@@ -177,6 +177,10 @@ export class NotificationInboxService {
         }
         return { kind: facts.ended ? 'ENDED' : 'OK', state: facts.status };
       }
+      case 'SHOP_PAYMENT': {
+        const facts = n.targetId === null ? undefined : await this.recipients.shopPaymentFacts(context, n.targetId);
+        return facts !== undefined && facts.ownerUserId === actor.userId ? { kind: facts.open ? 'OK' : 'ENDED', state: null } : { kind: 'NO_ACCESS', state: null };
+      }
       case 'WALLET_TXN': {
         const owner = n.targetId === null ? undefined : await this.recipients.topupOwner(context, n.targetId);
         return owner === actor.userId ? { kind: 'ENDED', state: null } : { kind: 'NO_ACCESS', state: null };

@@ -101,8 +101,22 @@ String _m07FailureText(M07Failure failure) {
       return 'Đơn đã kết thúc. Bạn chỉ có thể xem lại trao đổi.';
     case 'ORDER_CHAT_NOT_PARTICIPANT':
       return 'Bạn không còn quyền gửi tin trong trao đổi này.';
-    case 'ORDER_CHAT_RATE_LIMITED':
+    case 'ORDER_CHAT_RATE_LIMITED' || 'PAYMENT_CHAT_RATE_LIMITED':
       return 'Bạn gửi quá nhanh. Hãy đợi vài giây rồi gửi lại.';
+    case 'PAYMENT_CHAT_CLOSED':
+      return 'Yêu cầu đã đóng. Bạn chỉ có thể xem lại trao đổi.';
+    case 'PAYMENT_CHAT_NOT_PARTICIPANT':
+      return 'Bạn không còn quyền gửi tin trong trao đổi này.';
+    case 'MENU_VISIBLE_LIMIT_REACHED':
+      return 'Quán đang hiển thị tối đa 20 món. Hãy ẩn bớt một món (món ẩn không bị xóa) hoặc liên hệ quản trị để được mở rộng.';
+    case 'SHOP_PAYMENT_OPEN_EXISTS':
+      return 'Quán đã có một yêu cầu thanh toán đang mở cho mục đích này. Hãy mở yêu cầu đó để tiếp tục.';
+    case 'SHOP_PAYMENT_RECEIVING_ACCOUNT_NOT_CONFIGURED':
+      return 'Hệ thống chưa có tài khoản nhận tiền nên chưa tạo được yêu cầu. Vui lòng thử lại sau.';
+    case 'SHOP_PAYMENT_STATE_CONFLICT':
+      return 'Yêu cầu đã được xử lý hoặc đã báo chuyển khoản nên không thực hiện được thao tác này.';
+    case 'SHOP_PAYMENT_NOT_FOUND' || 'TOPUP_REQUEST_NOT_FOUND':
+      return 'Không tìm thấy yêu cầu này.';
   }
   return switch (failure.kind) {
     M07FailureKind.offline => 'Chưa gửi được vì mất kết nối. Hãy thử lại.',

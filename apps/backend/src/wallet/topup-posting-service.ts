@@ -68,6 +68,10 @@ export class TopupPostingService {
       // The ledger and the balance disagree before this credit: never post on top of a drift.
       throw new TechnicalError('internal', 'Wallet balance differs from its ledger');
     }
+    if (await this.repository.usedByShopPayment(context, input.bankId, input.systemAccountId, input.canonicalTransactionId)) {
+      // The same bank transaction already settled a payment of a shop: one transfer is never counted twice, whatever it was for.
+      throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');
+    }
     const topupId = randomUUID();
     const bankRecordId = randomUUID();
     const recorded = await this.repository.insertBankRecord(context, {

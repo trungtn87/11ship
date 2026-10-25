@@ -231,6 +231,8 @@ String m02FailureText(AuthFailure failure) {
       return 'Món không còn trong thực đơn.';
     case 'MENU_CATEGORY_NOT_AVAILABLE':
       return 'Nhóm món này không còn chọn được. Hãy chọn nhóm khác.';
+    case 'MENU_VISIBLE_LIMIT_REACHED':
+      return 'Quán đang hiển thị tối đa 20 món. Hãy ẩn bớt một món (món ẩn không bị xóa) hoặc liên hệ quản trị viên để được mở rộng.';
     case 'INVALID_MENU_IMAGE':
       return 'Ảnh không hợp lệ. Hãy chọn ảnh khác hoặc bỏ ảnh.';
   }

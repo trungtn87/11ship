@@ -34,8 +34,12 @@ export interface FinanceRights {
   readonly canProcess: boolean;
   readonly canConfirm: boolean;
   readonly canReconcile: boolean;
+  /** #198: the payments of SHOPS. Seeing the queue, recording the money received and granting the manual dish right are three separate rights. */
+  readonly canShopRead: boolean;
+  readonly canShopRecord: boolean;
+  readonly canShopManage: boolean;
 }
-export const NO_FINANCE_RIGHTS: FinanceRights = { role: 'ADMIN', implicit: false, canRead: false, canRecord: false, canProcess: false, canConfirm: false, canReconcile: false };
+export const NO_FINANCE_RIGHTS: FinanceRights = { role: 'ADMIN', implicit: false, canRead: false, canRecord: false, canProcess: false, canConfirm: false, canReconcile: false, canShopRead: false, canShopRecord: false, canShopManage: false };
 
 export type TopupState = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
 export const TOPUP_STATES: readonly TopupState[] = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'];
@@ -57,6 +61,8 @@ export interface TopupItem {
   readonly createdAt: string;
   readonly resolvedAt: string | null;
   readonly receivedAt: string | null;
+  /** #199: when the Shipper pressed "Tôi đã chuyển khoản". A notice only: the state is unchanged until an administrator confirms the money. */
+  readonly reportedAt: string | null;
 }
 export interface TopupPage {
   readonly items: readonly TopupItem[];
@@ -329,6 +335,11 @@ export const FINANCE_MESSAGE: Readonly<Record<string, string>> = {
   FINANCE_BANK_ACCOUNT_NOT_FOUND: 'Không tìm thấy tài khoản nhận tiền.',
   FINANCE_ADMIN_NOT_FOUND: 'Không tìm thấy quản trị viên hoặc tài khoản không còn hoạt động.',
   ADMIN_INPUT_INVALID: 'Dữ liệu không hợp lệ. Kiểm tra lại các trường rồi thử lại.',
+  SHOP_PAYMENT_STATE_CONFLICT: 'Yêu cầu thanh toán này đã được xử lý. Đã tải lại trạng thái mới nhất.',
+  SHOP_PAYMENT_NOT_FOUND: 'Không tìm thấy yêu cầu thanh toán.',
+  SHOP_ENTITLEMENT_STATE_CONFLICT: 'Quyền mở rộng số món đã ở trạng thái này. Đã tải lại.',
+  SHOP_ENTITLEMENT_PAYMENT_NOT_CONFIRMED: 'Khoản thanh toán này chưa được xác nhận tiền về, không thuộc quán này hoặc đã được dùng để cấp quyền.',
+  SHOP_NOT_FOUND: 'Không tìm thấy quán.',
 };
 export const FINANCE_GENERIC_MESSAGE = 'Máy chủ từ chối thao tác. Không có thay đổi nào được ghi.';
 export const FINANCE_UNKNOWN_MESSAGE = 'Chưa xác định kết quả. Kiểm tra lại trạng thái yêu cầu và sao kê trước khi làm gì tiếp; trang không tự gửi lại lệnh khác.';

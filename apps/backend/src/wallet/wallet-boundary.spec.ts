@@ -71,7 +71,7 @@ describe('M04-A1 wallet core boundary', () => {
     expect(codeOf('wallet/commission-hold-service.ts')).not.toMatch(/WITHDRAWAL/);
   });
 
-  it('M04-B2.2b / M07: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT, the two adjustment kinds), the adjustment record and the commission hold; no receiving switch to true by literal', () => {
+  it('M04-B2.2b / M07: the only inserts are the wallet, the request, an INACTIVE system account, the bank record, the topup, the ledger rows (TOPUP, COMMISSION_DEBIT, the two adjustment kinds), the adjustment record, the commission hold and the #199 "Tôi đã chuyển khoản" mark; no receiving switch to true by literal', () => {
     const code = walletCode();
     expect([...(code.match(/INSERT\s+INTO\s+app\.\w+/gi) ?? [])].sort()).toEqual([
       'INSERT INTO app.driver_wallets',
@@ -86,6 +86,7 @@ describe('M04-A1 wallet core boundary', () => {
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
       'INSERT INTO app.wallet_ledger_entries',
+      'INSERT INTO app.wallet_topup_reports',
       'INSERT INTO app.wallet_topup_requests',
       'INSERT INTO app.wallet_topups',
       'INSERT INTO app.wallet_withdrawal_events',

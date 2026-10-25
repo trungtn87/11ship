@@ -67,12 +67,16 @@ class HttpMenuApi implements MenuApi {
   @override
   Future<MenuSnapshot> load() async {
     final Map<String, Object?> data = _obj(await _call('GET', '/v1/shop/me/menu'));
+    final Object? visible = data['visible'];
     return MenuSnapshot(
       categories: <MenuCategory>[
         for (final Object? c in _list(data['categories']))
           MenuCategory(id: _str(_obj(c)['category_id']), name: _str(_obj(c)['name']), active: _str(_obj(c)['status']) == 'ACTIVE'),
       ],
       items: <MenuItem>[for (final Object? i in _list(data['items'])) _item(i)],
+      visibleLimit: visible == null ? null : (_obj(visible)['limit'] is int ? _obj(visible)['limit'] as int : null),
+      visibleCount: visible == null ? null : (_obj(visible)['count'] is int ? _obj(visible)['count'] as int : null),
+      expanded: visible != null && _obj(visible)['expanded'] == true,
     );
   }
 

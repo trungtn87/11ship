@@ -69,7 +69,8 @@ export class AdminTopupService {
       const rows = await this.requests.listForAdmin(context, { state: query.state, limit: query.limit + 1, after: query.after });
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
-      return { items: page.map(view), next_cursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAtMs, last.requestId) : null };
+      const reported = await this.requests.reportedAt(context, page.map((r) => r.requestId));
+      return { items: page.map((r) => ({ ...view(r), reported_at: reported.has(r.requestId) ? iso(reported.get(r.requestId) as number) : null })), next_cursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAtMs, last.requestId) : null };
     });
   }
 
@@ -96,7 +97,8 @@ export class AdminTopupService {
       if (row === undefined) {
         throw new AppError('TOPUP_REQUEST_NOT_FOUND');
       }
-      return view(row);
+      const reported = (await this.requests.reportedAt(context, [row.requestId])).get(row.requestId);
+      return { ...view(row), reported_at: reported === undefined ? null : iso(reported) };
     });
   }
 

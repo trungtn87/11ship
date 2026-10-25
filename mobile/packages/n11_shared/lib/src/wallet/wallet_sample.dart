@@ -109,6 +109,15 @@ class SampleWalletSource extends WalletSource implements WalletWrites {
   }
 
   @override
+  Future<void> reportTransfer(String code) async {
+    final TopupRequest? found = _topups[code];
+    if (found == null || !found.canReport) {
+      return;
+    }
+    _topups[code] = TopupRequest(code: found.code, amount: found.amount, createdAt: found.createdAt, status: found.status, transfer: found.transfer, proofName: found.proofName, reportedAt: _now);
+  }
+
+  @override
   Future<void> cancelWithdrawal(String code) async {
     final WithdrawalRequest? found = _withdrawals[code];
     if (found == null || !found.canCancel) {

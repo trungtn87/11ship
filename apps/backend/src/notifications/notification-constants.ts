@@ -6,7 +6,7 @@ export type NotificationApp = (typeof NOTIFICATION_APPS)[number];
 export const NOTIFICATION_CATEGORIES = ['ORDERS', 'REMINDERS', 'WALLET_PROFILE', 'AVAILABLE'] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
-export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE', 'COMPLAINT'] as const;
+export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE', 'COMPLAINT', 'SHOP_PAYMENT'] as const;
 export type TargetType = (typeof TARGET_TYPES)[number];
 
 /** The catalog of notification kinds. A kind fixes the category, the target and the lock-screen-safe wording; none of them carries a phone, an address, an OTP or bank data. */
@@ -50,6 +50,9 @@ export const KINDS = [
   'ORDER_DELIVERY_FAILED',
   // #191: someone wrote in the chat of an order / direct delivery (one collapsed card per room; the text itself is never in the notification).
   'ORDER_CHAT_MESSAGE',
+  // #199 / #198: someone wrote in a payment conversation (one collapsed card per room, no text), and a shop payment request was settled or refused.
+  'PAYMENT_CHAT_MESSAGE',
+  'SHOP_PAYMENT_UPDATED',
 ] as const;
 export type NotificationKind = (typeof KINDS)[number];
 
@@ -57,6 +60,10 @@ export const OUTBOX_DELIVERY_CHANGED_TYPE = 'delivery.changed.v1';
 export const OUTBOX_ORDER_CHANGED_TYPE = 'order.changed.v1';
 /** #191: a person wrote in an order chat room. */
 export const OUTBOX_ORDER_CHAT_MESSAGE_TYPE = 'order.chat_message.v1';
+/** #199: a person wrote in a payment conversation. */
+export const OUTBOX_PAYMENT_CHAT_MESSAGE_TYPE = 'payment.chat_message.v1';
+/** #198: a shop payment request moved (the shop is told when the administration confirmed the money or refused). */
+export const OUTBOX_SHOP_PAYMENT_CHANGED_TYPE = 'shop.payment_request.changed.v1';
 export const OUTBOX_TOPUP_CHANGED_TYPE = 'wallet.topup_request.changed.v1';
 export const OUTBOX_DRIVER_STATE_CHANGED_TYPE = 'driver.state_changed.v1';
 /** M11: a complaint moved (the Administration received it, asked, concluded, closed, re-opened). */
@@ -147,6 +154,8 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   ORDER_DELIVERING: 'ORDERS',
   ORDER_DELIVERY_FAILED: 'ORDERS',
   ORDER_CHAT_MESSAGE: 'ORDERS',
+  PAYMENT_CHAT_MESSAGE: 'WALLET_PROFILE',
+  SHOP_PAYMENT_UPDATED: 'WALLET_PROFILE',
 };
 
 export function isNotificationApp(value: unknown): value is NotificationApp {

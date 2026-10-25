@@ -32,6 +32,9 @@ export interface ChatPanelHost {
   readonly onSessionLost: () => void;
   readonly onForbidden: () => void;
   readonly dialogHost?: HTMLElement;
+  /** The title of the card and the line under the composer; the defaults are the order chat's. A payment room names itself ("Trao đổi thanh toán"). */
+  readonly title?: string;
+  readonly note?: string;
   /** Pause between two automatic reads of the newest messages (default 15 s). */
   readonly pollMs?: number;
 }
@@ -134,8 +137,8 @@ export class OrderChatPanel {
   constructor(room: ChatRoomRef, host: ChatPanelHost) {
     this.#room = room;
     this.#host = host;
-    const uid = `chat-${room.kind.toLowerCase()}-${room.id.slice(0, 8)}`;
-    this.#toggle = h('button', { type: 'button', class: 'chat-toggle', id: `${uid}-toggle`, 'aria-expanded': 'true', 'aria-controls': `${uid}-body` }, 'Trao đổi đơn hàng');
+    const uid = `chat-${room.kind.toLowerCase().replace(/_/g, '-')}-${room.id.slice(0, 8)}`;
+    this.#toggle = h('button', { type: 'button', class: 'chat-toggle', id: `${uid}-toggle`, 'aria-expanded': 'true', 'aria-controls': `${uid}-body` }, host.title ?? 'Trao đổi đơn hàng');
     this.#body = h('div', { class: 'chat-body', id: `${uid}-body` });
     this.#state = h('p', { class: 'hint chat-state', role: 'status' });
     this.#feed = h('ol', { class: 'chat-feed', 'aria-label': 'Nội dung trao đổi', tabindex: '0' });
@@ -149,7 +152,7 @@ export class OrderChatPanel {
     this.#send = primary('Gửi', 'submit');
     this.#send.classList.add('btn-inline');
     this.#sendStatus = message('error', `${uid}-status`);
-    const note = h('p', { class: 'hint chat-note', id: `${uid}-note` }, 'Tin nhắn hiển thị cho các bên tham gia hồ sơ này (khách, quán, shipper). Không nhập thông tin mật.');
+    const note = h('p', { class: 'hint chat-note', id: `${uid}-note` }, host.note ?? 'Tin nhắn hiển thị cho các bên tham gia hồ sơ này (khách, quán, shipper). Không nhập thông tin mật.');
     this.#composer = h('form', { class: 'chat-composer', novalidate: '' }, this.#input, h('div', { class: 'chat-composer-row' }, this.#count, this.#send), note, this.#sendStatus);
     this.#keep = h('section', { class: 'chat-keep', 'aria-label': 'Lưu lịch sử trao đổi' });
     this.#body.append(this.#state, this.#older, this.#feed, h('div', { class: 'chat-tools' }, this.#newer), this.#composer, this.#keep);

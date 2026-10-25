@@ -175,6 +175,10 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
       if (snapshot.categories.length > 1)
         _chips(<(String, String)>[('all', 'Tất cả nhóm'), for (final MenuCategory c in snapshot.categories) (c.id, c.active ? c.name : '${c.name} (ngừng)')], menu.categoryFilter, menu.setCategoryFilter, 'menu-cat'),
       Text('${snapshot.items.length} món · ${menu.hiddenCount} đang ẩn', key: const Key('menu-count'), style: N11Text.caption),
+      if (snapshot.visibleCount != null && snapshot.visibleLimit != null)
+        Text('Đang hiển thị ${snapshot.visibleCount}/${snapshot.visibleLimit} món. Món ẩn không chiếm suất và không bị xóa.', key: const Key('menu-visible-limit'), style: N11Text.caption)
+      else if (snapshot.expanded)
+        const Text('Quán đã được quản trị viên mở rộng số món hiển thị.', key: Key('menu-visible-expanded'), style: N11Text.caption),
       if (shown.isEmpty) ...<Widget>[
         const N11StateBlock(kind: StateKind.warn, icon: Icons.search_off, title: 'Không tìm thấy món phù hợp', text: 'Thử từ khóa hoặc bộ lọc khác.'),
         N11Button(key: const Key('menu-clear-filters'), label: 'Xóa bộ lọc', kind: ButtonKind.secondary, onPressed: () { _search.clear(); menu.clearFilters(); }),

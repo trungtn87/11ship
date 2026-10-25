@@ -31,11 +31,13 @@ import {
   TopupItem,
   TopupState,
 } from '../core/finance-admin.js';
+import { OrderChatSource } from '../core/order-chat.js';
 import { formatRoute, Route } from '../core/routes.js';
 import { formatDateTimeVn } from './accounts-view.js';
 import { DialogHandle, openDialog } from './dialog.js';
 import { h, message, primary, secondary, setMessage } from './dom.js';
 import { icon, UiIconName } from './icons.js';
+import { OrderChatPanel } from './order-chat-panel.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton, statePanel } from './states.js';
 
 // DOM of the REAL finance pages of the administration (M04-B3a): the top-up list and detail with the Admin's decision, the receiving accounts of the
@@ -60,6 +62,8 @@ export interface FinanceAdminHost {
   readonly rights: () => FinanceRights;
   readonly now: () => number;
   readonly dialogHost?: HTMLElement;
+  /** #199: where the payment conversation of a top-up request comes from. Absent = the page shows no conversation. */
+  readonly chat?: OrderChatSource;
 }
 
 /** What the shared pieces need from a page host (the top-up pages and the operating pages both provide it). */
@@ -247,7 +251,7 @@ export class TopupListView {
   }
 
   #draw(state: { kind: 'loading' } | { kind: 'empty' } | { kind: 'rows' } | { kind: 'read'; read: Exclude<FinanceRead<unknown>, { kind: 'ready' }> }): void {
-    const columns: readonly Column[] = [{ label: 'Thời gian' }, { label: 'Mã yêu cầu' }, { label: 'Shipper (ID)' }, { label: 'Tiền đề nghị', end: true }, { label: 'Tiền thực nhận', end: true }, { label: 'Trạng thái' }, { label: '', end: true }];
+    const columns: readonly Column[] = [{ label: 'Thời gian' }, { label: 'Mã yêu cầu' }, { label: 'Shipper (ID)' }, { label: 'Tiền đề nghị', end: true }, { label: 'Tiền thực nhận', end: true }, { label: 'Báo chuyển khoản' }, { label: 'Trạng thái' }, { label: '', end: true }];
     const caption = 'Yêu cầu nạp tiền';
     switch (state.kind) {
       case 'loading':
@@ -276,6 +280,7 @@ export class TopupListView {
             cell('Shipper (ID)', h('code', { title: item.driverId }, shortId(item.driverId))),
             cell('Tiền đề nghị', formatVndAmount(item.requestedVnd)),
             cell('Tiền thực nhận', item.actualVnd === null ? '—' : formatVndAmount(item.actualVnd)),
+            cell('Báo chuyển khoản', when(item.reportedAt)),
             cell('Trạng thái', stateBadge(item.state)),
             cell('', open),
           );
@@ -322,6 +327,7 @@ export class TopupDetailView {
   #pending: Pending | undefined;
   #busy = false;
   #dialog: DialogHandle | undefined;
+  #chat: OrderChatPanel | undefined;
   #alive = true;
   #latest = 0;
   #read: Exclude<FinanceRead<unknown>, { kind: 'ready' }> | { kind: 'loading' } = { kind: 'loading' };
@@ -341,6 +347,8 @@ export class TopupDetailView {
     this.#dialog?.close();
     this.#dialog = undefined;
     this.#pending = undefined;
+    this.#chat?.dispose();
+    this.#chat = undefined;
     // The draft (amount, transaction code, time, account) is dropped with the page.
     for (const input of [this.#actual, this.#transaction, this.#receivedAt]) {
       input.value = '';
@@ -413,6 +421,7 @@ export class TopupDetailView {
           ['Tiền đề nghị', formatVndAmount(detail.requestedVnd)],
           ['Tiền thực nhận', detail.actualVnd === null ? '—' : formatVndAmount(detail.actualVnd)],
           ['Tiền về lúc', when(detail.receivedAt)],
+          ['Shipper báo đã chuyển khoản lúc', when(detail.reportedAt)],
           ['Tạo lúc', when(detail.createdAt)],
           ['Xử lý lúc', when(detail.resolvedAt)],
         ]),
@@ -425,6 +434,25 @@ export class TopupDetailView {
       parts.push(this.host.rights().canRecord ? this.#decisionForms(detail) : h('p', { class: 'message message-notice' }, 'Bạn chỉ có quyền xem. Cần quyền "Xác nhận / từ chối nạp tiền" để xử lý yêu cầu này.'));
     } else {
       parts.push(h('p', { class: 'hint' }, 'Yêu cầu đã ở trạng thái cuối, không còn thao tác nào.'));
+    }
+    // #199: the payment conversation of this request. It never confirms money or credits the wallet: only the buttons above do.
+    if (this.host.chat !== undefined) {
+      if (this.#chat === undefined) {
+        this.#chat = new OrderChatPanel(
+          { kind: 'DRIVER_TOPUP', id: detail.requestId },
+          {
+            source: this.host.chat,
+            newKey: this.host.newKey,
+            onSessionLost: this.host.onSessionLost,
+            onForbidden: this.host.onForbidden,
+            title: 'Trao đổi thanh toán',
+            note: 'Tin nhắn chỉ hỗ trợ đối soát và hiển thị cho Shipper. Tin nhắn không xác nhận tiền và không cộng ví: dùng các nút xác nhận ở trên.',
+            ...(this.host.dialogHost === undefined ? {} : { dialogHost: this.host.dialogHost }),
+          },
+        );
+        this.#chat.start();
+      }
+      parts.push(this.#chat.element);
     }
     this.#body.replaceChildren(...parts.filter((part): part is HTMLElement => part !== undefined));
   }
@@ -591,6 +619,7 @@ export class TopupDetailView {
       this.#pending = undefined;
       this.#notice.set(undefined);
       await this.load();
+      void this.#chat?.refresh();
       this.#notice.set(`${pending.label}: máy chủ đã xác nhận. Đây là trạng thái mới nhất từ máy chủ.`);
       return;
     }

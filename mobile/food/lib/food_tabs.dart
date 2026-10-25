@@ -50,6 +50,12 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
             navigator.popUntil((Route<dynamic> r) => r.isFirst);
             actions.goTab('orders');
           }
+        case TargetType.shopPayment:
+          // #198 / #199: the payment request of the shop (a message in its conversation, or the administration's decision). The server checks the owner again.
+          final ShopPaymentSource? payments = flows.shopPayments;
+          if (payments != null && target.id != null) {
+            await navigator.push(n11Route(ShopPaymentDetailScreen(source: payments, requestId: target.id!)));
+          }
         case TargetType.walletTxn || TargetType.none:
           break;
       }
@@ -172,6 +178,14 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     settingsEntries: <Widget>[
       if (flows?.feedback != null) ...m11AccountEntries(context, source: flows!.feedback!, picker: flows.picker, role: m11RoleOf(session, shipApp: false)),
       if (flows?.addresses != null) addressBookEntry(context, flows!.addresses!),
+      if (flows?.shopPayments != null && session.identity?.availableRoles.contains('SHOP_OWNER') == true)
+        N11ListItem(
+          key: const Key('open-shop-payments'),
+          icon: Icons.account_balance_outlined,
+          title: 'Thanh toán quán',
+          sub: 'Yêu cầu thanh toán, báo chuyển khoản và trao đổi với quản trị viên',
+          onTap: () => Navigator.of(context).push(n11Route(ShopPaymentListScreen(source: flows!.shopPayments!))),
+        ),
       if (flows?.notificationSource != null && flows?.push != null)
         N11ListItem(
           key: const Key('open-notification-settings'),

@@ -3,6 +3,8 @@ import 'dart:convert';
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../m10/m10_http.dart';
+import '../m10/order_chat_models.dart';
 import 'wallet_models.dart';
 import 'wallet_source.dart';
 
@@ -53,7 +55,7 @@ String _refusalText(String? code) {
     case 'TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED':
       return 'Hệ thống chưa có tài khoản nhận tiền nên chưa nạp được. Vui lòng thử lại sau.';
     case 'TOPUP_REQUEST_STATE_CONFLICT':
-      return 'Yêu cầu nạp đã được xử lý nên không hủy được nữa.';
+      return 'Yêu cầu nạp đã được xử lý nên không thực hiện được thao tác này.';
     case 'TOPUP_REQUEST_NOT_FOUND' || 'WITHDRAWAL_NOT_FOUND':
       return 'Không tìm thấy yêu cầu này.';
     case 'WITHDRAWAL_AMOUNT_BELOW_MINIMUM':
@@ -160,7 +162,8 @@ TopupRequest _parseTopup(Object? data) {
   if (amount < 1 || version < 1) {
     throw const FormatException('amount');
   }
-  return TopupRequest(code: id, displayCode: walletShortCode(id), amount: amount, createdAt: _time(raw['created_at']), status: _topupStatus(raw['state']), version: version);
+  final Object? reported = raw['reported_at'];
+  return TopupRequest(code: id, displayCode: walletShortCode(id), amount: amount, createdAt: _time(raw['created_at']), status: _topupStatus(raw['state']), version: version, reportedAt: reported == null ? null : _time(reported));
 }
 
 WithdrawalRequest _parseWithdrawal(Object? data) {
@@ -254,6 +257,9 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
 
   @override
   bool get isSample => false;
+
+  @override
+  OrderChatApi? get chat => session.status == SessionStatus.signedIn ? HttpOrderChatApi(session: session) : null;
 
   @override
   WalletWrites? get writes => session.status == SessionStatus.signedIn ? this : null;
@@ -464,6 +470,11 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
     }
     final int version = current.version ?? 0;
     await _write('cancel-topup:$code:$version', 'POST', '/topup-requests/${Uri.encodeComponent(code)}/cancel', <String, Object?>{'expected_version': version}, ok: const <int>{200});
+  }
+
+  @override
+  Future<void> reportTransfer(String code) async {
+    await _write('report-topup:$code', 'POST', '/topup-requests/${Uri.encodeComponent(code)}/report-transfer', const <String, Object?>{}, ok: const <int>{200});
   }
 
   @override

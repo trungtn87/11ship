@@ -8,6 +8,7 @@ import { TopupFilter, TOPUP_FILTERS } from './finance-admin.js';
 import { WithdrawalFilterOps, WITHDRAWAL_FILTERS } from './finance-ops.js';
 import { InvitationStatus, INVITATION_STATUSES, isUuid } from './provisioning-api.js';
 import { SHIPPER_FILTERS, ShipperFilter } from './shippers.js';
+import { SHOP_PAYMENT_FILTERS, ShopPaymentFilter } from './shop-payments.js';
 import { PROFILE_FILTERS, ProfileFilter, SCHEDULE_FILTERS, ScheduleFilter, SEARCH_MAX, SHOP_TABS, ShopTab } from './shops.js';
 
 export type Route =
@@ -52,6 +53,9 @@ export type Route =
   | { readonly name: 'finance-topups'; readonly tab?: TopupTab; readonly status?: TopupFilter }
   | { readonly name: 'finance-bank-accounts' }
   | { readonly name: 'finance-topup'; readonly id: string }
+  // #198: the payments shops report (reconciliation queue and one request).
+  | { readonly name: 'shop-payments'; readonly filter?: ShopPaymentFilter }
+  | { readonly name: 'shop-payment'; readonly id: string }
   | { readonly name: 'finance-withdrawals'; readonly tab?: WithdrawalTab; readonly status?: WithdrawalFilterOps }
   | { readonly name: 'finance-withdrawal'; readonly id: string }
   | { readonly name: 'finance-transactions'; readonly shipper?: string }
@@ -280,6 +284,10 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
       return { name: 'wallet-params' };
     case '/finance/bank-accounts':
       return { name: 'finance-bank-accounts' };
+    case '/finance/shop-payments': {
+      const filter = new URLSearchParams(search).get('filter');
+      return filter !== null && (SHOP_PAYMENT_FILTERS as readonly string[]).includes(filter) ? { name: 'shop-payments', filter: filter as ShopPaymentFilter } : { name: 'shop-payments' };
+    }
     case '/finance/topups': {
       // B3a: the server's own states, one per call (?status=PENDING|CONFIRMED|REJECTED|CANCELLED|ALL). The old ?tab= of the mock is still read.
       const status = new URLSearchParams(search).get('status');
@@ -298,6 +306,10 @@ function parseFinanceRoute(path: string, search: string): Route | undefined {
       const tab = params.get('tab');
       return tab !== null && (WITHDRAWAL_TABS as readonly string[]).includes(tab) ? { name: 'finance-withdrawals', tab: tab as WithdrawalTab } : { name: 'finance-withdrawals' };
     }
+  }
+  const shopPayment = /^\/finance\/shop-payments\/([^/]+)$/.exec(path);
+  if (shopPayment !== null && isUuid(shopPayment[1])) {
+    return { name: 'shop-payment', id: shopPayment[1] };
   }
   const topup = /^\/finance\/topups\/([^/]+)$/.exec(path);
   if (topup !== null && isUuid(topup[1])) {
@@ -410,6 +422,10 @@ export function formatRoute(route: Route): string {
       return '/finance/bank-accounts';
     case 'finance-topup':
       return `/finance/topups/${route.id}`;
+    case 'shop-payments':
+      return route.filter === undefined ? '/finance/shop-payments' : `/finance/shop-payments?filter=${route.filter}`;
+    case 'shop-payment':
+      return `/finance/shop-payments/${route.id}`;
     case 'finance-withdrawals':
       return route.status !== undefined ? `/finance/withdrawals?status=${route.status}` : route.tab === undefined ? '/finance/withdrawals' : `/finance/withdrawals?tab=${route.tab}`;
     case 'finance-withdrawal':

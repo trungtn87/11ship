@@ -6,6 +6,8 @@ import '../account/session_controller.dart';
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
+import '../shop_payment/shop_payment_models.dart';
+import '../shop_payment/shop_payment_source.dart';
 import 'order_chat_models.dart';
 
 // The HTTP side of the M10 sources: signed requests of the session (Bearer + device proof). Every answer is parsed strictly; a body that is not what
@@ -235,6 +237,8 @@ class HttpOrderChatApi extends OrderChatApi {
         ChatDoor.shopOrder => '/v1/shop/me/orders/${room.id}/chat',
         ChatDoor.shopDirect => '/v1/shop/me/deliveries/${room.id}/chat',
         ChatDoor.shipperDelivery => '/v1/driver/deliveries/${room.id}/chat',
+        ChatDoor.shipperTopup => '/v1/driver/wallet/topup-requests/${room.id}/chat',
+        ChatDoor.shopPayment => '/v1/shop/me/payment-requests/${room.id}/chat',
       };
 
   @override
@@ -246,4 +250,43 @@ class HttpOrderChatApi extends OrderChatApi {
   @override
   Future<ChatSent> send(ChatRoomRef room, {required String body, required String key}) async =>
       _parse<ChatSent>(await _call(session, 'POST', pathOf(room), body: <String, Object?>{'body': body}, key: key, ok: const <int>{200, 201}), ChatSent.fromJson);
+}
+
+/// "Thanh toán quán" over the signed session (issue #198). The Idempotency-Key of a write is given by the screen and kept until a definite answer.
+class HttpShopPaymentSource extends ShopPaymentSource {
+  const HttpShopPaymentSource({required this.session});
+
+  final SessionController session;
+
+  @override
+  bool get isSample => false;
+
+  @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
+
+  static String _path(String id, [String tail = '']) => '/v1/shop/me/payment-requests/${Uri.encodeComponent(id)}$tail';
+
+  @override
+  Future<List<PaymentAccount>> accounts() async => _parse<List<PaymentAccount>>(await _call(session, 'GET', '/v1/shop/me/payment-receiving-accounts'), parsePaymentAccounts);
+
+  @override
+  Future<ShopPaymentPage> list({String? cursor}) async =>
+      _parse<ShopPaymentPage>(await _call(session, 'GET', '/v1/shop/me/payment-requests?limit=20${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}'), ShopPaymentPage.fromJson);
+
+  @override
+  Future<ShopPayment> detail(String requestId) async => _parse<ShopPayment>(await _call(session, 'GET', _path(requestId)), ShopPayment.fromJson);
+
+  @override
+  Future<ShopPayment> create({required ShopPaymentPurpose purpose, required int amount, required String key}) async => _parse<ShopPayment>(
+        await _call(session, 'POST', '/v1/shop/me/payment-requests', body: <String, Object?>{'purpose': purpose.wire, 'amount_vnd': amount}, key: key, ok: const <int>{201}),
+        ShopPayment.fromJson,
+      );
+
+  @override
+  Future<ShopPayment> report(String requestId, {required String key}) async =>
+      _parse<ShopPayment>(await _call(session, 'POST', _path(requestId, '/report-transfer'), body: const <String, Object?>{}, key: key), ShopPayment.fromJson);
+
+  @override
+  Future<ShopPayment> cancel(String requestId, {required int version, required String key}) async =>
+      _parse<ShopPayment>(await _call(session, 'POST', _path(requestId, '/cancel'), body: <String, Object?>{'expected_version': version}, key: key), ShopPayment.fromJson);
 }

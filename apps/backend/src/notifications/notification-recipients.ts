@@ -5,6 +5,7 @@ import { DriverRepository } from '../driver/driver-repository';
 import { ComplaintRepository } from '../feedback/complaint-repository';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { OrderChatParticipants, ChatRecipient } from '../order-chat/order-chat-participants';
+import { PaymentChatRepository } from '../payment-chat/payment-chat-repository';
 import { OrderRepository } from '../orders/order-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
@@ -45,7 +46,32 @@ export class NotificationRecipients {
     private readonly complaints: ComplaintRepository,
     private readonly orders: OrderRepository,
     private readonly chatParticipants: OrderChatParticipants,
+    private readonly paymentChats: PaymentChatRepository,
   ) {}
+
+  /**
+   * Who is told that a message was written in a payment room: the request's OWNER (re-read from the owner tables), when somebody else wrote and the request is still
+   * open. The Shipper opens the wallet target (the top-up request), the shop's owner the SHOP_PAYMENT target. Nobody else; the administration is not pushed.
+   */
+  async paymentChatRecipient(context: TransactionContext, kind: 'DRIVER_TOPUP' | 'SHOP_PAYMENT', caseId: string, senderUserId: string): Promise<{ userId: string; app: 'FOOD' | 'SHIP'; targetType: 'WALLET_TXN' | 'SHOP_PAYMENT'; targetId: string } | undefined> {
+    const owner = await this.paymentChats.findCase(context, kind, caseId);
+    if (owner === undefined || owner.ownerUserId === null || owner.ownerUserId === senderUserId) {
+      return undefined;
+    }
+    if ((await this.paymentChats.facts(context, kind, caseId))?.state !== 'PENDING') {
+      return undefined;
+    }
+    return kind === 'DRIVER_TOPUP' ? { userId: owner.ownerUserId, app: 'SHIP', targetType: 'WALLET_TXN', targetId: caseId } : { userId: owner.ownerUserId, app: 'FOOD', targetType: 'SHOP_PAYMENT', targetId: caseId };
+  }
+
+  /** The shop payment request as the receiving account must treat it right now: who owns it and whether it is still open. */
+  async shopPaymentFacts(context: TransactionContext, requestId: string): Promise<{ ownerUserId: string | null; open: boolean } | undefined> {
+    const owner = await this.paymentChats.findCase(context, 'SHOP_PAYMENT', requestId);
+    if (owner === undefined) {
+      return undefined;
+    }
+    return { ownerUserId: owner.ownerUserId, open: (await this.paymentChats.facts(context, 'SHOP_PAYMENT', requestId))?.state === 'PENDING' };
+  }
 
   shopOwner(context: TransactionContext, shopId: string): Promise<string | undefined> {
     return this.shops.ownerUserIdOfShop(context, shopId);

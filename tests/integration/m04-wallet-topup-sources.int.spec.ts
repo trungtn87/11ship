@@ -10,6 +10,7 @@ import { createDriverFor, purgePhone, randomPhone } from './support/auth-fixture
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 import { TOPUP_DOWN_SQL, TOPUP_UP_SQL } from './support/wallet-migration-sql';
+import { PAYMENT_CHAT_DOWN_SQL, PAYMENT_CHAT_UP_SQL } from './support/payment-chat-migration-sql';
 import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 
 // M04-B1 against a REAL PostgreSQL test database: the topup SOURCE core (system receiving accounts, requests, the bank-transaction registry,
@@ -446,6 +447,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
     try {
       await client.query('BEGIN');
       const before = await snapshot(client);
+      await client.query(PAYMENT_CHAT_DOWN_SQL);
       await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
       await client.query(TOPUP_DOWN_SQL);
       const gone = await client.query(`SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name IN ('system_owned_bank_accounts', 'wallet_topup_requests', 'wallet_bank_transactions', 'wallet_topups')`);
@@ -454,6 +456,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
       expect(await snapshot(client)).toEqual(before);
       await client.query(TOPUP_UP_SQL);
       await client.query(WITHDRAWAL_UP_SQL);
+      await client.query(PAYMENT_CHAT_UP_SQL);
       expect(await snapshot(client)).toEqual(before);
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -502,6 +505,7 @@ describe('M04-B1 - topup sources, bank registry and ledger source (schema, invar
         await reader.query('BEGIN');
         await reader.query('SELECT count(*) FROM app.wallet_topups');
         await migrator.query('BEGIN');
+        await migrator.query(PAYMENT_CHAT_DOWN_SQL);
         await migrator.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals depend on the registry: newest, down first
         const migrating = migrator.query(TOPUP_DOWN_SQL).then(() => undefined, (error: unknown) => error);
         await eventually(async () => (await waiting()) >= 1, 'the down migration blocked behind the open reader');

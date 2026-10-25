@@ -228,6 +228,7 @@ export class AccessView {
         { class: 'access-list' },
         ...APPS.map(appBlock),
         rightRow('Ví, nạp tiền và giao dịch', ['wallet.read', 'wallet.topup.record'], 'Quyền tiền không suy ra từ quyền ứng dụng.'),
+        rightRow('Thanh toán của quán', ['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage'], 'Xem hàng đợi, ghi nhận tiền về và cấp quyền mở rộng món là ba quyền riêng; không quyền nào suy ra quyền khác.'),
         rightRow('Rút tiền', ['wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile'], 'Ba bước tách người: nhận xử lý, xác nhận, đối soát.'),
         fixed('Phản ánh và đánh giá', 'Theo quyền ứng dụng Quán / Shipper: xem để đọc, quyền Xử lý để xử lý hồ sơ (module M11 kiểm lại ở máy chủ).'),
         fixed('Cấu hình', 'Xem: mọi ADMIN. Sửa: chỉ SYSTEM (quyết định của Owner 17/10/2026).'),

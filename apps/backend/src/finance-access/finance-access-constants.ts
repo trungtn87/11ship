@@ -28,13 +28,24 @@ export const GRANTABLE_FINANCE_PERMISSIONS = [
 
 /** The function rights beyond money (M12-C). They live in the same table and are given by the same SYSTEM-only routes, but are not finance rights. */
 export const GRANTABLE_FUNCTION_PERMISSIONS = [PERMISSION_REPORT_READ, PERMISSION_REPORT_EXPORT, PERMISSION_AUDIT_READ] as const;
-export const GRANTABLE_PERMISSIONS = [...GRANTABLE_FINANCE_PERMISSIONS, ...GRANTABLE_FUNCTION_PERMISSIONS] as const;
+
+// #198: the rights over the payments of SHOPS, each a separate switch (SYSTEM holds them implicitly). Seeing the queue is not recording money received, and neither
+// is opening a manual entitlement (extra dishes) for a shop: the three are given and revoked one by one.
+export const PERMISSION_SHOP_PAYMENT_READ = 'shop.payment.read';
+export const PERMISSION_SHOP_PAYMENT_RECORD = 'shop.payment.record';
+export const PERMISSION_SHOP_ENTITLEMENT_MANAGE = 'shop.entitlement.manage';
+export const GRANTABLE_SHOP_PAYMENT_PERMISSIONS = [PERMISSION_SHOP_PAYMENT_READ, PERMISSION_SHOP_PAYMENT_RECORD, PERMISSION_SHOP_ENTITLEMENT_MANAGE] as const;
+export type ShopPaymentPermissionKey = (typeof GRANTABLE_SHOP_PAYMENT_PERMISSIONS)[number];
+
+export const GRANTABLE_PERMISSIONS = [...GRANTABLE_FINANCE_PERMISSIONS, ...GRANTABLE_FUNCTION_PERMISSIONS, ...GRANTABLE_SHOP_PAYMENT_PERMISSIONS] as const;
 export type GrantablePermissionKey = (typeof GRANTABLE_PERMISSIONS)[number];
 
 export function isGrantablePermission(value: unknown): value is GrantablePermissionKey {
   return typeof value === 'string' && (GRANTABLE_PERMISSIONS as readonly string[]).includes(value);
 }
 export type FinancePermissionKey = (typeof GRANTABLE_FINANCE_PERMISSIONS)[number];
+/** What FinanceAccessParticipant.require accepts: a finance right or a right over the payments of shops. */
+export type RequirablePermissionKey = FinancePermissionKey | ShopPaymentPermissionKey;
 
 /**
  * Names reserved for the packages that will use them (withdrawals, adjustments, the Shipper bank read). The table accepts them (format only), but

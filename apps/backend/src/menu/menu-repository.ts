@@ -163,6 +163,12 @@ export class MenuRepository {
     return result.rows.map(toItem);
   }
 
+  /** #198: how many dishes of the shop are VISIBLE now (HIDDEN and DELETED do not count). */
+  async countVisibleItems(context: TransactionContext, shopId: string): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.menu_items WHERE shop_id = $1::uuid AND status = 'VISIBLE'`, [shopId]);
+    return Number(result.rows[0]?.n ?? '0');
+  }
+
   async insertItem(context: TransactionContext, itemId: string, shopId: string, fields: MenuItemFields): Promise<MenuItemRow> {
     const result = await context.query<RawItem>(
       `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, image_id, status, version, created_at, updated_at)

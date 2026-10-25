@@ -3,7 +3,7 @@ import { LockedActor } from '../admin-provisioning/admin-system-actor';
 import { AppError } from '../common/app-errors';
 import { isExpiredAt } from '../admin-auth/admin-expiry';
 import { TransactionContext } from '../transaction/transaction-context';
-import { FinancePermissionKey, GRANTABLE_FINANCE_PERMISSIONS } from './finance-access-constants';
+import { GRANTABLE_FINANCE_PERMISSIONS, RequirablePermissionKey } from './finance-access-constants';
 import { FinanceAccessRepository } from './finance-access-repository';
 
 /**
@@ -21,7 +21,7 @@ import { FinanceAccessRepository } from './finance-access-repository';
 export class FinanceAccessParticipant {
   constructor(private readonly grants: FinanceAccessRepository) {}
 
-  async require(context: TransactionContext, actor: LockedActor, permission: FinancePermissionKey, nowMs: number): Promise<void> {
+  async require(context: TransactionContext, actor: LockedActor, permission: RequirablePermissionKey, nowMs: number): Promise<void> {
     if (isExpiredAt(actor.session.expiresAtMs, nowMs)) {
       throw new AppError('ADMIN_SESSION_INVALID');
     }
@@ -32,6 +32,15 @@ export class FinanceAccessParticipant {
     if (row === undefined || row.state !== 'GRANTED') {
       throw new AppError('ADMIN_FORBIDDEN');
     }
+  }
+
+  /** Whether the actor holds the right now (the same decision as [require], answered as a boolean: it shows or hides a control, the command still calls [require]). */
+  async has(context: TransactionContext, actor: LockedActor, permission: RequirablePermissionKey): Promise<boolean> {
+    if (actor.checked.membership.adminRole === 'SYSTEM') {
+      return true;
+    }
+    const row = await this.grants.lockForShare(context, actor.known.userId, permission);
+    return row !== undefined && row.state === 'GRANTED';
   }
 
   /** The rights the actor holds now (for the actor's own read). SYSTEM: all of the grantable ones, implicitly. */

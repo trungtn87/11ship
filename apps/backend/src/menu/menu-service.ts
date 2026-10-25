@@ -12,6 +12,8 @@ import { requireActiveShop } from '../shop/shop-guards';
 import { AVAILABILITY_TIME_ZONE } from '../shop/shop-availability-sql';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
+import { FREE_VISIBLE_DISH_LIMIT } from '../shop-payment/shop-payment-constants';
+import { ShopPaymentRepository } from '../shop-payment/shop-payment-repository';
 import { ShopActivation } from '../shop-setup/shop-activation';
 import { publicContactOf } from '../shop-setup/shop-public-contact';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
@@ -66,6 +68,7 @@ export class MenuService {
     private readonly sales: OrderSalesReader,
     private readonly activation: ShopActivation,
     private readonly gate: ShopSetupGate,
+    private readonly entitlements: ShopPaymentRepository,
   ) {}
 
   // ---- reads ----------------------------------------------------------------------------------------------------
@@ -88,6 +91,8 @@ export class MenuService {
         categories: categories.map(toCategoryWire),
         items: items.map(toItemWire),
         limits: MENU_LIMITS,
+        // #198: how many dishes this shop shows now and how many it may show (null = no limit, the manual right is held). Hidden dishes do not count.
+        visible: await this.#visibleSummary(context, shop.shopId, items),
       };
     });
   }
@@ -211,6 +216,8 @@ export class MenuService {
         if ((await this.menu.countLiveItems(context, shop.shopId)) >= MENU_ITEMS_MAX_PER_SHOP) {
           throw new AppError('MENU_LIMIT_REACHED');
         }
+        // A new dish is VISIBLE: it needs a free place among the visible ones (decided under the shop row lock taken above).
+        await this.#requireVisibleRoom(context, shop.shopId);
         const item = await this.menu.insertItem(context, randomUUID(), shop.shopId, input);
         await this.#record(context, requestId, actor.userId, item, MENU_ITEM_CREATE_OPERATION_ID);
         await this.activation.reconcile(context, shop.shopId, requestId, 'menu_change');
@@ -240,9 +247,13 @@ export class MenuService {
   }
 
   async showItem(actor: SessionActor, itemId: string, expectedVersion: number, key: string | readonly string[] | undefined, requestId: string): Promise<MenuOutcome> {
-    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, (context, _shop, current) =>
-      this.menu.setItemStatus(context, current, 'VISIBLE'),
-    );
+    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, async (context, shop, current) => {
+      // Showing a dish that is already visible takes no new place; showing a hidden one does.
+      if (current.status !== 'VISIBLE') {
+        await this.#requireVisibleRoom(context, shop.shopId);
+      }
+      return this.menu.setItemStatus(context, current, 'VISIBLE');
+    });
   }
 
   async deleteItem(actor: SessionActor, itemId: string, expectedVersion: number, key: string | readonly string[] | undefined, requestId: string): Promise<MenuOutcome> {
@@ -312,6 +323,26 @@ export class MenuService {
     if (fields.imageId !== null && !(await this.menu.lockOwnImageShared(context, fields.imageId, shopId))) {
       throw new AppError('INVALID_MENU_IMAGE');
     }
+  }
+
+  /**
+   * #198: without the manual MENU_EXPANDED right a shop shows at most FREE_VISIBLE_DISH_LIMIT dishes at once. The caller holds the shop row FOR UPDATE, as does every
+   * grant / revoke of the right and every other menu write, so the count and the right cannot change between this check and the write. Only a step that ADDS a
+   * visible dish is refused: hiding, editing, and showing again after hiding stay possible, and a shop that already shows more (the right was revoked) keeps every
+   * dish; nothing is hidden or deleted for it, it simply cannot add another until it is back under the limit.
+   */
+  async #requireVisibleRoom(context: TransactionContext, shopId: string): Promise<void> {
+    if (await this.entitlements.isGranted(context, shopId)) {
+      return;
+    }
+    if ((await this.menu.countVisibleItems(context, shopId)) >= FREE_VISIBLE_DISH_LIMIT) {
+      throw new AppError('MENU_VISIBLE_LIMIT_REACHED');
+    }
+  }
+
+  async #visibleSummary(context: TransactionContext, shopId: string, items: readonly MenuItemRow[]): Promise<JsonObject> {
+    const expanded = await this.entitlements.isGranted(context, shopId);
+    return { count: items.filter((item) => item.status === 'VISIBLE').length, limit: expanded ? null : FREE_VISIBLE_DISH_LIMIT, expanded };
   }
 
   async #lockWritableShop(context: TransactionContext, userId: string): Promise<ShopRow> {

@@ -168,6 +168,37 @@ export class TopupRequestRepository {
     return row === undefined ? undefined : toRequest(row);
   }
 
+  /** #199: the request's state under a SHARED row lock (every resolution updates the row, so a send/report and a close have one winner). Undefined when it does not exist. */
+  async lockStateShared(context: TransactionContext, requestId: string): Promise<string | undefined> {
+    const result = await context.query<{ state: string }>(`SELECT state FROM app.wallet_topup_requests WHERE request_id = $1::uuid FOR SHARE`, [requestId]);
+    return result.rows[0]?.state;
+  }
+
+  /** #199: the "Tôi đã chuyển khoản" mark, written once. False when it was already there. It touches no request, wallet or ledger row. */
+  async insertReport(context: TransactionContext, requestId: string, userId: string): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.wallet_topup_reports (request_id, reported_by_user_id, reported_at) VALUES ($1::uuid, $2::uuid, date_trunc('milliseconds', clock_timestamp())) ON CONFLICT (request_id) DO NOTHING`,
+      [requestId, userId],
+    );
+    return result.rowCount === 1;
+  }
+
+  /** #199: when the Shipper pressed "Tôi đã chuyển khoản" for each of these requests (a read of app.wallet_topup_reports; a request not reported is absent from the map). */
+  async reportedAt(context: TransactionContext, requestIds: readonly string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (requestIds.length === 0) {
+      return out;
+    }
+    const result = await context.query<{ request_id: string; reported_ms: string }>(
+      `SELECT request_id::text AS request_id, (extract(epoch FROM reported_at) * 1000)::bigint::text AS reported_ms FROM app.wallet_topup_reports WHERE request_id = ANY($1::uuid[])`,
+      [requestIds],
+    );
+    for (const row of result.rows) {
+      out.set(row.request_id, safeNumber(row.reported_ms));
+    }
+    return out;
+  }
+
   /** Newest first (created_at, request_id), at most `limit` rows after the cursor. A plain read. */
   async listForWallet(
     context: TransactionContext,

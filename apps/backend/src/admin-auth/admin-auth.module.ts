@@ -64,6 +64,12 @@ import { AdminShipperService } from '../admin-shippers/admin-shipper-service';
 import { ShipperWalletParametersService } from '../admin-shippers/shipper-wallet-parameters-service';
 import { DriverModule } from '../driver/driver.module';
 import { AdminTopupController } from '../admin-topups/admin-topup.controller';
+import { AdminPaymentChatController } from '../admin-shop-payments/admin-payment-chat.controller';
+import { AdminPaymentChatService } from '../admin-shop-payments/admin-payment-chat-service';
+import { AdminShopPaymentController } from '../admin-shop-payments/admin-shop-payment.controller';
+import { AdminShopPaymentService } from '../admin-shop-payments/admin-shop-payment-service';
+import { PaymentChatModule } from '../payment-chat/payment-chat.module';
+import { ShopPaymentCoreModule } from '../shop-payment/shop-payment-core.module';
 import { AdminFinanceController } from '../admin-finance/admin-finance.controller';
 import { AdminFinanceReadService } from '../admin-finance/admin-finance-read-service';
 import { AdminWithdrawalService } from '../admin-finance/admin-withdrawal-service';
@@ -158,6 +164,9 @@ export class AdminAuthModule implements NestModule {
         OrdersCoreModule,
         // #191: the order chat service (the Administration reads / writes a conversation and holds its evidence through it).
         OrderChatServiceModule.register(auth),
+        // #198 / #199: the shop payment SQL and the payment conversation service (the Administration reads / writes a room through it).
+        ShopPaymentCoreModule,
+        PaymentChatModule.register(auth),
         ShopModule,
         // Issue #190: the setup gate and the automatic activation (the administration list, preview and re-enable use the very same rules).
         ShopSetupCoreModule,
@@ -172,7 +181,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminShopPaymentController, AdminPaymentChatController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [
         adminAuthConfigProvider,
         {
@@ -229,6 +238,9 @@ export class AdminAuthModule implements NestModule {
         SystemBankAccountService,
         // M04-B2.2b Admin reconciliation of the Shipper top-up requests (the ledger posting itself stays in WalletModule).
         AdminTopupService,
+        // #198 / #199 shop payments (queue, money received, manual dish right) and the payment conversation for the Administration.
+        AdminShopPaymentService,
+        AdminPaymentChatService,
         // M04-C: withdrawals (process, confirm, reconcile), the finance reads and the commission policy.
         AdminWithdrawalService,
         AdminFinanceReadService,
@@ -286,7 +298,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
+    consumer.apply(noStoreMiddleware).forRoutes(AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminShopPaymentController, AdminPaymentChatController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

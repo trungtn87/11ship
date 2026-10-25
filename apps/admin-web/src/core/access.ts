@@ -18,7 +18,7 @@ export interface AppPermissionRow {
 }
 
 /** The function rights SYSTEM gives one by one (wallet.read, wallet.topup.record, report.read, report.export, audit.read). */
-export const RIGHT_KEYS = ['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read'] as const;
+export const RIGHT_KEYS = ['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read', 'shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage'] as const;
 export type RightKey = (typeof RIGHT_KEYS)[number];
 
 export interface RightState {
@@ -81,6 +81,9 @@ export const RIGHT_LABEL: Record<RightKey, string> = {
   'report.read': 'Xem báo cáo',
   'report.export': 'Xuất báo cáo',
   'audit.read': 'Xem nhật ký',
+  'shop.payment.read': 'Xem thanh toán quán',
+  'shop.payment.record': 'Xác nhận tiền thanh toán quán',
+  'shop.entitlement.manage': 'Cấp / thu hồi quyền mở rộng số món',
 };
 
 export const ACCESS_REFUSAL: Record<string, string> = {

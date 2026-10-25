@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
+import '../m10/order_chat_models.dart';
+import '../m10/order_chat_view.dart';
+import '../m10/order_sections.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'wallet_models.dart';
@@ -132,19 +137,20 @@ class _KV extends StatelessWidget {
   }
 }
 
-Future<bool> _confirm(BuildContext context, {required String title, required String text}) async {
-  final bool? yes = await showDialog<bool>(
+Future<bool> _confirm(BuildContext context, {required String title, required String text, String yes = 'Hủy yêu cầu'}) async {
+  final String yesLabel = yes;
+  final bool? answer = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialog) => AlertDialog(
       title: Text(title),
       content: Text(text),
       actions: <Widget>[
         TextButton(key: const Key('confirm-no'), onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Không')),
-        TextButton(key: const Key('confirm-yes'), onPressed: () => Navigator.of(dialog).pop(true), child: const Text('Hủy yêu cầu')),
+        TextButton(key: const Key('confirm-yes'), onPressed: () => Navigator.of(dialog).pop(true), child: Text(yesLabel)),
       ],
     ),
   );
-  return yes == true;
+  return answer == true;
 }
 
 // ---- transactions: tile, sheet ---------------------------------------------------------------------------------------
@@ -752,6 +758,50 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   int _rev = 0;
   bool _busy = false;
   String? _error;
+  OrderChatController? _chat;
+
+  @override
+  void initState() {
+    super.initState();
+    // #199: the payment conversation of THIS request, kept above the collapsible card so closing it never loses the typed text.
+    final OrderChatApi? api = widget.source.chat;
+    if (api != null) {
+      _chat = OrderChatController(api: api, room: ChatRoomRef(ChatDoor.shipperTopup, widget.code));
+    }
+  }
+
+  @override
+  void dispose() {
+    _chat?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _report() async {
+    final WalletWrites? writes = widget.source.writes;
+    if (writes == null) {
+      return;
+    }
+    final bool yes = await _confirm(context, title: 'Bạn đã chuyển khoản?', text: 'Chỉ bấm khi bạn đã chuyển khoản vào tài khoản của hệ thống. Admin sẽ kiểm tra sao kê rồi mới cộng ví; bấm nút này không cộng tiền.', yes: 'Tôi đã chuyển khoản');
+    if (!yes || !mounted) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await writes.reportTransfer(widget.code);
+    } catch (error) {
+      _error = error is WalletFailure ? error.message : 'Chưa báo được chuyển khoản. Vui lòng thử lại.';
+    }
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _rev++;
+      });
+      unawaited(_chat?.reload(quiet: true));
+    }
+  }
 
   Future<void> _cancel() async {
     final WalletWrites? writes = widget.source.writes;
@@ -780,7 +830,8 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   }
 
   (IconData, _Tone, String) _look(TopupRequest r) => switch (r.status) {
-        TopupStatus.pending => (Icons.hourglass_top, _Tone.warn, 'Bạn đã gửi yêu cầu nạp ${formatWalletVnd(r.amount)}. Admin sẽ kiểm tra và cộng tiền vào ví sau khi xác minh giao dịch ngân hàng.'),
+        TopupStatus.pending when r.reportedAt != null => (Icons.hourglass_top, _Tone.warn, 'Bạn đã báo chuyển khoản ${formatWalletVnd(r.amount)}. Admin sẽ kiểm tra sao kê và cộng tiền vào ví sau khi xác minh. Báo chuyển khoản chưa cộng tiền.'),
+        TopupStatus.pending => (Icons.hourglass_top, _Tone.warn, 'Bạn đã gửi yêu cầu nạp ${formatWalletVnd(r.amount)}. Sau khi chuyển khoản, hãy bấm "Tôi đã chuyển khoản". Admin sẽ kiểm tra và cộng tiền vào ví sau khi xác minh giao dịch ngân hàng.'),
         TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
         TopupStatus.rejected => (Icons.cancel_outlined, _Tone.bad, 'Admin đã từ chối yêu cầu này. Ví không thay đổi.'),
         TopupStatus.cancelled => (Icons.block, _Tone.neutral, 'Yêu cầu đã được hủy. Ví không thay đổi.'),
@@ -804,12 +855,19 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
                   _KV('Số tiền', formatWalletVnd(r.amount)),
                   _KV('Thời gian', formatWalletTime(r.createdAt)),
                   _KV('Trạng thái', topupStatusLabel(r.status)),
+                  if (r.reportedAt != null) _KV('Đã báo chuyển khoản', formatWalletTime(r.reportedAt!.toLocal()), valueKey: const Key('topup-reported-at')),
                 ],
               ),
             ),
-            if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
+            if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa thực hiện được', text: _error),
+            if (r.canReport) N11Button(key: const Key('topup-report'), label: 'Tôi đã chuyển khoản', icon: Icons.check, loading: _busy, onPressed: source.canWrite ? _report : null),
             if (r.canCancel) N11Button(key: const Key('topup-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite ? _cancel : null),
             if (r.canCancel && !source.canWrite) ReasonNote(source.notWiredReason),
+            if (_chat != null)
+              ListenableBuilder(
+                listenable: _chat!,
+                builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi thanh toán', summary: _chat!.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: _chat!, texts: ChatTexts.payment)),
+              ),
           ]);
         },
       ),

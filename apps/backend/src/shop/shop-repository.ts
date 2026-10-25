@@ -158,6 +158,19 @@ export class ShopRepository {
     return row === undefined ? undefined : toShop(row);
   }
 
+  /** The shop by id, whatever its status, WITHOUT a lock (administration reads that only show it). */
+  async findById(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
+    const result = await context.query<RawShop>(
+      `SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat,
+              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version, s.logo,
+              to_char(date_trunc('milliseconds', s.activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at
+         FROM app.shops s WHERE s.shop_id = $1::uuid`,
+      [shopId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toShop(row);
+  }
+
   /**
    * ACTIVE <-> DISABLED at exactly `expectedVersion` and returns the new version. Nothing else of the shop changes (profile, schedule, dishes,
    * owner membership and the legacy accepting_orders column stay as they are). An update that touches no row is a broken invariant: the caller

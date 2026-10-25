@@ -1,3 +1,4 @@
+import '../m10/order_chat_models.dart';
 import 'wallet_models.dart';
 
 // The data seam of the wallet screens. A screen asks a [WalletSource] and draws whatever state comes back; it never invents a value.
@@ -58,6 +59,10 @@ abstract class WalletWrites {
 
   Future<void> cancelTopup(String code);
 
+  /// "Tôi đã chuyển khoản" (#199): ONE mark and a notice for the administration. The balance, the ledger and the request are untouched; only an Admin's
+  /// confirmation adds money.
+  Future<void> reportTransfer(String code);
+
   Future<void> cancelWithdrawal(String code);
 }
 
@@ -69,6 +74,9 @@ abstract class WalletSource {
 
   /// Null = nothing can be created or cancelled (buttons are disabled with [notWiredReason]).
   WalletWrites? get writes;
+
+  /// The payment conversation of a top-up request (#199); null when the source has none (the preview and the not-wired source).
+  OrderChatApi? get chat => null;
 
   bool get canWrite => writes != null;
 

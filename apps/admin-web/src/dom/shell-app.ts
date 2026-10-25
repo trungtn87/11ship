@@ -67,6 +67,8 @@ import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
 import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_CHAT, OrderChatSource } from '../core/order-chat.js';
+import { NOT_WIRED_SHOP_PAYMENTS, ShopPaymentFilter, ShopPaymentSource } from '../core/shop-payments.js';
+import { ShopPaymentDetailView, ShopPaymentHost, ShopPaymentListView } from './shop-payments-view.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
@@ -189,6 +191,8 @@ export class ShellApp implements ShellHost {
     private readonly shops: ShopSource = NOT_WIRED_SHOPS,
     /** Where "Trao đổi đơn hàng" and the evidence hold of the order / delivery drawers (issue #191) come from. By default nothing is wired, so the drawers say so. */
     private readonly chat: OrderChatSource = NOT_WIRED_CHAT,
+    /** Where "Thanh toán quán" (issue #198: the payments shops report, money received, the manual dish right) comes from. By default nothing is wired, so the pages say so. */
+    private readonly shopPayments: ShopPaymentSource = NOT_WIRED_SHOP_PAYMENTS,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -295,7 +299,10 @@ export class ShellApp implements ShellHost {
         next.canRecord !== this.#financeRights.canRecord ||
         next.canProcess !== this.#financeRights.canProcess ||
         next.canConfirm !== this.#financeRights.canConfirm ||
-        next.canReconcile !== this.#financeRights.canReconcile;
+        next.canReconcile !== this.#financeRights.canReconcile ||
+        next.canShopRead !== this.#financeRights.canShopRead ||
+        next.canShopRecord !== this.#financeRights.canShopRecord ||
+        next.canShopManage !== this.#financeRights.canShopManage;
       this.#financeRights = next;
       this.#financeLoaded = true;
       if (!changed) {
@@ -304,7 +311,7 @@ export class ShellApp implements ShellHost {
       // Only a money page depends on these rights. Anywhere else just the menu is redrawn: redrawing the whole page would wipe a form the
       // administrator has already started to fill when the answer arrives late.
       const route = parseRoute(this.history.pathname(), this.history.search());
-      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts' || route.name.startsWith('finance')) {
+      if (route.name === 'finance-topups' || route.name === 'finance-topup' || route.name === 'finance-bank-accounts' || route.name === 'shop-payments' || route.name === 'shop-payment' || route.name.startsWith('finance')) {
         this.#apply();
       } else if (this.#layout !== undefined && this.#role !== undefined) {
         this.#layout.render({ role: this.#role, grants: this.#effectiveGrants(), route, navigate: (next) => this.go(next) });
@@ -347,6 +354,8 @@ export class ShellApp implements ShellHost {
     const extra: GrantId[] = [];
     // The finance READ right opens every finance page (the actions on them need their own rights, which the server asks again).
     if (this.#financeRights.canRead) extra.push('topups', 'driver-wallets', 'withdrawals');
+    // #198: any of the three shop-payment rights opens the page; what the page offers is decided by the rights of the detail the server sent.
+    if (this.#financeRights.canShopRead || this.#financeRights.canShopRecord || this.#financeRights.canShopManage) extra.push('shop-payments');
     if (this.#opsLevel !== 'NONE') extra.push('ops');
     return extra.length === 0 ? this.#grants : new Set([...this.#grants, ...extra]);
   }
@@ -385,7 +394,7 @@ export class ShellApp implements ShellHost {
   }
 
   #rights(): FinanceRights {
-    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true, canProcess: true, canConfirm: true, canReconcile: true } : this.#financeRights;
+    return this.#role === 'SYSTEM' ? { role: 'SYSTEM', implicit: true, canRead: true, canRecord: true, canProcess: true, canConfirm: true, canReconcile: true, canShopRead: true, canShopRecord: true, canShopManage: true } : this.#financeRights;
   }
 
   #teardown(): void {
@@ -511,6 +520,12 @@ export class ShellApp implements ShellHost {
         return;
       case 'finance-topup':
         this.#topupDetail(content, route.id);
+        return;
+      case 'shop-payments':
+        this.#shopPaymentList(content, route.filter ?? 'CHECK');
+        return;
+      case 'shop-payment':
+        this.#shopPaymentDetail(content, route.id);
         return;
       case 'finance-bank-accounts':
         this.#bankAccounts(content);
@@ -998,6 +1013,7 @@ export class ShellApp implements ShellHost {
       home: () => this.go({ name: 'home' }),
       rights: () => this.#rights(),
       now: () => this.clock.now(),
+      chat: this.chat,
     };
   }
 
@@ -1010,6 +1026,40 @@ export class ShellApp implements ShellHost {
 
   #topupDetail(content: HTMLElement, id: string): void {
     const view = new TopupDetailView(content, this.#financeHost(), id);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  /** What the shop payment pages (#198) need from the shell. 401 ends the session; 403 re-reads the rights. */
+  #shopPaymentHost(): ShopPaymentHost {
+    return {
+      source: this.shopPayments,
+      chat: this.chat,
+      newKey: this.newKey,
+      onSessionLost: () => this.onSessionLost(),
+      onForbidden: () => {
+        this.#loadFinanceRights();
+        if (this.#role === 'ADMIN') {
+          this.#loadGrants(true);
+        }
+      },
+      go: (route) => this.go(route),
+      login: () => this.history.restart(),
+      home: () => this.go({ name: 'home' }),
+      rights: () => this.#rights(),
+      now: () => this.clock.now(),
+    };
+  }
+
+  /** "Tài chính › Thanh toán quán": the reconciliation queue. */
+  #shopPaymentList(content: HTMLElement, filter: ShopPaymentFilter): void {
+    const view = new ShopPaymentListView(content, this.#shopPaymentHost(), filter);
+    this.#unsubscribe = () => view.dispose();
+    void view.load();
+  }
+
+  #shopPaymentDetail(content: HTMLElement, id: string): void {
+    const view = new ShopPaymentDetailView(content, this.#shopPaymentHost(), id);
     this.#unsubscribe = () => view.dispose();
     void view.load();
   }

@@ -65,6 +65,9 @@ export function parseRights(data: Record<string, unknown>): FinanceRights | unde
     canProcess: every || held.has('wallet.withdrawal.process'),
     canConfirm: every || held.has('wallet.withdrawal.confirm'),
     canReconcile: every || held.has('wallet.withdrawal.reconcile'),
+    canShopRead: every || held.has('shop.payment.read'),
+    canShopRecord: every || held.has('shop.payment.record'),
+    canShopManage: every || held.has('shop.entitlement.manage'),
   };
 }
 
@@ -79,14 +82,17 @@ export function parseTopup(value: unknown): TopupItem | undefined {
   const resolvedAt = nullableIso(raw.resolved_at);
   const receivedAt = nullableIso(raw.received_at);
   const actual = nullableWhole(raw.actual_amount_vnd);
+  // Absent on the answers of the commands (confirm / reject): those are not parsed as an item, but a missing mark must never read as a failure.
+  const reportedAt = raw.reported_at === undefined ? null : nullableIso(raw.reported_at);
   if (
+    reportedAt === undefined ||
     requestId === undefined || driverId === undefined || createdAt === undefined || resolvedAt === undefined || receivedAt === undefined || actual === undefined ||
     !whole(raw.amount_requested_vnd) || raw.amount_requested_vnd < 1 || !whole(raw.version) || raw.version < 1 ||
     typeof raw.state !== 'string' || !(TOPUP_STATES as readonly string[]).includes(raw.state)
   ) {
     return undefined;
   }
-  return { requestId, driverId, requestedVnd: raw.amount_requested_vnd, actualVnd: actual, state: raw.state as TopupState, version: raw.version, createdAt, resolvedAt, receivedAt };
+  return { requestId, driverId, requestedVnd: raw.amount_requested_vnd, actualVnd: actual, state: raw.state as TopupState, version: raw.version, createdAt, resolvedAt, receivedAt, reportedAt };
 }
 
 export function parseTopupPage(data: Record<string, unknown>): TopupPage | undefined {
@@ -263,6 +269,9 @@ const CONFLICTS: readonly string[] = [
   'WITHDRAWAL_STATE_CONFLICT',
   'BANK_SNAPSHOT_STALE',
   'COMMISSION_POLICY_VERSION_CONFLICT',
+  'SHOP_PAYMENT_STATE_CONFLICT',
+  'SHOP_ENTITLEMENT_STATE_CONFLICT',
+  'SHOP_ENTITLEMENT_PAYMENT_NOT_CONFIRMED',
 ];
 
 export async function outcomeOf(result: ApiResult<unknown>, session: CsrfPort): Promise<FinanceOutcome> {

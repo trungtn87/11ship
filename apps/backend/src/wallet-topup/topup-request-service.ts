@@ -62,8 +62,9 @@ export class TopupRequestService {
       const rows = await this.requests.listForWallet(context, wallet.walletId, { state: query.state, limit: query.limit + 1, after: query.after });
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
+      const reported = await this.requests.reportedAt(context, page.map((r) => r.requestId));
       return {
-        items: page.map(view),
+        items: page.map((r) => withReport(view(r), reported.get(r.requestId))),
         next_cursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAtMs, last.requestId) : null,
       };
     });
@@ -76,7 +77,7 @@ export class TopupRequestService {
       if (row === undefined) {
         throw new AppError('TOPUP_REQUEST_NOT_FOUND');
       }
-      return view(row);
+      return withReport(view(row), (await this.requests.reportedAt(context, [row.requestId])).get(row.requestId));
     });
   }
 
@@ -239,4 +240,9 @@ function view(row: TopupRequestRow): JsonObject {
     created_at: new Date(row.createdAtMs).toISOString(),
     resolved_at: row.resolvedAtMs === null ? null : new Date(row.resolvedAtMs).toISOString(),
   };
+}
+
+/** #199: "Tôi đã chuyển khoản" mark of the request (null until the Shipper reported it). It is a notice, not a confirmation: the state is unchanged. */
+function withReport(base: JsonObject, reportedAtMs: number | undefined): JsonObject {
+  return { ...base, reported_at: reportedAtMs === undefined ? null : new Date(reportedAtMs).toISOString() };
 }

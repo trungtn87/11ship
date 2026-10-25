@@ -9,12 +9,14 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
-import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
+import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, SHOP_PAYMENT_COPY, TOPUP_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
   OUTBOX_COMPLAINT_CHANGED_TYPE,
   OUTBOX_ORDER_CHAT_MESSAGE_TYPE,
+  OUTBOX_PAYMENT_CHAT_MESSAGE_TYPE,
+  OUTBOX_SHOP_PAYMENT_CHANGED_TYPE,
   OUTBOX_DELIVERY_CHANGED_TYPE,
   OUTBOX_DRIVER_STATE_CHANGED_TYPE,
   OUTBOX_ORDER_CHANGED_TYPE,
@@ -90,7 +92,7 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
+    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE || event.eventType === OUTBOX_PAYMENT_CHAT_MESSAGE_TYPE || event.eventType === OUTBOX_SHOP_PAYMENT_CHANGED_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
@@ -109,6 +111,10 @@ export class NotificationEventService {
         return this.#complaint(event);
       case OUTBOX_ORDER_CHAT_MESSAGE_TYPE:
         return this.#chatMessage(event);
+      case OUTBOX_PAYMENT_CHAT_MESSAGE_TYPE:
+        return this.#paymentChatMessage(event);
+      case OUTBOX_SHOP_PAYMENT_CHANGED_TYPE:
+        return this.#shopPayment(event);
       default:
         if (event.eventType.startsWith(OUTBOX_ORDER_PREFIX) || event.eventType.startsWith(OUTBOX_WITHDRAWAL_PREFIX)) {
           // Any other order.* type and M04-C (withdrawal) have no consumer yet: the event is acknowledged as "not integrated" and nothing is made up.
@@ -316,6 +322,70 @@ export class NotificationEventService {
         });
         await this.pushes.queue(context, { config, notificationId: card.notificationId, userId: r.userId, app: r.app, category, pushKey: `chat:${event.eventId}`, ttlMs: PUSH_TTL_MS.result });
       }
+    });
+  }
+
+  // ---- payment conversation and shop payments (#199, #198) -----------------------------------------------------------------
+
+  /**
+   * A message was written in a payment room. The OWNER of the request (the Shipper, or the shop's owner) is told when the sender is somebody else, and only while the
+   * request is still open and the owner tables still say who owns it: ONE collapsed card per room that opens the request, never the text. There is no push to the
+   * administration here: it works from the reconciliation queue.
+   */
+  async #paymentChatMessage(event: OutboxPublishEvent): Promise<void> {
+    const { case_kind: caseKind, case_id: caseId, sender_user_id: senderUserId } = event.payload;
+    const valid = (caseKind === 'DRIVER_TOPUP' || caseKind === 'SHOP_PAYMENT') && isCanonicalUuid(caseId) && isCanonicalUuid(senderUserId);
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, valid ? 'OK' : 'INVALID_PAYLOAD'))) {
+        return;
+      }
+      if (!valid) {
+        return;
+      }
+      const r = await this.recipients.paymentChatRecipient(context, caseKind, caseId, senderUserId);
+      if (r === undefined) {
+        return;
+      }
+      const category = CATEGORY_OF_KIND.PAYMENT_CHAT_MESSAGE;
+      const card = await this.repo.upsertCollapsedCard(context, {
+        notificationId: randomUUID(),
+        recipientUserId: r.userId,
+        app: r.app,
+        kind: 'PAYMENT_CHAT_MESSAGE',
+        category,
+        title: 'Tin nhắn mới về thanh toán',
+        body: 'Mở Trao đổi thanh toán để xem tin nhắn mới.',
+        targetType: r.targetType,
+        targetId: r.targetId,
+        targetVersion: 0,
+        dedupeKey: `paychat:${caseKind}:${caseId}`,
+        sourceEventId: event.eventId,
+        validForMs: null,
+        purgeDays: config.purgeDays,
+      });
+      await this.pushes.queue(context, { config, notificationId: card.notificationId, userId: r.userId, app: r.app, category, pushKey: `paychat:${event.eventId}`, ttlMs: PUSH_TTL_MS.result });
+    });
+  }
+
+  /** The administration confirmed the money of a shop payment or refused it: the shop's owner is told once per outcome. Nothing else about a request is pushed. */
+  async #shopPayment(event: OutboxPublishEvent): Promise<void> {
+    const { request_id: requestId, shop_id: shopId, state, version } = event.payload;
+    const valid = isCanonicalUuid(requestId) && isCanonicalUuid(shopId) && typeof version === 'number' && (state === 'CONFIRMED' || state === 'REJECTED');
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, valid ? 'OK' : 'NO_NOTIFICATION'))) {
+        return;
+      }
+      if (!valid) {
+        return;
+      }
+      const owner = await this.recipients.shopOwner(context, shopId);
+      if (owner === undefined) {
+        return;
+      }
+      const copy = SHOP_PAYMENT_COPY[state];
+      await this.#notify(context, config, { audience: 'SHOP', app: 'FOOD', kind: 'SHOP_PAYMENT_UPDATED', title: copy.title, body: copy.body, targetType: 'SHOP_PAYMENT', targetId: requestId, targetVersion: version, dedupeKey: `shoppay:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, owner, event.eventId, this.#ageOf(event));
     });
   }
 

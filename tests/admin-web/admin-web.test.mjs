@@ -64,7 +64,7 @@ describe('menu by permission', () => {
     const finance = m.MENU.find((group) => group.id === 'finance').items[0];
     assert.deepEqual(
       finance.children.map((child) => child.label),
-      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Rút tiền', 'Giao dịch', 'Đối soát', 'Tài khoản nhận tiền'],
+      ['Tổng quan', 'Ví Shipper', 'Nạp tiền', 'Thanh toán quán', 'Rút tiền', 'Giao dịch', 'Đối soát', 'Tài khoản nhận tiền'],
     );
     assert.ok(finance.children.every((child) => child.ready && child.route !== undefined));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-reconciliation'));
@@ -77,6 +77,15 @@ describe('menu by permission', () => {
     assert.deepEqual(readOnly.filter((id) => id.startsWith('finance')), ['finance', 'finance-topups']);
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['topups', 'driver-wallets', 'withdrawals', 'drivers']))).includes('finance-bank-accounts'));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('finance-bank-accounts'));
+    // #198: the payments shops report are their own right: the top-up right does not open them, and they open nothing else.
+    assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['topups', 'driver-wallets', 'withdrawals']))).includes('finance-shop-payments'));
+    const shopOnly = ids(m.visibleMenu('ADMIN', new Set(['shop-payments']))).filter((id) => id.startsWith('finance'));
+    assert.deepEqual(shopOnly, ['finance', 'finance-shop-payments']);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['topups']), { name: 'shop-payments' }), false);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['shop-payments']), { name: 'shop-payment', id: 'x' }), true);
+    assert.equal(m.canOpenRoute('ADMIN', new Set(['shop-payments']), { name: 'finance-topups' }), false);
+    assert.equal(m.activeMenuId({ name: 'shop-payment', id: 'x' }), 'finance-shop-payments');
+    assert.deepEqual(m.breadcrumb({ name: 'shop-payments' }), ['Tài chính', 'Thanh toán quán']);
     assert.equal(m.canOpenRoute('ADMIN', new Set(['topups']), { name: 'finance-bank-accounts' }), false);
     assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'finance-bank-accounts' }), true);
     // The application permissions never open the money pages (a Shipper view right is not a finance right).

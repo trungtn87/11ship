@@ -210,7 +210,7 @@ class OrderChatController extends ChangeNotifier {
       }
       sending = false;
       notifyListeners();
-      if (error.code == 'ORDER_CHAT_CLOSED' || error.code == 'ORDER_CHAT_NOT_PARTICIPANT') {
+      if (error.code == 'ORDER_CHAT_CLOSED' || error.code == 'ORDER_CHAT_NOT_PARTICIPANT' || error.code == 'PAYMENT_CHAT_CLOSED' || error.code == 'PAYMENT_CHAT_NOT_PARTICIPANT') {
         unawaited(reload(quiet: true));
       }
       return false;
@@ -233,6 +233,32 @@ class OrderChatController extends ChangeNotifier {
   }
 }
 
+/// The sentences of the chat card that name the file it belongs to.
+class ChatTexts {
+  const ChatTexts({required this.empty, required this.closed, required this.hint, this.showRetention = true});
+
+  final String empty;
+  final String closed;
+  final String hint;
+
+  /// The order chat tells how long its history is kept; a payment room does not (the period is not decided).
+  final bool showRetention;
+
+  static const ChatTexts order = ChatTexts(
+    empty: 'Chưa có tin nhắn. Bạn có thể nhắn cho những người cùng tham gia đơn này.',
+    closed: 'Đơn đã kết thúc. Bạn chỉ có thể xem lại trao đổi.',
+    hint: 'Nhắn trong đơn này',
+  );
+
+  /// "Trao đổi thanh toán" (#199): text only, support and events; it confirms no money and opens no right.
+  static const ChatTexts payment = ChatTexts(
+    empty: 'Chưa có tin nhắn. Bạn có thể nhắn để quản trị viên đối soát khoản này. Tin nhắn không xác nhận tiền.',
+    closed: 'Yêu cầu đã đóng. Bạn chỉ có thể xem lại trao đổi.',
+    hint: 'Nhắn trong yêu cầu này',
+    showRetention: false,
+  );
+}
+
 /// "dd/MM HH:mm" when the day is not today, "HH:mm" otherwise.
 String chatTime(DateTime t, {DateTime? now}) {
   final DateTime l = t.toLocal();
@@ -243,9 +269,12 @@ String chatTime(DateTime t, {DateTime? now}) {
 
 /// The body of the "Trao đổi đơn hàng" card: the feed (messages as bubbles, milestones as centred neutral lines), older pages on request and the composer.
 class OrderChatPanel extends StatefulWidget {
-  const OrderChatPanel({super.key, required this.controller});
+  const OrderChatPanel({super.key, required this.controller, this.texts = ChatTexts.order});
 
   final OrderChatController controller;
+
+  /// The words of the card: an order chat and a payment conversation say the same things about different files.
+  final ChatTexts texts;
 
   @override
   State<OrderChatPanel> createState() => _OrderChatPanelState();
@@ -295,15 +324,15 @@ class _OrderChatPanelState extends State<OrderChatPanel> {
           const Padding(padding: EdgeInsets.all(N11Space.gap3), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
         else ...<Widget>[
           if (c.hasMore) TextButton(key: const Key('chat-older'), onPressed: c.loadingOlder ? null : () => unawaited(c.loadOlder()), child: Text(c.loadingOlder ? 'Đang tải…' : 'Xem tin cũ hơn')),
-          if (c.items.whereType<ChatMessage>().isEmpty && !c.ended) const Padding(padding: EdgeInsets.symmetric(vertical: N11Space.gap2), child: Text('Chưa có tin nhắn. Bạn có thể nhắn cho những người cùng tham gia đơn này.', key: Key('chat-empty'), style: N11Text.caption)),
+          if (c.items.whereType<ChatMessage>().isEmpty && !c.ended) Padding(padding: const EdgeInsets.symmetric(vertical: N11Space.gap2), child: Text(widget.texts.empty, key: const Key('chat-empty'), style: N11Text.caption)),
           for (final ChatItem i in c.items) ChatLine(key: ValueKey<String>('chat-${i.id}'), item: i),
         ],
         const SizedBox(height: N11Space.gap2),
         if (c.state?.expired ?? false)
           const ReasonNote('Lịch sử trao đổi đã hết thời hạn lưu trữ.', key: Key('chat-expired'), icon: Icons.lock_outline)
         else if (c.ended) ...<Widget>[
-          const ReasonNote('Đơn đã kết thúc. Bạn chỉ có thể xem lại trao đổi.', key: Key('chat-closed'), icon: Icons.lock_outline),
-          if (c.state?.retentionDays != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Lịch sử trao đổi được lưu ${c.state!.retentionDays} ngày sau khi đơn kết thúc.', key: const Key('chat-retention'), style: N11Text.caption)),
+          ReasonNote(widget.texts.closed, key: const Key('chat-closed'), icon: Icons.lock_outline),
+          if (widget.texts.showRetention && c.state?.retentionDays != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Lịch sử trao đổi được lưu ${c.state!.retentionDays} ngày sau khi đơn kết thúc.', key: const Key('chat-retention'), style: N11Text.caption)),
         ]
         else if (c.state != null && !c.canSend)
           const ReasonNote('Bạn không còn quyền gửi tin trong trao đổi này.', key: Key('chat-readonly'), icon: Icons.lock_outline)
@@ -320,7 +349,7 @@ class _OrderChatPanelState extends State<OrderChatPanel> {
                   maxLines: 4,
                   maxLength: 500,
                   textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(hintText: 'Nhắn trong đơn này', counterText: '', isDense: true, border: OutlineInputBorder()),
+                  decoration: InputDecoration(hintText: widget.texts.hint, counterText: '', isDense: true, border: const OutlineInputBorder()),
                 ),
               ),
               const SizedBox(width: N11Space.gap2),

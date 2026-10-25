@@ -94,7 +94,7 @@ class ReceivingAccount {
 }
 
 class TopupRequest {
-  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version});
+  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.reportedAt});
 
   /// The identifier the app opens the request by (the server's request id for a real source).
   final String code;
@@ -110,10 +110,16 @@ class TopupRequest {
   /// The record version the server answered (a cancel carries it).
   final int? version;
 
+  /// #199: when the Shipper pressed "Tôi đã chuyển khoản". A notice for the administration only: the request stays pending and the wallet is untouched.
+  final DateTime? reportedAt;
+
   String get shownCode => displayCode ?? code;
 
   /// A topup can be cancelled only while nobody has decided it.
   bool get canCancel => status == TopupStatus.pending;
+
+  /// "Tôi đã chuyển khoản" is offered once, while the request is open.
+  bool get canReport => status == TopupStatus.pending && reportedAt == null;
 }
 
 class WithdrawalRequest {

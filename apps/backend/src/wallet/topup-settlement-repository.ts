@@ -60,6 +60,32 @@ export class TopupSettlementRepository {
     return row === undefined ? undefined : { sequenceNo: Number(amount(row.sequence_no)), balanceAfterVnd: amount(row.balance_after_vnd) };
   }
 
+  /**
+   * #198: the other direction of the same rule. Takes the identity's advisory lock (the key the database triggers use) and says whether a Shipper top-up already
+   * recorded this bank transaction. Used by the shop payment confirmation, under the wallet package's ownership of the bank record table. Read only.
+   */
+  async usedByTopup(context: TransactionContext, bankId: string, systemAccountId: string, canonicalTransactionId: string): Promise<boolean> {
+    await context.query(`SELECT pg_advisory_xact_lock(hashtextextended('bank-tx|' || $1 || '|' || $2 || '|' || $3, 0))`, [bankId, systemAccountId, canonicalTransactionId]);
+    const result = await context.query(
+      `SELECT 1 FROM app.wallet_bank_transactions WHERE bank_id = $1 AND system_owned_account_id = $2::uuid AND canonical_transaction_id = $3`,
+      [bankId, systemAccountId, canonicalTransactionId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * #198: the bank transaction identity is also unique against the payments of SHOPS (app.shop_payment_settlements). Takes the identity's advisory lock (the same key the
+   * database triggers of both tables use, so a Shipper top-up and a shop payment cannot both pass) and says whether a shop payment already used it. Read only.
+   */
+  async usedByShopPayment(context: TransactionContext, bankId: string, systemAccountId: string, canonicalTransactionId: string): Promise<boolean> {
+    await context.query(`SELECT pg_advisory_xact_lock(hashtextextended('bank-tx|' || $1 || '|' || $2 || '|' || $3, 0))`, [bankId, systemAccountId, canonicalTransactionId]);
+    const result = await context.query(
+      `SELECT 1 FROM app.shop_payment_settlements WHERE bank_id = $1 AND system_owned_account_id = $2::uuid AND canonical_transaction_id = $3`,
+      [bankId, systemAccountId, canonicalTransactionId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** The bank transaction identity is unique across the whole system: the loser of a race, or a repeat of anyone's, inserts nothing and gets false. */
   async insertBankRecord(
     context: TransactionContext,

@@ -243,6 +243,11 @@ export const TOPUP_COPY = {
   REJECTED: { kind: 'TOPUP_REJECTED' as const, title: 'Yêu cầu nạp tiền bị từ chối', body: 'Yêu cầu nạp tiền của bạn chưa được chấp nhận. Mở ví để xem chi tiết.' },
 };
 
+export const SHOP_PAYMENT_COPY = {
+  CONFIRMED: { title: 'Đã nhận tiền thanh toán', body: 'Quản trị viên đã xác nhận tiền thực nhận cho yêu cầu thanh toán của quán. Mở yêu cầu để xem chi tiết.' },
+  REJECTED: { title: 'Yêu cầu thanh toán chưa được chấp nhận', body: 'Quản trị viên chưa ghi nhận tiền cho yêu cầu thanh toán của quán. Mở yêu cầu để xem chi tiết.' },
+};
+
 export const PROFILE_COPY: Readonly<Record<string, { kind: NotificationKind; title: string; body: string } | undefined>> = {
   approved: { kind: 'PROFILE_APPROVED', title: 'Hồ sơ shipper đã được duyệt', body: 'Hồ sơ của bạn đã được duyệt. Mở ứng dụng để bắt đầu.' },
   rejected: { kind: 'PROFILE_REJECTED', title: 'Hồ sơ shipper chưa được duyệt', body: 'Hồ sơ của bạn chưa được duyệt. Mở ứng dụng để xem lý do và bổ sung.' },

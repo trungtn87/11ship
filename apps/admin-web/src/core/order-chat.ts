@@ -9,7 +9,12 @@ export const CHAT_BODY_MAX = 500;
 export const CHAT_REASON_MIN = 3;
 export const CHAT_REASON_MAX = 300;
 
-export type ChatRoomKind = 'ORDER' | 'DIRECT';
+/**
+ * ORDER / DIRECT are the order rooms (#191). DRIVER_TOPUP / SHOP_PAYMENT are the payment rooms (#199): one per Shipper top-up request or per shop payment request,
+ * text only, with no retention area (the period is not approved) and no evidence hold.
+ */
+export type ChatRoomKind = 'ORDER' | 'DIRECT' | 'DRIVER_TOPUP' | 'SHOP_PAYMENT';
+export const isPaymentRoom = (kind: ChatRoomKind): boolean => kind === 'DRIVER_TOPUP' || kind === 'SHOP_PAYMENT';
 
 /** The room to talk in: an ORDER room is the order's id; a DIRECT room is the direct delivery's id. An ORDER delivery uses the room of its order. */
 export interface ChatRoomRef {

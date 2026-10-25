@@ -121,6 +121,14 @@ GRANT SELECT, INSERT, DELETE ON app.order_chat_messages TO ship11_app;
 -- #191: evidence holds on a chat (placed, then released once: INSERT and UPDATE; never deleted).
 GRANT SELECT, INSERT, UPDATE ON app.order_chat_holds TO ship11_app;
 
+-- #198 / #199: shop payment requests (reported once, then resolved: INSERT and UPDATE, never deleted), the proof of money received and the manual entitlement
+-- list (both append-only: INSERT, no UPDATE or DELETE), the Shipper top-up report mark, and the text of the payment conversations (INSERT only; no purge exists).
+GRANT SELECT, INSERT, UPDATE ON app.shop_payment_requests TO ship11_app;
+GRANT SELECT, INSERT ON app.shop_payment_settlements TO ship11_app;
+GRANT SELECT, INSERT ON app.shop_entitlement_grants TO ship11_app;
+GRANT SELECT, INSERT ON app.wallet_topup_reports TO ship11_app;
+GRANT SELECT, INSERT ON app.case_chat_messages TO ship11_app;
+
 -- PR #165: the public IDs/counters are allocated and mutated by SECURITY DEFINER
 -- triggers only; the runtime role may read them but must not update the counters.
 GRANT SELECT ON app.shop_public_ids TO ship11_app;

@@ -15,6 +15,7 @@ import { ADMIN_PASSWORD, AdminApp, adminData, AdminResponse, cookieFrom, loginSt
 import { begin, ok, post } from './support/activation-fixtures';
 import { ApiResponse, AuthApp, dataOf, obtainProof, PASSWORD, Phone, purgePhone, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { M07_DOWN_SQL, M07_MIGRATION_NAME, M07_UP_SQL } from './support/m07-migration-sql';
+import { PAYMENT_CHAT_TABLES_DOWN_SQL, PAYMENT_CHAT_TABLES_UP_SQL } from './support/payment-chat-migration-sql';
 import { WITHDRAWAL_DOWN_SQL, WITHDRAWAL_MIGRATION_NAME, WITHDRAWAL_UP_SQL } from './support/withdrawal-migration-sql';
 import { M08_DOWN_SQL, M08_MIGRATION_NAME, M08_UP_SQL } from './support/m08-migration-sql';
 import { M10_DOWN_SQL, M10_MIGRATION_NAME, M10_UP_SQL } from './support/m10-migration-sql';
@@ -60,6 +61,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let temporaryPasswordSchema = false;
   let temporaryShopRight = false;
   let temporaryOtpPolicy = false;
+  let temporaryPaymentTables = false;
   let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
@@ -137,6 +139,10 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
       await restoreMigrationHistory();
       // Remove the temporary auth overlay before the normal runner applies all pending migrations.
       // These historical fixtures use legacy sessions, which the Down preserves.
+      if (temporaryPaymentTables) {
+        await pool().query(PAYMENT_CHAT_TABLES_DOWN_SQL);
+        temporaryPaymentTables = false;
+      }
       if (temporaryOtpPolicy) {
         await pool().query(OTP_POLICY_DOWN_SQL);
         temporaryOtpPolicy = false;
@@ -181,6 +187,9 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     await runMigration(WITHDRAWAL_DOWN_SQL, 'delete', WITHDRAWAL_MIGRATION_NAME);
     await runMigration(M07_DOWN_SQL, 'delete');
     m07Applied = false;
+    // The new backend's top-up path also reads the shop payment tables; main's schema here has no notifications table, so they come without that migration's two notification statements.
+    await pool().query(PAYMENT_CHAT_TABLES_UP_SQL);
+    temporaryPaymentTables = true;
     await pool().query(PASSWORD_SESSION_UP_SQL);
     temporaryPasswordSchema = true;
     await pool().query(SHOP_RIGHT_UP_SQL);

@@ -162,6 +162,12 @@ const OWNER_JOIN = `
 
 @Injectable()
 export class AdminShopReadRepository {
+  /** #198: the dishes of a shop that are VISIBLE now (the dish limit of the manual right is counted on these). */
+  async countVisibleDishes(context: TransactionContext, shopId: string): Promise<number> {
+    const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.menu_items mi WHERE mi.shop_id = $1::uuid AND mi.status = 'VISIBLE'`, [shopId]);
+    return Number(result.rows[0]?.n ?? '0');
+  }
+
   /**
    * One page of shops with the facts the list shows, the schedule state evaluated at ONE instant of the database clock by the same rule as the
    * detail (inHoursSql + evaluateAvailability). `total` counts every row the filter matches, not only the page.

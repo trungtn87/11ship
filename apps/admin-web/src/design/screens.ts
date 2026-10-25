@@ -95,6 +95,11 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
       return { id: 'finance-topups', ...(route.tab === 'DONE' ? { variant: 'done' } : route.tab === 'ALL' ? { variant: 'all' } : {}) };
     case 'finance-topup':
       return { id: 'finance-topup' };
+    // #198: the real page has no design mock-up; the design catalogue shows the nearest money page.
+    case 'shop-payments':
+      return { id: 'finance-topups' };
+    case 'shop-payment':
+      return { id: 'finance-topup' };
     case 'finance-withdrawals':
       return { id: 'finance-withdrawals', ...(route.tab === undefined || route.tab === 'PENDING' ? {} : { variant: route.tab === 'NEEDS_RECONCILE' ? 'reconcile' : route.tab.toLowerCase() }) };
     case 'finance-withdrawal':

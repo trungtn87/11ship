@@ -46,9 +46,15 @@ class MenuItem {
 
 @immutable
 class MenuSnapshot {
-  const MenuSnapshot({required this.categories, required this.items});
+  const MenuSnapshot({required this.categories, required this.items, this.visibleLimit, this.visibleCount, this.expanded = false});
 
   final List<MenuCategory> categories;
+
+  /// #198: how many dishes this shop may show at once (null = no limit, the manual right is held, or the server did not say) and how many it shows now.
+  /// Hidden dishes do not count and nothing is ever removed to fit; the server decides, the phone only tells.
+  final int? visibleLimit;
+  final int? visibleCount;
+  final bool expanded;
 
   /// The shop's dishes that are not deleted.
   final List<MenuItem> items;

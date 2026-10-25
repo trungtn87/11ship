@@ -20,6 +20,7 @@ import '../m10/m10_cart.dart';
 import '../m10/m10_http.dart';
 import '../m10/m10_sample.dart';
 import '../m10/m10_source.dart';
+import '../shop_payment/shop_payment_source.dart';
 import '../m08/m08_controller.dart';
 import '../m08/m08_http.dart';
 import '../m08/m08_push.dart';
@@ -46,7 +47,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.orders, this.notifications, this.notificationSource, this.push, this.feedback, this.picker = const NoImagePicker()});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.orders, this.notifications, this.notificationSource, this.push, this.feedback, this.shopPayments, this.picker = const NoImagePicker()});
 
   final SessionController session;
   final ResetController reset;
@@ -76,6 +77,9 @@ class AppFlows {
   /// M11: ratings and complaints of this app's account. Real server contract; no sample data.
   final M11Source? feedback;
 
+  /// Food only: the shop's payment requests and their conversation (#198, #199). Real server contract; no sample data.
+  final ShopPaymentSource? shopPayments;
+
   /// The OS photo picker for complaint evidence pictures (a test passes its own).
   final ImagePickerPort picker;
 }
@@ -95,6 +99,7 @@ AppFlows createFlows(
   PushPort pushPort = const NoPushPort(),
   M11Source? feedbackSource,
   OrderRuntime? orderRuntime,
+  ShopPaymentSource? shopPaymentSource,
   M07MapBuilder? orderMapBuilder,
   M07PinPickerBuilder? orderPinPicker,
 }) {
@@ -112,6 +117,7 @@ AppFlows createFlows(
     orders: orders,
     notificationSource: inbox,
     feedback: feedback,
+    shopPayments: app == ClientApp.food ? (shopPaymentSource ?? HttpShopPaymentSource(session: session)) : null,
     picker: picker,
     notifications: inboxController,
     push: PushSync(session: session, source: inbox, port: pushPort, onTap: inboxController.requestOpen),

@@ -198,6 +198,18 @@ export const APP_ERROR_DEFINITIONS = {
   ORDER_CHAT_NOT_PARTICIPANT: { status: 409, message: 'You can no longer write in this conversation' },
   ORDER_CHAT_EXPIRED: { status: 409, message: 'The conversation history has expired; nothing is held or restored' },
   ORDER_CHAT_RATE_LIMITED: { status: 429, message: 'Too many messages; try again in a moment' },
+  // #198 / #199, the payment requests of a shop and the payment conversation. A request of another shop and a missing one answer the same SHOP_PAYMENT_NOT_FOUND
+  // (a Shipper top-up keeps TOPUP_REQUEST_NOT_FOUND). BANK_TRANSACTION_ALREADY_RECORDED, TOPUP_ACCOUNT_NOT_RECEIVING and VERSION_CONFLICT are reused unchanged.
+  SHOP_PAYMENT_NOT_FOUND: { status: 404, message: 'The payment request was not found' },
+  SHOP_PAYMENT_STATE_CONFLICT: { status: 409, message: 'The payment request is not in a state that allows this action' },
+  SHOP_PAYMENT_OPEN_EXISTS: { status: 409, message: 'This shop already has an open payment request for this purpose' },
+  SHOP_PAYMENT_RECEIVING_ACCOUNT_NOT_CONFIGURED: { status: 409, message: 'No receiving account is available for payments yet' },
+  SHOP_ENTITLEMENT_STATE_CONFLICT: { status: 409, message: 'The right is already in that state for this shop' },
+  SHOP_ENTITLEMENT_PAYMENT_NOT_CONFIRMED: { status: 409, message: 'The payment request has no recorded money received, or was already used for a right' },
+  MENU_VISIBLE_LIMIT_REACHED: { status: 409, message: 'The shop already shows the most dishes it may show; hide a dish first' },
+  PAYMENT_CHAT_CLOSED: { status: 409, message: 'The request is closed; the conversation can only be read' },
+  PAYMENT_CHAT_NOT_PARTICIPANT: { status: 409, message: 'You can no longer write in this payment conversation' },
+  PAYMENT_CHAT_RATE_LIMITED: { status: 429, message: 'Too many payment messages; try again in a moment' },
   ORDER_CART_CHANGED: { status: 409, message: 'A dish or a price changed; check the cart and send the order again' },
   ORDER_SHOP_NOT_OPEN: { status: 409, message: 'The shop cannot take this order now' },
   ORDER_SCHEDULE_INVALID: { status: 409, message: 'The wanted time is not possible for this shop' },

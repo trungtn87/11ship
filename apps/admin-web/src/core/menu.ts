@@ -43,6 +43,8 @@ export type GrantId =
   | 'feedback'
   | 'driver-wallets'
   | 'topups'
+  // #198: the payments shops report. An ADMIN gets it only from the server's answer (GET finance/access/me), never from the application grants.
+  | 'shop-payments'
   | 'withdrawals'
   | 'catalog'
   | 'zones'
@@ -207,6 +209,7 @@ export const MENU: readonly MenuGroup[] = [
           { id: 'finance-overview', label: 'Tổng quan', route: { name: 'finance' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-wallets', label: 'Ví Shipper', route: { name: 'finance-wallets' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-topups', label: 'Nạp tiền', route: { name: 'finance-topups' }, ready: true, access: 'topups' },
+          { id: 'finance-shop-payments', label: 'Thanh toán quán', route: { name: 'shop-payments' }, ready: true, access: 'shop-payments' },
           { id: 'finance-withdrawals', label: 'Rút tiền', route: { name: 'finance-withdrawals' }, ready: true, access: 'withdrawals' },
           { id: 'finance-transactions', label: 'Giao dịch', route: { name: 'finance-transactions' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-reconciliation', label: 'Đối soát', route: { name: 'finance-reconciliation' }, ready: true, access: 'driver-wallets' },
@@ -365,6 +368,9 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'finance-topups':
     case 'finance-topup':
       return canSee(role, grants, 'topups');
+    case 'shop-payments':
+    case 'shop-payment':
+      return canSee(role, grants, 'shop-payments');
     case 'finance-bank-accounts':
     case 'monitoring-errors':
       return role === 'SYSTEM';
@@ -426,6 +432,9 @@ export function activeMenuId(route: Route): string {
     case 'finance-topups':
     case 'finance-topup':
       return 'finance-topups';
+    case 'shop-payments':
+    case 'shop-payment':
+      return 'finance-shop-payments';
     case 'finance-bank-accounts':
       return 'finance-bank-accounts';
     case 'finance-withdrawals':
@@ -524,6 +533,10 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Tài chính', 'Nạp tiền'];
     case 'finance-topup':
       return ['Tài chính', 'Nạp tiền', 'Chi tiết'];
+    case 'shop-payments':
+      return ['Tài chính', 'Thanh toán quán'];
+    case 'shop-payment':
+      return ['Tài chính', 'Thanh toán quán', 'Chi tiết'];
     case 'finance-bank-accounts':
       return ['Tài chính', 'Tài khoản nhận tiền'];
     case 'finance-withdrawals':

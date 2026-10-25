@@ -14,6 +14,7 @@ import {
   ChatSendRequest,
   ChatSendResult,
   ChatSenderRole,
+  isPaymentRoom,
   HoldOverview,
   HoldReadResult,
   HoldRequest,
@@ -52,8 +53,15 @@ export function parseItem(value: unknown): ChatItem | undefined {
 
 export function parseRoom(value: unknown): ChatRoomState | undefined {
   const raw = record(value);
-  const expiresAt = nullableIso(raw?.expires_at);
-  if (raw === undefined || typeof raw.open !== 'boolean' || typeof raw.can_send !== 'boolean' || typeof raw.expired !== 'boolean' || !whole(raw.retention_days) || expiresAt === undefined) {
+  if (raw === undefined || typeof raw.open !== 'boolean' || typeof raw.can_send !== 'boolean') {
+    return undefined;
+  }
+  // A payment room has no retention fields (the period is not approved, nothing expires); an order room must carry all of them.
+  if (raw.retention_days === undefined && raw.expired === undefined && raw.expires_at === undefined) {
+    return { open: raw.open, canSend: raw.can_send, retentionDays: 0, expiresAt: null, expired: false };
+  }
+  const expiresAt = nullableIso(raw.expires_at);
+  if (typeof raw.expired !== 'boolean' || !whole(raw.retention_days) || expiresAt === undefined) {
     return undefined;
   }
   return { open: raw.open, canSend: raw.can_send, retentionDays: raw.retention_days, expiresAt, expired: raw.expired };
@@ -117,7 +125,16 @@ export function parseOverview(data: Record<string, unknown>): HoldOverview | und
 const validRoom = (room: ChatRoomRef): boolean => UUID_RE.test(room.id);
 
 function base(room: ChatRoomRef): string {
-  return room.kind === 'ORDER' ? `/admin/orders/${room.id}` : `/admin/deliveries/${room.id}`;
+  switch (room.kind) {
+    case 'ORDER':
+      return `/admin/orders/${room.id}`;
+    case 'DIRECT':
+      return `/admin/deliveries/${room.id}`;
+    case 'DRIVER_TOPUP':
+      return `/admin/finance/topup-requests/${room.id}`;
+    case 'SHOP_PAYMENT':
+      return `/admin/shop-payments/${room.id}`;
+  }
 }
 
 export class AdminOrderChatApi extends ApiClient {
@@ -156,12 +173,16 @@ async function common(result: Rejected, session: CsrfPort): Promise<{ kind: 'unk
       return { kind: 'session-expired' };
     case 'ADMIN_FORBIDDEN':
     case 'ORDER_CHAT_NOT_PARTICIPANT':
+    case 'PAYMENT_CHAT_NOT_PARTICIPANT':
       return { kind: 'forbidden' };
     case 'ORDER_NOT_FOUND':
     case 'DELIVERY_NOT_FOUND':
+    case 'TOPUP_REQUEST_NOT_FOUND':
+    case 'SHOP_PAYMENT_NOT_FOUND':
       return { kind: 'not-found' };
     case 'ADMIN_AUTH_RATE_LIMITED':
     case 'ORDER_CHAT_RATE_LIMITED':
+    case 'PAYMENT_CHAT_RATE_LIMITED':
       return { kind: 'rate-limited', ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSec: result.retryAfterSeconds }) };
     default:
       return undefined;
@@ -187,6 +208,10 @@ export function createOrderChatSource(api: AdminOrderChatApi, session?: CsrfPort
     async holdOverview(room): Promise<HoldReadResult> {
       if (!validRoom(room)) {
         return { kind: 'not-found' };
+      }
+      if (isPaymentRoom(room.kind)) {
+        // A payment room has no evidence hold and no retention area: there is nothing to read.
+        return { kind: 'not-wired', reason: 'Phòng trao đổi thanh toán không có mục lưu lịch sử.' };
       }
       const result = await api.overview(room);
       if (result.kind === 'ok') {
@@ -217,7 +242,7 @@ export function createOrderChatSource(api: AdminOrderChatApi, session?: CsrfPort
         return shared;
       }
       if (result.kind === 'error') {
-        if (result.code === 'ORDER_CHAT_CLOSED') {
+        if (result.code === 'ORDER_CHAT_CLOSED' || result.code === 'PAYMENT_CHAT_CLOSED') {
           return { kind: 'closed' };
         }
         if (result.code === 'ORDER_CHAT_EXPIRED') {

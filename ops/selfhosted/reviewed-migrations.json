@@ -40,6 +40,10 @@
     "1796601600000_create-order-chat": {
       "sha256": "c2f5926fe345f641c4ed0cdaaa65e670ee651f7d7c1b3292c290af099a36c305",
       "review": "Issue #191; compatibility review 2026-10-25: Up only adds two new tables, app.order_chat_messages (text messages of an order or a direct delivery) and app.order_chat_holds (evidence holds on one conversation), with their foreign keys, CHECKs, unique sender key, indexes and triggers that refuse updates (messages) and any change but a single release (holds); no existing table, column, constraint, grant or row changes. The previous backend never reads or writes the table and keeps working against the new schema; the new backend needs the migration before it restarts. The runtime role grant (SELECT, INSERT) is in ops/selfhosted/02-runtime-grants.sql."
+    },
+    "1796688000000_create-payment-requests-chat": {
+      "sha256": "e3809755537010b9a26d6a39adc83d935ddfee786217952a63aa262d88d75356",
+      "review": "Issues #198/#199; compatibility review 2026-10-25: Up adds new tables only (app.shop_payment_requests, app.shop_payment_settlements, app.shop_entitlement_grants, app.wallet_topup_reports, app.case_chat_messages) with their constraints, indexes and triggers (immutability of evidence rows, append-only rights with a guard, one bank-transaction identity across Shipper top-ups and shop payments), and widens the CHECK on app.notifications target types by two new values (existing rows and the previous backend's writes stay valid). No existing column, row or grant is changed or removed; the new trigger on app.wallet_bank_transactions only refuses an identity already recorded as a shop payment settlement, which the previous backend never writes. The previous backend keeps working against the new schema; the new backend needs the migration before it restarts. Runtime role grants (SELECT/INSERT, UPDATE on requests only) are in ops/selfhosted/02-runtime-grants.sql and checked by 04-check-runtime-grants.sql. Retention of the new conversation is not set (no purge)."
     }
   }
 }

@@ -36,7 +36,8 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
           navigator.popUntil((Route<dynamic> r) => r.isFirst);
           actions.goTab('orders');
         case TargetType.walletTxn:
-          await navigator.push(n11Route(WalletHomeScreen(source: buildWalletSource(session: session))));
+          // A top-up request (its decision, or a message in its payment conversation) opens that request; anything else opens the wallet.
+          await navigator.push(n11Route(target.id == null ? WalletHomeScreen(source: buildWalletSource(session: session)) : TopupDetailScreen(source: buildWalletSource(session: session), code: target.id!)));
         case TargetType.profile:
           final DriverController? driver = flows.driver;
           if (driver != null) {
@@ -47,7 +48,7 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
           if (feedback != null && target.id != null) {
             await navigator.push(n11Route(complaintRoute(source: feedback, role: M11Role.shipper, complaintId: target.id!, picker: flows.picker)));
           }
-        case TargetType.order || TargetType.none:
+        case TargetType.order || TargetType.shopPayment || TargetType.none:
           break;
       }
     };
