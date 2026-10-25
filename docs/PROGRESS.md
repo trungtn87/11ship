@@ -296,7 +296,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#197](https://github.com/trungtn87/11ship/pull/197) 11Ship #194: cảnh báo nổi bật GPS/mạng trên Home và minh bạ… | Đã merge (`MERGED`) | — | — | — | `085608a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#200](https://github.com/trungtn87/11ship/pull/200) feat(#191): Trao đổi đơn hàng + chi tiết đơn dạng thẻ (11Fo… | Đã merge (`MERGED`) | — | — | — | `12e8e52` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#201](https://github.com/trungtn87/11ship/pull/201) feat: 11Ship Business Dashboard PWA và trao đổi tài chính | Đã merge (`MERGED`) | — | — | — | `4537d97` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#208](https://github.com/trungtn87/11ship/pull/208) fix(11Food): bỏ yêu cầu ảnh món khi hoàn thành 4/4 thiết lậ… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `058785c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#208](https://github.com/trungtn87/11ship/pull/208) fix(11Food): bỏ yêu cầu ảnh món khi hoàn thành 4/4 thiết lậ… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `058785c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
