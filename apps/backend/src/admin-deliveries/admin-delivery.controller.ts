@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { NotFoundException, Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ADMIN_AUTH_CONFIG } from '../admin-auth/admin-auth-config.provider';
 import { AdminLimiter } from '../admin-auth/admin-limiter';
 import { AdminRequest, AdminTransport, Csrf, StatusResponse } from '../admin-shippers/admin-shipper.controller';
 import { AdminAuthConfig } from '../config/admin-auth-config';
+import { parseHoldBody, parsePageQuery, parseSendBody } from '../order-chat/order-chat-validation';
+import { AdminOrderChatService } from '../admin-orders/admin-order-chat-service';
 import { AdminDeliveryService } from './admin-delivery-service';
 import { parseAdminAction, parseAdminActionBody, parseAdminDeliveryId, parseAdminListQuery, parseNoQuery } from '../delivery/admin-delivery-validation';
 
@@ -19,6 +21,7 @@ export class AdminDeliveryController {
 
   constructor(
     private readonly deliveries: AdminDeliveryService,
+    private readonly chat: AdminOrderChatService,
     limiter: AdminLimiter,
     @Inject(ADMIN_AUTH_CONFIG) config: AdminAuthConfig,
   ) {
@@ -54,6 +57,50 @@ export class AdminDeliveryController {
     const deliveryId = parseAdminDeliveryId(id);
     const input = parseAdminActionBody(name, body);
     const outcome = await this.deliveries.action(name, token, csrf, deliveryId, input, key, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
+  }
+
+  /** The conversation of a DIRECT delivery (no order around it; #191). An ORDER delivery's conversation is the order's (`/admin/orders/:id/chat`). */
+  @Get(':delivery_id/chat')
+  async chatRead(@Param('delivery_id') id: string, @Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    return { data: await this.chat.read(token, 'DIRECT', parseAdminDeliveryId(id), parsePageQuery(query)) };
+  }
+
+  @Post(':delivery_id/chat')
+  @HttpCode(201)
+  async chatSend(@Param('delivery_id') id: string, @Body() body: unknown, @Req() request: AdminRequest, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
+    const token = await this.#transport.write(request);
+    return { data: await this.chat.send(token, csrf, 'DIRECT', parseAdminDeliveryId(id), parseSendBody(body), key) };
+  }
+
+  @Get(':delivery_id/chat-hold')
+  async holdState(@Param('delivery_id') id: string, @Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    parseNoQuery(query);
+    return { data: await this.chat.holdState(token, 'DIRECT', parseAdminDeliveryId(id)) };
+  }
+
+  @Post(':delivery_id/chat-hold/:change')
+  @HttpCode(200)
+  async hold(
+    @Param('delivery_id') id: string,
+    @Param('change') change: string,
+    @Body() body: unknown,
+    @Req() request: AdminRequest,
+    @Res({ passthrough: true }) response: StatusResponse,
+    @Headers('x-csrf-token') csrf: Csrf,
+    @Headers('idempotency-key') key: Csrf,
+  ) {
+    const token = await this.#transport.write(request);
+    const input = parseHoldBody(body);
+    const meta = { requestId: request.requestId ?? randomUUID() };
+    const deliveryId = parseAdminDeliveryId(id);
+    const outcome = change === 'place' ? await this.chat.placeHold(token, csrf, 'DIRECT', deliveryId, input.reason, key, meta) : change === 'release' ? await this.chat.releaseHold(token, csrf, 'DIRECT', deliveryId, input.reason, key, meta) : undefined;
+    if (outcome === undefined) {
+      throw new NotFoundException();
+    }
     response.status(outcome.status);
     return { data: outcome.payload };
   }

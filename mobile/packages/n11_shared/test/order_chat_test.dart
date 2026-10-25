@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 
 // Issue #191 on the phone: the independent cards of the order detail, the quick call, the dishes without pictures, the closed map that builds nothing, no order
 // code for the customer, and "Trao đổi đơn hàng" (feed, paging, send, retry with the same key, a closed room, a refusal that is never shown as sent).
@@ -231,6 +232,12 @@ void main() {
       expect(find.text('tin cũ'), findsOneWidget, reason: 'the stored history is still read');
     });
 
+    test('a staff message is read like any other (the role is the server\'s, never guessed)', () {
+      final ChatItem item = ChatItem.fromJson(<String, Object?>{'type': 'message', 'id': 'm', 'at': '2026-10-25T09:00:00Z', 'sender': <String, Object?>{'role': 'SYSTEM', 'name': 'Hệ thống', 'mine': false}, 'body': 'Ghi nhận'});
+      expect((item as ChatMessage).role, ChatRole.admin);
+      expect(() => ChatItem.fromJson(<String, Object?>{'type': 'message', 'id': 'm', 'at': '2026-10-25T09:00:00Z', 'sender': <String, Object?>{'role': 'ROOT', 'name': 'x', 'mine': false}, 'body': 'y'}), throwsFormatException);
+    });
+
     test('the room reads the retention the server sends and never invents one', () {
       final ChatRoom a = ChatRoom.fromJson(<String, Object?>{'id': 'r', 'open': false, 'can_send': false, 'retention_days': 7, 'expired': false});
       expect((a.retentionDays, a.expired), (7, false));
@@ -367,6 +374,45 @@ void main() {
       await tap(tester, key('section-recipient-header'));
       await tap(tester, key('section-map-header'));
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('the shop\'s public contact on the customer order', () {
+    testWidgets('Zalo and Messenger open only the declared links, only while the order runs; a link nobody handles is copied; none declared means no button', (WidgetTester tester) async {
+      final FakeContactLauncher launcher = FakeContactLauncher();
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String id = store.seed(status: 'PREPARING', deliveryState: 'waiting_driver');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: id, contactLauncher: launcher));
+      expect(key('order-shop-zalo'), findsNothing, reason: 'the shop card is closed');
+      await tap(tester, key('section-shop-header'));
+      await tap(tester, key('order-shop-zalo'));
+      await tap(tester, key('order-shop-messenger'));
+      expect(launcher.opened, <String>['https://zalo.me/0900000001', 'https://m.me/quanphominh']);
+      launcher.result = false;
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      await tap(tester, key('order-shop-zalo'));
+      expect(copied, 'https://zalo.me/0900000001');
+      expect(containing('Không mở được Zalo'), findsOneWidget);
+      await unmount(tester);
+
+      final String done = store.seed(status: 'COMPLETED', deliveryState: 'completed');
+      await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: done, contactLauncher: launcher));
+      await tap(tester, key('section-shop-header'));
+      expect(key('order-shop-zalo'), findsNothing);
+    });
+
+    test('a hostile or malformed contact in the answer becomes no button at all', () {
+      final OrderShop shop = OrderShop.fromJson(<String, Object?>{'shop_id': 's', 'name': 'Quán', 'phone': null, 'address_text': null, 'contact': <String, Object?>{'phone': '0912', 'zalo_url': 'http://evil.example/x', 'messenger_url': 'javascript:alert(1)'}});
+      expect(shop.contact.isEmpty, isTrue);
+      expect(OrderShop.fromJson(<String, Object?>{'shop_id': 's', 'name': 'Quán', 'phone': null, 'address_text': null}).contact.isEmpty, isTrue);
     });
   });
 

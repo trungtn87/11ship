@@ -23,7 +23,9 @@ import { OrderParametersController, ShippingEligibilityPolicyController, Shippin
 import { ShippingFeePolicyService } from '../shipping-policy/shipping-fee-policy-service';
 import { AdminDeliveryService } from '../admin-deliveries/admin-delivery-service';
 import { AdminOrderController } from '../admin-orders/admin-order.controller';
+import { AdminOrderChatService } from '../admin-orders/admin-order-chat-service';
 import { AdminOrderService } from '../admin-orders/admin-order-service';
+import { OrderChatServiceModule } from '../order-chat/order-chat-service.module';
 import { OrdersCoreModule } from '../orders/orders-core.module';
 import { OrderViews } from '../orders/order-views';
 import { ShopModule } from '../shop/shop.module';
@@ -154,6 +156,8 @@ export class AdminAuthModule implements NestModule {
         DeliveryCoreModule.register(auth),
         // M10.05 order management for the Admin routes below (the Order tables' SQL and the three records through their owner, the shop read port).
         OrdersCoreModule,
+        // #191: the order chat service (the Administration reads / writes a conversation and holds its evidence through it).
+        OrderChatServiceModule.register(auth),
         ShopModule,
         // Issue #190: the setup gate and the automatic activation (the administration list, preview and re-enable use the very same rules).
         ShopSetupCoreModule,
@@ -240,6 +244,7 @@ export class AdminAuthModule implements NestModule {
         // M10.05 order management (SYSTEM, or an ADMIN with the SHOP / DRIVER permissions).
         OrderViews,
         AdminOrderService,
+        AdminOrderChatService,
         AdminNotificationService,
         // M12: what an administrator may see right now, and the overview that only reads (M12-A).
         AdminRightsReader,

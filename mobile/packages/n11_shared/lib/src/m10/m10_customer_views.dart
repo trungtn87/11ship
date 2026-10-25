@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../account/api_client.dart';
@@ -11,6 +12,7 @@ import '../addresses/address_models.dart';
 import '../addresses/address_views.dart';
 import '../addresses/address_location_picker.dart';
 import '../m02/m02_widgets.dart';
+import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
 import '../m11/m11_entries.dart';
@@ -761,7 +763,10 @@ class OrderSummaryCard extends StatelessWidget {
 // ---- the detail ------------------------------------------------------------------------------------------------------
 
 class CustomerOrderDetailScreen extends StatefulWidget {
-  const CustomerOrderDetailScreen({super.key, required this.runtime, required this.orderId, this.justSent = false, this.mapBuilder});
+  const CustomerOrderDetailScreen({super.key, required this.runtime, required this.orderId, this.justSent = false, this.mapBuilder, this.contactLauncher = const MethodChannelContactLauncher()});
+
+  /// Opens the shop's Zalo / Messenger link in its app (the phone dialer is [orderPhoneDialer]); a link that cannot be opened is copied.
+  final ContactLauncher contactLauncher;
 
   final OrderRuntime runtime;
   final String orderId;
@@ -900,7 +905,8 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
   Widget _body(OrderView o) {
     final OrderDelivery? d = o.delivery;
     final bool shipperHeld = d != null && d.hasShipper && !o.ended;
-    final String? shopCall = o.ended ? null : o.shop.phone;
+    // The number to call is the shop's own public one when it has one, else the number on the order; nothing once the order ended.
+    final String? shopCall = o.ended ? null : (o.shop.contact.phone ?? o.shop.phone);
     return vstack(<Widget>[
       N11Card(
         child: Column(
@@ -939,7 +945,13 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
         title: 'Quán',
         summary: shopCall == null ? o.shop.name : '${o.shop.name} · ${dialNumberText(shopCall) ?? ''}'.trimRight(),
         trailing: QuickCall(phone: shopCall, who: 'quán'),
-        builder: (BuildContext _) => ContactRow(name: o.shop.name, detail: o.shop.addressText, phone: shopCall, who: 'quán', showCall: false),
+        builder: (BuildContext _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ContactRow(name: o.shop.name, detail: o.shop.addressText, phone: shopCall, who: 'quán', showCall: false),
+            if (!o.ended && (o.shop.contact.zaloUrl != null || o.shop.contact.messengerUrl != null)) _shopChats(o.shop.contact),
+          ],
+        ),
       ),
       OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: !o.ended, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
       OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),
@@ -971,6 +983,33 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
         ),
       if (_chat != null) _chatSection(_chat!),
     ]);
+  }
+
+  /// Zalo and Messenger of the shop, only the links the shop declared and the server and this app both validated; opening one that no app handles copies it.
+  Widget _shopChats(ShopContact c) {
+    Future<void> open(String url, String what) async {
+      var opened = false;
+      try {
+        opened = await widget.contactLauncher.openUrl(url);
+      } on Object {
+        opened = false;
+      }
+      if (opened || !mounted) {
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: url));
+      if (mounted) {
+        m02Toast(context, 'Không mở được $what. Đã sao chép liên kết để bạn dán vào ứng dụng khác.');
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: N11Space.gap2),
+      child: Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
+        if (c.zaloUrl != null) N11Button(key: const Key('order-shop-zalo'), label: 'Zalo', icon: Icons.chat_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => unawaited(open(c.zaloUrl!, 'Zalo'))),
+        if (c.messengerUrl != null) N11Button(key: const Key('order-shop-messenger'), label: 'Messenger', icon: Icons.forum_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => unawaited(open(c.messengerUrl!, 'Messenger'))),
+      ]),
+    );
   }
 
   static String _mapSummary(OrderView o, OrderDelivery? d) {

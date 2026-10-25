@@ -77,3 +77,13 @@ export function parsePageQuery(query: unknown): PageQuery {
 export function parseRoomId(value: unknown): string {
   return isCanonicalUuid(value) ? value : reject();
 }
+
+export interface HoldInput {
+  readonly reason: string;
+}
+
+/** An evidence hold is placed or released with a reason (3..300 characters), nothing else. */
+export function parseHoldBody(value: unknown): HoldInput {
+  const input = shaped(value, ['reason']);
+  return { reason: text(input.reason, 3, 300) };
+}

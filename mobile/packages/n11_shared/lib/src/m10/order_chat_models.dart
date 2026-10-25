@@ -46,13 +46,14 @@ class ChatRoom {
   final bool canSend;
 }
 
-enum ChatRole { customer, shop, shipper }
+enum ChatRole { customer, shop, shipper, admin }
 
 extension ChatRoleText on ChatRole {
   String get label => switch (this) {
         ChatRole.customer => 'Khách',
         ChatRole.shop => 'Quán',
         ChatRole.shipper => 'Shipper',
+        ChatRole.admin => 'Quản trị',
       };
 }
 
@@ -60,6 +61,8 @@ ChatRole _role(Object? v) => switch (_str(v)) {
       'CUSTOMER' => ChatRole.customer,
       'SHOP' => ChatRole.shop,
       'SHIPPER' => ChatRole.shipper,
+      // Staff (ADMIN or SYSTEM) writing where their right to view the file allows it; the server sends the name it shows ("Quản trị" / "Hệ thống").
+      'ADMIN' || 'SYSTEM' => ChatRole.admin,
       _ => throw const FormatException('role'),
     };
 

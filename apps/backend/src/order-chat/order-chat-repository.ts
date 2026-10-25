@@ -123,13 +123,19 @@ export class OrderChatRepository {
     const from = roomType === 'ORDER' ? 'app.orders o' : 'app.deliveries d';
     const key = roomType === 'ORDER' ? 'o.order_id' : 'd.delivery_id';
     const complaints = roomType === 'ORDER' ? `x.order_id = o.order_id OR x.delivery_id IN (SELECT t.delivery_id FROM app.deliveries t WHERE t.order_id = o.order_id)` : `x.delivery_id = d.delivery_id`;
+    const holds = roomType === 'ORDER' ? 'h.order_id = o.order_id' : 'h.delivery_id = d.delivery_id';
     const result = await context.query<{ ended_ms: string | null; complaint_ms: string | null; open_count: string }>(
-      `SELECT (extract(epoch FROM ${subject}) * 1000)::bigint::text AS ended_ms, (extract(epoch FROM c.last_closed) * 1000)::bigint::text AS complaint_ms, COALESCE(c.open_count, 0)::text AS open_count
+      `SELECT (extract(epoch FROM ${subject}) * 1000)::bigint::text AS ended_ms,
+              (extract(epoch FROM GREATEST(c.last_closed, hd.last_released)) * 1000)::bigint::text AS complaint_ms,
+              (COALESCE(c.open_count, 0) + COALESCE(hd.open_count, 0))::text AS open_count
          FROM ${from}
          LEFT JOIN LATERAL (
            SELECT max(COALESCE(x.closed_at, x.concluded_at, x.updated_at)) FILTER (WHERE x.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS last_closed,
                   count(*) FILTER (WHERE x.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS open_count
              FROM app.complaints x WHERE ${complaints}) c ON true
+         LEFT JOIN LATERAL (
+           SELECT max(h.released_at) AS last_released, count(*) FILTER (WHERE h.released_at IS NULL) AS open_count
+             FROM app.order_chat_holds h WHERE ${holds}) hd ON true
         WHERE ${key} = $1::uuid`,
       [roomId],
     );
@@ -147,13 +153,17 @@ export class OrderChatRepository {
       const table = kind === 'ORDER' ? 'app.orders o' : 'app.deliveries d';
       const joinOn = kind === 'ORDER' ? 'm.order_id = o.order_id' : 'm.delivery_id = d.delivery_id AND m.order_id IS NULL';
       const complaints = kind === 'ORDER' ? `x.order_id = o.order_id OR x.delivery_id IN (SELECT t.delivery_id FROM app.deliveries t WHERE t.order_id = o.order_id)` : `x.delivery_id = d.delivery_id`;
+      const holds = kind === 'ORDER' ? 'h.order_id = o.order_id' : 'h.delivery_id = d.delivery_id';
       return `SELECT m.message_id FROM app.order_chat_messages m JOIN ${table} ON ${joinOn}
                LEFT JOIN LATERAL (
                  SELECT max(COALESCE(x.closed_at, x.concluded_at, x.updated_at)) FILTER (WHERE x.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS last_closed,
                         count(*) FILTER (WHERE x.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS open_count
                    FROM app.complaints x WHERE ${complaints}) c ON true
-              WHERE ${alias}.ended_at IS NOT NULL AND COALESCE(c.open_count, 0) = 0
-                AND GREATEST(${alias}.ended_at, COALESCE(c.last_closed, ${alias}.ended_at)) + ($1::int * interval '1 day') <= clock_timestamp()`;
+               LEFT JOIN LATERAL (
+                 SELECT max(h.released_at) AS last_released, count(*) FILTER (WHERE h.released_at IS NULL) AS open_count
+                   FROM app.order_chat_holds h WHERE ${holds}) hd ON true
+              WHERE ${alias}.ended_at IS NOT NULL AND COALESCE(c.open_count, 0) = 0 AND COALESCE(hd.open_count, 0) = 0
+                AND GREATEST(${alias}.ended_at, COALESCE(c.last_closed, ${alias}.ended_at), COALESCE(hd.last_released, ${alias}.ended_at)) + ($1::int * interval '1 day') <= clock_timestamp()`;
     };
     const result = await context.query(
       `DELETE FROM app.order_chat_messages WHERE message_id IN (
@@ -161,5 +171,34 @@ export class OrderChatRepository {
       [days, limit],
     );
     return result.rowCount ?? 0;
+  }
+
+  /** The open hold on a file, if any (at most one: unique index). */
+  async openHold(context: TransactionContext, roomType: ChatRoomType, roomId: string): Promise<{ holdId: string; reason: string; placedAtMs: number } | undefined> {
+    const column = roomType === 'ORDER' ? 'order_id' : 'delivery_id';
+    const result = await context.query<{ hold_id: string; reason: string; placed_ms: string }>(
+      `SELECT hold_id::text AS hold_id, reason, ${ms('placed_at', 'placed_ms')} FROM app.order_chat_holds WHERE ${column} = $1::uuid AND released_at IS NULL`,
+      [roomId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { holdId: row.hold_id, reason: row.reason, placedAtMs: safe(row.placed_ms) };
+  }
+
+  async placeHold(context: TransactionContext, holdId: string, roomType: ChatRoomType, roomId: string, reason: string, userId: string): Promise<boolean> {
+    const result = await context.query(
+      `INSERT INTO app.order_chat_holds (hold_id, room_type, order_id, delivery_id, reason, placed_by, placed_at)
+       VALUES ($1::uuid, $2::varchar, CASE WHEN $2::varchar = 'ORDER' THEN $3::uuid END, CASE WHEN $2::varchar = 'DIRECT' THEN $3::uuid END, $4, $5::uuid, date_trunc('milliseconds', clock_timestamp()))
+       ON CONFLICT DO NOTHING`,
+      [holdId, roomType, roomId, reason, userId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async releaseHold(context: TransactionContext, holdId: string, reason: string, userId: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.order_chat_holds SET released_by = $3::uuid, release_reason = $2, released_at = date_trunc('milliseconds', clock_timestamp()) WHERE hold_id = $1::uuid AND released_at IS NULL`,
+      [holdId, reason, userId],
+    );
+    return result.rowCount === 1;
   }
 }

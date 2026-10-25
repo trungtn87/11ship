@@ -17,7 +17,7 @@ import { OpsSettingsService } from '../ops/ops-settings-service';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { CHAT_EVENT_LIMIT, CHAT_RATE_MAX, CHAT_RATE_WINDOW_MS, ChatRole, ORDER_CHAT_EVENT_SCHEMA, ORDER_CHAT_RESOURCE, OUTBOX_ORDER_CHAT_MESSAGE } from './order-chat-constants';
+import { CHAT_EVENT_LIMIT, CHAT_RATE_MAX, CHAT_RATE_WINDOW_MS, ChatRole, ChatRoomType, ORDER_CHAT_EVENT_SCHEMA, ORDER_CHAT_RESOURCE, OUTBOX_ORDER_CHAT_MESSAGE } from './order-chat-constants';
 import { cursorOf, FeedEntry, pageOf, systemEntries } from './order-chat-feed';
 import { ChatRoom, ChatSeat, deliveryIsOpen, OrderChatParticipants, orderIsOpen } from './order-chat-participants';
 import { ChatMessageRow, OrderChatRepository } from './order-chat-repository';
@@ -25,6 +25,13 @@ import { encodeCursor, PageQuery, SendInput } from './order-chat-validation';
 
 /** Which door the caller came through. The identifier in the path is the order (customer, shop) or the delivery (shop's direct call, Shipper). */
 export type ChatDoor = 'CUSTOMER_ORDER' | 'SHOP_ORDER' | 'SHOP_DIRECT' | 'SHIPPER_DELIVERY';
+
+/** A staff account asking for a room: who it is and the check of its current right, run inside the room's own transaction. */
+export interface ChatAdmin {
+  readonly userId: string;
+  /** Decides the right under the admin's locks and says which kind of staff account it is (the label of its messages). */
+  readonly authorize: (context: TransactionContext) => Promise<'ADMIN' | 'SYSTEM'>;
+}
 
 interface Caller {
   readonly userId: string;
@@ -110,24 +117,58 @@ export class OrderChatService {
     return this.transactions.withTransaction(async (context) => {
       const caller = await this.#caller(context, principal, door);
       const seat = await this.#seat(context, caller, door, id);
-      const nowMs = await freshClockMs(context);
-      const retention = await this.#retention(context, seat.room, nowMs);
-      if (retention.expired) {
-        // The retention ran out: no content of the conversation is returned any more (the order / delivery events and the audit are untouched).
-        return { room: { ...this.#roomView(seat), ...retention.view }, items: [], has_more: false, next_before: null, server_now: iso(nowMs) };
-      }
-      const milestones = systemEntries(await this.#story(context, seat.room));
-      const messages = await this.repo.listOlder(context, seat.room.type, seat.room.id, page.before, page.limit + 1);
-      const result = pageOf(messages, milestones, page.before, page.limit);
-      const first = result.entries[0];
-      return {
-        room: { ...this.#roomView(seat), ...retention.view },
-        items: result.entries.map((e) => this.#entryView(e, caller.userId)),
-        has_more: result.hasMore,
-        next_before: result.hasMore && first !== undefined ? encodeCursor(cursorOf(first)) : null,
-        server_now: iso(nowMs),
-      };
+      return this.#readSeat(context, caller.userId, seat, page);
     });
+  }
+
+  async #readSeat(context: TransactionContext, viewerId: string, seat: ChatSeat, page: PageQuery): Promise<JsonObject> {
+    const nowMs = await freshClockMs(context);
+    const retention = await this.#retention(context, seat.room, nowMs);
+    if (retention.expired) {
+      // The retention ran out: no content of the conversation is returned any more (the order / delivery events and the audit are untouched).
+      return { room: { ...this.#roomView(seat), ...retention.view }, items: [], has_more: false, next_before: null, server_now: iso(nowMs) };
+    }
+    const milestones = systemEntries(await this.#story(context, seat.room));
+    const messages = await this.repo.listOlder(context, seat.room.type, seat.room.id, page.before, page.limit + 1);
+    const result = pageOf(messages, milestones, page.before, page.limit);
+    const first = result.entries[0];
+    return {
+      room: { ...this.#roomView(seat), ...retention.view },
+      items: result.entries.map((e) => this.#entryView(e, viewerId)),
+      has_more: result.hasMore,
+      next_before: result.hasMore && first !== undefined ? encodeCursor(cursorOf(first)) : null,
+      server_now: iso(nowMs),
+    };
+  }
+
+  // ---- the Administration (ADMIN / SYSTEM) ------------------------------------------------------------------------------------
+
+  /**
+   * The Administration reads and writes a room only while its CURRENT right to view the file allows it: `admin.authorize` runs inside this transaction, under the
+   * admin's own locks (the same check as the order / delivery detail of the Administration). There is no other door to a conversation for a staff account.
+   */
+  async readForAdmin(admin: ChatAdmin, kind: ChatRoomType, id: string, page: PageQuery): Promise<JsonObject> {
+    return this.transactions.withTransaction(async (context) => {
+      await admin.authorize(context);
+      return this.#readSeat(context, admin.userId, await this.#adminSeat(context, kind, id), page);
+    });
+  }
+
+  async sendForAdmin(admin: ChatAdmin, kind: ChatRoomType, id: string, input: SendInput, key: string | readonly string[] | undefined): Promise<JsonObject> {
+    const clientKey = parseIdempotencyKey(key);
+    return this.transactions.withTransaction(async (context) => {
+      const role = await admin.authorize(context);
+      const caller: Caller = { userId: admin.userId, role, driverId: null, shopId: null, shipperName: null };
+      return this.#sendCore(context, caller, () => this.#adminSeat(context, kind, id), input, clientKey);
+    });
+  }
+
+  async #adminSeat(context: TransactionContext, kind: ChatRoomType, id: string): Promise<ChatSeat> {
+    const room = kind === 'ORDER' ? await this.participants.orderRoom(context, id) : await this.participants.directRoom(context, id);
+    if (room === undefined) {
+      throw new AppError(kind === 'ORDER' ? 'ORDER_NOT_FOUND' : 'DELIVERY_NOT_FOUND');
+    }
+    return { room, mayRead: true, maySend: room.open };
   }
 
   /**
@@ -161,51 +202,55 @@ export class OrderChatService {
           throw new AppError('DELIVERY_NOT_FOUND');
         }
       }
-      let seat = await this.#seat(context, caller, door, id);
-      const stored = await this.repo.findByKey(context, caller.userId, clientKey);
-      if (stored !== undefined) {
-        return this.#replay(stored, seat.room, input, caller.userId);
-      }
-      // The status is read AFTER the shared lock: if a close committed first the room is closed; if it is still running the close waits for this transaction.
-      const open = seat.room.type === 'ORDER' ? await this.#lockedOrderOpen(context, seat.room.id) : deliveryIsOpen((await this.repo.lockDeliveryState(context, seat.room.id)) ?? 'failed');
-      if (!open) {
-        throw new AppError('ORDER_CHAT_CLOSED');
-      }
-      seat = await this.#seat(context, caller, door, id);
-      if (!seat.maySend) {
-        throw new AppError(seat.room.open ? 'ORDER_CHAT_NOT_PARTICIPANT' : 'ORDER_CHAT_CLOSED');
-      }
-      if ((await this.repo.countRecent(context, caller.userId, CHAT_RATE_WINDOW_MS)) >= CHAT_RATE_MAX) {
-        throw new AppError('ORDER_CHAT_RATE_LIMITED');
-      }
-      const created = await this.repo.insert(context, {
-        messageId: randomUUID(),
-        roomType: seat.room.type,
-        roomId: seat.room.id,
-        senderUserId: caller.userId,
-        senderRole: caller.role,
-        senderName: this.#senderName(caller, seat.room),
-        body: input.body,
-        clientKey,
-      });
-      if (created === undefined) {
-        // The same key was written by a request that was still running when this one started (it committed meanwhile).
-        const winner = await this.repo.findByKey(context, caller.userId, clientKey);
-        if (winner === undefined) {
-          throw new AppError('IDEMPOTENCY_BUSY');
-        }
-        return this.#replay(winner, seat.room, input, caller.userId);
-      }
-      await this.outbox.append(context, {
-        eventType: OUTBOX_ORDER_CHAT_MESSAGE,
-        eventSchemaVersion: ORDER_CHAT_EVENT_SCHEMA,
-        resourceType: ORDER_CHAT_RESOURCE,
-        resourceId: seat.room.id,
-        resourceVersion: 1,
-        payload: { room_type: seat.room.type, room_id: seat.room.id, message_id: created.messageId, sender_user_id: caller.userId, shop_id: seat.room.shopId },
-      });
-      return { message: this.#messageView(created, caller.userId), room: this.#roomView(seat), replayed: false };
+      return this.#sendCore(context, caller, () => this.#seat(context, caller, door, id), input, clientKey);
     });
+  }
+
+  async #sendCore(context: TransactionContext, caller: Caller, resolveSeat: () => Promise<ChatSeat>, input: SendInput, clientKey: string): Promise<JsonObject> {
+    let seat = await resolveSeat();
+    const stored = await this.repo.findByKey(context, caller.userId, clientKey);
+    if (stored !== undefined) {
+      return this.#replay(stored, seat.room, input, caller.userId);
+    }
+    // The status is read AFTER the shared lock: if a close committed first the room is closed; if it is still running the close waits for this transaction.
+    const open = seat.room.type === 'ORDER' ? await this.#lockedOrderOpen(context, seat.room.id) : deliveryIsOpen((await this.repo.lockDeliveryState(context, seat.room.id)) ?? 'failed');
+    if (!open) {
+      throw new AppError('ORDER_CHAT_CLOSED');
+    }
+    seat = await resolveSeat();
+    if (!seat.maySend) {
+      throw new AppError(seat.room.open ? 'ORDER_CHAT_NOT_PARTICIPANT' : 'ORDER_CHAT_CLOSED');
+    }
+    if ((await this.repo.countRecent(context, caller.userId, CHAT_RATE_WINDOW_MS)) >= CHAT_RATE_MAX) {
+      throw new AppError('ORDER_CHAT_RATE_LIMITED');
+    }
+    const created = await this.repo.insert(context, {
+      messageId: randomUUID(),
+      roomType: seat.room.type,
+      roomId: seat.room.id,
+      senderUserId: caller.userId,
+      senderRole: caller.role,
+      senderName: this.#senderName(caller, seat.room),
+      body: input.body,
+      clientKey,
+    });
+    if (created === undefined) {
+      // The same key was written by a request that was still running when this one started (it committed meanwhile).
+      const winner = await this.repo.findByKey(context, caller.userId, clientKey);
+      if (winner === undefined) {
+        throw new AppError('IDEMPOTENCY_BUSY');
+      }
+      return this.#replay(winner, seat.room, input, caller.userId);
+    }
+    await this.outbox.append(context, {
+      eventType: OUTBOX_ORDER_CHAT_MESSAGE,
+      eventSchemaVersion: ORDER_CHAT_EVENT_SCHEMA,
+      resourceType: ORDER_CHAT_RESOURCE,
+      resourceId: seat.room.id,
+      resourceVersion: 1,
+      payload: { room_type: seat.room.type, room_id: seat.room.id, message_id: created.messageId, sender_user_id: caller.userId, shop_id: seat.room.shopId },
+    });
+    return { message: this.#messageView(created, caller.userId), room: this.#roomView(seat), replayed: false };
   }
 
   #replay(stored: ChatMessageRow, room: ChatRoom, input: SendInput, userId: string): JsonObject {
@@ -224,6 +269,9 @@ export class OrderChatService {
   }
 
   #senderName(caller: Caller, room: ChatRoom): string {
+    if (caller.role === 'ADMIN' || caller.role === 'SYSTEM') {
+      return caller.role === 'SYSTEM' ? 'Hệ thống' : 'Quản trị';
+    }
     const name = caller.role === 'SHOP' ? room.shopName : caller.role === 'SHIPPER' ? caller.shipperName : room.customerName;
     const clean = (name ?? '').trim();
     return clean === '' ? (caller.role === 'CUSTOMER' ? 'Khách hàng' : caller.role === 'SHOP' ? 'Quán' : 'Shipper') : [...clean].slice(0, 120).join('');

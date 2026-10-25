@@ -12,7 +12,7 @@ export const CHAT_EVENT_LIMIT = 300;
 export const CHAT_ROOM_ORDER = 'ORDER';
 export const CHAT_ROOM_DIRECT = 'DIRECT';
 export type ChatRoomType = typeof CHAT_ROOM_ORDER | typeof CHAT_ROOM_DIRECT;
-export type ChatRole = 'CUSTOMER' | 'SHOP' | 'SHIPPER';
+export type ChatRole = 'CUSTOMER' | 'SHOP' | 'SHIPPER' | 'ADMIN' | 'SYSTEM';
 
 export const OUTBOX_ORDER_CHAT_MESSAGE = 'order.chat_message.v1';
 export const ORDER_CHAT_EVENT_SCHEMA = 1;

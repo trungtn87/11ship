@@ -171,7 +171,7 @@ class SampleOrderStore {
       'status': o.status,
       'display_status': _display(o),
       'version': o.version,
-      'shop': <String, Object?>{'shop_id': kSampleShopId, 'name': 'Quán Phở Minh họa', 'phone': '+84900000001', 'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội'},
+      'shop': <String, Object?>{'shop_id': kSampleShopId, 'name': 'Quán Phở Minh họa', 'phone': '+84900000001', 'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội', if (!shop) 'contact': <String, Object?>{'phone': '+84900000001', 'zalo_url': 'https://zalo.me/0900000001', 'messenger_url': 'https://m.me/quanphominh'}},
       'recipient': <String, Object?>{'name': o.recipientName, 'phone': o.recipientPhone, 'address_text': o.addressText, 'lat': o.lat, 'lng': o.lng},
       'note': o.note,
       'scheduled_for': o.scheduledFor?.toUtc().toIso8601String(),

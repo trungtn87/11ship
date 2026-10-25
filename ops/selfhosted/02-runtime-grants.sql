@@ -118,6 +118,8 @@ GRANT SELECT, INSERT, UPDATE ON app.order_items TO ship11_app;
 GRANT SELECT, INSERT ON app.order_events TO ship11_app;
 -- #191: the order chat. A message is only inserted and read (a trigger refuses any update); DELETE is for the retention job (chat.retention_days after the file closes).
 GRANT SELECT, INSERT, DELETE ON app.order_chat_messages TO ship11_app;
+-- #191: evidence holds on a chat (placed, then released once: INSERT and UPDATE; never deleted).
+GRANT SELECT, INSERT, UPDATE ON app.order_chat_holds TO ship11_app;
 
 -- PR #165: the public IDs/counters are allocated and mutated by SECURITY DEFINER
 -- triggers only; the runtime role may read them but must not update the counters.

@@ -1,3 +1,4 @@
+import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
 
 // M10 (food orders) data the phone screens draw. Wire contract: docs/current/M10-implementation-20261018.md. Money is whole VND and a fee that is not
@@ -60,12 +61,16 @@ DateTime _time(Object? v) => DateTime.parse(_str(v));
 DateTime? _timeOrNull(Object? v) => v == null ? null : _time(v);
 
 class OrderShop {
-  const OrderShop({required this.shopId, required this.name, required this.phone, required this.addressText});
+  const OrderShop({required this.shopId, required this.name, required this.phone, required this.addressText, this.contact = ShopContact.none});
 
   factory OrderShop.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return OrderShop(shopId: _str(m['shop_id']), name: _str(m['name']), phone: _strOrNull(m['phone']), addressText: _strOrNull(m['address_text']));
+    return OrderShop(shopId: _str(m['shop_id']), name: _str(m['name']), phone: _strOrNull(m['phone']), addressText: _strOrNull(m['address_text']), contact: ShopContact.fromWire(m['contact']));
   }
+
+  /// The shop's PUBLIC contact the customer's order carries (phone, Zalo, Messenger), validated again by [ShopContact]; empty when the order ended or the shop
+  /// declared none. A button exists only for a value in here.
+  final ShopContact contact;
 
   final String shopId;
   final String name;
