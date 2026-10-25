@@ -167,6 +167,22 @@ jobs:
           path: ${{ runner.temp }}/ship-m01-ui/*.png
           if-no-files-found: ignore
 
+      # #194: home alert and location label in every state (GPS off, Internet down, server down, old position, resting). Widget renders of scripted state, not a device.
+      - name: Render 11Ship home GPS/network alerts for review
+        if: matrix.app == 'ship'
+        working-directory: mobile/ship
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/ship-home-alerts
+        run: flutter test test/home_alert_screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Ship home alert renders (scripted state, not device acceptance)
+        if: always() && matrix.app == 'ship'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-home-alert-widget-renders
+          path: ${{ runner.temp }}/ship-home-alerts/*.png
+          if-no-files-found: ignore
+
       - name: Render 11Food M10 order screens for review
         if: matrix.app == 'food'
         working-directory: mobile/food

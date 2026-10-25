@@ -335,6 +335,15 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
                 style: const TextStyle(color: N11Colors.error),
               ),
             ),
+          // #194: a pinned point is fixed; moving around never changes it, and nothing here shares the person's position.
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này. Nút vị trí hiện tại chỉ đặt ghim theo GPS của máy khi bạn bấm, không chia sẻ vị trí.',
+              key: Key('location-picker-fixed-note'),
+              style: N11Text.caption,
+            ),
+          ),
         ],
       ),
     ),
