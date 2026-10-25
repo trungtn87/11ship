@@ -125,6 +125,10 @@ jobs:
       - name: Deploy configuration tests (Render Blueprint, remote migration gates)
         run: npm run deploy:test
 
+      # #193: the APK–backend compatibility matrix shipped with the backend is well-formed (a raised minimum must state why).
+      - name: APK compatibility matrix (static)
+        run: node scripts/deploy/check-app-compat.mjs --static
+
       # M01-UI: shared phone UI foundation (validation, route guards, ports never answering ok, design preview isolation).
       - name: Client shell tests (phone UI foundation)
         run: npm run client-shell:test

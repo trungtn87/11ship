@@ -256,6 +256,8 @@ export interface ComponentVersion {
   readonly published: ReleaseRow | null;
   readonly status: string;
   readonly statusLabel: string;
+  /** #193: the backend's minimum client build and whether a downloadable APK meets it (null for components without one). */
+  readonly compatibility: { readonly ok: boolean; readonly minClientVersionCode: number; readonly summary: string } | null;
 }
 
 export interface ReleasesPage {

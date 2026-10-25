@@ -23,6 +23,7 @@ on:
       - 'mobile/**'
       - '.github/workflows/mobile-apk.yml'
       - 'config/endpoints.json'
+      - 'apps/backend/src/ops/app-compatibility.json'
       - 'tools/brand/**'
       - 'docs/brand/**'
 

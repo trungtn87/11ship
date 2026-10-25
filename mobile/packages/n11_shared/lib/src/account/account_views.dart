@@ -10,6 +10,8 @@ import '../features.dart';
 import '../shell.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m13/m13_update.dart';
+import '../m13/m13_views.dart';
 import '../flows/shop_controller.dart';
 import '../flows/shop_views.dart';
 import '../flows/reset_controller.dart';
@@ -246,8 +248,27 @@ class AccountTab extends StatelessWidget {
       if (signedIn && brand.id == AppId.food && shop != null && session.identity?.availableRoles.contains('SHOP_OWNER') != true)
         N11ListItem(key: const Key('shop-entry'), icon: Icons.storefront_outlined, title: 'Đăng ký mở quán', sub: 'Gửi hồ sơ để được xét duyệt.', onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop!)))),
       ...entries,
+      _updateRow(context),
       if (showDiagnostics && brand.id != AppId.food) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
     ]);
+  }
+
+  /// "Kiểm tra cập nhật": the manual retry of the M13 check (the same one the app makes at start), shown only when this build checks at all.
+  Widget _updateRow(BuildContext context) {
+    final AppUpdateController? updates = AppUpdateScope.maybeOf(context);
+    if (updates == null || !updates.enabled) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: updates,
+      builder: (BuildContext context, Widget? _) => N11ListItem(
+        key: const Key('m13-update-check'),
+        icon: Icons.system_update_outlined,
+        title: 'Kiểm tra cập nhật',
+        sub: updateCheckSummary(updates),
+        onTap: updates.phase == AppUpdatePhase.checking ? null : () => updates.check(force: true),
+      ),
+    );
   }
 
   Widget _guest(BuildContext context) {

@@ -68,6 +68,10 @@ describe('M13 operations administration client', () => {
     const page = { updated_at: AT, viewer: { level: 'SYSTEM' }, components: [{ component: 'SHIP', label: '11Ship', running: null, published: release, status: 'NO_REPORT', status_label: 'Chưa có báo cáo phiên bản đang chạy' }], releases: { items: [release], total: 1, limit: 20, offset: 0 }, deploys: [], deploy_control: { available: false, missing: ['a'] }, gateway_update_rule: 'g', android_note: 'a', artifacts_available: true };
     expect(parseReleases(page)).toMatchObject({ deployControl: { available: false }, components: [{ running: null, status: 'NO_REPORT' }], releases: [{ rollbackWarning: 'cần đánh giá riêng' }] });
     expect(parseReleases({ ...page, deploy_control: { available: 'no' } })).toBeUndefined();
+    // #193: the APK–backend compatibility of an app is read when present, and absent for components without one.
+    const withCompat = { ...page, components: [{ ...page.components[0], compatibility: { contract_revision: 3, min_client_version_code: 30, ok: false, problem: 'COMPAT_NO_PUBLISHED_APK', summary: 'Backend yêu cầu bản 30 nhưng chưa có APK' } }] };
+    expect(parseReleases(withCompat)?.components[0]?.compatibility).toEqual({ ok: false, minClientVersionCode: 30, summary: 'Backend yêu cầu bản 30 nhưng chưa có APK' });
+    expect(parseReleases(page)?.components[0]?.compatibility).toBeNull();
     const cfg = { updated_at: AT, viewer: { level: 'SYSTEM' }, maintenance: [], access: [], config: { version: 1, editable: true, settings: [{ key: 'server.cpu_percent', group: 'server', label: 'CPU', unit: 'percent', value: 90, default: 90, min: 50, max: 100, impl_default: false }], discord: { enabled: true, min_severity: 'WARNING', webhook_configured: true, webhook_masked: '••••', webhook_updated_at: AT } } };
     const parsed = parseConfig(cfg);
     expect(parsed?.discord).toMatchObject({ webhookConfigured: true, webhookMasked: '••••' });

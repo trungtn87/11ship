@@ -65,6 +65,12 @@ export class OpsClientController {
     return { data: await this.ingest.updateCheck(q.component, q.versionCode) };
   }
 
+  /** The deployed APK contract and what can be downloaded, per app. Read-only and public like /check; the deploy preflight reads it before promoting a breaking change. */
+  @Get('app-updates/compatibility')
+  async compatibility() {
+    return { data: await this.ingest.compatibilityView() };
+  }
+
   @Get('app-updates/download/:release_id')
   async download(@Param('release_id') id: string, @Res({ passthrough: true }) response: DownloadResponse): Promise<StreamableFile> {
     const file = await this.ingest.openArtifact(parseReleaseId(id), ['FOOD', 'SHIP']);
