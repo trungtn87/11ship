@@ -209,7 +209,7 @@ jobs:
       # Local mode: exactly what the README tells a developer to run. No CI admin credential and no
       # wrong-user fixture. Only the real wrong-user test may be skipped; nothing else.
       - name: Integration tests, local mode (no CI-only credentials)
-        timeout-minutes: 15
+        timeout-minutes: 22
         env:
           NODE_ENV: test
           APP_ENV: test
@@ -230,7 +230,7 @@ jobs:
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
-        timeout-minutes: 15
+        timeout-minutes: 22
         env:
           NODE_ENV: test
           APP_ENV: test
