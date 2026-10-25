@@ -13,7 +13,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { ChatRoomType } from '../order-chat/order-chat-constants';
 import { OrderChatParticipants } from '../order-chat/order-chat-participants';
 import { OrderChatRepository } from '../order-chat/order-chat-repository';
-import { ChatAdmin, OrderChatService } from '../order-chat/order-chat-service';
+import { AdminAccess, ChatAdmin, OrderChatService } from '../order-chat/order-chat-service';
 import { PageQuery, SendInput } from '../order-chat/order-chat-validation';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -58,15 +58,10 @@ export class AdminOrderChatService {
     return this.chat.sendForAdmin(await this.#admin(known, 'view'), kind, id, input, key);
   }
 
-  /** The state of the hold on a file, for the Administration (who may view the file may see whether it is held). */
+  /** "Lưu lịch sử trao đổi" of a file: retention, what keeps it, and what this account may do about it. */
   async holdState(sessionToken: string | undefined, kind: ChatRoomType, id: string): Promise<JsonObject> {
     const known = await this.actor.precheck(sessionToken, { required: false });
-    const admin = await this.#admin(known, 'view');
-    return this.#inTransaction(async (context) => {
-      await admin.authorize(context);
-      const hold = await this.repo.openHold(context, kind, id);
-      return { held: hold !== undefined, reason: hold?.reason ?? null, placed_at: hold === undefined ? null : new Date(hold.placedAtMs).toISOString() };
-    });
+    return this.chat.holdOverview(await this.#admin(known, 'view'), kind, id);
   }
 
   async placeHold(sessionToken: string | undefined, csrfHeader: unknown, kind: ChatRoomType, id: string, reason: string, key: string | readonly string[] | undefined, meta: { requestId: string }): Promise<IdempotentOutcome> {
@@ -111,6 +106,10 @@ export class AdminOrderChatService {
           if (open !== undefined) {
             throw new AppError('ORDER_STATE_CONFLICT');
           }
+          // A hold keeps what is still there; it never brings a conversation back. Once the retention ran out (the job may not have run yet) it is refused.
+          if ((await this.chat.retentionState(context, room, await freshClockMs(context))).expired) {
+            throw new AppError('ORDER_CHAT_EXPIRED');
+          }
           holdId = randomUUID();
           if (!(await this.repo.placeHold(context, holdId, kind, id, reason, known.userId))) {
             throw new AppError('ORDER_STATE_CONFLICT');
@@ -149,14 +148,14 @@ export class AdminOrderChatService {
     return { userId: known.userId, authorize: (context) => this.#authorize(context, known, right) };
   }
 
-  async #authorize(context: TransactionContext, known: SessionLookup, right: Right): Promise<'ADMIN' | 'SYSTEM'> {
+  async #authorize(context: TransactionContext, known: SessionLookup, right: Right): Promise<AdminAccess> {
     const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
     const role = locked.checked.membership.adminRole;
     const rows = role === 'ADMIN' ? await this.permissions.permissions(context, known.userId) : [];
     const nowMs = await freshClockMs(context);
     this.actor.assertSessionLive(locked, nowMs);
     if (role === 'SYSTEM') {
-      return 'SYSTEM';
+      return { role: 'SYSTEM', review: true };
     }
     const driver = rows.find((candidate) => candidate.app === 'DRIVER');
     const shop = rows.find((candidate) => candidate.app === 'SHOP');
@@ -165,6 +164,6 @@ export class AdminOrderChatService {
     if (!mayView || (right === 'review' && !review)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
-    return 'ADMIN';
+    return { role: 'ADMIN', review };
   }
 }

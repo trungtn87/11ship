@@ -248,3 +248,137 @@ describe('design preview', () => {
     }
   });
 });
+
+// Issue #191: the Administration's "Trao đổi đơn hàng" client. Pure Node with a fake transport: paths of the ORDER and DIRECT rooms, one key and one CSRF per
+// write, strict parsing, and every outcome mapped to a closed result (an unknown outcome is never reported as a success or as a refusal).
+describe('order chat client (issue #191)', () => {
+  const ORDER = '11111111-1111-4111-8111-111111111111';
+  const DELIVERY = '22222222-2222-4222-8222-222222222222';
+  const KEY = '33333333-3333-4333-8333-333333333333';
+  const page = (items = [], extra = {}) => ({
+    data: { room: { type: 'ORDER', id: ORDER, open: true, can_send: true, retention_days: 7, expires_at: null, expired: false }, items, has_more: false, next_before: null, server_now: '2026-10-25T01:00:00.000Z', ...extra },
+  });
+  const message = { type: 'message', id: 'm1', at: '2026-10-25T00:59:00.000Z', sender: { role: 'SHOP', name: 'Quán <b>A</b>', mine: false }, body: '<img src=x onerror=alert(1)>' };
+  async function make(responder, session) {
+    const chat = await load(real, 'core/order-chat-api.js');
+    const api = await load(real, 'core/api.js');
+    const calls = [];
+    const transport = async (req) => {
+      calls.push(req);
+      const out = await responder(req, calls.length);
+      if (out instanceof Error) {
+        throw out;
+      }
+      return { status: out.status, header: (n) => out.headers?.[n] ?? null, json: async () => out.body };
+    };
+    const source = chat.createOrderChatSource(new chat.AdminOrderChatApi(transport), session ?? { csrf: () => 'csrf-1', refresh: async () => true });
+    return { source, calls, api };
+  }
+  const error = (status, code, headers) => ({ status, headers, body: { error: { code } } });
+
+  it('reads the ORDER room through the order and the DIRECT room through the delivery, newest page then the older cursor', async () => {
+    const { source, calls } = await make(() => ({ status: 200, body: page([message]) }));
+    const read = await source.read({ kind: 'ORDER', id: ORDER }, null);
+    assert.equal(read.kind, 'ready');
+    assert.equal(read.page.items[0].body, '<img src=x onerror=alert(1)>');
+    assert.equal(read.page.items[0].role, 'SHOP');
+    await source.read({ kind: 'DIRECT', id: DELIVERY }, 'abc_-1');
+    await source.holdOverview({ kind: 'DIRECT', id: DELIVERY });
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), [`GET /admin/orders/${ORDER}/chat`, `GET /admin/deliveries/${DELIVERY}/chat?before=abc_-1`, `GET /admin/deliveries/${DELIVERY}/chat-hold`]);
+    assert.ok(calls.every((c) => c.csrf === undefined && c.idempotencyKey === undefined));
+  });
+  it('refuses a body that is not the documented shape and a room id that is not a UUID (nothing goes to the network)', async () => {
+    const { source, calls } = await make(() => ({ status: 200, body: page([{ ...message, sender: { role: 'HACKER', name: 'x', mine: false } }]) }));
+    assert.equal((await source.read({ kind: 'ORDER', id: ORDER }, null)).kind, 'failed');
+    assert.equal((await source.read({ kind: 'ORDER', id: '../x' }, null)).kind, 'not-found');
+    assert.equal((await source.send({ room: { kind: 'ORDER', id: 'x/y' }, body: 'a', key: KEY })).kind, 'not-found');
+    assert.equal(calls.length, 1);
+  });
+  it('maps 401 / 403 / 404 of a read to session-expired / forbidden / not-found and a lost answer to offline', async () => {
+    for (const [out, want] of [
+      [error(401, 'ADMIN_SESSION_INVALID'), 'session-expired'],
+      [error(403, 'ADMIN_FORBIDDEN'), 'forbidden'],
+      [new Error('down'), 'offline'],
+    ]) {
+      const { source } = await make(() => out);
+      const read = await source.read({ kind: 'ORDER', id: ORDER }, null);
+      assert.equal(read.kind, 'failed');
+      assert.equal(read.failure, want);
+    }
+    const { source } = await make(() => error(404, 'ORDER_NOT_FOUND'));
+    assert.equal((await source.read({ kind: 'ORDER', id: ORDER }, null)).kind, 'not-found');
+  });
+  it('sends ONE message with the CSRF token and the caller\'s Idempotency-Key, accepts 201, and shows it only from the server answer', async () => {
+    const { source, calls } = await make(() => ({ status: 201, body: { data: { message, room: { type: 'ORDER', id: ORDER, open: true, can_send: true }, replayed: false } } }));
+    const sent = await source.send({ room: { kind: 'ORDER', id: ORDER }, body: 'Xin chào', key: KEY });
+    assert.equal(sent.kind, 'ok');
+    assert.equal(sent.item.id, 'm1');
+    assert.deepEqual(calls[0], { method: 'POST', path: `/admin/orders/${ORDER}/chat`, body: { body: 'Xin chào' }, csrf: 'csrf-1', idempotencyKey: KEY });
+  });
+  it('maps every send outcome: closed, expired, rate limit, 5xx / network / busy = unknown (same key retry), stale CSRF = unknown after a refresh', async () => {
+    const cases = [
+      [error(409, 'ORDER_CHAT_CLOSED'), 'closed'],
+      [error(410, 'ORDER_CHAT_EXPIRED'), 'expired'],
+      [error(403, 'ORDER_CHAT_NOT_PARTICIPANT'), 'forbidden'],
+      [error(403, 'ADMIN_FORBIDDEN'), 'forbidden'],
+      [error(401, 'ADMIN_SESSION_INVALID'), 'session-expired'],
+      [error(404, 'ORDER_NOT_FOUND'), 'not-found'],
+      [error(429, 'ORDER_CHAT_RATE_LIMITED', { 'retry-after': '30' }), 'rate-limited'],
+      [error(409, 'IDEMPOTENCY_BUSY'), 'unknown'],
+      [error(503, 'TRANSACTION_OUTCOME_UNKNOWN'), 'unknown'],
+      [error(400, 'VALIDATION_FAILED'), 'refused'],
+      [new Error('timeout'), 'unknown'],
+    ];
+    for (const [out, want] of cases) {
+      const { source } = await make(() => out);
+      const sent = await source.send({ room: { kind: 'ORDER', id: ORDER }, body: 'a', key: KEY });
+      assert.equal(sent.kind, want, JSON.stringify(out));
+      if (want === 'rate-limited') {
+        assert.equal(sent.retryAfterSec, 30);
+      }
+    }
+    let refreshed = 0;
+    const { source } = await make(() => error(403, 'ADMIN_CSRF_INVALID'), { csrf: () => 'c', refresh: async () => ((refreshed += 1), true) });
+    assert.equal((await source.send({ room: { kind: 'ORDER', id: ORDER }, body: 'a', key: KEY })).kind, 'unknown');
+    assert.equal(refreshed, 1);
+  });
+  it('without a session token nothing is sent; without a wired session the write is "not-wired"', async () => {
+    const { source, calls } = await make(() => ({ status: 200, body: {} }), { csrf: () => undefined, refresh: async () => false });
+    assert.equal((await source.send({ room: { kind: 'ORDER', id: ORDER }, body: 'a', key: KEY })).kind, 'session-expired');
+    assert.equal((await source.hold({ room: { kind: 'ORDER', id: ORDER }, action: 'place', reason: 'khiếu nại', key: KEY })).kind, 'session-expired');
+    assert.equal(calls.length, 0);
+    const chat = await load(real, 'core/order-chat-api.js');
+    const bare = chat.createOrderChatSource(new chat.AdminOrderChatApi(async () => { throw new Error('no'); }));
+    assert.equal((await bare.send({ room: { kind: 'ORDER', id: ORDER }, body: 'a', key: KEY })).kind, 'not-wired');
+  });
+  it('places and releases an evidence hold with a reason, the CSRF token and one key, on the ORDER and on the DIRECT room', async () => {
+    const { source, calls } = await make(() => ({ status: 200, body: { data: { held: true, room_type: 'ORDER', room_id: ORDER } } }));
+    assert.equal((await source.hold({ room: { kind: 'ORDER', id: ORDER }, action: 'place', reason: 'Khiếu nại #1', key: KEY })).kind, 'ok');
+    assert.equal((await source.hold({ room: { kind: 'DIRECT', id: DELIVERY }, action: 'release', reason: 'Đã xử lý xong', key: KEY })).kind, 'ok');
+    assert.deepEqual(calls.map((c) => [c.path, c.body, c.csrf, c.idempotencyKey]), [
+      [`/admin/orders/${ORDER}/chat-hold/place`, { reason: 'Khiếu nại #1' }, 'csrf-1', KEY],
+      [`/admin/deliveries/${DELIVERY}/chat-hold/release`, { reason: 'Đã xử lý xong' }, 'csrf-1', KEY],
+    ]);
+  });
+  it('maps hold outcomes: conflict, expired, forbidden, unknown', async () => {
+    for (const [out, want] of [
+      [error(409, 'ORDER_STATE_CONFLICT'), 'conflict'],
+      [error(410, 'ORDER_CHAT_EXPIRED'), 'expired'],
+      [error(403, 'ADMIN_FORBIDDEN'), 'forbidden'],
+      [error(502, 'SERVICE_UNAVAILABLE'), 'unknown'],
+      [error(400, 'VALIDATION_FAILED'), 'refused'],
+    ]) {
+      const { source } = await make(() => out);
+      assert.equal((await source.hold({ room: { kind: 'ORDER', id: ORDER }, action: 'place', reason: 'abc', key: KEY })).kind, want);
+    }
+  });
+  it('parses the hold overview strictly: days, complaint hold, manual hold with reason and time, and the two capabilities', async () => {
+    const overview = { room_type: 'ORDER', room_id: ORDER, open: false, closed_at: '2026-10-20T00:00:00.000Z', retention_days: 7, expires_at: null, expired: false, complaint_hold: true, manual_hold: { reason: 'Khiếu nại', placed_at: '2026-10-21T00:00:00.000Z' }, can_place_hold: false, can_release_hold: true, server_now: '2026-10-25T00:00:00.000Z' };
+    const { source } = await make(() => ({ status: 200, body: { data: overview } }));
+    const read = await source.holdOverview({ kind: 'ORDER', id: ORDER });
+    assert.equal(read.kind, 'ready');
+    assert.deepEqual(read.overview, { open: false, closedAt: overview.closed_at, retentionDays: 7, expiresAt: null, expired: false, complaintHold: true, manualHold: { reason: 'Khiếu nại', placedAt: overview.manual_hold.placed_at }, canPlaceHold: false, canReleaseHold: true });
+    const { source: broken } = await make(() => ({ status: 200, body: { data: { ...overview, can_place_hold: 'yes' } } }));
+    assert.equal((await broken.holdOverview({ kind: 'ORDER', id: ORDER })).kind, 'failed');
+  });
+});

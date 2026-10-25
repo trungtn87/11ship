@@ -305,6 +305,7 @@ describe('AllExceptionsFilter', () => {
         'ORDER_CART_OTHER_SHOP',
         'ORDER_CHANGE_REASON_REQUIRED',
         'ORDER_CHAT_CLOSED',
+        'ORDER_CHAT_EXPIRED',
         'ORDER_CHAT_NOT_PARTICIPANT',
         'ORDER_CHAT_RATE_LIMITED',
         'ORDER_EMPTY',

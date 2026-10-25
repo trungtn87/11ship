@@ -66,6 +66,7 @@ import { ComplaintListView, FeedbackHost, ReviewListView } from './feedback-view
 import { DeliveryHost, DeliveryListView } from './deliveries-view.js';
 import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
 import { OrderHost, OrderListView } from './orders-view.js';
+import { NOT_WIRED_CHAT, OrderChatSource } from '../core/order-chat.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
@@ -186,6 +187,8 @@ export class ShellApp implements ShellHost {
     private readonly ops: OpsSource = NOT_WIRED_OPS,
     /** Where the shops (Vận hành › Quán, M02 shop management) come from. By default nothing is wired, so the pages say so. */
     private readonly shops: ShopSource = NOT_WIRED_SHOPS,
+    /** Where "Trao đổi đơn hàng" and the evidence hold of the order / delivery drawers (issue #191) come from. By default nothing is wired, so the drawers say so. */
+    private readonly chat: OrderChatSource = NOT_WIRED_CHAT,
   ) {}
 
   mount(parts: { readonly layout: ShellLayout; readonly role: AdminRole }): void {
@@ -1089,6 +1092,7 @@ export class ShellApp implements ShellHost {
       // The Shipper page opens from a delivery only for an administrator who may open it (the server decides again on the read).
       ...(this.#role !== undefined && canOpenRoute(this.#role, this.#effectiveGrants(), { name: 'shippers' }) ? { openShipper: (driverId: string) => this.go({ name: 'shipper', id: driverId }) } : {}),
       source: this.deliveries,
+      chat: this.chat,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
       onForbidden: () => {
@@ -1223,6 +1227,7 @@ export class ShellApp implements ShellHost {
   #orderList(content: HTMLElement): void {
     const host: OrderHost = {
       source: this.orders,
+      chat: this.chat,
       newKey: this.newKey,
       onSessionLost: () => this.onSessionLost(),
       onForbidden: () => {

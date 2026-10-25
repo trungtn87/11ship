@@ -24,9 +24,11 @@ import {
   REASON_MAX,
   SOURCE_FILTER_LABEL,
 } from '../core/deliveries.js';
+import { ChatRoomRef, OrderChatSource } from '../core/order-chat.js';
 import { DialogHandle, openDialog } from './dialog.js';
 import { formatDateTime, h, message, primary, secondary, setMessage, svg } from './dom.js';
 import { icon } from './icons.js';
+import { OrderChatPanel } from './order-chat-panel.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
 // DOM of "Vận hành › Giao hàng" (M07.07): counters, filters, the list and a detail drawer with the timeline, the assignments, the goods
@@ -38,6 +40,8 @@ import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
 export interface DeliveryHost {
   readonly source: DeliverySource;
+  /** "Trao đổi đơn hàng" (issue #191) in the detail drawer; without it the drawer shows no chat. */
+  readonly chat?: OrderChatSource;
   /** A new Idempotency-Key for a NEW intent. A retry after an unknown outcome never calls it. */
   readonly newKey: () => string;
   readonly onSessionLost: () => void;
@@ -191,6 +195,7 @@ export class DeliveryListView {
   #basis: 'created' | 'ended' = 'created';
   #disposed = false;
   #openId: string | undefined;
+  #chat: OrderChatPanel | undefined;
   #handle: DialogHandle | undefined;
 
   constructor(
@@ -254,6 +259,12 @@ export class DeliveryListView {
     this.#disposed = true;
     clearTimeout(this.#timer);
     this.#handle?.close();
+    this.#dropChat();
+  }
+
+  #dropChat(): void {
+    this.#chat?.dispose();
+    this.#chat = undefined;
   }
 
   async load(): Promise<void> {
@@ -390,6 +401,7 @@ export class DeliveryListView {
 
   async #open(id: string, note?: string): Promise<void> {
     this.#openId = id;
+    this.#dropChat();
     this.#drawer.hidden = false;
     this.#drawer.replaceChildren(skeleton(3));
     const read = await this.host.source.detail(id);
@@ -415,6 +427,7 @@ export class DeliveryListView {
     }
     this.#drawer.replaceChildren(...this.#detail(read.delivery, note));
     this.#drawer.focus();
+    this.#chat?.start();
   }
 
   /** Pickup and drop-off. The drop-off address and point are the customer's: filled only for an Admin who may see the contact. */
@@ -534,10 +547,24 @@ export class DeliveryListView {
     close.classList.add('btn-inline');
     close.addEventListener('click', () => {
       this.#openId = undefined;
+      this.#dropChat();
       this.#drawer.hidden = true;
       this.#drawer.replaceChildren();
     });
     return h('header', { class: 'drawer-head' }, h('h2', { class: 'subtitle' }, title), close);
+  }
+
+  /** An ORDER delivery talks in the room of its Order, a DIRECT one in the room of the delivery itself: one room per file, never a second one. */
+  #chatBlock(d: DeliveryDetail): HTMLElement[] {
+    if (this.host.chat === undefined) {
+      return [];
+    }
+    const room: ChatRoomRef | undefined = d.source === 'ORDER' ? (d.orderId === null ? undefined : { kind: 'ORDER', id: d.orderId }) : { kind: 'DIRECT', id: d.id };
+    if (room === undefined) {
+      return [h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Trao đổi đơn hàng'), h('p', { class: 'empty' }, 'Không xác định được đơn của yêu cầu giao này nên chưa mở được trao đổi.'))];
+    }
+    this.#chat = new OrderChatPanel(room, { source: this.host.chat, newKey: this.host.newKey, onSessionLost: this.host.onSessionLost, onForbidden: this.host.onForbidden, ...(this.host.dialogHost === undefined ? {} : { dialogHost: this.host.dialogHost }) });
+    return [this.#chat.element];
   }
 
   #detail(d: DeliveryDetail, note?: string): HTMLElement[] {
@@ -638,6 +665,7 @@ export class DeliveryListView {
           ['Phiên bản bảng phí', d.policy.feePolicyVersion === null ? '—' : `v${String(d.policy.feePolicyVersion)}`],
         ]),
       ),
+      ...this.#chatBlock(d),
       h(
         'section',
         { class: 'detail-block' },

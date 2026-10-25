@@ -118,16 +118,16 @@ export class OrderChatRepository {
    * When the room's file closed and whether something keeps it open: the order's (or the direct delivery's) end time, the end of its latest closed complaint,
    * and the number of complaints still open. Retention counts from the LATER of the first two; an open complaint holds the deletion.
    */
-  async retentionOf(context: TransactionContext, roomType: ChatRoomType, roomId: string): Promise<{ endedAtMs: number | null; complaintClosedAtMs: number | null; openComplaints: number }> {
+  async retentionOf(context: TransactionContext, roomType: ChatRoomType, roomId: string): Promise<{ endedAtMs: number | null; complaintClosedAtMs: number | null; openComplaints: number; openHolds: number }> {
     const subject = roomType === 'ORDER' ? 'o.ended_at' : 'd.ended_at';
     const from = roomType === 'ORDER' ? 'app.orders o' : 'app.deliveries d';
     const key = roomType === 'ORDER' ? 'o.order_id' : 'd.delivery_id';
     const complaints = roomType === 'ORDER' ? `x.order_id = o.order_id OR x.delivery_id IN (SELECT t.delivery_id FROM app.deliveries t WHERE t.order_id = o.order_id)` : `x.delivery_id = d.delivery_id`;
     const holds = roomType === 'ORDER' ? 'h.order_id = o.order_id' : 'h.delivery_id = d.delivery_id';
-    const result = await context.query<{ ended_ms: string | null; complaint_ms: string | null; open_count: string }>(
+    const result = await context.query<{ ended_ms: string | null; complaint_ms: string | null; open_count: string; hold_count: string }>(
       `SELECT (extract(epoch FROM ${subject}) * 1000)::bigint::text AS ended_ms,
               (extract(epoch FROM GREATEST(c.last_closed, hd.last_released)) * 1000)::bigint::text AS complaint_ms,
-              (COALESCE(c.open_count, 0) + COALESCE(hd.open_count, 0))::text AS open_count
+              COALESCE(c.open_count, 0)::text AS open_count, COALESCE(hd.open_count, 0)::text AS hold_count
          FROM ${from}
          LEFT JOIN LATERAL (
            SELECT max(COALESCE(x.closed_at, x.concluded_at, x.updated_at)) FILTER (WHERE x.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AS last_closed,
@@ -140,7 +140,7 @@ export class OrderChatRepository {
       [roomId],
     );
     const row = result.rows[0];
-    return { endedAtMs: row?.ended_ms == null ? null : safe(row.ended_ms), complaintClosedAtMs: row?.complaint_ms == null ? null : safe(row.complaint_ms), openComplaints: row === undefined ? 0 : safe(row.open_count) };
+    return { endedAtMs: row?.ended_ms == null ? null : safe(row.ended_ms), complaintClosedAtMs: row?.complaint_ms == null ? null : safe(row.complaint_ms), openComplaints: row === undefined ? 0 : safe(row.open_count), openHolds: row === undefined ? 0 : safe(row.hold_count) };
   }
 
   /**

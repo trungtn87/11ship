@@ -26,11 +26,18 @@ import { encodeCursor, PageQuery, SendInput } from './order-chat-validation';
 /** Which door the caller came through. The identifier in the path is the order (customer, shop) or the delivery (shop's direct call, Shipper). */
 export type ChatDoor = 'CUSTOMER_ORDER' | 'SHOP_ORDER' | 'SHOP_DIRECT' | 'SHIPPER_DELIVERY';
 
+/** What the Administration's current permission rows give this account on a conversation. */
+export interface AdminAccess {
+  readonly role: 'ADMIN' | 'SYSTEM';
+  /** May place / release an evidence hold (SYSTEM, or the review right on DRIVER). */
+  readonly review: boolean;
+}
+
 /** A staff account asking for a room: who it is and the check of its current right, run inside the room's own transaction. */
 export interface ChatAdmin {
   readonly userId: string;
   /** Decides the right under the admin's locks and says which kind of staff account it is (the label of its messages). */
-  readonly authorize: (context: TransactionContext) => Promise<'ADMIN' | 'SYSTEM'>;
+  readonly authorize: (context: TransactionContext) => Promise<AdminAccess>;
 }
 
 interface Caller {
@@ -40,6 +47,16 @@ interface Caller {
   readonly driverId: string | null;
   readonly shopId: string | null;
   readonly shipperName: string | null;
+}
+
+/** Where a room stands in its retention (see [OrderChatService.retentionState]). */
+export interface RetentionState {
+  readonly days: number;
+  readonly closedAtMs: number | null;
+  readonly expiresAtMs: number | null;
+  readonly expired: boolean;
+  readonly openComplaints: number;
+  readonly openHolds: number;
 }
 
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -157,7 +174,7 @@ export class OrderChatService {
   async sendForAdmin(admin: ChatAdmin, kind: ChatRoomType, id: string, input: SendInput, key: string | readonly string[] | undefined): Promise<JsonObject> {
     const clientKey = parseIdempotencyKey(key);
     return this.transactions.withTransaction(async (context) => {
-      const role = await admin.authorize(context);
+      const { role } = await admin.authorize(context);
       const caller: Caller = { userId: admin.userId, role, driverId: null, shopId: null, shipperName: null };
       return this.#sendCore(context, caller, () => this.#adminSeat(context, kind, id), input, clientKey);
     });
@@ -173,20 +190,54 @@ export class OrderChatService {
 
   /**
    * How long the history of this room is kept (the SYSTEM setting `chat.retention_days`, default 7), counted from the moment the WHOLE file closed — the order, or the
-   * direct delivery — and, when a complaint about it closed later, from that later moment. An open complaint holds the history. Expired: the feed is not returned.
+   * direct delivery — and, when a complaint about it closed (or an evidence hold was released) later, from that later moment. An open complaint or an open
+   * evidence hold keeps the history. Expired: the feed is not returned.
    */
-  async #retention(context: TransactionContext, room: ChatRoom, nowMs: number): Promise<{ expired: boolean; view: JsonObject }> {
+  async retentionState(context: TransactionContext, room: ChatRoom, nowMs: number): Promise<RetentionState> {
     const days = (await this.settings.load(context)).settings['chat.retention_days'] as number;
     if (room.open) {
-      return { expired: false, view: { retention_days: days, expires_at: null, expired: false } };
+      return { days, closedAtMs: null, expiresAtMs: null, expired: false, openComplaints: 0, openHolds: 0 };
     }
     const r = await this.repo.retentionOf(context, room.type, room.id);
     if (r.endedAtMs === null) {
-      return { expired: false, view: { retention_days: days, expires_at: null, expired: false } };
+      return { days, closedAtMs: null, expiresAtMs: null, expired: false, openComplaints: r.openComplaints, openHolds: r.openHolds };
     }
-    const expiresAt = r.openComplaints > 0 ? null : Math.max(r.endedAtMs, r.complaintClosedAtMs ?? 0) + days * 86_400_000;
-    const expired = expiresAt !== null && nowMs >= expiresAt;
-    return { expired, view: { retention_days: days, expires_at: expiresAt === null ? null : iso(expiresAt), expired } };
+    const held = r.openComplaints + r.openHolds > 0;
+    const expiresAtMs = held ? null : Math.max(r.endedAtMs, r.complaintClosedAtMs ?? 0) + days * 86_400_000;
+    return { days, closedAtMs: r.endedAtMs, expiresAtMs, expired: expiresAtMs !== null && nowMs >= expiresAtMs, openComplaints: r.openComplaints, openHolds: r.openHolds };
+  }
+
+  async #retention(context: TransactionContext, room: ChatRoom, nowMs: number): Promise<{ expired: boolean; view: JsonObject }> {
+    const r = await this.retentionState(context, room, nowMs);
+    return { expired: r.expired, view: { retention_days: r.days, expires_at: r.expiresAtMs === null ? null : iso(r.expiresAtMs), expired: r.expired } };
+  }
+
+  /**
+   * What the Administration needs to show "Lưu lịch sử trao đổi" for a file: the days, when the file closed, when the history expires, whether a complaint or a
+   * manual hold keeps it, and what THIS account may do about it. Same view right as reading the conversation.
+   */
+  async holdOverview(admin: ChatAdmin, kind: ChatRoomType, id: string): Promise<JsonObject> {
+    return this.transactions.withTransaction(async (context) => {
+      const access = await admin.authorize(context);
+      const room = (await this.#adminSeat(context, kind, id)).room;
+      const nowMs = await freshClockMs(context);
+      const r = await this.retentionState(context, room, nowMs);
+      const hold = await this.repo.openHold(context, kind, id);
+      return {
+        room_type: kind,
+        room_id: id,
+        open: room.open,
+        closed_at: r.closedAtMs === null ? null : iso(r.closedAtMs),
+        retention_days: r.days,
+        expires_at: r.expiresAtMs === null ? null : iso(r.expiresAtMs),
+        expired: r.expired,
+        complaint_hold: r.openComplaints > 0,
+        manual_hold: hold === undefined ? null : { reason: hold.reason, placed_at: iso(hold.placedAtMs) },
+        can_place_hold: access.review && hold === undefined && !r.expired,
+        can_release_hold: access.review && hold !== undefined,
+        server_now: iso(nowMs),
+      };
+    });
   }
 
   // ---- send ------------------------------------------------------------------------------------------------------------------
@@ -276,6 +327,7 @@ export class OrderChatService {
     const clean = (name ?? '').trim();
     return clean === '' ? (caller.role === 'CUSTOMER' ? 'Khách hàng' : caller.role === 'SHOP' ? 'Quán' : 'Shipper') : [...clean].slice(0, 120).join('');
   }
+
 
   // ---- milestones ------------------------------------------------------------------------------------------------------------
 

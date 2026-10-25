@@ -227,12 +227,14 @@ describe('M10.05 — Admin orders', () => {
     expect((await adminPost(locker, `/orders/${id}/chat-hold/place`, { reason: 'x' })).status).toBe(400);
     expect((await adminPost(locker, `/orders/${id}/chat-hold/place`, { reason: 'Giữ chứng cứ', extra: 1 })).status).toBe(400);
     expect((await adminPost(locker, `/orders/${id}/chat-hold/destroy`, { reason: 'Giữ chứng cứ' })).status).toBe(404);
-    expect(adminJson(await adminGet(viewer, `/orders/${id}/chat-hold`))).toMatchObject({ held: false });
+    expect(adminJson(await adminGet(viewer, `/orders/${id}/chat-hold`))).toMatchObject({ manual_hold: null, complaint_hold: false, open: false, retention_days: 7, can_place_hold: false, can_release_hold: false });
+    expect(adminJson(await adminGet(locker, `/orders/${id}/chat-hold`))).toMatchObject({ manual_hold: null, can_place_hold: true, can_release_hold: false, expired: false });
     const key = randomUUID();
     expect(adminJson(await adminPost(locker, `/orders/${id}/chat-hold/place`, { reason: 'Giữ chứng cứ khiếu nại' }, { key }))).toMatchObject({ held: true });
     expect((await adminPost(locker, `/orders/${id}/chat-hold/place`, { reason: 'Giữ chứng cứ khiếu nại' }, { key })).status).toBe(200);
     expect(codeOf(await adminPost(system.login, `/orders/${id}/chat-hold/place`, { reason: 'Giữ lần hai' }))).toMatchObject({ status: 409 });
-    expect(adminJson(await adminGet(viewer, `/orders/${id}/chat-hold`))).toMatchObject({ held: true, reason: 'Giữ chứng cứ khiếu nại' });
+    expect(adminJson(await adminGet(viewer, `/orders/${id}/chat-hold`))).toMatchObject({ manual_hold: { reason: 'Giữ chứng cứ khiếu nại' }, expires_at: null, can_place_hold: false, can_release_hold: false });
+    expect(adminJson(await adminGet(locker, `/orders/${id}/chat-hold`))).toMatchObject({ can_place_hold: false, can_release_hold: true });
     expect(await auditCount('admin.order_chat.hold.v1', id)).toBe(1);
     // Ten days after the close the conversation is still served and the job leaves it alone.
     await backdate('orders', 'ended_at', 'order_id', id, 10);
@@ -254,8 +256,10 @@ describe('M10.05 — Admin orders', () => {
     expect(((dataOf(await chatAsCustomer(id, 'GET')) as Json).room as Json).expired).toBe(true);
     await retention.runOnce();
     expect(await storedMessages(id)).toBe(0);
-    // The hold rows and the audit stay.
+    // The hold rows and the audit stay. Once the history expired a new hold brings nothing back: refused.
     expect((await app.pool.query('SELECT 1 FROM app.order_chat_holds WHERE order_id = $1::uuid', [id])).rowCount).toBe(1);
+    expect(codeOf(await adminPost(system.login, `/orders/${id}/chat-hold/place`, { reason: 'Giữ muộn' }))).toMatchObject({ status: 409, code: 'ORDER_CHAT_EXPIRED' });
+    expect(adminJson(await adminGet(locker, `/orders/${id}/chat-hold`))).toMatchObject({ expired: true, can_place_hold: false });
   });
 
   it('#191 contact: the customer\'s order carries the shop\'s public contact while it runs and nothing once it ended', async () => {
