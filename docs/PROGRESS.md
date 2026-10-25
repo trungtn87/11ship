@@ -291,10 +291,12 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#188](https://github.com/trungtn87/11ship/pull/188) M07: sửa đơn kẹt khi shipper bỏ lượt nhận phí thương lượng;… | Đã merge (`MERGED`) | — | — | — | `4ed24de` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#189](https://github.com/trungtn87/11ship/pull/189) docs(qa): bộ nghiệm thu thủ công 11Ship (289 test, smoke te… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `1b17acb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#192](https://github.com/trungtn87/11ship/pull/192) M01 #117: chính sách SMS &amp; OTP chỉnh từ Admin Web + kiể… | Đã merge (`MERGED`) | — | — | — | `90bc8a4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#195](https://github.com/trungtn87/11ship/pull/195) feat(#190): checklist thiết lập quán, chặn quán chưa đủ điề… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `d037196` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
 - `UNCLASSIFIED_PR` PR #189: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #195: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
