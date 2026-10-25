@@ -1,6 +1,6 @@
 import { AdminAuthController } from '../core/controller.js';
 import { AdminRole } from '../core/api.js';
-import { BusinessApi, businessError, BusinessReports, FinanceList, FinanceRequest, FinanceRoom, Notices, Report } from '../core/business-api.js';
+import { BusinessApi, businessError, BusinessReports, FinanceList, FinanceMessage, FinanceRequest, FinanceRoom, Notices, Report } from '../core/business-api.js';
 import { ShellLayout } from './shell-layout.js';
 import { ShellHost } from './view.js';
 import { h, svg } from './dom.js';
@@ -34,7 +34,7 @@ export class BusinessDashboard implements ShellHost {
     window.addEventListener('popstate',this.pop);
     void this.api.call<{implicit:boolean;permissions:string[]}>('/v1/admin/finance/access/me').then(r=>{if(this.host)this.canRecord=r.implicit||r.permissions.includes('wallet.topup.record');}).catch(()=>undefined).finally(()=>void this.refresh(true));
     this.timer=window.setInterval(()=>void this.refresh(false),30000);
-    void this.registerWorker();
+    void this.restorePush();
   }
   unmount():void{this.generation++;if(this.timer)clearInterval(this.timer);this.timer=undefined;window.removeEventListener('popstate',this.pop);this.clearSensitiveView();this.host=undefined;this.api.clear();this.pollRoom=undefined;}
   resume():void{void this.refresh(true);}
@@ -84,7 +84,7 @@ export class BusinessDashboard implements ShellHost {
   private async overview():Promise<void>{
     const d=await this.api.call<BusinessReports>(BASE+'/reports?'+this.query());if(!this.host)return;
     const t=d.trade;const old=d.previous_trade;
-    const cards=h('div',{class:'business-grid'},this.tile('Giao dịch tạo mới',t.transactions,'count',old.transactions),this.tile('Giá trị tiền hàng',t.goods_vnd,'vnd',old.goods_vnd),this.tile('Tổng quán',t.shops),this.tile('Quán đã kích hoạt',t.active_shops),this.tile('Tổng shipper',t.shippers));
+    const cards=h('div',{class:'business-grid'},this.tile('Giao dịch tạo mới',t.transactions,'count',old.transactions),this.tile('Giá trị tiền hàng',t.goods_vnd,'vnd',old.goods_vnd),this.tile('Tổng quán',t.shops),this.tile('Quán đã kích hoạt',t.active_shops),this.tile('Tổng shipper',t.shippers),this.tile('Shipper đang online',t.online_shippers));
     const sections=h('div',{},this.filters(),h('p',{class:'business-muted'},`${d.period.from_day} → ${d.period.to_day} · ${d.comparison_label}`),cards,h('p',{class:'business-muted'},t.goods_note));
     const delivery=d.reports.deliveries;if(delivery?.current){sections.append(this.chart(delivery.current));}
     const moneyReport=d.reports.money;if(moneyReport?.current){const s=moneyReport.current.summary;sections.append(h('div',{class:'business-grid'},...s.filter(x=>['commission','topup','balance','held'].includes(x.key)).map(x=>this.tile(x.label,x.value,x.format,moneyReport.previous?.summary.find(y=>y.key===x.key)?.value))));}
@@ -125,9 +125,12 @@ export class BusinessDashboard implements ShellHost {
     const room=await this.api.call<FinanceRoom>(BASE+'/requests/'+id);if(!this.host)return;this.detailId=id;
     const request=room.request;
     const messages=h('div',{class:'business-messages','aria-live':'polite'});
-    const render=(r:FinanceRoom)=>{messages.replaceChildren(...r.messages.items.map(m=>h('article',{class:'business-message '+(m.role==='SYSTEM_EVENT'?'business-event':'')},h('small',{},`${({SYSTEM_EVENT:'Thông báo',SHIPPER:'Shipper',SHOP:'Quán',ADMIN:'Quản trị',SYSTEM:'Hệ thống'} as Record<string,string>)[m.role]??m.role} · ${time(m.created_at)}`),h('p',{},m.body))));};render(room);
+    const history=new Map<string,FinanceMessage>();
+    const render=(r:FinanceRoom)=>{for(const m of r.messages.items)history.set(m.sequence,m);messages.replaceChildren(...[...history.values()].sort((a,b)=>BigInt(a.sequence)<BigInt(b.sequence)?-1:1).map(m=>h('article',{class:'business-message '+(m.role==='SYSTEM_EVENT'?'business-event':'')},h('small',{},`${({SYSTEM_EVENT:'Thông báo',SHIPPER:'Shipper',SHOP:'Quán',ADMIN:'Quản trị',SYSTEM:'Hệ thống'} as Record<string,string>)[m.role]??m.role} · ${time(m.created_at)}`),h('p',{},m.body))));};render(room);
     const panel=h('section',{class:'business-panel'},button('← Danh sách',()=>this.navigate('chat')),h('h2',{},request.label),h('p',{},`${money(request.amount_requested_vnd)} · ${stateText[request.state]??request.state}`),messages);
-    if(room.messages.has_more)panel.insertBefore(button('Xem tin cũ hơn',()=>void this.api.call<FinanceRoom>(BASE+'/requests/'+id+'?before='+room.messages.next_before).then(r=>{for(const m of [...r.messages.items].reverse())messages.prepend(h('article',{class:'business-message'},h('small',{},time(m.created_at)),h('p',{},m.body)));}).catch(e=>this.showError(e))),messages);
+    if(request.actual_amount_vnd!==null)panel.append(h('p',{},'Tiền thực nhận: '+money(request.actual_amount_vnd)));
+    let olderCursor=room.messages.next_before;
+    if(olderCursor){const older=button('Xem tin cũ hơn',()=>{if(!olderCursor)return;older.disabled=true;void this.api.call<FinanceRoom>(BASE+'/requests/'+id+'?before='+olderCursor).then(r=>{if(this.detailId!==id)return;render(r);olderCursor=r.messages.next_before;if(!olderCursor)older.remove();}).catch(e=>this.showError(e)).finally(()=>{older.disabled=false;});});panel.insertBefore(older,messages);}
     if(request.state==='PENDING'){
       const input=h('textarea',{'aria-label':'Tin nhắn',placeholder:'Nhập trao đổi…',maxlength:'1000',rows:'3',required:true});
       const send=h('button',{type:'submit',class:'business-button business-primary'},'Gửi tin nhắn');const form=h('form',{},input,send);
@@ -174,6 +177,11 @@ export class BusinessDashboard implements ShellHost {
     panel.append(h('a',{href:'/operations/orders'},'Mở quản lý đơn hàng trong Web Admin'));this.content.replaceChildren(panel);
   }
   private async registerWorker():Promise<ServiceWorkerRegistration|undefined>{if(!('serviceWorker'in navigator)||!window.isSecureContext)return;return navigator.serviceWorker.register('/business-sw.js',{scope:'/business/'}).catch(()=>undefined);}
+  private async restorePush():Promise<void>{
+    try {const registration=await this.registerWorker();if(!registration||!('Notification'in window)||Notification.permission!=='granted')return;
+      const sub=await registration.pushManager.getSubscription();if(sub){const j=sub.toJSON();await this.api.call(BASE+'/push/subscribe',{endpoint:j.endpoint,keys:j.keys});}
+    }catch{/* Inbox remains authoritative when a provider or configuration is unavailable. */}
+  }
   private async enablePush():Promise<void>{
     try{
       if(!('Notification'in window)||!('PushManager'in window))throw new Error('unsupported');

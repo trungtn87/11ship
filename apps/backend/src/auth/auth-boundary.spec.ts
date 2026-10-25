@@ -21,7 +21,7 @@ function occurrences(text: string, needle: string): number {
 }
 
 describe('dependencies (task section 3)', () => {
-  it('adds ONLY argon2 to the backend dependencies: no ORM, JWT, validation framework, extra crypto or Redis', () => {
+  it('keeps the explicit backend dependency set: Auth adds argon2 and Business Dashboard adds Web Push', () => {
     const manifest = JSON.parse(readFileSync(sourcePath('../package.json'), 'utf8')) as { dependencies: Record<string, string> };
     expect(Object.keys(manifest.dependencies).sort()).toEqual([
       '@nestjs/common',
@@ -31,6 +31,7 @@ describe('dependencies (task section 3)', () => {
       'pg',
       'reflect-metadata',
       'rxjs',
+      'web-push', // Business Dashboard: standard encrypted Web Push, outside Auth.
     ]);
     expect(manifest.dependencies.argon2).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+$/); // exact, no range
   });

@@ -1,3 +1,6 @@
+import { ShopRepository } from '../shop/shop-repository';
+import { DriverRepository } from '../driver/driver-repository';
+import { ShipperLocationRepository } from '../delivery/shipper-location';
 import { Injectable } from '@nestjs/common';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AdminRightsReader } from '../admin-m12/admin-rights';
@@ -22,7 +25,7 @@ export function comparisonPeriods(p:Period,now:number):{current:Period;previous:
 }
 @Injectable()
 export class BusinessReportService {
-  constructor(private readonly tx:TransactionManager,private readonly actor:AdminSystemActor,private readonly rights:AdminRightsReader,private readonly builder:ReportBuilder,private readonly trade:BusinessTradeReader) {}
+  constructor(private readonly tx:TransactionManager,private readonly actor:AdminSystemActor,private readonly rights:AdminRightsReader,private readonly builder:ReportBuilder,private readonly trade:BusinessTradeReader,private readonly shops:ShopRepository,private readonly drivers:DriverRepository,private readonly locations:ShipperLocationRepository) {}
   async read(token:string|undefined,query:OverviewQuery):Promise<JsonObject> {
     const known=await this.actor.precheck(token,{required:false});
     return this.tx.withTransaction(async c=>{
@@ -35,8 +38,11 @@ export class BusinessReportService {
         const previous=await this.builder.build(c,kind,periods.previous,'created',rights,100);
         reports[kind]={status:'OK',current:JSON.parse(JSON.stringify(current)) as JsonObject,previous:JSON.parse(JSON.stringify(previous)) as JsonObject};
       }
-      const trade=await this.trade.summary(c,periods.current,rights.has(FINANCE_PERMISSION_READ));
+      let trade=await this.trade.summary(c,periods.current,rights.has(FINANCE_PERMISSION_READ));
       const previousTrade=await this.trade.summary(c,periods.previous,rights.has(FINANCE_PERMISSION_READ));
+      const shops=await this.shops.dashboardCounts(c);const drivers=await this.drivers.dashboardCounts(c);
+      const names=await this.shops.namesOf(c,(trade.ranking as JsonObject[]).map(r=>String(r.shop_id)));
+      trade={...trade,shops:shops.total,active_shops:shops.active,shippers:drivers.total,online_shippers:await this.locations.countFreshAmong(c,drivers.acceptingIds),ranking:(trade.ranking as JsonObject[]).map(r=>({...r,name:names.get(String(r.shop_id))??'Quán'}))};
       return {generated_at:new Date(rights.nowMs).toISOString(),time_zone:'Asia/Ho_Chi_Minh',period:{from_day:p.fromDay,to_day:p.toDay,from:new Date(periods.current.fromMs).toISOString(),to:new Date(periods.current.toMs).toISOString()},previous_period:{from:new Date(periods.previous.fromMs).toISOString(),to:new Date(periods.previous.toMs).toISOString()},comparison_label:'So với cùng khoảng thời gian của kỳ trước',trade,previous_trade:previousTrade,reports};
     });
   }

@@ -70,6 +70,15 @@ function toShop(row: RawShop): ShopRow {
  */
 @Injectable()
 export class ShopRepository {
+  async dashboardCounts(context: TransactionContext): Promise<{total:number;active:number}> {
+    const r=(await context.query<{total:string;active:string}>("SELECT count(*)::text AS total,count(*) FILTER(WHERE status='ACTIVE')::text AS active FROM app.shops")).rows[0]!;
+    return {total:toSafeInteger(r.total),active:toSafeInteger(r.active)};
+  }
+  async namesOf(context:TransactionContext,ids:readonly string[]):Promise<ReadonlyMap<string,string>> {
+    const rows=(await context.query<{shop_id:string;name:string}>('SELECT shop_id,name FROM app.shops WHERE shop_id=ANY($1::uuid[])',[ids])).rows;
+    return new Map(rows.map(r=>[r.shop_id,r.name]));
+  }
+
   async saveLogo(context: TransactionContext, shopId: string, logo: ShopLogo | null | undefined): Promise<void> {
     if (logo === undefined) return;
     await context.query('UPDATE app.shops SET logo = $2::jsonb WHERE shop_id = $1::uuid', [shopId, logo === null ? null : JSON.stringify(logo)]);

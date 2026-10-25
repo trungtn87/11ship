@@ -1,3 +1,4 @@
+import { SystemBankAccountRepository } from '../wallet/system-bank-account-repository';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
@@ -27,7 +28,7 @@ export class BusinessFinanceService {
   constructor(private readonly tx:TransactionManager,private readonly executor:IdempotencyExecutor,
     private readonly actor:AdminSystemActor,private readonly access:FinanceAccessParticipant,
     private readonly authority:ClientSessionAuthority,private readonly users:UserRepository,
-    private readonly shops:ShopRepository,private readonly drivers:DriverRepository,
+    private readonly shops:ShopRepository,private readonly accounts:SystemBankAccountRepository,private readonly drivers:DriverRepository,
     private readonly repo:BusinessFinanceRepository,private readonly audit:AuditWriter,
     @Inject(APP_CONFIG) private readonly config:AppConfig) {}
   async admin(token:string|undefined,csrf?:unknown,write=false):Promise<FinanceIdentity> {
@@ -99,8 +100,8 @@ export class BusinessFinanceService {
       if(row.state!=='PENDING'||Number(row.version)!==body.expectedVersion)throw new AppError('VERSION_CONFLICT');
       if(confirm){
         if(confirm.receivedAtMs>await freshClockMs(c)+300000)throw new AppError('ADMIN_INPUT_INVALID');
-        const account=(await c.query<{bank_id:string;can_receive:boolean}>(`SELECT bank_id,can_receive FROM app.system_owned_bank_accounts WHERE system_account_id=$1 FOR SHARE`,[confirm.systemAccountId])).rows[0];
-        if(!account?.can_receive||account.bank_id!==confirm.bankId)throw new AppError('TOPUP_ACCOUNT_NOT_RECEIVING');
+        const account=await this.accounts.lockForUpdate(c,confirm.systemAccountId);
+        if(!account?.canReceive||account.bankId!==confirm.bankId)throw new AppError('TOPUP_ACCOUNT_NOT_RECEIVING');
         const receipt=await c.query(`INSERT INTO app.business_bank_receipts(bank_id,system_account_id,canonical_transaction_id,source_kind,source_id,amount_vnd,received_at)
           VALUES($1,$2,$3,'SHOP_PAYMENT',$4,$5,$6) ON CONFLICT DO NOTHING`,[confirm.bankId,confirm.systemAccountId,confirm.canonicalTransactionId,id,String(confirm.actualAmountVnd),confirm.receivedAtIso]);
         if(receipt.rowCount!==1)throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');

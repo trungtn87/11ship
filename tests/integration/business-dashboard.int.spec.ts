@@ -3,9 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AdminApp, adminData, adminErrorCode, startAdminApp } from './support/admin-fixtures';
 import { AuthApp, dataOf, PASSWORD, startAuthApp } from './support/auth-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
-import { activatedAdmin, changeGrant, getAs, permission, postAs, systemLoginOf } from './support/m12-fixtures';
+import { activatedAdmin, changeGrant, getAs, permission, postAs, purgeDeliveriesOfShops, seedDelivery, systemLoginOf } from './support/m12-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
-import { PRIVACY, TERMS } from './support/m10-fixtures';
+import { newShipper, PRIVACY, TERMS } from './support/m10-fixtures';
 import { BusinessPushService } from '../../apps/backend/src/business-dashboard/business-push-service';
 
 describe('Business Dashboard — real money requests, chat, rights and reports',()=>{
@@ -20,7 +20,7 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
   });
   afterAll(async()=>{
     try{
-      await app.close();await admin.close();
+      await purgeDeliveriesOfShops(app.pool,[shop.shopId,other.shopId]);await app.close();await admin.close();
     }finally{
       // The shared fixture pool is closed above. The suite's receiving account is removed by the following guarded test-only connection.
       const {Client}=await import('pg');const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();
@@ -80,6 +80,31 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect(adminErrorCode(duplicate)).toBe('BANK_TRANSACTION_ALREADY_RECORDED');
     expect((await admin.pool.query('SELECT count(*)::int AS n FROM app.business_bank_receipts WHERE source_id=$1',[id])).rows[0].n).toBe(1);
     expect((await admin.pool.query(`SELECT count(*)::int AS n FROM app.audit_logs WHERE resource_id=$1 AND action='business.finance.shop_payment.confirm.v1'`,[id])).rows[0].n).toBe(1);
+  });
+  it('keeps existing topup posting, synchronizes its room, and rejects a bank receipt already used for a shop',async()=>{
+    const shipper=await newShipper(app,[]);
+    const before=Number((await app.pool.query('SELECT balance_vnd FROM app.driver_wallets WHERE wallet_id=$1',[shipper.walletId])).rows[0].balance_vnd);
+    const created=await app.call('POST','/driver/wallet/topup-requests',{bearer:shipper.token,headers:{'idempotency-key':randomUUID()},body:{amount_vnd:100000}});
+    expect(created.status).toBe(201);const id=String(dataOf(created).request_id);
+    const chat=await admin.call('GET',`/finance/me/requests/${id}`,{basePath:'/v1',headers:{authorization:'Bearer '+shipper.token}});
+    expect(chat.status).toBe(200);expect(adminData(chat).request).toMatchObject({kind:'TOPUP',state:'PENDING'});
+    const duplicate=await postAs(admin,systemLoginOf(system),`/finance/topup-requests/${id}/confirm`,{...confirmation(),actual_amount_vnd:100000});
+    expect(adminErrorCode(duplicate)).toBe('BANK_TRANSACTION_ALREADY_RECORDED');
+    const body={...confirmation(),actual_amount_vnd:100000,canonical_transaction_id:'TOPUP-'+randomUUID()};
+    const key=randomUUID();expect((await postAs(admin,systemLoginOf(system),`/finance/topup-requests/${id}/confirm`,body,key)).status).toBe(200);
+    expect((await postAs(admin,systemLoginOf(system),`/finance/topup-requests/${id}/confirm`,body,key)).status).toBe(200);
+    const after=(await getAs(admin,systemLoginOf(system),'/business/requests/'+id));
+    expect(adminData(after).request).toMatchObject({state:'CONFIRMED',version:2,actual_amount_vnd:100000});
+    expect(Number((await app.pool.query('SELECT balance_vnd FROM app.driver_wallets WHERE wallet_id=$1',[shipper.walletId])).rows[0].balance_vnd)).toBe(before+100000);
+    expect((await app.pool.query("SELECT count(*)::int AS n FROM app.wallet_ledger_entries WHERE wallet_id=$1 AND entry_kind='TOPUP'",[shipper.walletId])).rows[0].n).toBe(1);
+  });
+  it('counts a direct call once when it is recalled, without adding an Order',async()=>{
+    const current=async()=>adminData(await getAs(admin,systemLoginOf(system),'/business/reports?range=today')).trade as {transactions:number;goods_vnd:number};
+    const before=await current();
+    const root=await seedDelivery(app.pool,{shopId:shop.shopId,userId:shop.userId,state:'search_stopped'});
+    const first=await current();expect(first.transactions).toBe(before.transactions+1);
+    await seedDelivery(app.pool,{shopId:shop.shopId,userId:shop.userId,previousDeliveryId:root});
+    const recalled=await current();expect(recalled.transactions).toBe(first.transactions);expect(recalled.goods_vnd).toBe(first.goods_vnd);
   });
   it('reports real recorded shop receipts separately from deposits and commission, and an overdue request stays visible without push',async()=>{
     const r=await getAs(admin,systemLoginOf(system),'/business/reports?range=today');expect(r.status).toBe(200);

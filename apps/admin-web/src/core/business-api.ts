@@ -6,7 +6,7 @@ export interface FinanceList {items:FinanceRequest[];has_more:boolean;next_befor
 export interface Notices {unread:number;items:{sequence:string;request_id:string;kind:string;created_at:string;unread:boolean}[];next_before:string|null}
 export interface Summary {key:string;label:string;value:number|string|null;format:string;note?:string}
 export interface Report {title:string;basisLabel:string;summary:Summary[];columns:{key:string;label:string;format:string}[];rows:{cells:(number|string|null)[]}[];notes:string[];truncated:boolean}
-export interface Trade {transactions:number;goods_vnd:number;goods_note:string;shops:number;active_shops:number;shippers:number;ranking:{name:string;orders:number;goods_vnd:number}[];quality:{reviews:number;average_stars:number|null;complaints:number;average_resolution_seconds:number|null};shop_payments:{status:string;confirmed_vnd?:number;confirmed_count?:number}}
+export interface Trade {transactions:number;goods_vnd:number;goods_note:string;shops:number;active_shops:number;shippers:number;online_shippers:number;ranking:{name:string;orders:number;goods_vnd:number}[];quality:{reviews:number;average_stars:number|null;complaints:number;average_resolution_seconds:number|null};shop_payments:{status:string;confirmed_vnd?:number;confirmed_count?:number}}
 export interface BusinessReports {generated_at:string;period:{from_day:string;to_day:string};comparison_label:string;trade:Trade;previous_trade:Trade;reports:Record<string,{status:string;current?:Report;previous?:Report}>}
 export class BusinessApiError extends Error {constructor(readonly code:string,readonly status:number){super(code);}}
 export class BusinessApi {

@@ -28,6 +28,12 @@ interface RawLocation {
 
 @Injectable()
 export class ShipperLocationRepository {
+  async countFreshAmong(context:TransactionContext,ids:readonly string[]):Promise<number> {
+    const r=(await context.query<{n:string}>(`SELECT count(*)::text AS n FROM app.shipper_latest_locations WHERE driver_id=ANY($1::uuid[])
+      AND recorded_at>=clock_timestamp()-($2::float8*interval '1 millisecond') AND NOT(lat=0 AND lng=0)`,[ids,LOCATION_FRESH_MS])).rows[0]!;
+    const n=Number(r.n);if(!Number.isSafeInteger(n))throw new TechnicalError('internal','Invalid location count');return n;
+  }
+
   /** Keeps ONLY the latest position of the Shipper (INSERT or overwrite). Returns the stored time. */
   async upsert(context: TransactionContext, driverId: string, lat: number, lng: number, accuracyM: number | null): Promise<void> {
     await context.query(

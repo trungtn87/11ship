@@ -74,14 +74,15 @@ CREATE TABLE app.business_bank_receipts (
 INSERT INTO app.business_bank_receipts
 SELECT bank_id,system_owned_account_id,canonical_transaction_id,'WALLET',bank_record_id,amount_vnd,occurred_at
 FROM app.wallet_bank_transactions;
-CREATE FUNCTION app.business_wallet_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION app.business_wallet_receipt() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
   INSERT INTO app.business_bank_receipts VALUES
   (NEW.bank_id,NEW.system_owned_account_id,NEW.canonical_transaction_id,'WALLET',NEW.bank_record_id,NEW.amount_vnd,NEW.occurred_at);
   RETURN NEW;
 END $$;
+REVOKE ALL ON FUNCTION app.business_wallet_receipt() FROM PUBLIC;
 CREATE TRIGGER business_wallet_receipt AFTER INSERT ON app.wallet_bank_transactions FOR EACH ROW EXECUTE FUNCTION app.business_wallet_receipt();
-CREATE FUNCTION app.business_finance_message_event() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION app.business_finance_message_event() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
   INSERT INTO app.business_push_jobs(message_sequence,subscription_id)
   SELECT NEW.sequence_no,s.subscription_id FROM app.business_push_subscriptions s
@@ -92,8 +93,9 @@ BEGIN
       WHERE g.user_id=m.user_id AND g.permission_key='wallet.read' AND g.state='GRANTED'));
   RETURN NEW;
 END $$;
+REVOKE ALL ON FUNCTION app.business_finance_message_event() FROM PUBLIC;
 CREATE TRIGGER business_finance_message_event AFTER INSERT ON app.business_finance_messages FOR EACH ROW EXECUTE FUNCTION app.business_finance_message_event();
-CREATE FUNCTION app.business_finance_state_event() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION app.business_finance_state_event() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
   IF TG_OP='INSERT' OR NEW.state IS DISTINCT FROM OLD.state THEN
     INSERT INTO app.business_finance_messages(request_id,sender_role,body,event_kind)
@@ -105,18 +107,22 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
+REVOKE ALL ON FUNCTION app.business_finance_state_event() FROM PUBLIC;
 CREATE TRIGGER business_finance_state_event AFTER INSERT OR UPDATE OF state ON app.business_finance_requests FOR EACH ROW EXECUTE FUNCTION app.business_finance_state_event();
+-- Trigger functions have a fixed search path and narrowly write only additive finance tables.
+-- SECURITY DEFINER preserves old runtime writes during the migration-to-grants window and code rollback.
 -- Top-up conversations follow the existing money service atomically, including cancels and retries.
-CREATE FUNCTION app.business_topup_sync() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION app.business_topup_sync() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
-  INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,amount_requested_vnd,state,version,created_at,resolved_at,resolved_by)
-  VALUES(NEW.request_id,'TOPUP',NEW.created_by_user_id,NEW.amount_requested_vnd,NEW.state,NEW.version,NEW.created_at,NEW.resolved_at,NEW.resolved_by_user_id)
-  ON CONFLICT(request_id) DO UPDATE SET state=EXCLUDED.state,version=EXCLUDED.version,resolved_at=EXCLUDED.resolved_at,resolved_by=EXCLUDED.resolved_by;
+  INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,amount_requested_vnd,actual_amount_vnd,state,version,created_at,resolved_at,resolved_by)
+  VALUES(NEW.request_id,'TOPUP',NEW.created_by_user_id,NEW.amount_requested_vnd,(SELECT actual_amount_vnd FROM app.wallet_topups WHERE request_id=NEW.request_id),NEW.state,NEW.version,NEW.created_at,NEW.resolved_at,NEW.resolved_by_user_id)
+  ON CONFLICT(request_id) DO UPDATE SET state=EXCLUDED.state,version=EXCLUDED.version,resolved_at=EXCLUDED.resolved_at,resolved_by=EXCLUDED.resolved_by,actual_amount_vnd=EXCLUDED.actual_amount_vnd;
   RETURN NEW;
 END $$;
+REVOKE ALL ON FUNCTION app.business_topup_sync() FROM PUBLIC;
 CREATE TRIGGER business_topup_sync AFTER INSERT OR UPDATE OF state ON app.wallet_topup_requests FOR EACH ROW EXECUTE FUNCTION app.business_topup_sync();
-INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,amount_requested_vnd,state,version,created_at,resolved_at,resolved_by)
-SELECT request_id,'TOPUP',created_by_user_id,amount_requested_vnd,state,version,created_at,resolved_at,resolved_by_user_id FROM app.wallet_topup_requests;
+INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,amount_requested_vnd,actual_amount_vnd,state,version,created_at,resolved_at,resolved_by)
+SELECT r.request_id,'TOPUP',r.created_by_user_id,r.amount_requested_vnd,t.actual_amount_vnd,r.state,r.version,r.created_at,r.resolved_at,r.resolved_by_user_id FROM app.wallet_topup_requests r LEFT JOIN app.wallet_topups t ON t.request_id=r.request_id;
 -- The evidence and receipt identity are append-only; no retention deletion of financial records.
 CREATE FUNCTION app.business_finance_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
