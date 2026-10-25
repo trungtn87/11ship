@@ -299,7 +299,7 @@ describe('M02 — menu and public shop view', () => {
   });
 
   describe('the public view of a shop (customers, no session)', () => {
-    /** A shop that is SET UP (issue #190): open all week, one sellable dish with a picture (in group `ownGroup`, so group lists stay exact). */
+    /** A shop that is SET UP (issue #190): open all week, one VISIBLE dish with a price (photo optional). */
     async function setUpOwner(dishName = 'Món nền', group = active): Promise<ShopOwner> {
       const o = await owner();
       await completeSetup(app, o, { categoryId: group, dishName });
@@ -352,7 +352,6 @@ describe('M02 — menu and public shop view', () => {
     it.each([
       ['a (0, 0) pickup placeholder', `UPDATE app.shops SET pickup_lat = 0, pickup_lng = 0 WHERE shop_id = $1::uuid`],
       ['no dish on sale (hidden)', `UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE shop_id = $1::uuid`],
-      ['a dish without a picture', `UPDATE app.menu_items SET image_id = NULL WHERE shop_id = $1::uuid`],
       ['the owner account locked', `UPDATE app.users SET status = 'DISABLED' WHERE user_id = (SELECT user_id FROM app.shop_members WHERE shop_id = $1::uuid AND member_role = 'OWNER')`],
     ])('issue #190: a shop with %s is not public', async (label, sql) => {
       const o = await setUpOwner();
@@ -360,6 +359,14 @@ describe('M02 — menu and public shop view', () => {
       await app.pool.query(sql, [o.shopId]);
       const response = await publicShop(app, o.shopId);
       expect([label, response.status, errorCode(response)]).toEqual([label, 403, 'SHOP_UNAVAILABLE']);
+    });
+
+    it('keeps an ACTIVE shop public when its only sellable dish has no picture', async () => {
+      const o = await setUpOwner();
+      await app.pool.query('UPDATE app.menu_items SET image_id = NULL WHERE shop_id = $1::uuid', [o.shopId]);
+      expect((await publicShop(app, o.shopId)).status).toBe(200);
+      const progress = dataOf(await app.call('GET', '/onboarding/shop/setup', { bearer: o.token }));
+      expect(progress).toMatchObject({ state: 'ACTIVATED', completed_steps: 4, missing: [], public: true });
     });
 
     it('a closed shop that IS set up stays visible with its menu and contact (only a new order is refused)', async () => {
