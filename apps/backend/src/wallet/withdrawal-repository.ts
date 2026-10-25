@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TechnicalError } from '../common/app-errors';
+import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { MAX_WALLET_VND } from './wallet-types';
 
@@ -382,12 +382,17 @@ export class WithdrawalRepository {
     context: TransactionContext,
     input: { bankRecordId: string; bankId: string; systemAccountId: string; canonicalTransactionId: string; amountVnd: bigint; occurredAtIso: string; withdrawalId: string },
   ): Promise<boolean> {
-    const result = await context.query(
+    let result;
+    try { result = await context.query(
       `INSERT INTO app.wallet_bank_transactions (bank_record_id, bank_id, system_owned_account_id, canonical_transaction_id, direction, amount_vnd, occurred_at, topup_id, withdrawal_id, created_at)
        SELECT $1::uuid, $2, $3::uuid, $4, 'OUT', $5::bigint, $6::timestamptz, NULL, $7::uuid, ${CLOCK}
        ON CONFLICT (bank_id, system_owned_account_id, canonical_transaction_id) DO NOTHING`,
       [input.bankRecordId, input.bankId, input.systemAccountId, input.canonicalTransactionId, input.amountVnd.toString(), input.occurredAtIso, input.withdrawalId],
     );
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505' && 'constraint' in error && error.constraint === 'business_bank_receipts_pkey') throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');
+      throw error;
+    }
     return result.rowCount === 1;
   }
 

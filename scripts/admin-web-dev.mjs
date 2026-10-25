@@ -32,6 +32,7 @@ const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.woff2': 'font/woff2',
+  '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.txt': 'text/plain; charset=utf-8',
@@ -41,7 +42,7 @@ const CONTENT_TYPES = {
 const SECURITY_HEADERS = {
   'content-security-policy':
     "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; " +
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
@@ -242,6 +243,7 @@ function serveStatic(pathname, request, response, distRoot) {
     response.end('Not found');
     return;
   }
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(relative)) relative = '/business.html';
   const candidate = normalize(join(distRoot, relative));
   let file;
   try {

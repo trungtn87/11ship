@@ -1,3 +1,4 @@
+import { BUSINESS_DOWN_SQL, BUSINESS_UP_SQL } from './support/business-migration-sql';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
@@ -383,7 +384,8 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER driver_wallets_no_delete');
         await client.query('DELETE FROM app.driver_wallets');
         await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER driver_wallets_no_delete');
-        await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: the very newest, down first, up last
+        await client.query(BUSINESS_DOWN_SQL); // Newest dependent schema, with its history refusal intact.
+      await client.query(WITHDRAWAL_DOWN_SQL); // M04-C withdrawals: down before M04 sources
         await client.query(ADJUSTMENT_DOWN_SQL); // M04 adjustments reference the wallet table and replace the ledger gate: the very newest, down first, up last
         await client.query(POSTING_DOWN_SQL); // M04-B2.2b: replaces one function and needs the topup tables: newest, down first, up last
         await client.query(FINANCE_DOWN_SQL); // M04-B2.2a: newest, down first, up last
@@ -398,6 +400,7 @@ describe('M04-A1 - Shipper wallet core and ledger (schema, participant, transact
         await client.query(POSTING_UP_SQL);
         await client.query(ADJUSTMENT_UP_SQL);
         await client.query(WITHDRAWAL_UP_SQL);
+      await client.query(BUSINESS_UP_SQL);
         expect(await tablesPresent(client)).toEqual(['driver_wallets', 'wallet_ledger_entries']);
         // The re-created schema works: a zero wallet can be born again.
         const { driverId } = await (async () => {

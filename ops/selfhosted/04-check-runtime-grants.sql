@@ -99,6 +99,12 @@ WITH expected(table_name, privileges) AS (
     ('backup_records', ARRAY['SELECT']::text[]),
     ('restore_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('backup_jobs', ARRAY['SELECT', 'INSERT']::text[]),
+    ('business_finance_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('business_finance_reads', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('business_push_subscriptions', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('business_push_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('business_finance_messages', ARRAY['SELECT', 'INSERT']::text[]),
+    ('business_bank_receipts', ARRAY['SELECT', 'INSERT']::text[]),
     ('notification_push_tokens', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notification_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notifications', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
@@ -139,7 +145,7 @@ WITH expected(table_name, privileges) AS (
               ELSE 'OK' END AS result
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'),
+  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'),
          ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,

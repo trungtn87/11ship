@@ -1,3 +1,4 @@
+import { BusinessPushConfig, parseBusinessPushConfig } from './business-push-config';
 import { M14RoutingConfig, parseM14Routing } from './m14-routing-config';
 import { OpsConfig, parseOpsConfig } from './ops-config';
 import { parsePushConfig, PushConfig } from './push-config';
@@ -188,6 +189,7 @@ export interface AppConfig {
   m14Routing?: M14RoutingConfig;
   /** Android push provider (M08, FCM). Present only when PUSH_FCM_PROJECT_ID and PUSH_FCM_SERVICE_ACCOUNT_FILE are both set and valid; absent = push is not configured (the inbox still works). */
   push?: PushConfig;
+  businessPush?: BusinessPushConfig;
   /** M13 operations: always present (every variable is optional; absent inputs mean "not configured", never a made-up status). */
   ops?: OpsConfig;
   /**
@@ -708,6 +710,9 @@ export function loadConfig(env: EnvSource): ConfigResult {
     m14RoutingResult.invalid.forEach(flag);
   }
 
+  const businessPushResult = parseBusinessPushConfig(env);
+  if (!businessPushResult.ok) businessPushResult.invalid.forEach(flag);
+
   // Android push (M08): optional; absent means every push is recorded as skipped (PROVIDER_NOT_CONFIGURED), never as sent. Names only.
   const pushResult = parsePushConfig({ env, appEnv: appEnv ?? '' });
   let push: PushConfig | undefined;
@@ -801,6 +806,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(accountRecoveryMode === 'DISABLED_TEST' || accountRecoveryMode === 'SMS_OTP' ? { accountRecoveryMode } : {}),
       ...(smsGateway === undefined ? {} : { smsGateway }),
       ...(m14Routing === undefined ? {} : { m14Routing }),
+      ...(businessPushResult.ok && businessPushResult.config ? { businessPush: businessPushResult.config } : {}),
       ...(push === undefined ? {} : { push }),
       ...(ops === undefined ? {} : { ops }),
       ...(clientAndroid === undefined ? {} : { clientAndroid }),

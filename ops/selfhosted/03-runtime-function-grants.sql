@@ -26,3 +26,6 @@ GRANT EXECUTE ON FUNCTION app.next_complaint_code() TO ship11_app;
 -- M07/M10 #165: scoped shop public display codes; writes are never exposed.
 GRANT EXECUTE ON FUNCTION app.shop_display_order(uuid) TO ship11_app;
 GRANT EXECUTE ON FUNCTION app.shop_display_delivery(uuid) TO ship11_app;
+
+-- Business finance message ordering, without direct sequence access.
+GRANT EXECUTE ON FUNCTION app.next_business_message_sequence() TO ship11_app;

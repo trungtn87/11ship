@@ -1,3 +1,4 @@
+import { BusinessTradeReader } from './business-trade-reader';
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { OutboxModule } from '../outbox/outbox.module';
@@ -14,7 +15,7 @@ import { OrderSalesReader } from './order-sales-reader';
  */
 @Module({
   imports: [AuditModule, OutboxModule],
-  providers: [OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
-  exports: [OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  providers: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  exports: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
 })
 export class OrdersCoreModule {}

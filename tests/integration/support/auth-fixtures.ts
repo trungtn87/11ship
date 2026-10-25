@@ -1,3 +1,4 @@
+import { purgeBusinessFinanceOfPhone } from './business-finance-fixtures';
 import { purgeShopDisplayCodes } from './shop-display-fixtures';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -269,6 +270,7 @@ async function purgeWalletsOfPhone(pool: Pool, normalizedPhone: string): Promise
 
 /** Removes every Auth row of one phone number (and the register idempotency records of its proofs). */
 export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<void> {
+  await purgeBusinessFinanceOfPhone(pool, normalizedPhone);
   const grants = await pool.query("SELECT to_regclass('app.admin_finance_grants') AS t");
   if (grants.rows[0]?.t != null) {
     const c = await pool.connect();

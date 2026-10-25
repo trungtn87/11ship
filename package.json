@@ -2,7 +2,7 @@
   "name": "11ship",
   "version": "0.0.0",
   "private": true,
-  "description": "11Ship — backend foundation (task M00-B1)",
+  "description": "11Ship \u2014 backend foundation (task M00-B1)",
   "packageManager": "npm@11.9.0",
   "engines": {
     "node": ">=24 <25",
@@ -61,6 +61,7 @@
     "@nestjs/testing": "11.2.7",
     "@types/node": "24.19.1",
     "@types/pg": "8.23.1",
+    "@types/web-push": "3.6.4",
     "eslint": "9.39.5",
     "jest": "30.5.2",
     "node-pg-migrate": "8.0.4",

@@ -198,6 +198,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     ],
     entries: <Widget>[
       WalletListItem(key: const Key('account-wallet-entry'), session: session),
+      if (session.status == SessionStatus.signedIn) N11ListItem(icon: Icons.chat_outlined, title: 'Trao đổi nạp tiền', sub: 'Yêu cầu, chưa đọc và lịch sử xử lý', onTap: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: session)))),
       if (driver != null && session.status == SessionStatus.signedIn)
         N11ListItem(
           key: const Key('account-closure-entry'),
