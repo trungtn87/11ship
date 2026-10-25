@@ -148,6 +148,11 @@ const PATCH_COLUMNS: Readonly<Record<keyof DriverPatch, { column: string; cast?:
  */
 @Injectable()
 export class DriverRepository {
+  async codesForUsers(context:TransactionContext,ids:readonly string[]):Promise<ReadonlyMap<string,string>> {
+    const rows=(await context.query<{user_id:string;shipper_code:string}>('SELECT user_id,shipper_code FROM app.drivers WHERE user_id=ANY($1::uuid[])',[ids])).rows;
+    return new Map(rows.map(r=>[r.user_id,r.shipper_code]));
+  }
+
   async dashboardCounts(context:TransactionContext):Promise<{total:number;acceptingIds:string[]}> {
     const r=(await context.query<{total:string;accepting_ids:string[]|null}>("SELECT count(*)::text AS total,array_agg(driver_id) FILTER(WHERE status='ACTIVE' AND accepting_deliveries) AS accepting_ids FROM app.drivers")).rows[0]!;
     const total=toSafeInteger(r.total);

@@ -21,10 +21,11 @@ export class BusinessPushService implements OnApplicationBootstrap,OnApplication
     if(!this.config.businessPush)throw new AppError('BUSINESS_PUSH_NOT_CONFIGURED');
     return this.finance.command(who,'push.subscribe',{endpoint:s.endpoint,p256dh:s.p256dh,auth:s.auth},key,requestId,async(c,a)=>{
       if(who.kind!=='admin')throw new AppError('ADMIN_FORBIDDEN');
-      // Never reassign another user's endpoint; it can be explicitly disabled by its owner.
+      // Another user's active session cannot be displaced. Ended bindings may be rebound after a new login.
       const result=await c.query(`INSERT INTO app.business_push_subscriptions(subscription_id,user_id,session_id,endpoint,p256dh,auth)
-        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(endpoint) DO UPDATE SET active=true,session_id=EXCLUDED.session_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth
-        WHERE business_push_subscriptions.user_id=EXCLUDED.user_id`,[randomUUID(),a.userId,who.known.sessionId,s.endpoint,s.p256dh,s.auth]);
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(endpoint) DO UPDATE SET active=true,user_id=EXCLUDED.user_id,session_id=EXCLUDED.session_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth
+        WHERE business_push_subscriptions.user_id=EXCLUDED.user_id OR NOT business_push_subscriptions.active
+          OR EXISTS(SELECT 1 FROM app.admin_sessions old_session WHERE old_session.session_id=business_push_subscriptions.session_id AND (old_session.revoked_at IS NOT NULL OR old_session.expires_at<=clock_timestamp()))`,[randomUUID(),a.userId,who.known.sessionId,s.endpoint,s.p256dh,s.auth]);
       if(result.rowCount!==1)throw new AppError('ADMIN_FORBIDDEN');
       return {ok:true};
     },false);

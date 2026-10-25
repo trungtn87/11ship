@@ -20,7 +20,7 @@ export class BusinessTradeReader {
       UNION ALL SELECT shop_id,goods_value_vnd FROM app.deliveries WHERE source='DIRECT' AND previous_delivery_id IS NULL
         AND created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))
       SELECT shop_id,count(*)::text AS orders,sum(t.goods)::text AS goods FROM t
-      GROUP BY shop_id ORDER BY count(*) DESC,shop_id LIMIT 100`,[p.fromMs,p.toMs])).rows;
+      GROUP BY shop_id ORDER BY count(*) DESC,shop_id LIMIT 101`,[p.fromMs,p.toMs])).rows;
     const quality=(await c.query<{reviews:string;stars:string|null;complaints:string;seconds:string|null}>(`SELECT
       (SELECT count(*) FROM app.reviews WHERE created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))::text AS reviews,
       (SELECT round(avg(stars),2) FROM app.reviews WHERE created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))::text AS stars,
@@ -32,6 +32,6 @@ export class BusinessTradeReader {
         WHERE kind='SHOP_PAYMENT' AND state='CONFIRMED' AND resolved_at>=to_timestamp($1::bigint/1000.0) AND resolved_at<to_timestamp($2::bigint/1000.0)`,[p.fromMs,p.toMs])).rows[0]!;
       shopPayments={status:'OK',confirmed_vnd:safe(r.total),confirmed_count:safe(r.count)};
     }
-    return {transactions:safe(rows.transactions!),goods_vnd:safe(rows.goods_vnd!),goods_note:'Giá trị đơn tạo trong kỳ, gồm cả đơn hủy; mỗi đơn chỉ tính một lần. Không phải doanh thu nền tảng.',ranking:ranking.map(r=>({shop_id:r.shop_id,orders:safe(r.orders),goods_vnd:safe(r.goods)})),quality:{reviews:safe(quality.reviews),average_stars:quality.stars===null?null:Number(quality.stars),complaints:safe(quality.complaints),average_resolution_seconds:quality.seconds===null?null:safe(quality.seconds)},shop_payments:shopPayments};
+    return {transactions:safe(rows.transactions!),goods_vnd:safe(rows.goods_vnd!),goods_note:'Giá trị đơn tạo trong kỳ, gồm cả đơn hủy; mỗi đơn chỉ tính một lần. Không phải doanh thu nền tảng.',ranking_truncated:ranking.length>100,ranking:ranking.slice(0,100).map(r=>({shop_id:r.shop_id,orders:safe(r.orders),goods_vnd:safe(r.goods)})),quality:{reviews:safe(quality.reviews),average_stars:quality.stars===null?null:Number(quality.stars),complaints:safe(quality.complaints),average_resolution_seconds:quality.seconds===null?null:safe(quality.seconds)},shop_payments:shopPayments};
   }
 }

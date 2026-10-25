@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { createECDH } from 'node:crypto';
-import { comparisonPeriods } from './business-report-service';
+import { comparisonPeriods, shipperSuccessRates } from './business-report-service';
 import { resolvePeriod } from '../admin-m12/vietnam-time';
 import { id, object, page, positive, sequence, subscription, text } from './finance-validation';
 import { parseBusinessPushConfig } from '../config/business-push-config';
@@ -17,6 +17,10 @@ describe('Business Dashboard money and privacy boundaries',()=>{
     const now=Date.parse('2026-03-31T05:00:00Z');const p=comparisonPeriods(resolvePeriod('month',now),now);
     expect(p.previous.fromMs).toBe(Date.parse('2026-01-31T17:00:00Z'));
     expect(p.previous.toMs).toBe(Date.parse('2026-02-28T17:00:00Z'));
+  });
+  it('uses completed plus failed as the shipper success denominator and leaves no outcomes as unavailable',()=>{
+    const report={kind:'shippers',title:'Shipper',basisLabel:'Kỳ',summary:[],columns:[{key:'completed',label:'Thành công',format:'count'},{key:'failed',label:'Thất bại',format:'count'}],rows:[{cells:[3,1]},{cells:[0,0]}],truncated:false,notes:[]} as const;
+    const r=shipperSuccessRates(report);expect(r.rows.map(row=>row.cells.at(-1))).toEqual([75,null]);
   });
   it('refuses invalid money, caller-supplied identity and unbounded cursors',()=>{
     expect(()=>positive(1.5)).toThrow();expect(()=>positive(-1)).toThrow();expect(()=>positive(Number.MAX_SAFE_INTEGER)).toThrow();

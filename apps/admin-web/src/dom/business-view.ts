@@ -43,11 +43,12 @@ export class BusinessDashboard implements ShellHost {
   private tab():string{return tabs.some(t=>t[0]===location.pathname.split('/')[2])?location.pathname.split('/')[2]!:'overview';}
   private navigate(tab:string,request?:string):void{history.pushState(null,'',`/business/${tab}${request?'?request='+encodeURIComponent(request):''}`);this.detailId=undefined;this.pollRoom=undefined;void this.refresh(true);}
   private showError(e:unknown):void{if(!this.host)return;this.error.hidden=false;this.error.textContent=businessError(e);}
-  private async logout():Promise<void>{try{await this.api.call(BASE+'/push/unsubscribe',{});}catch{/* session-bound subscriptions also stop on server logout */}await this.auth.logout();}
+  private async logout():Promise<void>{try{await this.api.call(BASE+'/push/unsubscribe',{});}catch{/* session-bound subscriptions also stop on server logout */}try{const r=await navigator.serviceWorker?.getRegistration('/business/');await(await r?.pushManager.getSubscription())?.unsubscribe();}catch{/* best effort cleanup of this browser endpoint */}await this.auth.logout();}
   private async refresh(force:boolean):Promise<void>{
     if(!this.host||this.busy||document.visibilityState==='hidden')return;
     const active=document.activeElement;
-    if(!force&&(active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement||active instanceof HTMLSelectElement))return;
+    if(!force&&(active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement)&&!this.pollRoom)return;
+    const target=location.pathname+location.search;
     this.busy=true;const gen=++this.generation;this.error.hidden=true;
     for(const [name,b]of this.navButtons){b.setAttribute('aria-current',name===this.tab()?'page':'false');}
     try{
@@ -59,6 +60,7 @@ export class BusinessDashboard implements ShellHost {
       }else if(tab==='orders')await this.orders();else await this.notifications();
       if(this.host&&gen===this.generation)this.updated.textContent='Cập nhật '+new Date().toLocaleTimeString('vi-VN');
     }catch(e){this.showError(e);}finally{this.busy=false;}
+    if(this.host&&target!==location.pathname+location.search){void this.refresh(true);return;}
     if(this.host)void this.api.call<Notices>(BASE+'/notifications').then(n=>{if(this.host)this.badge.textContent=n.unread?String(n.unread):'';}).catch(()=>undefined);
   }
   private filters():HTMLElement{
@@ -90,6 +92,7 @@ export class BusinessDashboard implements ShellHost {
     const moneyReport=d.reports.money;if(moneyReport?.current){const s=moneyReport.current.summary;sections.append(h('div',{class:'business-grid'},...s.filter(x=>['commission','topup','balance','held'].includes(x.key)).map(x=>this.tile(x.label,x.value,x.format,moneyReport.previous?.summary.find(y=>y.key===x.key)?.value))));}
     const ranking=h('section',{class:'business-panel'},h('h2',{},'Quán có nhiều giao dịch'));
     for(const [i,r]of t.ranking.entries())ranking.append(h('div',{class:'business-ranking'},h('strong',{},`${i+1}. ${r.name}`),h('span',{},`${r.orders} giao dịch · ${money(r.goods_vnd)}`)));
+    if(t.ranking_truncated)ranking.append(h('p',{class:'business-muted'},'Đang hiển thị 100 quán đầu. Xem báo cáo Web Admin để xem tiếp.'));
     if(!t.ranking.length)ranking.append(h('p',{},'Chưa có giao dịch trong kỳ.'));sections.append(ranking);
     sections.append(h('div',{class:'business-grid'},this.tile('Đánh giá',t.quality.reviews),this.tile('Điểm trung bình',t.quality.average_stars),this.tile('Khiếu nại trong kỳ',t.quality.complaints),this.tile('Xử lý khiếu nại trung bình',t.quality.average_resolution_seconds,'seconds')));
     for(const key of ['deliveries','shippers','quality']){const item=d.reports[key];if(item?.current){const details=h('details',{class:'business-details'},h('summary',{},item.current.title.replace(' (delivery)','')),this.reportPanel(item.current,item.previous));sections.append(details);}}
@@ -128,6 +131,7 @@ export class BusinessDashboard implements ShellHost {
     const history=new Map<string,FinanceMessage>();
     const render=(r:FinanceRoom)=>{for(const m of r.messages.items)history.set(m.sequence,m);messages.replaceChildren(...[...history.values()].sort((a,b)=>BigInt(a.sequence)<BigInt(b.sequence)?-1:1).map(m=>h('article',{class:'business-message '+(m.role==='SYSTEM_EVENT'?'business-event':'')},h('small',{},`${({SYSTEM_EVENT:'Thông báo',SHIPPER:'Shipper',SHOP:'Quán',ADMIN:'Quản trị',SYSTEM:'Hệ thống'} as Record<string,string>)[m.role]??m.role} · ${time(m.created_at)}`),h('p',{},m.body))));};render(room);
     const panel=h('section',{class:'business-panel'},button('← Danh sách',()=>this.navigate('chat')),h('h2',{},request.label),h('p',{},`${money(request.amount_requested_vnd)} · ${stateText[request.state]??request.state}`),messages);
+    if(request.kind==='TOPUP')panel.append(h('a',{href:'/finance/topups/'+request.request_id},'Xem hồ sơ nạp ví'));
     if(request.actual_amount_vnd!==null)panel.append(h('p',{},'Tiền thực nhận: '+money(request.actual_amount_vnd)));
     let olderCursor=room.messages.next_before;
     if(olderCursor){const older=button('Xem tin cũ hơn',()=>{if(!olderCursor)return;older.disabled=true;void this.api.call<FinanceRoom>(BASE+'/requests/'+id+'?before='+olderCursor).then(r=>{if(this.detailId!==id)return;render(r);olderCursor=r.messages.next_before;if(!olderCursor)older.remove();}).catch(e=>this.showError(e)).finally(()=>{older.disabled=false;});});panel.insertBefore(older,messages);}

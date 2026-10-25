@@ -1,6 +1,12 @@
-/* No fetch handler, CacheStorage, IndexedDB or offline copies: every view requires a live session and API. */
+/* Network only: no CacheStorage, IndexedDB or offline financial copies. */
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch',event=>{
+  const url=new URL(event.request.url);
+  if(event.request.method==='GET'&&event.request.mode==='navigate'&&url.origin===self.location.origin&&url.pathname.startsWith('/business/')){
+    event.respondWith(fetch(event.request,{cache:'no-store'}));
+  }
+});
 self.addEventListener('push',event=>{
   let url='/business/notifications';
   try {const value=event.data.json();if(typeof value.url==='string'&&/^\/business\/chat\?request=[0-9a-f-]{36}$/.test(value.url))url=value.url;} catch { /* fixed neutral notice */ }

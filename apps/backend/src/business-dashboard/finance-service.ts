@@ -61,7 +61,7 @@ export class BusinessFinanceService {
     return this.tx.withTransaction(async c=>{const a=await this.authorize(c,who);return this.repo.list(c,a.userId,who.kind==='admin',state,before);});
   }
   read(who:FinanceIdentity,id:string,before:string|null):Promise<JsonObject> {
-    return this.tx.withTransaction(async c=>{await this.authorize(c,who);const row=await this.room(c,who,id);return {request:financeView(row),messages:await this.repo.messages(c,id,before)};});
+    return this.tx.withTransaction(async c=>{await this.authorize(c,who);const row=await this.room(c,who,id);return {request:await this.repo.namedView(c,row),messages:await this.repo.messages(c,id,before)};});
   }
   notifications(who:FinanceIdentity,before:string|null):Promise<JsonObject> {
     return this.tx.withTransaction(async c=>{const a=await this.authorize(c,who);return this.repo.notifications(c,a.userId,who.kind==='admin',before);});

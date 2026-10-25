@@ -1,3 +1,4 @@
+import { DriverRepository } from '../driver/driver-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { Injectable } from '@nestjs/common';
 import { JsonObject } from '../idempotency/idempotency-executor';
@@ -13,7 +14,11 @@ export function financeView(r: FinanceRow): JsonObject {
 }
 @Injectable()
 export class BusinessFinanceRepository {
-  constructor(private readonly shops:ShopRepository){}
+  constructor(private readonly shops:ShopRepository,private readonly drivers:DriverRepository){}
+  async namedView(c:TransactionContext,row:FinanceRow):Promise<JsonObject>{
+    const names=await this.shops.namesOf(c,row.shop_id?[row.shop_id]:[]);const codes=await this.drivers.codesForUsers(c,[row.owner_user_id]);
+    return financeView({...row,label:row.shop_id?names.get(row.shop_id):`Nạp ví · ${codes.get(row.owner_user_id)??'Shipper'}`});
+  }
   async find(c: TransactionContext, requestId: string, lock = false): Promise<FinanceRow | undefined> {
     return (await c.query<FinanceRow>(`SELECT * FROM app.business_finance_requests WHERE request_id=$1::uuid${lock?' FOR UPDATE':''}`,[requestId])).rows[0];
   }
@@ -26,7 +31,8 @@ export class BusinessFinanceRepository {
         AND ($4::uuid IS NULL OR (r.created_at,r.request_id)<(SELECT created_at,request_id FROM app.business_finance_requests WHERE request_id=$4::uuid))
       ORDER BY r.created_at DESC,r.request_id DESC LIMIT 51`,[userId,admin,state,before])).rows;
     const names=await this.shops.namesOf(c,rows.flatMap(r=>r.shop_id?[r.shop_id]:[]));
-    const items=rows.slice(0,50).map(r=>({...r,label:r.shop_id?names.get(r.shop_id):undefined}));const last=items.at(-1);
+    const codes=await this.drivers.codesForUsers(c,rows.filter(r=>r.kind==='TOPUP').map(r=>r.owner_user_id));
+    const items=rows.slice(0,50).map(r=>({...r,label:r.shop_id?names.get(r.shop_id):`Nạp ví · ${codes.get(r.owner_user_id)??'Shipper'}`}));const last=items.at(-1);
     return {items:items.map(financeView),has_more:rows.length>50,next_before:rows.length>50&&last?last.request_id:null};
   }
   async messages(c: TransactionContext, requestId: string, before: string | null): Promise<JsonObject> {
