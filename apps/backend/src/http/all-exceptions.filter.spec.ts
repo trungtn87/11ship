@@ -294,6 +294,7 @@ describe('AllExceptionsFilter', () => {
         'OPS_MAINTENANCE_NOT_FOUND',
         'OPS_RELEASE_CONFLICT',
         'OPS_RELEASE_NOT_FOUND',
+        'OPS_RELEASE_WITHDRAW_BLOCKED',
         'OPS_SECRET_UNAVAILABLE',
         'OPS_SETTINGS_INVALID',
         'OPS_TARGET_NOT_FOUND',

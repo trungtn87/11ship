@@ -22,6 +22,10 @@ void main() {
     config,
     busyProbe: () async => (await (flows.shipperDeliveries?.mine(history: false) ?? Future<List<DeliveryView>>.value(const <DeliveryView>[]))).isNotEmpty,
   );
+  // A REQUIRED update never interrupts the delivery in hand, but no new work starts: the online switch refuses (and an online shipper is switched off).
+  if (ops != null) {
+    shipOnlineFor(session, driver: flows.driver).bindUpdateGate(gate: ops.updates, blocked: () => ops.updates.blocksNewWork);
+  }
   ops?.installCrashHooks();
   ops?.start();
   runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));

@@ -1,13 +1,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createReadStream, lstatSync, ReadStream } from 'node:fs';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuthPrincipal } from '../auth/auth-principal';
 import { AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { DEFAULT_OPS_CONFIG } from '../config/ops-config';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ANDROID_COMPONENTS, CHECK_BACKUP, CHECK_EXTERNAL_PROBE, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, ClientLogKind, IngestKeyScope, OpsSource, ReleaseComponent } from './ops-constants';
+import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactReady, decideCompat } from './ops-compat';
 import { OpsEngine } from './ops-engine';
 import { evaluateBackup, evaluateRestoreTest } from './ops-monitors';
 import { OpsReleaseRepository, ReleaseRow } from './ops-release-repository';
@@ -48,6 +49,7 @@ export class OpsIngestService {
   readonly #artifactDir: string | undefined;
   readonly #environment: string;
   readonly #version: string;
+  readonly #compat: CompatMatrix;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -56,7 +58,9 @@ export class OpsIngestService {
     private readonly engine: OpsEngine,
     private readonly settings: OpsSettingsService,
     @Inject(APP_CONFIG) appConfig: AppConfig,
+    @Optional() @Inject(APP_COMPAT_MATRIX) compat?: CompatMatrix,
   ) {
+    this.#compat = compat ?? APP_COMPAT;
     const ops = appConfig.ops ?? DEFAULT_OPS_CONFIG;
     this.#artifactDir = ops.artifactDir;
     this.#environment = appConfig.appEnv;
@@ -241,22 +245,43 @@ export class OpsIngestService {
     return { recorded: true };
   }
 
-  /** What a phone is told at start-up and while it runs. A newer PUBLISHED release only; a withdrawn or draft one is never offered. */
+  /**
+   * What a phone is told at start-up and while it runs. Only a PUBLISHED release whose file is really in the artifact directory is ever offered; a
+   * withdrawn, draft or missing-file release is not. When the deployed contract (app-compatibility.json) demands a build that cannot be downloaded the answer is
+   * UPDATE_REQUIRED_UNAVAILABLE, never "up to date"; the operations check `app_compat.*` raises the same fault for SYSTEM.
+   */
   async updateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null): Promise<JsonObject> {
     const latest = await this.transactions.withTransaction((context) => this.releases.latestPublished(context, component));
-    if (latest === undefined || latest.versionCode === null || latest.artifactName === null) {
-      return { update_available: false, release: null };
-    }
-    const newer = versionCode === null || latest.versionCode > versionCode;
-    // REQUIRED only when the installed build is older than the minimum SYSTEM declared (a compatibility or security reason stated on the release); otherwise the update is advice.
-    const blocking = newer && latest.priority === 'REQUIRED' && (latest.minSupportedVersionCode === null || versionCode === null || versionCode < latest.minSupportedVersionCode);
+    const d = decideCompat(component, this.#compat, versionCode, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest) });
     return {
-      update_available: newer,
-      required: blocking,
-      priority: latest.priority,
-      reason: blocking ? latest.requiredReason : null,
-      release: newer ? this.#publicRelease(latest) : null,
+      status: d.status,
+      compatible: d.compatible,
+      contract_revision: this.#compat.contractRevision,
+      min_supported_version_code: d.minSupportedVersionCode,
+      latest_version_code: d.offer?.versionCode ?? null,
+      update_available: d.offer !== null,
+      required: d.required,
+      priority: latest?.priority ?? null,
+      reason: d.required ? d.reason : null,
+      release: d.offer === null ? null : this.#publicRelease(d.offer),
     };
+  }
+
+  /** What the deploy preflight reads: the contract minimum and the newest downloadable build of each app, no phone involved. */
+  async compatibilityView(): Promise<JsonObject> {
+    const components: JsonObject = {};
+    for (const component of APP_COMPONENTS) {
+      const latest = await this.transactions.withTransaction((context) => this.releases.latestPublished(context, component));
+      const ready = artifactReady(this.#artifactDir, latest);
+      components[component] = {
+        min_client_version_code: this.#compat.components[component].minClientVersionCode,
+        published_version_code: latest?.versionCode ?? null,
+        published_version_name: latest?.versionName ?? null,
+        artifact_ready: ready,
+        satisfied: latest !== undefined && latest.versionCode !== null && latest.versionCode >= this.#compat.components[component].minClientVersionCode && ready,
+      };
+    }
+    return { contract_revision: this.#compat.contractRevision, backend_version: this.#version, components };
   }
 
   #publicRelease(r: ReleaseRow): JsonObject {

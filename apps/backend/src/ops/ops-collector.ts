@@ -9,6 +9,7 @@ import { PUSH_PROVIDER, PushProvider } from '../notifications/push-provider';
 import { SmsGatewayOpsReader } from '../sms-gateway/sms-gateway-ops-reader';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CHECK_API, CHECK_DATABASE, CHECK_EXTERNAL_PROBE, CHECK_M14, CHECK_NOTIFICATIONS, CHECK_WORKER } from './ops-constants';
+import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactReady, evaluateAppCompat } from './ops-compat';
 import { DiscordClient, OPS_DISCORD_CLIENT, buildDiscordBody } from './ops-discord';
 import { OpsEngine } from './ops-engine';
 import { OpsIncidentRepository } from './ops-incident-repository';
@@ -45,6 +46,7 @@ interface DbOutage {
 export class OpsCollector {
   readonly #config: OpsConfig;
   readonly #environment: string;
+  readonly #compat: CompatMatrix;
   #outage: DbOutage | undefined;
   #cache: { url: string | undefined; enabled: boolean; minSeverity: 'WARNING' | 'CRITICAL'; settings: OpsSettings; maintenance: { scopes: string[]; endsAtMs: number }[] } = {
     url: undefined,
@@ -71,7 +73,9 @@ export class OpsCollector {
     @Inject(OPS_DISCORD_CLIENT) private readonly discord: DiscordClient,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     @Optional() @Inject(APP_LOGGER) private readonly logger?: JsonLogger,
+    @Optional() @Inject(APP_COMPAT_MATRIX) compat?: CompatMatrix,
   ) {
+    this.#compat = compat ?? APP_COMPAT;
     this.#config = appConfig.ops ?? DEFAULT_OPS_CONFIG;
     this.#environment = appConfig.appEnv;
   }
@@ -96,6 +100,7 @@ export class OpsCollector {
       await this.#step('worker', () => this.#worker());
       await this.#step('gateway', () => this.#gateway());
       await this.#step('backup', () => this.#backup());
+      await this.#step('app_compat', () => this.#appCompat());
       await this.#step('https', () => this.#https());
       await this.#step('probe', () => this.#externalProbe());
       await this.#step('notifications', () => this.#notificationsCheck());
@@ -311,6 +316,16 @@ export class OpsCollector {
       const r = await this.releases.backupSummary(context, 'RESTORE_TEST');
       await this.engine.observe(context, evaluateBackup({ nowMs, latest: b.latest, lastOkAtMs: b.lastOkAtMs }, this.#cache.settings));
       await this.engine.observe(context, evaluateRestoreTest({ nowMs, latest: r.latest, lastOkAtMs: r.lastOkAtMs }));
+    });
+  }
+
+  /** The deployed APK contract against what can really be downloaded (#193): a breaking minimum with no downloadable APK is a SYSTEM-visible fault, never silence. */
+  async #appCompat(): Promise<void> {
+    await this.transactions.withTransaction(async (context) => {
+      for (const component of APP_COMPONENTS) {
+        const release = await this.releases.latestPublished(context, component);
+        await this.engine.observe(context, evaluateAppCompat(component, this.#compat, { release, artifactReady: artifactReady(this.#config.artifactDir, release) }));
+      }
     });
   }
 

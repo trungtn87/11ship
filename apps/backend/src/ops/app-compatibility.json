@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "contract_revision": 1,
+  "components": {
+    "FOOD": { "min_client_version_code": 1, "reason": null },
+    "SHIP": { "min_client_version_code": 1, "reason": null }
+  }
+}

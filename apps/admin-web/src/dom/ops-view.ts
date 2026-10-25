@@ -797,6 +797,9 @@ export class OpsReleasesView extends Page {
       'section',
       { class: 'detail-block' },
       h('h2', { class: 'subtitle' }, p === null ? `${selected?.label ?? ''}: chưa có bản phát hành` : `${p.componentLabel} ${p.versionName}`),
+      selected?.compatibility == null
+        ? undefined
+        : h('p', { class: selected.compatibility.ok ? 'hint' : 'message message-warning', role: 'status' }, h('strong', {}, 'Tương thích với backend: '), `${selected.compatibility.summary} (backend yêu cầu versionCode từ ${String(selected.compatibility.minClientVersionCode)}).`),
       p === null
         ? h('p', { class: 'hint' }, 'Chưa có bản nào được phát hành. "Có bản mới" chỉ hiện khi có bản đã phát hành và thiết bị đã báo phiên bản cũ hơn.')
         : h(

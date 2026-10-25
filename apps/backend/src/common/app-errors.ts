@@ -162,6 +162,7 @@ export const APP_ERROR_DEFINITIONS = {
   OPS_MAINTENANCE_NOT_FOUND: { status: 404, message: 'The maintenance window was not found' },
   OPS_RELEASE_NOT_FOUND: { status: 404, message: 'The release was not found' },
   OPS_RELEASE_CONFLICT: { status: 409, message: 'The release already exists or is not in a state that allows this action' },
+  OPS_RELEASE_WITHDRAW_BLOCKED: { status: 409, message: 'Withdrawing this release would leave no downloadable build that meets the minimum the backend requires' },
   OPS_ARTIFACT_INVALID: { status: 400, message: 'The release file is not valid' },
   OPS_ARTIFACT_UNAVAILABLE: { status: 503, message: 'Release files are not available on this server' },
   OPS_INGEST_UNAUTHORIZED: { status: 401, message: 'The reporting credential is not valid' },

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, lstatSync } from 'node:fs';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
 import { AdminMembershipRepository } from '../admin-auth/admin-membership-repository';
 import { PROVISIONING_SCOPE_TYPE } from '../admin-provisioning/admin-provisioning-constants';
@@ -23,6 +23,8 @@ import { IncidentRow, OpsIncidentRepository, incidentCode } from './ops-incident
 import { OpsReleaseRepository } from './ops-release-repository';
 import { CheckRow, OpsRepository } from './ops-repository';
 import { checkSettingsPatch, overridesOf, resolveSettings, SETTING_DEFS } from './ops-settings';
+import { APP_COMPAT, APP_COMPAT_MATRIX, CompatMatrix, artifactReady, evaluateAppCompat } from './ops-compat';
+import type { ReleaseRow } from './ops-release-repository';
 import { OpsSettingsService } from './ops-settings-service';
 import { OpsTelemetryRepository } from './ops-telemetry-repository';
 import { ConfigBody, IncidentListQuery, LogQuery, MaintenanceBody, ReleaseBody } from './ops-validation';
@@ -63,6 +65,7 @@ export class OpsAdminService {
   readonly #lockTimeoutMs: number;
   readonly #artifactDir: string | undefined;
   readonly #environment: string;
+  readonly #compat: CompatMatrix;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -79,7 +82,9 @@ export class OpsAdminService {
     private readonly dispatcher: OpsDiscordDispatcher,
     private readonly audit: AuditWriter,
     @Inject(APP_CONFIG) appConfig: AppConfig,
+    @Optional() @Inject(APP_COMPAT_MATRIX) compat?: CompatMatrix,
   ) {
+    this.#compat = compat ?? APP_COMPAT;
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#artifactDir = (appConfig.ops ?? DEFAULT_OPS_CONFIG).artifactDir;
     this.#environment = appConfig.appEnv;
@@ -638,6 +643,7 @@ export class OpsAdminService {
           running: running === undefined ? null : { version_name: running.versionName, version_code: running.versionCode, reporters: running.reporters, last_reported_at: iso(running.lastReportedAtMs) },
           reported_versions: reported.map((r) => ({ version_name: r.versionName, version_code: r.versionCode, reporters: r.reporters })),
           published: latest === undefined ? null : releaseView(latest, {}),
+          compatibility: this.#compatView(component, latest),
           status: latest === undefined ? 'NO_RELEASE' : running === undefined ? 'NO_REPORT' : newer ? 'UPDATE_AVAILABLE' : 'CURRENT',
           status_label: latest === undefined ? 'Chưa phát hành' : running === undefined ? 'Chưa có báo cáo phiên bản đang chạy' : newer ? 'Có bản mới' : 'Mới nhất',
         });
@@ -659,6 +665,15 @@ export class OpsAdminService {
   }
 
   /** SHA-256 and size of a release file, computed by the server from its own artifact directory (never a path from the request; symlinks refused). */
+  /** The APK contract of one app next to its published build (null for components without one): what the Administration shows as "tương thích APK–backend". */
+  #compatView(component: string, latest: ReleaseRow | undefined): JsonObject | null {
+    if (component !== 'FOOD' && component !== 'SHIP') {
+      return null;
+    }
+    const check = evaluateAppCompat(component, this.#compat, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest) });
+    return { contract_revision: this.#compat.contractRevision, min_client_version_code: this.#compat.components[component].minClientVersionCode, ok: check.state === 'OK', problem: check.state === 'OK' ? null : (check.evidenceCode ?? null), summary: check.state === 'OK' ? 'Có APK tải được đáp ứng mức tối thiểu của backend' : check.title };
+  }
+
   async #measureArtifact(name: string): Promise<{ name: string; sha256: string; sizeBytes: number }> {
     if (this.#artifactDir === undefined) {
       throw new AppError('OPS_ARTIFACT_UNAVAILABLE');
@@ -725,6 +740,16 @@ export class OpsAdminService {
       }
       if (to === 'PUBLISHED' && current.artifactName !== null && (remeasured === null || remeasured.sha256 !== current.artifactSha256 || remeasured.sizeBytes !== current.artifactSizeBytes)) {
         throw new AppError('OPS_ARTIFACT_INVALID');
+      }
+      if (to === 'WITHDRAWN' && (current.component === 'FOOD' || current.component === 'SHIP') && this.#compat.components[current.component].minClientVersionCode > 1) {
+        // Phones below the contract minimum are told to update; taking away the only build that satisfies it would strand them with nothing to download.
+        const rest = await context.query<{ ok: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM app.ops_releases WHERE component = $1 AND status = 'PUBLISHED' AND release_id <> $2::uuid AND version_code >= $3) AS ok`,
+          [current.component, id, this.#compat.components[current.component].minClientVersionCode],
+        );
+        if (rest.rows[0]?.ok !== true) {
+          throw new AppError('OPS_RELEASE_WITHDRAW_BLOCKED');
+        }
       }
       const row = await this.releases.setReleaseStatus(context, id, expectedVersion, to);
       if (row === undefined) {

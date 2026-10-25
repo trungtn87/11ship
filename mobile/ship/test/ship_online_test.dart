@@ -160,6 +160,36 @@ Future<_T> _build({bool accepting = false, bool walletReady = true, bool attach 
 Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
 
 void main() {
+  group('a required app update (#193)', () {
+    test('refuses to go online while one is pending, says why, and starts nothing', () async {
+      final t = await _build();
+      final ValueNotifier<bool> blocked = ValueNotifier<bool>(true);
+      t.online.bindUpdateGate(gate: blocked, blocked: () => blocked.value);
+      expect(await t.online.setOnline(true), isFalse);
+      expect(t.online.message, contains('Cần cập nhật ứng dụng'));
+      expect(t.feed.starts, 0);
+      expect(t.accepting, isEmpty);
+      expect(t.driver.profile!.acceptingDeliveries, isFalse);
+      blocked.value = false;
+      expect(await t.online.setOnline(true), isTrue);
+      expect(t.driver.profile!.acceptingDeliveries, isTrue);
+    });
+
+    test('a shipper who is online is switched to not accepting the moment a required update is known; the sharing follows the server', () async {
+      final t = await _build();
+      expect(await t.driver.setAccepting(true), isTrue);
+      expect(t.online.receiving, isTrue);
+      final ValueNotifier<bool> blocked = ValueNotifier<bool>(false);
+      t.online.bindUpdateGate(gate: blocked, blocked: () => blocked.value);
+      blocked.value = true;
+      blocked.notifyListeners();
+      await settle();
+      expect(t.accepting.last, contains('false'));
+      expect(t.driver.profile!.acceptingDeliveries, isFalse);
+      expect(t.online.newWorkBlockedByUpdate, isTrue);
+    });
+  });
+
   group('turning on', () {
     test('shares the position first, then asks the server; one button does both', () async {
       final t = await _build();
