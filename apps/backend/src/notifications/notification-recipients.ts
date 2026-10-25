@@ -4,6 +4,7 @@ import { ShipperLocationRepository } from '../delivery/shipper-location';
 import { DriverRepository } from '../driver/driver-repository';
 import { ComplaintRepository } from '../feedback/complaint-repository';
 import { freshClockMs } from '../idempotency/idempotency-repository';
+import { OrderChatParticipants, ChatRecipient } from '../order-chat/order-chat-participants';
 import { OrderRepository } from '../orders/order-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
@@ -43,6 +44,7 @@ export class NotificationRecipients {
     private readonly agreements: ShippingFeeAgreementService,
     private readonly complaints: ComplaintRepository,
     private readonly orders: OrderRepository,
+    private readonly chatParticipants: OrderChatParticipants,
   ) {}
 
   shopOwner(context: TransactionContext, shopId: string): Promise<string | undefined> {
@@ -78,6 +80,15 @@ export class NotificationRecipients {
     }
     const facts = await this.orderAccessFor(context, d.orderId, userId, 'SHOP');
     return { kind: 'order', orderId: d.orderId, ...facts };
+  }
+
+  /**
+   * Who is told that a message was written in an order chat room: the accounts that may write in the room NOW (read back from the owners' tables, never from
+   * the event), never the sender. An empty list when the room closed or does not exist any more.
+   */
+  async chatRecipients(context: TransactionContext, roomType: 'ORDER' | 'DIRECT', roomId: string, senderUserId: string): Promise<ChatRecipient[]> {
+    const room = roomType === 'ORDER' ? await this.chatParticipants.orderRoom(context, roomId) : await this.chatParticipants.directRoom(context, roomId);
+    return room === undefined || !room.open ? [] : this.chatParticipants.recipients(context, room, senderUserId);
   }
 
   async driverUser(context: TransactionContext, driverId: string): Promise<string | undefined> {

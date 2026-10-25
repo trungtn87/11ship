@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
+import 'order_chat_models.dart';
+import 'order_chat_sample.dart';
 
 // ILLUSTRATIVE data for the tests and the design preview (--dart-define=M10_UI_PREVIEW=true). It is a small in-memory stand-in for the server: one store
 // shared by a customer source and a shop source, so a flow (send -> the shop confirms -> the customer sees it) can be walked through. It builds the very
@@ -75,10 +77,15 @@ class _Order {
 
 /// The shared stand-in for the server.
 class SampleOrderStore {
+  /// The chat of the sample orders: one in-memory room, shared by the customer and the shop source.
+  late final SampleOrderChat chat = SampleOrderChat(milestonesOf: _milestonesOf, openOf: _isOpen);
   final List<_Order> _orders = <_Order>[];
   List<DraftLine> _cart = <DraftLine>[];
   String? _cartShop;
   int _next = 1;
+
+  /// The code of an Order (the shop reads it; the customer never does), for assertions in tests.
+  String codeOf(String id) => _find(id).code;
 
   /// Orders the sample "server" holds, for assertions in tests.
   int get orderCount => _orders.length;
@@ -164,7 +171,7 @@ class SampleOrderStore {
       'status': o.status,
       'display_status': _display(o),
       'version': o.version,
-      'shop': <String, Object?>{'shop_id': kSampleShopId, 'name': 'Quán Phở Minh họa', 'phone': '+84900000001', 'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội'},
+      'shop': <String, Object?>{'shop_id': kSampleShopId, 'name': 'Quán Phở Minh họa', 'phone': '+84900000001', 'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội', if (!shop) 'contact': <String, Object?>{'phone': '+84900000001', 'zalo_url': 'https://zalo.me/0900000001', 'messenger_url': 'https://m.me/quanphominh'}},
       'recipient': <String, Object?>{'name': o.recipientName, 'phone': o.recipientPhone, 'address_text': o.addressText, 'lat': o.lat, 'lng': o.lng},
       'note': o.note,
       'scheduled_for': o.scheduledFor?.toUtc().toIso8601String(),
@@ -239,6 +246,37 @@ class SampleOrderStore {
     };
   }
 
+  _Order? _findOrNull(String id) {
+    for (final _Order o in _orders) {
+      if (o.id == id) {
+        return o;
+      }
+    }
+    return null;
+  }
+
+  /// The chat's milestones are the order's events in plain words (the server projects the same from the real events); the room closes with the order.
+  List<ChatMilestone> _milestonesOf(String id) {
+    final _Order? o = _findOrNull(id);
+    if (o == null) {
+      return const <ChatMilestone>[];
+    }
+    final DateTime base = o.createdAt;
+    final List<ChatMilestone> out = <ChatMilestone>[];
+    for (int i = 0; i < o.events.length; i++) {
+      final String? text = _storyText(o.events[i]);
+      if (text != null) {
+        out.add(ChatMilestone(id: 'o:${o.id}:$i', at: base.add(Duration(seconds: i)), text: text));
+      }
+    }
+    return out;
+  }
+
+  bool _isOpen(String id) {
+    final _Order? o = _findOrNull(id);
+    return o != null && !const <String>{'COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP', 'CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED'}.contains(o.status);
+  }
+
   /// Seeds one Order in a given state (for the screenshots and the list tests).
   String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true}) {
     final _Order o = _create(<DraftLine>[DraftLine(itemId: kSampleDishes[0].id, name: kSampleDishes[0].name, quantity: 2, priceVnd: 45000), DraftLine(itemId: kSampleDishes[2].id, name: kSampleDishes[2].name, quantity: 1, priceVnd: 5000, note: 'Ít đá')], 'seed-$_next');
@@ -281,6 +319,9 @@ class SampleCustomerOrders extends CustomerOrderSource {
   SampleCustomerOrders(this.store);
 
   final SampleOrderStore store;
+
+  @override
+  OrderChatApi get chat => store.chat;
 
   @override
   bool get isSample => true;
@@ -485,6 +526,9 @@ class SampleShopOrders extends ShopOrderSource {
   SampleShopOrders(this.store);
 
   final SampleOrderStore store;
+
+  @override
+  OrderChatApi get chat => store.chat;
 
   @override
   bool get isSample => true;

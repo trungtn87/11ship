@@ -7,6 +7,9 @@ import '../m06/m06_models.dart';
 import '../m06/m06_views.dart' show parseAgreedFee;
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m10/order_chat_models.dart';
+import '../m10/order_chat_view.dart';
+import '../m10/order_sections.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -365,6 +368,25 @@ class ShipperDeliveryDetailScreen extends StatefulWidget {
 class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScreen> with M07Actions<ShipperDeliveryDetailScreen> {
   final GlobalKey<M07DetailPageState<DeliveryView>> _page = GlobalKey<M07DetailPageState<DeliveryView>>();
 
+  /// "Trao đổi đơn hàng" of the delivery this Shipper holds (the room of its order, or of the direct call). Held above the collapsible card.
+  OrderChatController? _chat;
+
+  OrderChatController? _chatFor(DeliveryView d) {
+    final OrderChatApi? api = widget.source.chat;
+    if (api == null) {
+      return null;
+    }
+    final OrderChatController chat = _chat ??= OrderChatController(api: api, room: ChatRoomRef(ChatDoor.shipperDelivery, widget.deliveryId));
+    chat.noteVersion(d.version);
+    return chat;
+  }
+
+  @override
+  void dispose() {
+    _chat?.dispose();
+    super.dispose();
+  }
+
   Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
 
   Future<void> _release(DeliveryView d) async {
@@ -483,25 +505,45 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           text: 'Chỉ cần bấm "Giao thành công" khi đã giao xong. Nếu không giao được, hãy gọi quán để thống nhất; chỉ người tạo đơn mới hủy được.',
           icon: Icons.phone_in_talk_outlined,
         ),
-      _contactCard('Quán lấy hàng', <(String, String)>[('Quán', d.pickup.shopName), if (d.pickup.phone != null) ('Điện thoại', d.pickup.phone!), if (d.pickup.addressText != null) ('Địa chỉ', d.pickup.addressText!)], key: 'm07-pickup-card', show: active),
+      // The contacts exist only while this Shipper holds the delivery (the server sends them only then); "Gọi" opens the dialer and never calls by itself.
+      _contactCard('Quán lấy hàng', d.pickup.shopName, <(String, String)>[('Quán', d.pickup.shopName), if (d.pickup.phone != null) ('Điện thoại', d.pickup.phone!), if (d.pickup.addressText != null) ('Địa chỉ', d.pickup.addressText!)], key: 'm07-pickup-card', show: active, phone: d.pickup.phone, who: 'quán'),
       _contactCard(
         'Người nhận',
+        d.recipient.name,
         <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—')],
         key: 'm07-recipient-card',
         show: active,
+        phone: d.recipient.phone,
+        who: 'người nhận',
       ),
       N11Card(child: KeyValueRows(<(String, String)>[('Hàng', d.goods.description), if (d.note != null && d.note!.isNotEmpty) ('Ghi chú', d.note!)])),
       MoneySummary(goods: d.goods, fee: d.fee),
+      if (active || d.state == DeliveryState.completed)
+        if (_chatFor(d) case final OrderChatController chat)
+          ListenableBuilder(
+            listenable: chat,
+            builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: chat.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: chat)),
+          ),
       if (!active) _result(d),
     ];
     return M07PageParts(body, bottom: active ? _bottom(d) : null);
   }
 
-  Widget _contactCard(String title, List<(String, String)> rows, {required String key, required bool show}) {
+  Widget _contactCard(String title, String name, List<(String, String)> rows, {required String key, required bool show, String? phone, required String who}) {
     if (!show) {
       return const SizedBox.shrink();
     }
-    return N11Card(key: Key(key), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(title, style: N11Text.label), KeyValueRows(rows)]));
+    return KeyedSubtree(
+      key: Key(key),
+      child: OrderSection(
+        id: key,
+        title: title,
+        summary: [name, dialNumberText(phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
+        initiallyExpanded: true,
+        trailing: QuickCall(phone: phone, who: who),
+        builder: (BuildContext _) => KeyValueRows(rows),
+      ),
+    );
   }
 
   Widget _result(DeliveryView d) {

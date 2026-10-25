@@ -133,6 +133,7 @@ if [ "$app" = food ]; then
   cp "$here/android-templates/kotlin/N11LaunchChannel.kt" "$kt/vn/eleven/n11/N11LaunchChannel.kt"
 fi
 cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
+cp "$here/android-templates/kotlin/N11DialerChannel.kt" "$kt/vn/eleven/n11/N11DialerChannel.kt"
 sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
 # JVM unit test of the Binder join rules (no device needed), run by `./gradlew :app:testDebugUnitTest` in CI.
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"

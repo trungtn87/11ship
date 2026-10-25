@@ -367,7 +367,7 @@ class TimelineEntry {
   final String? note;
 }
 
-/// One milestone of "Diễn biến", already put in plain words by the server (no event key, no internal code). Shown by [StoryCard].
+/// One milestone of "Diễn biến", already put in plain words by the server (no event key, no internal code). The order chat draws the same milestones as lines of its feed.
 class StoryEntry {
   const StoryEntry({required this.at, required this.text});
 

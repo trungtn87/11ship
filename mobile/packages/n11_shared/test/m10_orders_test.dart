@@ -312,8 +312,11 @@ void main() {
       final OrderRuntime runtime = runtimeOf(store);
       final String live = store.seed(status: 'PREPARING', deliveryState: 'accepted');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: live));
-      expect(containing('Shipper Minh Họa'), findsOneWidget);
+      expect(containing('Shipper Minh Họa'), findsWidgets);
       expect(containing('Shipper đang đến quán'), findsWidgets);
+      // The map is closed by default (nothing heavy is built); the person opens it to see the position.
+      expect(key('m07-location-card'), findsNothing);
+      await tap(tester, key('section-map-header'));
       expect(key('m07-location-card'), findsOneWidget);
       expect(key('m07-location-time'), findsOneWidget);
       await unmount(tester);
@@ -339,6 +342,9 @@ void main() {
       );
       final String live = store.seed(status: 'PREPARING', deliveryState: 'accepted');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: live));
+      expect(key('fake-map'), findsNothing);
+      expect(drawn, isEmpty);
+      await tap(tester, key('section-map-header'));
       expect(key('fake-map'), findsOneWidget);
       expect(drawn.last, containsAll(<String>['shipper', 'Điểm giao']));
       expect(key('m07-location-time'), findsOneWidget);
@@ -346,11 +352,13 @@ void main() {
       drawn.clear();
       final String searching = store.seed(status: 'PREPARING', deliveryState: 'waiting_driver');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: searching));
+      await tap(tester, key('section-map-header'));
       expect(drawn.last, isNot(contains('shipper')), reason: 'nobody holds the delivery yet: no live position');
       await unmount(tester);
       drawn.clear();
       final String done = store.seed(status: 'COMPLETED', deliveryState: 'completed');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: done));
+      await tap(tester, key('section-map-header'));
       expect(drawn.every((List<String> labels) => !labels.contains('shipper')), isTrue, reason: 'an ended order stops tracking');
       expect(key('m07-location-card'), findsNothing);
       expect(containing('không còn theo dõi vị trí'), findsOneWidget);
@@ -484,7 +492,7 @@ void main() {
       expect(containing('Quán từ chối'), findsWidgets);
       await unmount(tester);
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: id));
-      expect(containing('Quán đã từ chối đơn — Hết món'), findsOneWidget);
+      expect(containing('Quán đã từ chối đơn — Hết món'), findsWidgets);
       expect(key('order-end-reason'), findsNothing);
       await unmount(tester);
     });

@@ -14,6 +14,7 @@ import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
   OUTBOX_COMPLAINT_CHANGED_TYPE,
+  OUTBOX_ORDER_CHAT_MESSAGE_TYPE,
   OUTBOX_DELIVERY_CHANGED_TYPE,
   OUTBOX_DRIVER_STATE_CHANGED_TYPE,
   OUTBOX_ORDER_CHANGED_TYPE,
@@ -89,7 +90,7 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE;
+    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
@@ -106,6 +107,8 @@ export class NotificationEventService {
         return this.#profile(event);
       case OUTBOX_COMPLAINT_CHANGED_TYPE:
         return this.#complaint(event);
+      case OUTBOX_ORDER_CHAT_MESSAGE_TYPE:
+        return this.#chatMessage(event);
       default:
         if (event.eventType.startsWith(OUTBOX_ORDER_PREFIX) || event.eventType.startsWith(OUTBOX_WITHDRAWAL_PREFIX)) {
           // Any other order.* type and M04-C (withdrawal) have no consumer yet: the event is acknowledged as "not integrated" and nothing is made up.
@@ -272,6 +275,46 @@ export class NotificationEventService {
           event.eventId,
           this.#ageOf(event),
         );
+      }
+    });
+  }
+
+  // ---- order chat (#191) -----------------------------------------------------------------------------------------------------
+
+  /**
+   * A message was written in an order chat room. Whoever may write in the room NOW (re-read from the owners' tables) and is not the sender gets ONE collapsed card
+   * per room that opens the chat; the text of the message is never in the notification. Business milestones are not pushed here: M10/M07 already tell them.
+   */
+  async #chatMessage(event: OutboxPublishEvent): Promise<void> {
+    const { room_type: roomType, room_id: roomId, sender_user_id: senderUserId } = event.payload;
+    const valid = (roomType === 'ORDER' || roomType === 'DIRECT') && isCanonicalUuid(roomId) && isCanonicalUuid(senderUserId);
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, valid ? 'OK' : 'INVALID_PAYLOAD'))) {
+        return;
+      }
+      if (!valid) {
+        return;
+      }
+      for (const r of await this.recipients.chatRecipients(context, roomType, roomId, senderUserId)) {
+        const category = CATEGORY_OF_KIND.ORDER_CHAT_MESSAGE;
+        const card = await this.repo.upsertCollapsedCard(context, {
+          notificationId: randomUUID(),
+          recipientUserId: r.userId,
+          app: r.app,
+          kind: 'ORDER_CHAT_MESSAGE',
+          category,
+          title: 'Tin nhắn mới về đơn hàng',
+          body: 'Mở Trao đổi đơn hàng để xem tin nhắn mới.',
+          targetType: r.targetType,
+          targetId: r.targetId,
+          targetVersion: 0,
+          dedupeKey: `chat:${roomType}:${roomId}`,
+          sourceEventId: event.eventId,
+          validForMs: null,
+          purgeDays: config.purgeDays,
+        });
+        await this.pushes.queue(context, { config, notificationId: card.notificationId, userId: r.userId, app: r.app, category, pushKey: `chat:${event.eventId}`, ttlMs: PUSH_TTL_MS.result });
       }
     });
   }

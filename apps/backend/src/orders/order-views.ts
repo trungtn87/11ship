@@ -10,6 +10,7 @@ import { ACTIVE_STATES } from '../delivery/delivery-constants';
 import { ItemRow, OrderEventRow, OrderListItem, OrderRepository, OrderRow } from './order-repository';
 import { buildOrderStory, StoryAudience, StoryOrderEvent } from './order-story';
 import { humanDeliveryReason } from '../delivery/delivery-reason-text';
+import { publicContactOf } from '../shop-setup/shop-public-contact';
 import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
@@ -137,6 +138,11 @@ export class OrderViews {
     const { all, latest } = await this.#latest(context, o);
     const view = await this.#base(context, o, items, latest, nowMs);
     view.end_reason = humanDeliveryReason(o.endReason);
+    // The shop's PUBLIC contact (phone, Zalo and Messenger links as the shop declared and the server validated), for the quick-contact buttons; it goes away
+    // when the order has ended, like the number above it. Nothing private is added: the same projection the public shop page uses.
+    const snapshot = isEnded(o.status) ? undefined : await this.shops.snapshotOfShop(context, o.shopId);
+    const contact = snapshot === undefined ? undefined : publicContactOf(snapshot);
+    view.shop = { ...(view.shop as JsonObject), contact: contact === undefined ? null : { phone: contact.phone, zalo_url: contact.zaloUrl, messenger_url: contact.messengerUrl } };
     view.delivery = latest === undefined ? null : await this.deliveryViews.forCustomer(context, latest, nowMs);
     view.delivery_count = all.length;
     // After pickup the customer (who created an ORDER) may cancel; the Shipper is told to call the shop and the goods stay with them until the shop settles them.

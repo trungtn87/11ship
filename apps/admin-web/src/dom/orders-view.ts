@@ -16,9 +16,11 @@ import {
   OrderStatusFilter,
   DISPLAY_LABEL,
 } from '../core/orders.js';
+import { OrderChatSource } from '../core/order-chat.js';
 import { DialogHandle, openDialog } from './dialog.js';
 import { formatDateTime, h, message, primary, secondary, setMessage } from './dom.js';
 import { icon } from './icons.js';
+import { OrderChatPanel } from './order-chat-panel.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
 // DOM of "Vận hành › Đơn hàng" (M10.05): the list of food Orders with filters, a detail drawer (dishes with the shop's edits, amounts, the calls for a
@@ -28,6 +30,8 @@ import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
 export interface OrderHost {
   readonly source: OrderSource;
+  /** "Trao đổi đơn hàng" (issue #191) in the detail drawer; without it the drawer shows no chat. */
+  readonly chat?: OrderChatSource;
   /** A new Idempotency-Key for a NEW intent. A retry after an unknown outcome never calls it. */
   readonly newKey: () => string;
   readonly onSessionLost: () => void;
@@ -107,6 +111,7 @@ export class OrderListView {
   #disposed = false;
   #openId: string | undefined;
   #handle: DialogHandle | undefined;
+  #chat: OrderChatPanel | undefined;
 
   constructor(
     private readonly root: HTMLElement,
@@ -153,6 +158,12 @@ export class OrderListView {
     this.#disposed = true;
     clearTimeout(this.#timer);
     this.#handle?.close();
+    this.#dropChat();
+  }
+
+  #dropChat(): void {
+    this.#chat?.dispose();
+    this.#chat = undefined;
   }
 
   async load(): Promise<void> {
@@ -239,6 +250,7 @@ export class OrderListView {
 
   async #open(id: string, note?: string): Promise<void> {
     this.#openId = id;
+    this.#dropChat();
     this.#drawer.hidden = false;
     this.#drawer.replaceChildren(skeleton(3));
     const read = await this.host.source.detail(id);
@@ -264,6 +276,7 @@ export class OrderListView {
     }
     this.#drawer.replaceChildren(...this.#detail(read.order, note));
     this.#drawer.focus();
+    this.#chat?.start();
   }
 
   #closeBar(title: string): HTMLElement {
@@ -271,6 +284,7 @@ export class OrderListView {
     close.classList.add('btn-inline');
     close.addEventListener('click', () => {
       this.#openId = undefined;
+      this.#dropChat();
       this.#drawer.hidden = true;
       this.#drawer.replaceChildren();
     });
@@ -357,6 +371,7 @@ export class OrderListView {
               ),
             ),
       ),
+      ...this.#chatBlock(d),
       h(
         'section',
         { class: 'detail-block' },
@@ -387,6 +402,18 @@ export class OrderListView {
       blocks.push(h('section', { class: 'detail-block' }, h('h3', { class: 'subtitle' }, 'Xử lý ngoại lệ'), h('div', { class: 'detail-actions' }, ...actions)));
     }
     return blocks;
+  }
+
+  /** The chat room of an Order is the Order's own; its panel starts once the drawer is drawn. */
+  #chatBlock(d: OrderDetail): HTMLElement[] {
+    if (this.host.chat === undefined) {
+      return [];
+    }
+    this.#chat = new OrderChatPanel(
+      { kind: 'ORDER', id: d.id },
+      { source: this.host.chat, newKey: this.host.newKey, onSessionLost: this.host.onSessionLost, onForbidden: this.host.onForbidden, ...(this.host.dialogHost === undefined ? {} : { dialogHost: this.host.dialogHost }) },
+    );
+    return [this.#chat.element];
   }
 
   #ask(d: OrderDetail, name: OrderActionName): void {

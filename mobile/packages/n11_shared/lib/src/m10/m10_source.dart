@@ -1,5 +1,6 @@
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
+import 'order_chat_models.dart';
 
 // The data seam of the M10 screens. A screen asks a source and draws what comes back; it never invents a value. Real builds use the HTTP sources
 // (m10_http.dart) over the signed session. [SampleCustomerOrders]/[SampleShopOrders] (m10_sample.dart) feed the tests and the design preview
@@ -77,6 +78,9 @@ class LineEdit {
 abstract class CustomerOrderSource {
   const CustomerOrderSource();
 
+  /// The chat of an order; null in a build whose source has none (the section is then not drawn).
+  OrderChatApi? get chat => null;
+
   /// True only for illustrative data: every screen then carries the sample banner.
   bool get isSample;
 
@@ -106,6 +110,8 @@ abstract class CustomerOrderSource {
 /// The shop side (11Food).
 abstract class ShopOrderSource {
   const ShopOrderSource();
+
+  OrderChatApi? get chat => null;
 
   bool get isSample;
 

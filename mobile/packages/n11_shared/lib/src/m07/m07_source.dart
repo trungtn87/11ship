@@ -1,3 +1,4 @@
+import '../m10/order_chat_models.dart' show OrderChatApi;
 import 'm07_models.dart';
 
 // The data seam of the M07 screens. A screen asks a source and draws whatever comes back; it never invents a value.
@@ -96,6 +97,12 @@ String _m07FailureText(M07Failure failure) {
       return 'Hồ sơ này không còn yêu cầu xem xét lại được.';
     case 'SHOP_PROFILE_INCOMPLETE':
       return 'Quán chưa có vị trí lấy hàng. Hãy hoàn tất hồ sơ quán.';
+    case 'ORDER_CHAT_CLOSED':
+      return 'Đơn đã kết thúc. Bạn chỉ có thể xem lại trao đổi.';
+    case 'ORDER_CHAT_NOT_PARTICIPANT':
+      return 'Bạn không còn quyền gửi tin trong trao đổi này.';
+    case 'ORDER_CHAT_RATE_LIMITED':
+      return 'Bạn gửi quá nhanh. Hãy đợi vài giây rồi gửi lại.';
   }
   return switch (failure.kind) {
     M07FailureKind.offline => 'Chưa gửi được vì mất kết nối. Hãy thử lại.',
@@ -110,6 +117,9 @@ String _m07FailureText(M07Failure failure) {
 /// The shop side (11Food).
 abstract class ShopDeliverySource {
   const ShopDeliverySource();
+
+  /// The chat of a direct call (no order around it); null in a build whose source has none.
+  OrderChatApi? get chat => null;
 
   /// True only for illustrative data: every screen then carries the sample banner.
   bool get isSample;
@@ -154,6 +164,9 @@ abstract class ShopDeliverySource {
 /// The Shipper side (11Ship).
 abstract class ShipperDeliverySource {
   const ShipperDeliverySource();
+
+  /// The chat of the delivery the Shipper holds; null in a build whose source has none.
+  OrderChatApi? get chat => null;
 
   bool get isSample;
 

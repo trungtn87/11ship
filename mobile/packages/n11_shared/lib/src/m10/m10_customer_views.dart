@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../account/api_client.dart';
@@ -11,6 +12,7 @@ import '../addresses/address_models.dart';
 import '../addresses/address_views.dart';
 import '../addresses/address_location_picker.dart';
 import '../m02/m02_widgets.dart';
+import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
 import '../m11/m11_entries.dart';
@@ -22,6 +24,9 @@ import 'm10_cart.dart';
 import 'm10_common.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
+import 'order_chat_models.dart';
+import 'order_chat_view.dart';
+import 'order_sections.dart';
 
 // The customer's side of M10 in 11Food: choose dishes (+ / − and a note), the cart, the check and sending, "Đơn hàng" (Đang xử lý / Đơn hẹn / Lịch sử),
 // the detail with the Shipper and the map of the CURRENT delivery, cancelling before the shop confirms, and ordering again.
@@ -758,7 +763,10 @@ class OrderSummaryCard extends StatelessWidget {
 // ---- the detail ------------------------------------------------------------------------------------------------------
 
 class CustomerOrderDetailScreen extends StatefulWidget {
-  const CustomerOrderDetailScreen({super.key, required this.runtime, required this.orderId, this.justSent = false, this.mapBuilder});
+  const CustomerOrderDetailScreen({super.key, required this.runtime, required this.orderId, this.justSent = false, this.mapBuilder, this.contactLauncher = const MethodChannelContactLauncher()});
+
+  /// Opens the shop's Zalo / Messenger link in its app (the phone dialer is [orderPhoneDialer]); a link that cannot be opened is copied.
+  final ContactLauncher contactLauncher;
 
   final OrderRuntime runtime;
   final String orderId;
@@ -772,7 +780,23 @@ class CustomerOrderDetailScreen extends StatefulWidget {
 class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M07Actions<CustomerOrderDetailScreen> {
   late final M07Fetcher<OrderView> _fetcher = M07Fetcher<OrderView>(() => widget.runtime.customer.get(widget.orderId), refreshEvery: const Duration(seconds: 10))..addListener(_changed);
 
+  /// "Trao đổi đơn hàng". Held here, above the collapsible card, so closing the card keeps what was typed, the pages read and the key of a send in flight.
+  OrderChatController? _chat;
+
+  @override
+  void initState() {
+    super.initState();
+    final OrderChatApi? api = widget.runtime.customer.chat;
+    if (api != null) {
+      _chat = OrderChatController(api: api, room: ChatRoomRef(ChatDoor.customerOrder, widget.orderId));
+    }
+  }
+
   void _changed() {
+    final OrderView? o = _fetcher.value;
+    if (o != null) {
+      _chat?.noteVersion(o.version);
+    }
     if (mounted) {
       setState(() {});
     }
@@ -780,6 +804,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
 
   @override
   void dispose() {
+    _chat?.dispose();
     _fetcher.dispose();
     super.dispose();
   }
@@ -849,8 +874,9 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
   @override
   Widget build(BuildContext context) {
     final OrderView? o = _fetcher.value;
+    // The customer never sees the order code (Owner decision): the page is "Chi tiết đơn" of this shop.
     return m07Page(
-      o == null ? 'Chi tiết đơn' : 'Đơn ${o.code}',
+      'Chi tiết đơn',
       widget.runtime.customer.isSample,
       <Widget>[
         if (widget.justSent) const N11Banner(key: Key('order-sent'), kind: BannerKind.success, title: 'Đã gửi đơn', text: 'Đơn đang chờ quán xác nhận. Bạn hủy được cho đến khi quán xác nhận.'),
@@ -874,8 +900,13 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     return null;
   }
 
+  /// The page, top to bottom: the status and the total (always drawn, never inside a card that can close), the question the customer must answer about the fee
+  /// (also always drawn), then independent cards that open and close by themselves. Closed cards say one useful line and build nothing heavy.
   Widget _body(OrderView o) {
     final OrderDelivery? d = o.delivery;
+    final bool shipperHeld = d != null && d.hasShipper && !o.ended;
+    // The number to call is the shop's own public one when it has one, else the number on the order; nothing once the order ended.
+    final String? shopCall = o.ended ? null : (o.shop.contact.phone ?? o.shop.phone);
     return vstack(<Widget>[
       N11Card(
         child: Column(
@@ -884,34 +915,123 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             Text(o.shop.name, style: N11Text.h2),
             const SizedBox(height: 4),
             Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display)),
-            const SizedBox(height: 4),
-            Text('Mã đơn ${o.code}', style: N11Text.caption),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),
-            if (o.shop.phone != null && !o.ended) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Liên hệ quán: ${o.shop.phone}', style: N11Text.caption)),
+            const Divider(height: N11Space.gap4, color: N11Colors.line),
+            Row(
+              children: <Widget>[
+                Expanded(child: Text(o.money.expectedTotalVnd != null ? 'Tổng dự kiến' : 'Tiền món', style: N11Text.bodyStrong)),
+                Text(m10Money(o.money.expectedTotalVnd ?? o.money.itemsVnd), key: const Key('order-total'), textAlign: TextAlign.right, style: N11Text.title.copyWith(fontSize: 20)),
+              ],
+            ),
+            if (o.money.expectedTotalVnd == null) const Text(kNoFeeNote, key: Key('order-total-unknown'), style: N11Text.caption),
           ],
         ),
       ),
+      if (d?.feeDecision != null) _feeDecisionCard(o, d!, d.feeDecision!),
       if (o.edited && o.confirmedAt != null) N11Banner(key: const Key('order-edited'), kind: BannerKind.info, title: 'Quán đã chỉnh đơn', text: 'Lý do: ${o.changeReason ?? '—'}. Bên dưới là bản đã chốt, kèm số liệu ban đầu của bạn.'),
-      OrderLinesCard(lines: o.items),
-      OrderMoneyCard(money: o.money, edited: o.edited),
-      N11Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Người nhận', style: N11Text.label), KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)])),
-      if (d != null) _deliveryCard(o, d),
+      if (shipperHeld)
+        OrderSection(
+          id: 'shipper',
+          title: 'Shipper',
+          summary: '${d.shipperName} · ${d.state.label}',
+          initiallyExpanded: true,
+          trailing: QuickCall(phone: d.shipperPhone, who: 'shipper'),
+          builder: (BuildContext _) => _shipperBody(d),
+        )
+      else if (d != null)
+        _deliveryStatus(o, d),
+      OrderSection(
+        id: 'shop',
+        title: 'Quán',
+        summary: shopCall == null ? o.shop.name : '${o.shop.name} · ${dialNumberText(shopCall) ?? ''}'.trimRight(),
+        trailing: QuickCall(phone: shopCall, who: 'quán'),
+        builder: (BuildContext _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ContactRow(name: o.shop.name, detail: o.shop.addressText, phone: shopCall, who: 'quán', showCall: false),
+            if (!o.ended && (o.shop.contact.zaloUrl != null || o.shop.contact.messengerUrl != null)) _shopChats(o.shop.contact),
+          ],
+        ),
+      ),
+      OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: !o.ended, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
+      OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),
+      OrderSection(
+        id: 'recipient',
+        title: 'Người nhận',
+        summary: '${o.recipient.name} · ${o.recipient.addressText}',
+        builder: (BuildContext _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)]),
+      ),
       if (o.ended && widget.runtime.feedback != null && widget.runtime.picker != null)
         customerOrderFeedbackCard(context, source: widget.runtime.feedback!, picker: widget.runtime.picker!, orderId: o.orderId, orderCode: o.code),
       if (d != null || o.recipient.hasPin)
-        OrderMapCard(
-          pickupLat: d?.pickupLat,
-          pickupLng: d?.pickupLng,
-          dropoffLat: d?.dropoffLat ?? o.recipient.lat,
-          dropoffLng: d?.dropoffLng ?? o.recipient.lng,
-          location: o.ended ? null : d?.location,
-          mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
-          ended: o.ended,
-          who: 'shipper',
+        OrderSection(
+          id: 'map',
+          title: 'Bản đồ giao hàng',
+          summary: _mapSummary(o, d),
+          // Closed by default: the heavy map is not even built until the person asks for it.
+          builder: (BuildContext context) => OrderMapCard(
+            framed: false,
+            pickupLat: d?.pickupLat,
+            pickupLng: d?.pickupLng,
+            dropoffLat: d?.dropoffLat ?? o.recipient.lat,
+            dropoffLng: d?.dropoffLng ?? o.recipient.lng,
+            location: o.ended ? null : d?.location,
+            mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
+            ended: o.ended,
+            who: 'shipper',
+          ),
         ),
-      StoryCard(o.story),
+      if (_chat != null) _chatSection(_chat!),
     ]);
   }
+
+  /// Zalo and Messenger of the shop, only the links the shop declared and the server and this app both validated; opening one that no app handles copies it.
+  Widget _shopChats(ShopContact c) {
+    Future<void> open(String url, String what) async {
+      var opened = false;
+      try {
+        opened = await widget.contactLauncher.openUrl(url);
+      } on Object {
+        opened = false;
+      }
+      if (opened || !mounted) {
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: url));
+      if (mounted) {
+        m02Toast(context, 'Không mở được $what. Đã sao chép liên kết để bạn dán vào ứng dụng khác.');
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: N11Space.gap2),
+      child: Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
+        if (c.zaloUrl != null) N11Button(key: const Key('order-shop-zalo'), label: 'Zalo', icon: Icons.chat_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => unawaited(open(c.zaloUrl!, 'Zalo'))),
+        if (c.messengerUrl != null) N11Button(key: const Key('order-shop-messenger'), label: 'Messenger', icon: Icons.forum_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => unawaited(open(c.messengerUrl!, 'Messenger'))),
+      ]),
+    );
+  }
+
+  static String _mapSummary(OrderView o, OrderDelivery? d) {
+    if (o.ended) {
+      return 'Xem bản đồ · Đơn đã kết thúc';
+    }
+    return d?.location != null ? 'Xem bản đồ · Đang theo dõi shipper' : 'Xem bản đồ · Chưa có vị trí shipper';
+  }
+
+  Widget _shipperBody(OrderDelivery d) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ContactRow(name: d.shipperName!, detail: d.plate == null ? null : 'Biển số ${d.plate}', phone: d.shipperPhone, who: 'shipper', showCall: false),
+          const SizedBox(height: N11Space.gap2),
+          Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
+        ],
+      );
+
+  Widget _chatSection(OrderChatController chat) => ListenableBuilder(
+        listenable: chat,
+        builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: chat.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: chat)),
+      );
 
   Widget _feeDecisionCard(OrderView o, OrderDelivery d, OrderFeeDecision f) {
     final bool counter = f.state == 'COUNTERED';
@@ -940,7 +1060,9 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     );
   }
 
-  Widget _deliveryCard(OrderView o, OrderDelivery d) {
+  /// The delivery while NO Shipper holds it (searching, search stopped, failed, or the order ended): its state and what it means. No contact of any Shipper is
+  /// drawn here, so nothing private is shown before a Shipper takes the order or after the assignment ended.
+  Widget _deliveryStatus(OrderView o, OrderDelivery d) {
     return N11Card(
       key: const Key('order-delivery'),
       child: Column(
@@ -950,10 +1072,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           const SizedBox(height: 4),
           Align(alignment: Alignment.centerLeft, child: N11Chip(d.state.label, kind: m07StateChip(d.state).kind)),
           const SizedBox(height: N11Space.gap2),
-          if (d.feeDecision != null) _feeDecisionCard(o, d, d.feeDecision!),
-          if (d.hasShipper && !o.ended)
-            KeyValueRows(<(String, String)>[('Shipper', d.shipperName!), if (d.plate != null) ('Biển số', d.plate!), if (d.shipperPhone != null) ('Điện thoại', d.shipperPhone!)])
-          else if (d.state == DeliveryState.waitingDriver)
+          if (d.state == DeliveryState.waitingDriver)
             const Text('Đang tìm shipper. Khi có shipper nhận, thông tin sẽ hiện ở đây.', style: N11Text.body)
           else if (d.state == DeliveryState.searchStopped)
             const Text('Chưa tìm được shipper — quán đang xử lý.', style: N11Text.body)

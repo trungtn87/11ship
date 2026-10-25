@@ -193,6 +193,11 @@ export const APP_ERROR_DEFINITIONS = {
   // DELIVERY_* / ADMIN_* codes (above) are reused unchanged.
   ORDER_NOT_FOUND: { status: 404, message: 'The order was not found' },
   ORDER_STATE_CONFLICT: { status: 409, message: 'The order is not in a state that allows this action' },
+  // #191, the order chat. A room the caller may not see answers like a missing order / delivery (ORDER_NOT_FOUND / DELIVERY_NOT_FOUND).
+  ORDER_CHAT_CLOSED: { status: 409, message: 'The order has ended; the conversation can only be read' },
+  ORDER_CHAT_NOT_PARTICIPANT: { status: 409, message: 'You can no longer write in this conversation' },
+  ORDER_CHAT_EXPIRED: { status: 409, message: 'The conversation history has expired; nothing is held or restored' },
+  ORDER_CHAT_RATE_LIMITED: { status: 429, message: 'Too many messages; try again in a moment' },
   ORDER_CART_CHANGED: { status: 409, message: 'A dish or a price changed; check the cart and send the order again' },
   ORDER_SHOP_NOT_OPEN: { status: 409, message: 'The shop cannot take this order now' },
   ORDER_SCHEDULE_INVALID: { status: 409, message: 'The wanted time is not possible for this shop' },

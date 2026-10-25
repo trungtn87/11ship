@@ -67,6 +67,8 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   def('retention.metrics_detail_days', 'retention', 'Chỉ số chi tiết', 7, 1, 90, 'days'),
   def('retention.metrics_hourly_days', 'retention', 'Chỉ số tổng hợp theo giờ', 90, 30, 730, 'days'),
   def('retention.incident_days', 'retention', 'Sự cố và lịch sử cảnh báo', 365, 90, 1825, 'days'),
+  // #191: how long the chat of an order stays readable AFTER its file closes (Owner 2026-10-25: 7 days by default; the old 30-day floor was only a proposal).
+  def('chat.retention_days', 'retention', 'Trao đổi đơn hàng: số ngày xem lại sau khi hồ sơ đóng', 7, 1, 365, 'days'),
   def('retention.admin_days', 'retention', 'Nhật ký quản trị (tối thiểu 365 ngày)', 365, 365, 3650, 'days'),
 ];
 

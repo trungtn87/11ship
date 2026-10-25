@@ -10,6 +10,9 @@ import '../wallet/wallet_models.dart';
 import '../widgets/components.dart';
 import '../widgets/shop_order_filters.dart';
 import '../widgets/form_feedback.dart';
+import '../m10/order_chat_models.dart';
+import '../m10/order_chat_view.dart';
+import '../m10/order_sections.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -679,20 +682,26 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
     if (a == null) {
       return const SizedBox.shrink();
     }
-    return N11Card(
-      key: const Key('m07-shipper-card'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Shipper', style: N11Text.label),
-          KeyValueRows(<(String, String)>[
-            ('Tên', a.shipperName),
-            if (a.shipperPhone != null) ('Điện thoại', a.shipperPhone!),
-            if (a.plateNumber != null) ('Biển số', a.plateNumber!),
-            ('Nhận lúc', m07Hm(a.acceptedAt)),
-            if (a.pickedUpAt != null) ('Lấy hàng lúc', m07Hm(a.pickedUpAt!)),
-          ]),
-        ],
+    // The Shipper who holds the delivery: name, state and the number with "Gọi" stay visible when the card is closed (the server sends the phone only while the
+    // assignment is active, so a released Shipper never shows up here).
+    return OrderSection(
+      id: 'shipper',
+      title: 'Shipper',
+      summary: '${a.shipperName} · ${d.state.label}',
+      initiallyExpanded: true,
+      trailing: QuickCall(phone: a.shipperPhone, who: 'shipper'),
+      builder: (BuildContext _) => Container(
+        key: const Key('m07-shipper-card'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ContactRow(name: a.shipperName, detail: a.plateNumber == null ? null : 'Biển số ${a.plateNumber}', phone: a.shipperPhone, who: 'shipper', showCall: false),
+            KeyValueRows(<(String, String)>[
+              ('Nhận lúc', m07Hm(a.acceptedAt)),
+              if (a.pickedUpAt != null) ('Lấy hàng lúc', m07Hm(a.pickedUpAt!)),
+            ]),
+          ],
+        ),
       ),
     );
   }
@@ -748,6 +757,25 @@ class ShopDeliveryDetailScreen extends StatefulWidget {
 class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> with M07Actions<ShopDeliveryDetailScreen> {
   final GlobalKey<M07DetailPageState<DeliveryView>> _page = GlobalKey<M07DetailPageState<DeliveryView>>();
 
+  /// "Trao đổi đơn hàng" of a direct call: the delivery itself is the file (no order is made). Created on the first read, kept above the collapsible card.
+  OrderChatController? _chat;
+
+  OrderChatController? _chatFor(DeliveryView d) {
+    final OrderChatApi? api = widget.source.chat;
+    if (api == null) {
+      return null;
+    }
+    final OrderChatController chat = _chat ??= OrderChatController(api: api, room: d.orderId != null ? ChatRoomRef(ChatDoor.shopOrder, d.orderId!) : ChatRoomRef(ChatDoor.shopDirect, d.deliveryId));
+    chat.noteVersion(d.version);
+    return chat;
+  }
+
+  @override
+  void dispose() {
+    _chat?.dispose();
+    super.dispose();
+  }
+
   Future<void> _reload() async => _page.currentState?.fetcher.reload(quiet: true);
 
   Future<void> _cancel(DeliveryView d) async {
@@ -795,17 +823,26 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
       MoneySummary(goods: d.goods, fee: d.fee),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant)) widget.feedbackSlot!(context, d),
       if (d.previousDeliveryId != null) const N11Card(child: Text('Đây là lần gọi lại. Lần gọi trước vẫn nằm trong lịch sử.', style: N11Text.caption)),
-      StoryCard(d.story),
+      if (_chatFor(d) case final OrderChatController chat)
+        ListenableBuilder(
+          listenable: chat,
+          builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: chat.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: chat)),
+        ),
     ];
     return M07PageParts(body, bottom: _bottom(d));
   }
 
-  Widget _recipientCard(DeliveryView d) => N11Card(
-        key: const Key('m07-recipient'),
-        child: Column(
+  /// The recipient of the call, with "Gọi" next to the name while the request is running (the shop typed this number itself).
+  Widget _recipientCard(DeliveryView d) => OrderSection(
+        id: 'recipient',
+        title: 'Người nhận',
+        summary: '${d.recipient.name} · ${d.recipient.addressText ?? '—'}',
+        initiallyExpanded: d.state.isActive,
+        trailing: d.state.isActive ? QuickCall(phone: d.recipient.phone, who: 'người nhận') : null,
+        builder: (BuildContext _) => Column(
+          key: const Key('m07-recipient'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text('Người nhận', style: N11Text.label),
             KeyValueRows(<(String, String)>[
               ('Tên', d.recipient.name),
               if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!),
