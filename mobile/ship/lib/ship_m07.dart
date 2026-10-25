@@ -123,6 +123,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
   bool _permissionDenied = false;
   bool _gpsOff = false;
   bool _uploadFailed = false;
+  bool? _internet;
 
   /// Told after every accepted report, so the app can stop by itself when the server says nothing needs the position any more.
   void Function(LocationAck ack)? onAck;
@@ -137,6 +138,31 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
   String get gpsStatus => _gpsStatus;
   Map<String, dynamic>? get position => _position;
   LocationProblem get problem => _problem;
+
+  /// What the phone's operating system says about the Internet (a validated network): true / false, or null when the snapshot does not say (an older core, a
+  /// test feed). It is NOT whether our server answers: that is the health monitor's business, and the two are never merged into one claim.
+  bool? get internetAvailable => _internet;
+
+  /// The service's last upload failed (the phone could not reach the server with its report).
+  bool get uploadFailed => _uploadFailed;
+
+  /// The clock this reporter judges freshness by (a test clock in tests), so a screen compares times with the same one.
+  DateTime get now => _clock();
+
+  /// The server's ACK of the last accepted report (the service's own `uploadedAt`), distinct from [position]'s measurement time.
+  DateTime? get serverAckAt => _lastUpload;
+
+  /// When the phone measured the position now held in [position] (the snapshot's `time`), or null.
+  DateTime? get fixMeasuredAt {
+    final Object? t = _position?['time'];
+    return t is int ? DateTime.fromMillisecondsSinceEpoch(t, isUtc: true) : null;
+  }
+
+  /// The estimated accuracy of the held position, in metres, only when the snapshot carried a valid one.
+  double? get fixAccuracyMetres {
+    final Object? a = _position?['accuracy'];
+    return a is num && a.isFinite && a > 0 ? a.toDouble() : null;
+  }
 
   /// True while the server holds a position this app sent a moment ago.
   bool get serverHasPosition => _sharing && _lastUpload != null && _clock().difference(_lastUpload!) < freshAck;
@@ -280,6 +306,12 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Snapshot timestamps are measurement times from M14, never reception times.
   Future<void> onSnapshot(Map<String, dynamic> snapshot) async {
+    final Object? net = snapshot['networkAvailable'];
+    final bool? internet = net is bool ? net : null;
+    if (internet != _internet) {
+      _internet = internet;
+      notifyListeners();
+    }
     _applyReport(snapshot);
     if (snapshot['recording'] == false) {
       // The service starts a moment after the call returns: a "not recording" read in that moment is not a stop.
@@ -317,6 +349,14 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
       _permissionDenied = snapshot['permissionGranted'] == false;
       _gpsOff = snapshot['gpsEnabled'] == false || (snapshot['gpsEnabled'] != true && snapshot['fixState'] == 'DISABLED');
       if (_gpsOff || _permissionDenied) _settle(false);
+      // While sharing, the phone's own GPS/permission state IS the problem to show (#194); it clears by itself as soon as the phone says it is fine again.
+      if (_permissionDenied) {
+        _problem = LocationProblem.permission;
+      } else if (_gpsOff) {
+        _problem = LocationProblem.gpsOff;
+      } else if (_problem == LocationProblem.permission || _problem == LocationProblem.gpsOff) {
+        _problem = LocationProblem.none;
+      }
       _gpsStatus = _permissionDenied ? 'Chưa cấp quyền vị trí'
           : _gpsOff ? 'GPS đang tắt'
           : snapshot['fixState'] == 'ACQUIRING' || (snapshot['gpsEnabled'] == true && snapshot['fixState'] == 'DISABLED') ? 'Đang lấy vị trí'
@@ -327,6 +367,7 @@ class ShipLocationReporter extends ChangeNotifier with WidgetsBindingObserver {
     }
     _permissionDenied = false;
     _gpsOff = false;
+    if (_problem == LocationProblem.permission || _problem == LocationProblem.gpsOff) _problem = LocationProblem.none;
     _latestTime = measured;
     _position = Map<String, dynamic>.from(snapshot);
     _gpsStatus = 'Đã có vị trí mới';

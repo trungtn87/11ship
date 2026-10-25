@@ -137,3 +137,27 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
     );
   }
 }
+
+/// Whether the check says our SERVER cannot be used (a problem the person can only retry), as opposed to still checking or fine. It never says why the
+/// phone is offline: only the operating system can say that.
+bool healthPhaseIsServerProblem(HealthPhase phase) {
+  switch (phase) {
+    case HealthPhase.offline:
+    case HealthPhase.timeout:
+    case HealthPhase.badResponse:
+    case HealthPhase.tlsFailed:
+    case HealthPhase.backendNotReady:
+      return true;
+    case HealthPhase.ready:
+    case HealthPhase.checking:
+    case HealthPhase.notConfigured:
+      return false;
+  }
+}
+
+/// Gives a screen inside the shell the one [HealthMonitor] of the app (a screen that draws its own connection state, such as the 11Ship home).
+class HealthScope extends InheritedNotifier<HealthMonitor> {
+  const HealthScope({super.key, required HealthMonitor monitor, required super.child}) : super(notifier: monitor);
+
+  static HealthMonitor? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<HealthScope>()?.notifier;
+}
