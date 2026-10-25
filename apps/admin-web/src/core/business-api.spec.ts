@@ -3,7 +3,7 @@ import { BusinessApi } from './business-api';
 import { AdminAuthController } from './controller';
 const response=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
 const rig=()=>{const sessionLost=jest.fn();return {api:new BusinessApi({sessionCsrf:'csrf-memory',sessionLost} as unknown as AdminAuthController),sessionLost};};
-afterEach(()=>jest.restoreAllMocks());
+afterEach(()=>{jest.restoreAllMocks();});
 describe('Business API session and money retry semantics',()=>{
   it('reuses the same key after a lost response and sends only same-origin cookies plus in-memory CSRF',async()=>{
     const headers:Headers[]=[];let calls=0;
