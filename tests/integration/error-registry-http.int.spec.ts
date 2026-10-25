@@ -126,8 +126,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 13 M12 codes (3 ADMIN_ACCESS_*, 4 REPORT_EXPORT_*, 5 RESTORE_*, BACKUP_RUN_OPEN)
     // + 2 shop management codes (M02 Quản lý quán: SHOP_STATE_CONFLICT, SHOP_HAS_OPEN_WORK)
     // + 2 SMS OTP policy codes (issue #117: OTP_LOCKED, OTP_POLICY_VERSION_CONFLICT)
+    // + 4 order chat codes (#191: CHAT_MESSAGE_INVALID, CHAT_QUERY_INVALID, CHAT_CLOSED, CHAT_RATE_LIMITED)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(205);
+    expect(codes).toHaveLength(209);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);

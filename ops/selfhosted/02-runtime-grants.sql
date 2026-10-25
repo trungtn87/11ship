@@ -116,6 +116,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.customer_carts TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.orders TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.order_items TO ship11_app;
 GRANT SELECT, INSERT ON app.order_events TO ship11_app;
+-- #191: the text chat of an order or of a direct delivery. Messages are inserted by the write path and deleted only by the retention job; never edited (trigger).
+GRANT SELECT, INSERT, DELETE ON app.order_chat_messages TO ship11_app;
 
 -- PR #165: the public IDs/counters are allocated and mutated by SECURITY DEFINER
 -- triggers only; the runtime role may read them but must not update the counters.

@@ -202,6 +202,11 @@ export const APP_ERROR_DEFINITIONS = {
   ORDER_PAYMENT_INVALID: { status: 400, message: 'The paid amount is not valid' },
   ORDER_CART_OTHER_SHOP: { status: 409, message: 'The cart holds dishes of another shop' },
   ORDER_INPUT_INVALID: { status: 400, message: 'The order details are not valid' },
+  // #191 order chat. ORDER_NOT_FOUND / DELIVERY_NOT_FOUND / ROLE_NOT_AVAILABLE / SESSION_INVALID are reused: a room the caller may not see reads as not found.
+  CHAT_MESSAGE_INVALID: { status: 400, message: 'The message is empty, too long or not text' },
+  CHAT_QUERY_INVALID: { status: 400, message: 'The page request is not valid' },
+  CHAT_CLOSED: { status: 409, message: 'The order has ended; the conversation can only be read' },
+  CHAT_RATE_LIMITED: { status: 429, message: 'Too many messages; try again in a moment' },
 
   // Shop management (M02-A, task section 7). Same rule: fixed messages that echo nothing the client sent and reveal
   // nothing about any other account. SESSION_*, ACCOUNT_DISABLED, INVALID_SERVICE_AREA, SHOP_PROFILE_INCOMPLETE and

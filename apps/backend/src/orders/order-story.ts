@@ -5,6 +5,8 @@ import { humanDeliveryReason, systemCancelSentence } from '../delivery/delivery-
 // warnings, repeated notices and technical steps are dropped, and an event this file does not know says nothing (no event key ever reaches a screen).
 
 export interface StoryOrderEvent {
+  /** Id of the stored event (the chat feed keys a milestone by it); optional so older callers are unchanged. */
+  readonly eventId?: string;
   readonly atMs: number;
   /** Stored as `order.<change>`. */
   readonly type: string;
@@ -14,6 +16,8 @@ export interface StoryOrderEvent {
 }
 
 export interface StoryDeliveryEvent {
+  /** Position of the event in its delivery's log (with the delivery id it is the stable key of a milestone in the chat feed). */
+  readonly seq?: number;
   readonly atMs: number;
   /** Stored as `delivery.<change>`. */
   readonly type: string;
@@ -33,10 +37,17 @@ export interface StoryDelivery {
 export interface StoryEntry {
   readonly at: string;
   readonly text: string;
+  readonly atMs: number;
+  /** Stable key of the source event: `o:<order event id>` or `d:<delivery id>:<seq>`. */
+  readonly key: string;
 }
 
-/** `shop`: the shop's owner. `customer`: the person who ordered (no goods handling, no Shipper's private reasons). */
-export type StoryAudience = 'shop' | 'customer';
+/**
+ * `shop`: the shop's owner. `customer`: the person who ordered (no goods handling, no Shipper's private reasons).
+ * `room`: the order's chat room, read by every party allowed to see the order: the customer's wording (no goods handling, no private reasons) plus the fee
+ * milestones, so the same sentence is true and safe for all of them.
+ */
+export type StoryAudience = 'shop' | 'customer' | 'room';
 
 /** A call cancelled in the same moment as the order it belongs to is one milestone, told by the order. */
 const SAME_MOMENT_MS = 3000;
@@ -92,6 +103,18 @@ function deliveryLine(e: StoryDeliveryEvent, d: StoryDelivery, audience: StoryAu
       return 'Shipper đã nhận đơn';
     case 'released_by_shipper':
       return audience === 'shop' ? withReason('Shipper đã hủy nhận đơn', reason) : 'Shipper đã hủy nhận đơn';
+    // Fee milestones are told only in the order's room (the other audiences keep their earlier wording); no amount, no private reason.
+    case 'fee_countered':
+      return audience === 'room' ? 'Shipper đề xuất phí giao khác, đang chờ quyết định' : null;
+    case 'fee_agreed':
+    case 'fee_counter_accepted':
+    case 'fee_customer_confirmed':
+      return audience === 'room' ? 'Phí giao đã được chấp nhận' : null;
+    case 'fee_counter_rejected':
+      return audience === 'room' ? 'Đề xuất phí giao không được chấp nhận' : null;
+    case 'fee_answer_expired':
+    case 'fee_answer_expired_released':
+      return audience === 'room' ? 'Đề xuất phí giao đã hết hạn trả lời' : null;
     case 'released_by_admin':
       return 'Quản trị đã gỡ shipper khỏi đơn';
     case 'picked_up':
@@ -127,12 +150,12 @@ const CANCEL_DELIVERY_EVENTS = new Set(['cancelled_by_shop', 'cancelled_after_pi
 /** The story of an order: its own milestones and those of every call for a Shipper, oldest first. */
 export function buildOrderStory(orderEvents: readonly StoryOrderEvent[], deliveries: readonly StoryDelivery[], audience: StoryAudience): StoryEntry[] {
   const endings = orderEvents.filter((e) => ENDING_ORDER_EVENTS.has(bare(e.type, 'order.'))).map((e) => e.atMs);
-  const rows: { atMs: number; rank: number; seq: number; text: string }[] = [];
+  const rows: { atMs: number; rank: number; seq: number; text: string; key: string }[] = [];
   let seq = 0;
   for (const e of orderEvents) {
     const text = orderLine(e);
     if (text !== null) {
-      rows.push({ atMs: e.atMs, rank: 0, seq: (seq += 1), text });
+      rows.push({ atMs: e.atMs, rank: 0, seq: (seq += 1), text, key: `o:${e.eventId ?? String(seq)}` });
     }
   }
   for (const d of deliveries) {
@@ -142,11 +165,11 @@ export function buildOrderStory(orderEvents: readonly StoryOrderEvent[], deliver
       }
       const text = deliveryLine(e, d, audience);
       if (text !== null) {
-        rows.push({ atMs: e.atMs, rank: 1, seq: (seq += 1), text });
+        rows.push({ atMs: e.atMs, rank: 1, seq: (seq += 1), text, key: `d:${d.deliveryId}:${String(e.seq ?? seq)}` });
       }
     }
   }
-  return rows.sort((a, b) => a.atMs - b.atMs || a.rank - b.rank || a.seq - b.seq).map((r) => ({ at: new Date(r.atMs).toISOString(), text: r.text }));
+  return rows.sort((a, b) => a.atMs - b.atMs || a.rank - b.rank || a.seq - b.seq).map((r) => ({ at: new Date(r.atMs).toISOString(), text: r.text, atMs: r.atMs, key: r.key }));
 }
 
 /** The story of one direct delivery (no order around it). */
