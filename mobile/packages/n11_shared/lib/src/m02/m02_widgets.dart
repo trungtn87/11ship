@@ -432,6 +432,10 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
       return (label: 'Đã đóng cửa', text: 'Ngoài giờ hoạt động đã cài đặt.', kind: ChipKind.neutral);
     case 'NO_BUSINESS_HOURS':
       return (label: 'Chưa cài giờ hoạt động', text: 'Cài lịch để quán tự mở và đóng cửa.', kind: ChipKind.warn);
+    case 'NO_PICKUP_POINT':
+      return (label: 'Chưa có vị trí GPS của quán', text: 'Lấy vị trí GPS khi đang ở quán để khách tìm thấy quán.', kind: ChipKind.warn);
+    case 'NO_SELLABLE_ITEM':
+      return (label: 'Chưa có món đang bán', text: 'Thêm ít nhất 1 món đang bán, có giá và ảnh để quán hiển thị với khách.', kind: ChipKind.warn);
     case 'SHOP_INCOMPLETE':
       return (label: 'Hồ sơ chưa hoàn tất', text: 'Hoàn tất hồ sơ để quán bắt đầu hoạt động.', kind: ChipKind.warn);
     case 'SHOP_DISABLED':

@@ -159,3 +159,22 @@ describe('Onboarding coordinator boundary', () => {
     expect(app).toContain('OnboardingModule.register(auth)');
   });
 });
+
+describe('Shop setup (issue #190) module boundary', () => {
+  it('the setup coordinator and the route service issue no SQL: they compose the Shop and Menu ports', () => {
+    for (const directory of ['shop-setup', 'discovery-route']) {
+      expect(codeIn(directory)).not.toMatch(/\.query\(|DATABASE_POOL|from 'pg'|app\.(shops|shop_members|service_areas|shop_business_hours|menu\w*)\b/);
+    }
+  });
+
+  it('the Menu port of the setup reads only Menu tables and the Shop port reads no Menu table', () => {
+    expect(codeOf('menu/menu-readiness-reader.ts')).not.toMatch(/app\.(shops|shop_members|service_areas|shop_business_hours)\b/);
+    expect(codeIn('shop')).not.toMatch(/app\.menu\w*\b/);
+  });
+
+  it('the setup core module imports no module that imports it back (Shop, the menu port, Audit, Outbox only)', () => {
+    const module = codeOf('shop-setup/shop-setup-core.module.ts');
+    expect(module).toMatch(/imports: \[ShopModule, MenuReadinessModule, AuditModule, OutboxModule\]/);
+    expect(codeOf('menu/menu-readiness.module.ts')).not.toMatch(/imports:/);
+  });
+});

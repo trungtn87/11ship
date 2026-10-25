@@ -7,6 +7,7 @@ import { ClientActor, ClientSessionAuthority } from '../client-auth/client-sessi
 import { AppError, TechnicalError } from '../common/app-errors';
 import { CustomersService } from '../customers/customers-service';
 import { M14RouteClient, RouteLeg } from '../delivery/m14-route-client';
+import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { MenuRepository, MenuItemRow } from '../menu/menu-repository';
@@ -63,6 +64,7 @@ export class OrderCustomerService {
     private readonly customers: CustomersService,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly routes: M14RouteClient,
+    private readonly setupGate: ShopSetupGate,
   ) {}
 
   // ---- the caller ------------------------------------------------------------------------------------------------------------
@@ -105,13 +107,15 @@ export class OrderCustomerService {
 
   async #cartView(context: TransactionContext, shopId: string, lines: readonly { itemId: string; quantity: number; note: string | null; name: string }[], note: string | null, version: number): Promise<JsonObject> {
     const snapshot = await this.shopReader.snapshotOfShop(context, shopId);
+    // Issue #190: a shop that is not set up (no schedule, no pickup point, no sellable dish) or is locked is not orderable, whatever its old status says.
+    const gate = snapshot === undefined ? undefined : await this.setupGate.evaluate(context, snapshot);
     const dishes = new Map((await this.menu.listPublicItems(context, shopId)).map((d) => [d.itemId, d]));
     const out: JsonObject[] = [];
     let total = 0;
     // The cart has no destination: entry tier of the active M06 policy is only a provisional reference.
     const baseQuote = await this.agreements.estimate(context, 0);
     for (const line of lines) {
-      const dish = snapshot?.status === 'ACTIVE' ? dishes.get(line.itemId) : undefined;
+      const dish = gate?.publicVisible === true ? dishes.get(line.itemId) : undefined;
       if (dish !== undefined) {
         total += dish.priceVnd * line.quantity;
       }
@@ -126,7 +130,7 @@ export class OrderCustomerService {
       });
     }
     return {
-      shop: { shop_id: shopId, name: snapshot?.name ?? null, online: snapshot?.status === 'ACTIVE' && snapshot.availability.online, reason: snapshot === undefined ? 'SHOP_NOT_FOUND' : snapshot.status === 'ACTIVE' ? snapshot.availability.reason : 'SHOP_DISABLED' },
+      shop: { shop_id: shopId, name: snapshot?.name ?? null, online: gate?.acceptsOrders === true, reason: snapshot === undefined || gate === undefined ? 'SHOP_NOT_FOUND' : snapshot.status === 'ACTIVE' ? gate.availability.reason : 'SHOP_DISABLED' },
       lines: out,
       note,
       items_total_vnd: total,
@@ -140,7 +144,7 @@ export class OrderCustomerService {
     return this.transactions.withTransaction(async (context) => {
       const actor = await this.#customer(context, principal, 'update');
       const snapshot = await this.shopReader.snapshotOfShop(context, input.shopId);
-      if (snapshot === undefined || snapshot.status !== 'ACTIVE') {
+      if (snapshot === undefined || snapshot.status !== 'ACTIVE' || !(await this.setupGate.evaluate(context, snapshot)).publicVisible) {
         throw new AppError('ORDER_SHOP_NOT_OPEN');
       }
       const merged = this.#merge(input.lines);
@@ -246,10 +250,12 @@ export class OrderCustomerService {
     const blockers: string[] = [];
     const nowMs = await freshClockMs(context);
     const shop = await this.shopReader.snapshotOfShop(context, input.shopId);
-    if (shop === undefined || shop.status !== 'ACTIVE') {
+    const gate = shop === undefined ? undefined : await this.setupGate.evaluate(context, shop);
+    if (shop === undefined || gate === undefined || shop.status !== 'ACTIVE' || !gate.publicVisible) {
+      // Not set up (issue #190) or locked: never open for a NEW order, whatever the schedule says. Orders already created are not touched by this check.
       blockers.push('SHOP_NOT_OPEN');
     } else if (input.scheduledForMs === null) {
-      if (!shop.availability.online) {
+      if (!gate.availability.online) {
         blockers.push('SHOP_NOT_OPEN');
       }
     } else {
@@ -493,7 +499,7 @@ export class OrderCustomerService {
           throw new AppError('ORDER_NOT_FOUND');
         }
         const snapshot = await this.shopReader.snapshotOfShop(context, order.shopId);
-        if (snapshot === undefined || snapshot.status !== 'ACTIVE') {
+        if (snapshot === undefined || snapshot.status !== 'ACTIVE' || !(await this.setupGate.evaluate(context, snapshot)).publicVisible) {
           throw new AppError('ORDER_SHOP_NOT_OPEN');
         }
         const existing = await this.orders.findCart(context, actor.userId);

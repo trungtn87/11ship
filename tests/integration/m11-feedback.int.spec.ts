@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { dataOf, errorCode } from './support/auth-fixtures';
-import { createShopOwner } from './support/shop-management-fixtures';
+import { createShopOwner, completeSetup } from './support/shop-management-fixtures';
 import { Json, M11World, PNG_BASE64, Shipper } from './support/m11-harness';
 
 // M11.01 (ratings) and M11.02 (complaints) on a REAL Nest pipeline and PostgreSQL: the actors and subjects, the eligibility of each rating, one rating per
@@ -107,6 +107,7 @@ describe('M11.01 ratings', () => {
   it('the public shop page: average, count, newest first, star filter, the reply, no personal data; with no rating it says so', async () => {
     // A shop of its own, so the totals are exactly this test's.
     const fresh = await createShopOwner(w.app);
+    await completeSetup(w.app, fresh);
     const empty = await w.app.call('GET', `/shops/${fresh.shopId}/reviews`);
     expect(empty.status).toBe(200);
     const none = dataOf(empty) as Json;

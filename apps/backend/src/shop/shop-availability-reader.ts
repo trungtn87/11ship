@@ -26,6 +26,11 @@ export interface RawShopSnapshot {
   hours: unknown;
   has_hours: boolean;
   in_hours: boolean;
+  /** Issue #190 columns (optional so a test row built before them still maps). */
+  has_pickup_point?: boolean;
+  activated_at?: string | null;
+  setup_request_note?: string | null;
+  setup_request_at?: string | null;
   /** The OWNER account is locked (optional: a test row built without it means "not locked"). */
   owner_locked?: boolean;
 }
@@ -49,6 +54,15 @@ export interface ShopSnapshot {
   readonly version: number;
   readonly hours: readonly BusinessInterval[];
   readonly availability: ShopAvailability;
+  /** A real pickup point is stored (issue #190); the same fact the availability reason NO_PICKUP_POINT is built on. */
+  readonly hasPickupPoint: boolean;
+  /** ISO 8601 UTC: when the system first activated the shop, or null while it has not been set up completely. */
+  readonly activatedAt: string | null;
+  /** The administrator's pending request to complete the setup, or null. */
+  readonly setupRequest: { readonly note: string; readonly at: string } | null;
+  /** The OWNER account is locked (availability then reads SHOP_DISABLED whatever the shop status is). */
+  readonly ownerLocked: boolean;
+  readonly areaStatus: string | null;
 }
 
 const SHOP_AT_SQL = buildAvailabilitySnapshotSql('$2::timestamptz', 'shop');
@@ -93,6 +107,7 @@ export function evaluateAvailability(
   inHours: boolean,
   evaluatedAt: string,
   ownerLocked = false,
+  hasPickupPoint = true,
 ): ShopAvailability {
   if (!isShopStatus(status) || !EVALUATED_AT_PATTERN.test(evaluatedAt)) {
     return broken();
@@ -112,6 +127,9 @@ export function evaluateAvailability(
   }
   if (!hasHours) {
     return { online: false, reason: 'NO_BUSINESS_HOURS', evaluatedAt };
+  }
+  if (!hasPickupPoint) {
+    return { online: false, reason: 'NO_PICKUP_POINT', evaluatedAt };
   }
   if (!inHours) {
     return { online: false, reason: 'OUTSIDE_BUSINESS_HOURS', evaluatedAt };
@@ -138,7 +156,12 @@ export function toShopSnapshot(row: RawShopSnapshot): ShopSnapshot {
     status: row.status,
     version: toSafeInteger(row.version),
     hours: parseHours(row.hours),
-    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true),
+    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point ?? (row.pickup_lat !== null && row.pickup_lng !== null)),
+    hasPickupPoint: row.has_pickup_point ?? (row.pickup_lat !== null && row.pickup_lng !== null),
+    activatedAt: row.activated_at ?? null,
+    setupRequest: row.setup_request_note == null || row.setup_request_at == null ? null : { note: row.setup_request_note, at: row.setup_request_at },
+    ownerLocked: row.owner_locked === true,
+    areaStatus: row.area_status,
   };
 }
 

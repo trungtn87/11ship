@@ -6,6 +6,7 @@ import { toSafeInteger } from '../shop/shop-db';
 import { DiscoverableShop, ShopDiscoveryReader } from '../shop/shop-discovery-reader';
 import { ServiceAreaRepository } from '../shop/service-area-repository';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { MenuReadinessReader } from './menu-readiness-reader';
 import { MenuRepository } from './menu-repository';
 import { DiscoveryQuery } from './discovery-validation';
 
@@ -50,6 +51,7 @@ export class DiscoveryService {
     private readonly menu: MenuRepository,
     private readonly sales: OrderSalesReader,
     private readonly reviews: ReviewRepository,
+    private readonly readiness: MenuReadinessReader,
   ) {}
 
   async serviceAreas(): Promise<Record<string, unknown>[]> {
@@ -76,6 +78,7 @@ export class DiscoveryService {
   async shops(query: DiscoveryQuery): Promise<Record<string, unknown>> {
     return this.transactions.withTransaction(async (context) => {
       const eligible = await this.#eligible(context, query);
+      // A group filter keeps the shops with a VISIBLE dish in that group; the shop itself must already be set up (a sellable dish somewhere).
       const withDish = await this.menu.shopIdsWithPublicItem(context, eligible.map((s) => s.shopId), query.categoryId);
       const matching = eligible
         .filter((shop) => withDish.has(shop.shopId))
@@ -128,9 +131,15 @@ export class DiscoveryService {
     });
   }
 
-  /** The shops of the area that may be shown (open-only already applied). */
+  /**
+   * The shops of the area that may be shown (open-only already applied). Issue #190: the shop reader has already dropped what is locked or has no
+   * schedule or no pickup point; the Menu fact (a sellable dish: on sale, price > 0, a picture) is joined here, so a shop that is not set up never
+   * reaches the shop list, the dish search or the group lists. A closed shop that IS set up stays.
+   */
   async #eligible(context: Parameters<ShopDiscoveryReader['eligibleShopsOfArea']>[0], query: DiscoveryQuery): Promise<DiscoverableShop[]> {
     const all = await this.shopReader.eligibleShopsOfArea(context, query.areaId);
-    return query.openOnly ? all.filter((shop) => shop.hasHours && shop.inHours) : all;
+    const sellable = await this.readiness.shopIdsWithSellableItem(context, all.map((shop) => shop.shopId));
+    const setUp = all.filter((shop) => sellable.has(shop.shopId));
+    return query.openOnly ? setUp.filter((shop) => shop.hasHours && shop.inHours) : setUp;
   }
 }

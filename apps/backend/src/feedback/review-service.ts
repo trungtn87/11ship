@@ -6,6 +6,7 @@ import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository
 import { DriverRepository } from '../driver/driver-repository';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { isCanonicalUuid } from '../shared/identifiers';
+import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -39,6 +40,7 @@ export class ReviewService {
     private readonly deliveries: DeliveryRepository,
     private readonly drivers: DriverRepository,
     private readonly shopReader: ShopAvailabilityReader,
+    private readonly setupGate: ShopSetupGate,
     private readonly recorder: FeedbackRecorder,
     @Inject(FEEDBACK_ORDER_PORT) private readonly orders: FeedbackOrderPort,
   ) {}
@@ -270,8 +272,8 @@ export class ReviewService {
       if (snapshot === undefined) {
         throw new AppError('SHOP_NOT_FOUND');
       }
-      const reason = snapshot.availability.reason;
-      if (snapshot.status !== 'ACTIVE' || reason === 'SHOP_DISABLED' || reason === 'SHOP_INCOMPLETE' || reason === 'SERVICE_AREA_INACTIVE') {
+      // Issue #190: the public page of a shop that is not set up (or is locked) is as unavailable as its menu.
+      if (!(await this.setupGate.evaluate(context, snapshot)).publicVisible) {
         throw new AppError('SHOP_UNAVAILABLE');
       }
       const [summary, rows] = await Promise.all([this.reviews.shopSummary(context, shopId), this.reviews.listShopReviews(context, shopId, query.stars, query.limit, query.offset)]);

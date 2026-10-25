@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { foldVietnamese } from '../../apps/backend/src/shared/fold-vietnamese';
 import { AuthApp, createServiceArea, dataOf, errorCode, startAuthApp } from './support/auth-fixtures';
-import { createCategory, createItem, discoveryDishes, discoveryShops, itemAction, purgeCategories } from './support/menu-fixtures';
+import { createCategory, createItem, createItemWithPicture, discoveryDishes, discoveryShops, itemAction, purgeCategories } from './support/menu-fixtures';
 import { createShopOwner, insertHours, ShopOwner } from './support/shop-management-fixtures';
 
 // M02 discovery (docs/current/M02-discovery-UI-LOCKED-20261016.md) through the REAL Nest pipeline on a REAL PostgreSQL.
@@ -52,15 +52,26 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
 
   const every = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, start_minute: 0, end_minute: 1440, end_day_offset: 0 }));
 
-  /** An ACTIVE shop in `areaId` named `name` with the given dishes (all VISIBLE) and, optionally, open all day. */
-  async function shop(name: string, dishes: [string, number, string][], options: { open?: boolean; areaId?: string } = {}): Promise<ShopOwner> {
+  // One minute that is certainly not now (Vietnam time): a shop that IS scheduled but closed.
+  const farMinute = (): number => {
+    const now = new Date();
+    const vnMinute = (now.getUTCHours() * 60 + now.getUTCMinutes() + 7 * 60) % 1440;
+    return vnMinute >= 230 && vnMinute <= 250 ? 960 : 240;
+  };
+
+  /**
+   * An ACTIVE shop in `areaId` named `name` with the given dishes (all VISIBLE, each with a picture) and a schedule: open all day, or (default) scheduled
+   * but closed now. Issue #190: a shop with NO schedule or NO sellable dish is not set up and never listed (`unscheduled`, `noPicture` build those).
+   */
+  async function shop(name: string, dishes: [string, number, string][], options: { open?: boolean; areaId?: string; unscheduled?: boolean; noPicture?: boolean } = {}): Promise<ShopOwner> {
     const owner = await createShopOwner(app, { areaId: options.areaId ?? area });
     await app.pool.query(`UPDATE app.shops SET name = $2, updated_at = clock_timestamp() WHERE shop_id = $1::uuid`, [owner.shopId, name]);
-    if (options.open === true) {
-      await insertHours(app.pool, owner.shopId, every);
+    if (options.unscheduled !== true) {
+      await insertHours(app.pool, owner.shopId, options.open === true ? every : every.map((day) => ({ ...day, start_minute: farMinute(), end_minute: farMinute() + 1 })));
     }
     for (const [dish, price, category] of dishes) {
-      const response = await createItem(app, owner.token, { name: dish, price_vnd: price, category_id: category, image_id: null });
+      const body = { name: dish, price_vnd: price, category_id: category };
+      const response = options.noPicture === true ? await createItem(app, owner.token, { ...body, image_id: null }) : await createItemWithPicture(app, owner.token, body);
       expect(response.status).toBe(201);
     }
     return owner;
@@ -141,11 +152,32 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     const first = (data.shops as { availability: { online: boolean; reason: string }; shop_id: string }[])[0]!;
     expect(first.shop_id).toBe(open.shopId);
     expect(first.availability).toEqual({ online: true, reason: 'ONLINE' });
-    expect((data.shops as { availability: { reason: string }; shop_id: string }[])[1]!.availability.reason).toBe('NO_BUSINESS_HOURS');
+    expect((data.shops as { availability: { reason: string }; shop_id: string }[])[1]!.availability.reason).toBe('OUTSIDE_BUSINESS_HOURS');
     expect(data.has_more).toBe(false);
     expect(closedA.shopId).toBeTruthy();
     expect(list.text).not.toMatch(/contact_phone|zalo|facebook|accepting|user_id/i);
     expect(names(await discoveryShops(app, { area_id: otherArea }))).toEqual(['Quán Khu Khác']);
+  });
+
+  it('issue #190: a shop with no schedule, no picture on its only dish, or a locked owner never reaches the shop list, the dish search or a group list; a closed shop that IS set up stays', async () => {
+    const setUpClosed = await shop('Quán Đủ Điều Kiện 190', [['Phở đủ 190', 40000, snail]]);
+    await shop('Quán Thiếu Giờ 190', [['Phở thiếu giờ 190', 40000, snail]], { unscheduled: true });
+    await shop('Quán Thiếu Ảnh 190', [['Phở thiếu ảnh 190', 40000, snail]], { noPicture: true });
+    const locked = await shop('Quán Chủ Bị Khóa 190', [['Phở khóa 190', 40000, snail]]);
+    await app.pool.query(`UPDATE app.users SET status = 'DISABLED' WHERE user_id = $1::uuid`, [locked.userId]);
+    const query = { area_id: area, q: '190' };
+    expect(names(await discoveryShops(app, query))).toEqual(['Quán Đủ Điều Kiện 190']);
+    expect(names(await discoveryShops(app, { ...query, category_id: snail }))).toEqual(['Quán Đủ Điều Kiện 190']);
+    expect(names(await discoveryShops(app, { ...query, open_only: 'true' }))).toEqual([]);
+    const dishes = dataOf(await discoveryDishes(app, query)).dishes as { name: string; shop: { shop_id: string; availability: { reason: string } } }[];
+    expect(dishes.map((dish) => dish.name)).toEqual(['Phở đủ 190']);
+    expect(dishes[0]?.shop).toMatchObject({ shop_id: setUpClosed.shopId, availability: { reason: 'OUTSIDE_BUSINESS_HOURS' } });
+    // The same shops are refused on their direct link and take no new order, whatever their old status says.
+    for (const name of ['Quán Thiếu Giờ 190', 'Quán Thiếu Ảnh 190', 'Quán Chủ Bị Khóa 190']) {
+      const row = await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shops WHERE name = $1', [name]);
+      const link = await app.call('GET', `/shops/${row.rows[0]!.shop_id}`, {});
+      expect([name, link.status, errorCode(link)]).toEqual([name, 403, 'SHOP_UNAVAILABLE']);
+    }
   });
 
   it('an unavailable shop (disabled, incomplete, area stopped) leaves discovery; a hidden or deleted dish leaves with it', async () => {
@@ -177,7 +209,7 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect(names(await discoveryShops(app, { area_id: area, q: 'khong co quan nay' }))).toEqual([]);
     const dishes = dataOf(await discoveryDishes(app, { area_id: area, q: 'DAU PHU' })).dishes as { name: string; shop: { name: string; availability: { reason: string } }; price_vnd: number }[];
     expect(dishes).toHaveLength(1);
-    expect(dishes[0]).toMatchObject({ name: 'Đậu phụ', price_vnd: 30000, shop: { name: 'Ốc Hương Đặc Biệt', availability: { reason: 'NO_BUSINESS_HOURS' } } });
+    expect(dishes[0]).toMatchObject({ name: 'Đậu phụ', price_vnd: 30000, shop: { name: 'Ốc Hương Đặc Biệt', availability: { reason: 'OUTSIDE_BUSINESS_HOURS' } } });
     // A wildcard typed by the person is a plain character.
     expect(names(await discoveryShops(app, { area_id: area, q: '%' }))).toEqual([]);
     expect(names(await discoveryShops(app, { area_id: area, q: '_' }))).toEqual([]);

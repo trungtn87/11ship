@@ -4,6 +4,7 @@ import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OrderFeedbackAdapter } from '../orders/order-feedback-adapter';
 import { OrdersCoreModule } from '../orders/orders-core.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ComplaintController } from './complaint.controller';
@@ -25,7 +26,7 @@ export class FeedbackModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: FeedbackModule,
-      imports: [auth, TransactionModule, IdempotencyModule, FeedbackReadModule, DeliveryCoreModule.register(auth), DriverModule, ShopModule, OrdersCoreModule],
+      imports: [auth, TransactionModule, IdempotencyModule, FeedbackReadModule, DeliveryCoreModule.register(auth), DriverModule, ShopModule, ShopSetupCoreModule, OrdersCoreModule],
       controllers: [ReviewController, PublicReviewController, ComplaintController],
       providers: [FeedbackActors, ReviewService, ComplaintService, { provide: FEEDBACK_ORDER_PORT, useExisting: OrderFeedbackAdapter }],
       exports: [FeedbackReadModule],

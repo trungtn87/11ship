@@ -48,6 +48,14 @@ export function hasHoursSql(shopIdRef: string): string {
   return `EXISTS (SELECT 1 FROM app.shop_business_hours bh WHERE bh.shop_id = ${shopIdRef})`;
 }
 
+/**
+ * True when the shop has a real pickup point (issue #190): both coordinates stored and not the (0, 0) placeholder. The range is already enforced by the
+ * table CHECKs. A typed address alone is never a point. The ONE copy of the rule (the snapshot, discovery, the logo and the administration list use it).
+ */
+export function hasPickupPointSql(shopAlias: string): string {
+  return `(${shopAlias}.pickup_lat IS NOT NULL AND ${shopAlias}.pickup_lng IS NOT NULL AND NOT (${shopAlias}.pickup_lat = 0 AND ${shopAlias}.pickup_lng = 0))`;
+}
+
 /** The statement prefix every availability statement starts with: the clock (sampled once) and the local week minute. */
 export function localTimeCtes(clockExpression: string): string {
   return `WITH clock AS MATERIALIZED (
@@ -67,6 +75,10 @@ const SELECT_LIST = `
 SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat, s.pickup_lng,
        s.service_area_id, s.status, s.version,
        a.status AS area_status,
+       ${hasPickupPointSql('s')} AS has_pickup_point,
+       to_char(date_trunc('milliseconds', s.activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at,
+       s.setup_request_note,
+       to_char(date_trunc('milliseconds', s.setup_request_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS setup_request_at,
        to_char(date_trunc('milliseconds', l.instant) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS evaluated_at,
        COALESCE(
          (SELECT json_agg(

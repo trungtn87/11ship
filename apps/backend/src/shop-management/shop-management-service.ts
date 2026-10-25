@@ -13,6 +13,9 @@ import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-
 import { ShopBusinessHoursRepository } from '../shop/shop-business-hours-repository';
 import { requireActiveShop } from '../shop/shop-guards';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
+import { ShopAvailability } from '../shop/shop-types';
+import { ShopActivation } from '../shop-setup/shop-activation';
+import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import {
@@ -61,6 +64,8 @@ export class ShopManagementService {
     private readonly reader: ShopAvailabilityReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly activation: ShopActivation,
+    private readonly gate: ShopSetupGate,
   ) {}
 
   /**
@@ -71,14 +76,16 @@ export class ShopManagementService {
    * SHOP_NOT_FOUND.
    */
   async read(actor: SessionActor): Promise<Record<string, unknown>> {
-    const snapshot = await this.transactions.withTransaction(async (context) => {
+    const read = await this.transactions.withTransaction(async (context) => {
       await this.sessionAuth.lockAuthorizedShopActorShared(context, actor);
-      return this.reader.snapshotOfOwner(context, actor.userId);
+      const found = await this.reader.snapshotOfOwner(context, actor.userId);
+      // Issue #190: the owner is told "not set up" (no dish on sale), never ONLINE, for a shop customers cannot see.
+      return found === undefined ? undefined : { snapshot: found, gate: await this.gate.evaluate(context, found) };
     });
-    if (snapshot === undefined) {
+    if (read === undefined) {
       throw new AppError('SHOP_NOT_FOUND');
     }
-    return toView(snapshot);
+    return toView(read.snapshot, read.gate.availability);
   }
 
   async updateProfile(
@@ -161,6 +168,8 @@ export class ShopManagementService {
       audit: SHOP_MANAGEMENT_AUDIT_ACTIONS.profileUpdate,
       event: SHOP_PROFILE_UPDATED_EVENT_TYPE,
     });
+    // Issue #190: this save may be the one that completes the setup (a pickup point); the owner is never blocked by it.
+    await this.activation.reconcile(context, shop.shopId, requestId, 'profile_update');
 
     return {
       status: 200,
@@ -200,6 +209,7 @@ export class ShopManagementService {
       audit: SHOP_MANAGEMENT_AUDIT_ACTIONS.businessHoursReplace,
       event: SHOP_BUSINESS_HOURS_UPDATED_EVENT_TYPE,
     });
+    await this.activation.reconcile(context, shop.shopId, requestId, 'business_hours_update');
 
     return {
       status: 200,
@@ -287,7 +297,7 @@ export class ShopManagementService {
 }
 
 /** The exact GET /v1/shop/me data object (task section 10). It never includes accepting_orders. */
-function toView(snapshot: ShopSnapshot): Record<string, unknown> {
+function toView(snapshot: ShopSnapshot, availability: ShopAvailability): Record<string, unknown> {
   return {
     shop_id: snapshot.shopId,
     ...(snapshot.logo == null ? {} : { logo: snapshot.logo }),
@@ -304,9 +314,9 @@ function toView(snapshot: ShopSnapshot): Record<string, unknown> {
     timezone: AVAILABILITY_TIME_ZONE,
     hours: snapshot.hours.map(toWire),
     availability: {
-      online: snapshot.availability.online,
-      reason: snapshot.availability.reason,
-      evaluated_at: snapshot.availability.evaluatedAt,
+      online: availability.online,
+      reason: availability.reason,
+      evaluated_at: availability.evaluatedAt,
     },
   };
 }

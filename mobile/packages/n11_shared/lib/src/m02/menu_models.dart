@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'schedule.dart';
+import 'shop_contact.dart';
 
 // M02-MON / M02-XEM: what the menu and customer screens show, and the PORTS they read and write through.
 //
@@ -168,14 +169,17 @@ class PublicCategory {
 /// What a customer (or the owner's preview) sees of a shop. Only public fields.
 @immutable
 class ShopMenuView {
-  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories, this.logoUrl, this.logoBytes});
+  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories, this.logoUrl, this.logoBytes, this.contact = ShopContact.none});
 
   final String name;
   final String address;
   final String? logoUrl;
   final Uint8List? logoBytes;
 
-  /// ONLINE / OUTSIDE_BUSINESS_HOURS / NO_BUSINESS_HOURS (anything else: the shop is not shown to customers).
+  /// The shop's own quick contact (phone, Zalo, Messenger), already validated; empty for the owner's preview and for an older server.
+  final ShopContact contact;
+
+  /// ONLINE / OUTSIDE_BUSINESS_HOURS (the server shows a shop only when it is set up; anything else is not shown to customers).
   final String availabilityReason;
 
   /// The server's instant (UTC), used only to mark today in the schedule; never to decide open/closed.

@@ -8,7 +8,9 @@ import 'package:n11_shared/testing.dart';
 FakeDiscoveryApi seeded() => FakeDiscoveryApi(shops: <FakeShopEntry>[
       FakeShopEntry('s1', 'Zeta Ốc Hương', reason: 'ONLINE', dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Ốc hương hấp', 120000, 'c1')]),
       FakeShopEntry('s2', 'Alpha Hải Sản', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d2', 'Ngao hấp', 60000, 'c2'), FakeDishEntry('d3', 'Ốc len xào dừa', 90000, 'c1')]),
-      FakeShopEntry('s3', 'Quán Chưa Lịch', reason: 'NO_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d4', 'Mực nướng', 150000, 'c2')]),
+      FakeShopEntry('s3', 'Quán Đóng Cửa', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d4', 'Mực nướng', 150000, 'c2')]),
+      // Issue #190: what an OLDER server (or a stale list) may still send. It is not set up, so the app never draws it, whatever the server said.
+      FakeShopEntry('s5', 'Quán Máy Chủ Cũ', reason: 'NO_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d6', 'Gỏi cuốn', 30000, 'c1')]),
       FakeShopEntry('s4', 'Quán Khu Khác', areaId: 'a2', dishes: const <FakeDishEntry>[FakeDishEntry('d5', 'Cua rang', 250000, 'c2')]),
     ]);
 
@@ -50,7 +52,7 @@ void main() {
       final DiscoveryController one = DiscoveryController(api: seeded());
       await one.start();
       expect(one.areaId, 'a1');
-      expect(one.shops.map((ShopCardData s) => s.name), <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Chưa Lịch']);
+      expect(one.shops.map((ShopCardData s) => s.name), <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Đóng Cửa']);
       final FakeDiscoveryApi twoAreas = seeded()..areaList = <AreaChoice>[const AreaChoice(id: 'a1', name: 'Cao Bằng'), const AreaChoice(id: 'a2', name: 'Hòa An')];
       final DiscoveryController many = DiscoveryController(api: twoAreas);
       await many.start();
@@ -66,7 +68,7 @@ void main() {
       await c.start();
       await c.toggleCategory('c2');
       expect(api.queries.last.categoryId, 'c2');
-      expect(c.shops.map((ShopCardData s) => s.name), <String>['Alpha Hải Sản', 'Quán Chưa Lịch']);
+      expect(c.shops.map((ShopCardData s) => s.name), <String>['Alpha Hải Sản', 'Quán Đóng Cửa']);
       await c.toggleCategory('c2');
       expect(c.categoryId, isNull);
       await c.apply(area: 'a1', category: 'c1', open: true);
@@ -115,18 +117,27 @@ void main() {
     });
   });
 
-  testWidgets('shop cards show actual ratings, no fake distance, then a one-shot approximate distance', (WidgetTester tester) async {
+  testWidgets('shop cards show actual ratings; the distance is a ROAD distance, never the straight line passed off as a route (issue #190)', (WidgetTester tester) async {
     phone(tester);
     const ShopCardData shop = ShopCardData(shopId: 'rated', name: 'Ốc 11', address: 'Cao Bằng', reason: 'ONLINE', ratingAverage: 4.5, ratingCount: 12, latitude: 22.67, longitude: 106.25);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, onTap: () {}))));
     expect(find.text('★ 4.5/5 (12 đánh giá)'), findsOneWidget);
-    expect(find.text('Chưa xác định'), findsOneWidget);
+    expect(find.text('Chưa xác định quãng đường'), findsOneWidget);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, locating: true, onTap: () {}))));
     expect(find.text('Đang định vị…'), findsOneWidget);
     final LocationFix fix = LocationFix(latitude: 22.67, longitude: 106.26, accuracyMeters: 10, takenAt: DateTime.now());
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, onTap: () {}))));
-    expect(shop.distanceKm(fix), closeTo(1.026, 0.02));
-    expect(find.textContaining('km · đường chim bay'), findsOneWidget);
+    // The straight line is about 1.0 km; the road the server found is 3.4 km. The card shows the road, labelled as such, and never the Haversine number.
+    expect(shop.straightLineKm(fix), closeTo(1.026, 0.02));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, distance: const RouteDistance.route(3400), onTap: () {}))));
+    expect(find.text('≈ 3,4 km · đường đi'), findsOneWidget);
+    expect(find.textContaining('chim bay'), findsNothing);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, distance: RouteDistance.loading, onTap: () {}))));
+    expect(find.text('Đang tính quãng đường…'), findsOneWidget);
+    // Road unknown: it says so; the straight line may follow only as an explicitly labelled reference.
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, distance: RouteDistance.unavailable, onTap: () {}))));
+    expect(find.textContaining('Chưa xác định quãng đường'), findsOneWidget);
+    expect(find.textContaining('đường chim bay'), findsOneWidget);
+    expect(find.textContaining('đường đi'), findsNothing);
     final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
     final DiscoveryPosition position = DiscoveryPosition(provider: gps);
     await position.locate();
@@ -230,14 +241,15 @@ void main() {
       addTearDown(c.dispose);
       await home(tester, c);
       expect(find.text('Cao Bằng · tham khảo'), findsOneWidget);
-      final List<String> order = <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Chưa Lịch'];
+      final List<String> order = <String>['Zeta Ốc Hương', 'Alpha Hải Sản', 'Quán Đóng Cửa'];
       for (final String n in order) {
         expect(find.text(n), findsOneWidget);
       }
       expect(tester.getTopLeft(find.text('Zeta Ốc Hương')).dy, lessThan(tester.getTopLeft(find.text('Alpha Hải Sản')).dy));
       expect(find.text('Đang mở cửa'), findsWidgets);
-      expect(find.text('Đã đóng cửa'), findsOneWidget);
-      expect(find.text('Chưa cài giờ hoạt động'), findsOneWidget);
+      expect(find.text('Đã đóng cửa'), findsNWidgets(2));
+      expect(find.text('Chưa cài giờ hoạt động'), findsNothing);
+      expect(find.text('Quán Máy Chủ Cũ'), findsNothing);
       expect(find.text('Quán Khu Khác'), findsNothing);
       for (final String word in <String>['sao', 'km', 'Phí ship', 'Mua', 'Giỏ hàng']) {
         expect(find.textContaining(word), findsNothing);

@@ -129,6 +129,8 @@ if [ "$app" = food ]; then
   main_template="MainActivityFood.kt"
   mkdir -p "$kt/vn/eleven/m14/gps"
   cp "$here/../gps-test/gps/src/main/java/vn/eleven/m14/gps/FreshLocationRequest.kt" "$kt/vn/eleven/m14/gps/FreshLocationRequest.kt"
+  # Issue #190: the quick contact of the shop page (open the dialer / Zalo / Messenger). 11Food only; no permission, no new dependency.
+  cp "$here/android-templates/kotlin/N11LaunchChannel.kt" "$kt/vn/eleven/n11/N11LaunchChannel.kt"
 fi
 cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
 sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"

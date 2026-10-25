@@ -46,7 +46,9 @@ class ShopCardData {
   final int ratingCount;
   final double? latitude;
   final double? longitude;
-  double? distanceKm(LocationFix? fix) {
+  /// The STRAIGHT-LINE distance (Haversine). Issue #190: it is never the distance a card shows as a route; it exists only to be shown as a
+  /// reference labelled "đường chim bay" when the road is unknown. The road distance comes from [RouteDistanceController].
+  double? straightLineKm(LocationFix? fix) {
     if (fix == null || latitude == null || longitude == null) return null;
     double rad(double n) => n * math.pi / 180;
     final double a =
@@ -62,11 +64,18 @@ class ShopCardData {
   final String name;
   final String address;
 
-  /// ONLINE / OUTSIDE_BUSINESS_HOURS / NO_BUSINESS_HOURS, as the server computed it.
+  /// ONLINE / OUTSIDE_BUSINESS_HOURS, as the server computed it (a shop in any other state is not listed).
   final String reason;
 
   bool get open => reason == 'ONLINE';
+
+  /// Issue #190: customers see a shop only when the server says it is set up: open now, or closed by its schedule. Any other reason
+  /// (no schedule, locked, not set up) comes from an older server or a stale list and is never drawn.
+  bool get isPublic => reason == 'ONLINE' || reason == 'OUTSIDE_BUSINESS_HOURS';
 }
+
+/// The cards a customer may be shown (see [ShopCardData.isPublic]).
+List<ShopCardData> onlyPublic(Iterable<ShopCardData> shops) => <ShopCardData>[for (final ShopCardData s in shops) if (s.isPublic) s];
 
 @immutable
 class DishHit {
@@ -126,6 +135,10 @@ class DiscoveryQuery {
 
 /// Throws [AuthFailure] (no answer / refusal) or [FeatureNotConnected].
 abstract class DiscoveryApi {
+  /// Issue #190: the road distance in metres from the position to the pickup point of each shop (null = not known), keyed by shop id. The shops
+  /// the server does not mention are simply absent. Throws [AuthFailure] or [FeatureNotConnected].
+  Future<Map<String, int?>> routeDistances(double latitude, double longitude, List<String> shopIds);
+
   Future<AreaChoice?> resolveArea(double latitude, double longitude);
   Future<List<AreaChoice>> areas();
   Future<List<CategoryChoice>> categories();
@@ -135,6 +148,10 @@ abstract class DiscoveryApi {
 
 class UnwiredDiscoveryApi implements DiscoveryApi {
   const UnwiredDiscoveryApi();
+
+  @override
+  Future<Map<String, int?>> routeDistances(double latitude, double longitude, List<String> shopIds) =>
+      Future<Map<String, int?>>.error(const FeatureNotConnected());
 
   @override
   Future<AreaChoice?> resolveArea(double latitude, double longitude) =>

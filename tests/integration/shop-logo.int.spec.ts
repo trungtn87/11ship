@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AuthApp, dataOf, startAuthApp, registerUser } from './support/auth-fixtures';
 import { publicShop } from './support/menu-fixtures';
-import { createShopOwner, getShop, profileBody, putProfile } from './support/shop-management-fixtures';
+import { createShopOwner, getShop, profileBody, putProfile, completeSetup } from './support/shop-management-fixtures';
 
 const png = readFileSync('tests/fixtures/shop-logo-256.png').toString('base64');
 const logo = { content_type: 'image/png', data_base64: png };
@@ -41,6 +41,7 @@ describe('shop logo saved with the versioned profile', () => {
 
   it('saves and reads back, survives an old client, rejects stale/invalid writes, removes and hides disabled shops', async () => {
     const owner = await createShopOwner(app);
+    await completeSetup(app, owner);
     const key = randomUUID();
     const body = profileBody(owner, { logo });
     const first = await putProfile(app, owner.token, body, key);
