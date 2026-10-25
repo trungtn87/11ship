@@ -202,10 +202,15 @@ describe('admin shop management (real browser)', () => {
       [`Trà đá ${tag}`, drink, 5000, 'VISIBLE'],
       [`Món đã xóa ${tag}`, food, 1000, 'DELETED'],
     ] as const) {
+      // Issue #190: a dish on sale carries a picture (a shop is set up only with one).
+      const imageId = status === 'VISIBLE' ? randomUUID() : null;
+      if (imageId !== null) {
+        await app.pool.query(`INSERT INTO app.menu_images (image_id, shop_id, content_type, byte_size, data, created_at) VALUES ($1::uuid, $2::uuid, 'image/jpeg', 4, '\\xffd8ffe0'::bytea, clock_timestamp())`, [imageId, idA]);
+      }
       await app.pool.query(
-        `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, version, created_at, updated_at, deleted_at)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 1, clock_timestamp(), clock_timestamp(), CASE WHEN $6 = 'DELETED' THEN clock_timestamp() END)`,
-        [randomUUID(), idA, category, name, price, status],
+        `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, image_id, version, created_at, updated_at, deleted_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::uuid, 1, clock_timestamp(), clock_timestamp(), CASE WHEN $6 = 'DELETED' THEN clock_timestamp() END)`,
+        [randomUUID(), idA, category, name, price, status, imageId],
       );
     }
     // 21 more shops so the list has a second page.
@@ -226,6 +231,7 @@ describe('admin shop management (real browser)', () => {
     if (app !== undefined) {
       await cleanupOrders({ pool: app.pool } as AuthApp, { shopIds, customerIds: [], drivers: [], userIds: [] });
       await app.pool.query('DELETE FROM app.menu_items WHERE shop_id = ANY($1::uuid[])', [shopIds]);
+      await app.pool.query('DELETE FROM app.menu_images WHERE shop_id = ANY($1::uuid[])', [shopIds]);
       await app.pool.query('DELETE FROM app.menu_categories WHERE category_id = ANY($1::uuid[])', [categoryIds]);
       await app.close();
     }
@@ -272,7 +278,7 @@ describe('admin shop management (real browser)', () => {
     await page.waitFor(`document.body.innerText.includes('Không tìm thấy quán')`);
     await pick(page, '#shop-profile', 'ACTIVE');
     await pick(page, '#shop-schedule', 'CLOSED');
-    await waitRows(page, `rows.length >= 1 && rows.every((r) => r.includes('Đóng'))`);
+    await waitRows(page, `rows.length >= 1 && rows.every((r) => (r.includes('Đóng') || r.includes('Chưa thiết lập')))`);
 
     // Detail: header, the four tabs, reload of the route and of the tab.
     await page.goto(`${origin}/operations/shops/${idA}`);
@@ -485,7 +491,7 @@ describe('admin shop management (real browser)', () => {
     expect(await press(page, 'Kích hoạt lại', 'document.querySelector(".dialog")')).toBe(true);
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã kích hoạt lại quán')`);
     expect((await shopRow(idA)).status).toBe('ACTIVE');
-    expect(await page.evaluate<string>(`document.querySelector('.detail-status').innerText`)).toContain('Đóng · chưa có lịch');
+    expect(await page.evaluate<string>(`document.querySelector('.detail-status').innerText`)).toContain('Chưa thiết lập · chưa có lịch');
     expect(await audits(idA, 'admin.shop.enable.v1')).toBe(1);
     await page.close();
   }, 300_000);

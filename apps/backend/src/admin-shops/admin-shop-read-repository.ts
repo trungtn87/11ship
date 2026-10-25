@@ -4,7 +4,9 @@ import { TechnicalError } from '../common/app-errors';
 import { TERMINAL_STATES } from '../delivery/delivery-constants';
 import { ENDED_STATUSES } from '../orders/order-constants';
 import { evaluateAvailability } from '../shop/shop-availability-reader';
-import { hasHoursSql, inHoursSql, localTimeCtes, PRODUCTION_CLOCK } from '../shop/shop-availability-sql';
+import { hasHoursSql, hasPickupPointSql, inHoursSql, localTimeCtes, PRODUCTION_CLOCK } from '../shop/shop-availability-sql';
+import { sellableItemExistsSql } from '../menu/menu-readiness-sql';
+import { effectiveAvailability, evaluateSetup, SetupEvaluation, SetupState } from '../shop-setup/shop-setup-rules';
 import { ShopAvailability, ShopStatus } from '../shop/shop-types';
 import { TransactionContext } from '../transaction/transaction-context';
 import { ScheduleFilter } from './admin-shop-validation';
@@ -24,6 +26,7 @@ export interface ShopFilter {
   readonly areaId: string | null;
   readonly profile: ShopStatus | null;
   readonly schedule: ScheduleFilter | null;
+  readonly setup: SetupState | null;
 }
 
 export interface OwnerFacts {
@@ -47,6 +50,10 @@ export interface ShopListRow {
   readonly availability: ShopAvailability;
   readonly itemsVisible: number;
   readonly itemsTotal: number;
+  /** Issue #190: the setup steps and state (derived from the real rows), the pending request and the reason of a lock. */
+  readonly setup: SetupEvaluation;
+  readonly setupRequest: { readonly note: string; readonly atMs: number } | null;
+  readonly lock: { readonly kind: 'ADMIN' | 'OWNER_ACCOUNT'; readonly reason: string | null } | null;
 }
 
 export interface ShopAdminFacts {
@@ -59,6 +66,11 @@ export interface ShopAdminFacts {
   readonly updatedAtMs: number;
   readonly itemsVisible: number;
   readonly itemsHidden: number;
+  readonly hasSellableItem: boolean;
+  readonly activatedAtMs: number | null;
+  readonly setupRequest: { readonly note: string; readonly atMs: number } | null;
+  /** The reason the last administrator lock gave (audit), or null. */
+  readonly lockReason: string | null;
 }
 
 export interface OpenWork {
@@ -122,6 +134,14 @@ interface RawList {
   items_visible: string;
   items_total: string;
   total: string;
+  contact_phone_normalized: string;
+  has_pickup_point: boolean;
+  has_sellable: boolean;
+  activated_ms: string | null;
+  request_note: string | null;
+  request_ms: string | null;
+  lock_reason: string | null;
+  setup_state: SetupState;
 }
 
 function ownerOf(id: string | null, name: string | null, phone: string | null, locked: boolean | null): OwnerFacts | undefined {
@@ -147,7 +167,7 @@ export class AdminShopReadRepository {
    * detail (inHoursSql + evaluateAvailability). `total` counts every row the filter matches, not only the page.
    */
   async list(context: TransactionContext, filter: ShopFilter, limit: number, offset: number): Promise<{ rows: ShopListRow[]; total: number }> {
-    const online = `(s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND COALESCE(ou.status = 'ACTIVE', true) AND h.has_hours AND h.in_hours)`;
+    const online = `(s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND COALESCE(ou.status = 'ACTIVE', true) AND h.has_hours AND h.in_hours AND ${hasPickupPointSql('s')} AND ${sellableItemExistsSql('s.shop_id')})`;
     const result = await context.query<RawList>(
       `${localTimeCtes(PRODUCTION_CLOCK)},
        base AS (
@@ -157,7 +177,14 @@ export class AdminShopReadRepository {
                 to_char(date_trunc('milliseconds', l.instant) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS evaluated_at,
                 h.has_hours, h.in_hours,
                 COALESCE(i.visible, 0) AS items_visible, COALESCE(i.total, 0) AS items_total,
-                ${online} AS is_online
+                ${online} AS is_online,
+                ${hasPickupPointSql('s')} AS has_pickup_point,
+                ${sellableItemExistsSql('s.shop_id')} AS has_sellable,
+                ${epochMs('s.activated_at')} AS activated_ms,
+                s.setup_request_note AS request_note, ${epochMs('s.setup_request_at')} AS request_ms,
+                (SELECT al.metadata->>'reason' FROM app.audit_logs al
+                  WHERE al.resource_type = 'shop' AND al.resource_id = s.shop_id::text AND al.action = 'admin.shop.disable.v1' AND al.outcome = 'SUCCESS'
+                  ORDER BY al.occurred_at DESC, al.audit_id DESC LIMIT 1) AS lock_reason
            FROM app.shops s
            LEFT JOIN app.shop_public_ids pid ON pid.shop_id = s.shop_id
            LEFT JOIN app.service_areas a ON a.service_area_id = s.service_area_id${OWNER_JOIN}
@@ -168,8 +195,25 @@ export class AdminShopReadRepository {
                FROM app.menu_items mi WHERE mi.shop_id = s.shop_id AND mi.status <> 'DELETED'
            ) i ON true
        ),
+       staged AS (
+         SELECT b.*,
+                (b.name <> '' AND b.address_text <> '' AND b.contact_phone_normalized <> '' AND b.area_id IS NOT NULL AND b.area_status = 'ACTIVE'
+                 AND b.has_hours AND b.has_pickup_point AND b.has_sellable) AS setup_complete
+           FROM base b
+       ),
+       classified AS (
+         SELECT t.*,
+                CASE
+                  WHEN t.status = 'DISABLED' OR COALESCE(t.owner_locked, false) THEN 'LOCKED'
+                  WHEN t.request_note IS NOT NULL THEN 'NEEDS_REVIEW'
+                  WHEN NOT t.setup_complete THEN CASE WHEN t.activated_ms IS NULL THEN 'INCOMPLETE' ELSE 'NEEDS_REVIEW' END
+                  WHEN t.status = 'ACTIVE' THEN 'ACTIVATED'
+                  ELSE 'INCOMPLETE'
+                END AS setup_state
+           FROM staged t
+       ),
        matched AS (
-         SELECT * FROM base b
+         SELECT * FROM classified b
           WHERE ($1::text IS NULL
                  OR app.fold_vi(b.name) LIKE $1::text
                  OR app.fold_vi(COALESCE(b.owner_name, '')) LIKE $1::text
@@ -178,12 +222,13 @@ export class AdminShopReadRepository {
             AND ($3::uuid IS NULL OR b.area_id = $3::uuid)
             AND ($4::text IS NULL OR b.status = $4::text)
             AND ($5::text IS NULL OR ($5::text = 'OPEN' AND b.is_online) OR ($5::text = 'CLOSED' AND NOT b.is_online))
+            AND ($8::text IS NULL OR b.setup_state = $8::text)
        )
        SELECT m.*, (SELECT count(*) FROM matched) AS total
          FROM matched m
         ORDER BY m.created_at DESC, m.shop_id DESC
         LIMIT $6::int OFFSET $7::int`,
-      [filter.name, filter.digits, filter.areaId, filter.profile, filter.schedule, limit, offset],
+      [filter.name, filter.digits, filter.areaId, filter.profile, filter.schedule, limit, offset, filter.setup],
     );
     let total = result.rows[0] === undefined ? 0 : toSafeInteger(result.rows[0].total);
     if (result.rows.length === 0 && offset > 0) {
@@ -201,9 +246,25 @@ export class AdminShopReadRepository {
         areaName: row.area_name,
         status: asStatus(row.status),
         version: toSafeInteger(row.version),
-        availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true),
+        availability: effectiveAvailability(evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point), row.has_sellable),
         itemsVisible: toSafeInteger(row.items_visible),
         itemsTotal: toSafeInteger(row.items_total),
+        setup: evaluateSetup({
+          status: row.status,
+          ownerLocked: row.owner_locked === true,
+          name: row.name,
+          addressText: row.address_text,
+          contactPhone: row.contact_phone_normalized,
+          serviceAreaId: row.area_id,
+          areaStatus: row.area_status,
+          hasHours: row.has_hours,
+          hasPickupPoint: row.has_pickup_point,
+          hasSellableItem: row.has_sellable,
+          activatedAt: row.activated_ms,
+          requestPending: row.request_note !== null,
+        }),
+        setupRequest: row.request_note === null || row.request_ms === null ? null : { note: row.request_note, atMs: toSafeInteger(row.request_ms) },
+        lock: row.status === 'DISABLED' ? { kind: 'ADMIN', reason: row.lock_reason } : row.owner_locked === true ? { kind: 'OWNER_ACCOUNT', reason: null } : null,
       })),
       total,
     };
@@ -229,12 +290,22 @@ export class AdminShopReadRepository {
       updated_ms: string;
       items_visible: string;
       items_hidden: string;
+      has_sellable: boolean;
+      activated_ms: string | null;
+      request_note: string | null;
+      request_ms: string | null;
+      lock_reason: string | null;
     }>(
       `SELECT s.shop_id, ${SHOP_CODE} AS code, ou.user_id AS owner_id, cp.full_name AS owner_name, ou.phone_normalized AS owner_phone,
               (ou.status <> 'ACTIVE') AS owner_locked, a.name AS area_name, a.status AS area_status,
               ${epochMs('s.created_at')} AS created_ms, ${epochMs('s.updated_at')} AS updated_ms,
               (SELECT count(*) FROM app.menu_items mi WHERE mi.shop_id = s.shop_id AND mi.status = 'VISIBLE') AS items_visible,
-              (SELECT count(*) FROM app.menu_items mi WHERE mi.shop_id = s.shop_id AND mi.status = 'HIDDEN') AS items_hidden
+              (SELECT count(*) FROM app.menu_items mi WHERE mi.shop_id = s.shop_id AND mi.status = 'HIDDEN') AS items_hidden,
+              ${sellableItemExistsSql('s.shop_id')} AS has_sellable,
+              ${epochMs('s.activated_at')} AS activated_ms, s.setup_request_note AS request_note, ${epochMs('s.setup_request_at')} AS request_ms,
+              (SELECT al.metadata->>'reason' FROM app.audit_logs al
+                WHERE al.resource_type = 'shop' AND al.resource_id = s.shop_id::text AND al.action = 'admin.shop.disable.v1' AND al.outcome = 'SUCCESS'
+                ORDER BY al.occurred_at DESC, al.audit_id DESC LIMIT 1) AS lock_reason
          FROM app.shops s
          LEFT JOIN app.shop_public_ids pid ON pid.shop_id = s.shop_id
          LEFT JOIN app.service_areas a ON a.service_area_id = s.service_area_id${OWNER_JOIN}
@@ -255,6 +326,10 @@ export class AdminShopReadRepository {
       updatedAtMs: toSafeInteger(row.updated_ms),
       itemsVisible: toSafeInteger(row.items_visible),
       itemsHidden: toSafeInteger(row.items_hidden),
+      hasSellableItem: row.has_sellable,
+      activatedAtMs: row.activated_ms === null ? null : toSafeInteger(row.activated_ms),
+      setupRequest: row.request_note === null || row.request_ms === null ? null : { note: row.request_note, atMs: toSafeInteger(row.request_ms) },
+      lockReason: row.lock_reason,
     };
   }
 

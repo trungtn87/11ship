@@ -10,6 +10,7 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { ServiceAreaRepository } from '../shop/service-area-repository';
 import { ShopRepository } from '../shop/shop-repository';
+import { ShopActivation } from '../shop-setup/shop-activation';
 import { TransactionContext } from '../transaction/transaction-context';
 import {
   ONBOARDING_AUDIT_ACTIONS,
@@ -49,6 +50,7 @@ export class ShopOnboardingService {
     private readonly serviceAreas: ServiceAreaRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly activation: ShopActivation,
   ) {}
 
   async saveProfile(
@@ -188,14 +190,33 @@ export class ShopOnboardingService {
     if (shop.pickupLat === null || shop.pickupLng === null || shop.serviceAreaId === null) {
       throw new AppError('SHOP_PROFILE_INCOMPLETE');
     }
+    const version = await this.#finishProfile(context, userId, { shopId: shop.shopId, version: shop.version, serviceAreaId: shop.serviceAreaId }, requestId);
+
+    return {
+      status: 200,
+      replayGuard: { user_id: userId },
+      payload: {
+        shop_id: shop.shopId,
+        status: 'ACTIVE',
+        accepting_orders: false,
+        role_granted: true,
+        version,
+      },
+    };
+  }
+
+  /**
+   * INCOMPLETE -> ACTIVE (profile finished) + the SHOP role, with its audit row and outbox event. Shared by the explicit completion and by the profile
+   * save that already carries a pickup point and an area. The caller holds user, session, membership and shop locks; the area is locked FOR SHARE here.
+   * Returns the new version. It does NOT make the shop public: that is the setup readiness (schedule, point, a sellable dish).
+   */
+  async #finishProfile(context: TransactionContext, userId: string, shop: { readonly shopId: string; readonly version: number; readonly serviceAreaId: string }, requestId: string): Promise<number> {
     const area = await this.serviceAreas.lockShared(context, shop.serviceAreaId);
     if (area === undefined || area.status !== 'ACTIVE') {
       throw new AppError('INVALID_SERVICE_AREA');
     }
-
     const version = await this.shops.activate(context, shop.shopId, shop.version);
     await this.roleGrants.grant(context, userId, 'SHOP');
-
     await this.audit.append(context, {
       requestId,
       actorType: 'USER',
@@ -216,17 +237,9 @@ export class ShopOnboardingService {
       payload: { shop_id: shop.shopId, user_id: userId },
     });
 
-    return {
-      status: 200,
-      replayGuard: { user_id: userId },
-      payload: {
-        shop_id: shop.shopId,
-        status: 'ACTIVE',
-        accepting_orders: false,
-        role_granted: true,
-        version,
-      },
-    };
+    // Every condition may already hold (a re-registered owner with a schedule and dishes): the system activates at once, exactly once.
+    await this.activation.reconcile(context, shop.shopId, requestId, 'profile_completed');
+    return version;
   }
 
   /**

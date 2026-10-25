@@ -125,10 +125,19 @@ describe('admin shop management (API)', () => {
 
   async function addItem(shopId: string, categoryId: string, name: string, price: number, status: 'VISIBLE' | 'HIDDEN' | 'DELETED'): Promise<string> {
     const itemId = randomUUID();
+    // Issue #190: a dish on sale has a picture (a shop is set up only with one), so every VISIBLE dish of this suite carries one.
+    let imageId: string | null = null;
+    if (status === 'VISIBLE') {
+      imageId = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.menu_images (image_id, shop_id, content_type, byte_size, data, created_at) VALUES ($1::uuid, $2::uuid, 'image/jpeg', 4, '\\xffd8ffe0'::bytea, clock_timestamp())`,
+        [imageId, shopId],
+      );
+    }
     await app.pool.query(
-      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, version, created_at, updated_at, deleted_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 1, clock_timestamp(), clock_timestamp(), CASE WHEN $6 = 'DELETED' THEN clock_timestamp() END)`,
-      [itemId, shopId, categoryId, name, price, status],
+      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, image_id, version, created_at, updated_at, deleted_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::uuid, 1, clock_timestamp(), clock_timestamp(), CASE WHEN $6 = 'DELETED' THEN clock_timestamp() END)`,
+      [itemId, shopId, categoryId, name, price, status, imageId],
     );
     return itemId;
   }
@@ -257,12 +266,14 @@ describe('admin shop management (API)', () => {
     hiddenItem = await addItem(alpha.shopId, groupFood, `Phở đặc biệt ẩn ${tag}`, 60000, 'HIDDEN');
     await addItem(alpha.shopId, groupFood, `Món đã xóa ${tag}`, 10000, 'DELETED');
     await addItem(beta.shopId, groupFood, `Bún chả ${tag}`, 40000, 'VISIBLE');
+    await addItem(gamma.shopId, groupFood, `Cơm tấm ${tag}`, 35000, 'VISIBLE');
   }, 300_000);
 
   afterAll(async () => {
     if (app !== undefined) {
       await cleanupOrders({ pool: app.pool } as AuthApp, { shopIds: shops, customerIds: [], drivers: [], userIds: [] });
       await app.pool.query('DELETE FROM app.menu_items WHERE shop_id = ANY($1::uuid[])', [shops]);
+      await app.pool.query('DELETE FROM app.menu_images WHERE shop_id = ANY($1::uuid[])', [shops]);
       await app.pool.query('DELETE FROM app.menu_categories WHERE category_id = ANY($1::uuid[])', [categories]);
       await app.close();
     }
@@ -395,9 +406,86 @@ describe('admin shop management (API)', () => {
   it('the public API never shows what the administration shows', async () => {
     const publicView = await app.call('GET', `/shops/${alpha.shopId}`, { basePath: '/v1' });
     const text = JSON.stringify(publicView.body);
-    expect(text).not.toMatch(/911000222|pickup_|zalo|facebook|owner|HIDDEN|ẩn/);
+    // Issue #190: the shop's OWN contact phone is public by design (the quick-contact buttons); the owner's login phone, GPS and hidden dishes are not.
+    expect(text).not.toMatch(new RegExp(`pickup_|owner|HIDDEN|ẩn|${alpha.phone.replace('+', '\\+')}`));
+    expect(publicView.body).toMatchObject({ data: { contact: { phone: '+84911000222' } } });
     const publicAdmin = await app.call('GET', '/shops', { basePath: BASE });
     expect(publicAdmin.status).toBe(401);
+  });
+
+  it('issue #190: the list and the detail say how far each shop is set up (x/4, what is missing, the state), the filter finds them, and the preview agrees', async () => {
+    const named = [alpha.shopId, beta.shopId, gamma.shopId, draft.shopId];
+    // (The list suite added 22 more shops named "Trang <tag>": only the four named shops are looked at, over every page.)
+    const found = async (setup: string): Promise<string[]> => items(await read(viewer, `/shops?q=${tag}&setup=${setup}&limit=50`)).map((item) => String(item.shop_id)).filter((id) => named.includes(id)).sort();
+    // alpha: schedule + two dishes with pictures + a point; gamma: a closed schedule + a dish; beta: a dish but NO schedule; the draft: nothing yet.
+    expect(await found('ACTIVATED')).toEqual([alpha.shopId, gamma.shopId].sort());
+    expect(await found('INCOMPLETE')).toEqual([beta.shopId, draft.shopId].sort());
+    expect(await found('LOCKED')).toEqual([]);
+    expect(await found('NEEDS_REVIEW')).toEqual([]);
+    expect(await found('ALL')).toHaveLength(4);
+    expect((await read(viewer, `/shops?q=${tag}&setup=SOON`)).status).toBe(400);
+    const rows = items(await read(viewer, `/shops?q=${tag}&limit=50`));
+    const setupOf = (shopId: string): Json => rows.find((candidate) => candidate.shop_id === shopId)?.setup as Json;
+    expect(setupOf(alpha.shopId)).toMatchObject({ state: 'ACTIVATED', completed_steps: 4, total_steps: 4, missing: [], public: true, request: null, lock: null });
+    expect(setupOf(beta.shopId)).toMatchObject({ state: 'INCOMPLETE', completed_steps: 3, missing: ['BUSINESS_HOURS'], public: false });
+    expect(setupOf(draft.shopId)).toMatchObject({ state: 'INCOMPLETE', completed_steps: 1 });
+    expect(setupOf(draft.shopId).missing).toEqual(expect.arrayContaining(['SERVICE_AREA', 'BUSINESS_HOURS', 'PICKUP_POINT', 'SELLABLE_ITEM']));
+    // The detail has the same block with the four steps, and the preview refuses a shop that is not set up with the missing parts.
+    const detail = adminData(await read(viewer, `/shops/${beta.shopId}`));
+    expect(detail.setup).toMatchObject({ state: 'INCOMPLETE', steps: [{ key: 'ACCOUNT', done: true }, { key: 'SHOP_INFO', done: false, missing: ['BUSINESS_HOURS'] }, { key: 'LOCATION', done: true }, { key: 'FIRST_ITEM', done: true }] });
+    expect(adminData(await read(viewer, `/shops/${beta.shopId}/preview`))).toMatchObject({ visible_to_customers: false, reason: 'NO_BUSINESS_HOURS', missing: ['BUSINESS_HOURS'], setup_state: 'INCOMPLETE' });
+    expect(adminData(await read(viewer, `/shops/${alpha.shopId}`)).setup).toMatchObject({ state: 'ACTIVATED', completed_steps: 4 });
+    // The customer side agrees: the incomplete shop is refused on its direct link, the set-up one is shown.
+    expect((await app.call('GET', `/shops/${beta.shopId}`, { basePath: '/v1' })).status).toBe(403);
+    expect((await app.call('GET', `/shops/${alpha.shopId}`, { basePath: '/v1' })).status).toBe(200);
+  });
+
+  it('issue #190: request-info and clear-request need the right, a reason and the version; each real change is audited ONCE, a repeat changes and logs nothing', async () => {
+    const id = beta.shopId;
+    const version = (await shopRow(id)).version;
+    const body = { expected_version: version, reason: 'Bổ sung giờ hoạt động' };
+    // Rights, transport and input.
+    for (const who of [viewer, lockOnly, customerAdmin]) {
+      expect(codeOf(await write(who, `/shops/${id}/request-info`, body))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    }
+    expect((await write(manager, `/shops/${id}/request-info`, { expected_version: version })).status).toBe(400);
+    expect((await write(manager, `/shops/${id}/request-info`, { ...body, reason: '   ' })).status).toBe(400);
+    expect(codeOf(await write(manager, `/shops/${id}/request-info`, { ...body, expected_version: version + 5 }))).toEqual({ status: 409, code: 'VERSION_CONFLICT' });
+    expect((await write(manager, `/shops/${id}/request-info`, body, { csrf: null })).status).toBe(403);
+    expect(await audits(id, 'admin.shop.request_info.v1')).toBe(0);
+    // The request: stored, shown on the detail and the list, the state is NEEDS_REVIEW, the version is NOT advanced (the owner's open form stays valid).
+    const key = randomUUID();
+    const first = await write(manager, `/shops/${id}/request-info`, body, { key });
+    expect(first.status).toBe(200);
+    expect(adminData(first)).toMatchObject({ version, setup: { state: 'NEEDS_REVIEW', request: { note: 'Bổ sung giờ hoạt động' } }, allowed_actions: expect.arrayContaining(['REQUEST_INFO', 'CLEAR_REQUEST']) });
+    expect(await shopRow(id)).toMatchObject({ status: 'ACTIVE', version });
+    expect(await audits(id, 'admin.shop.request_info.v1')).toBe(1);
+    expect(await events(id, 'shop.setup_requested.v1')).toBe(1);
+    expect(items(await read(viewer, `/shops?q=${tag}&setup=NEEDS_REVIEW`)).map((item) => item.shop_id)).toEqual([id]);
+    expect((await read(viewer, `/shops/${id}/history`)).status).toBe(200);
+    expect(items(await read(viewer, `/shops/${id}/history`))[0]).toMatchObject({ action: 'admin.shop.request_info.v1', reason: 'Bổ sung giờ hoạt động', actor: { type: 'ADMIN' } });
+    // The same key replays the stored answer; a NEW key with the same text finds it already pending: still ONE audit row and ONE event.
+    const replay = await write(manager, `/shops/${id}/request-info`, body, { key });
+    expect(replay.status).toBe(200);
+    const again = await write(manager2, `/shops/${id}/request-info`, body);
+    expect(again.status).toBe(200);
+    expect(await audits(id, 'admin.shop.request_info.v1')).toBe(1);
+    expect(await events(id, 'shop.setup_requested.v1')).toBe(1);
+    // A different text is a real change.
+    expect((await write(manager, `/shops/${id}/request-info`, { ...body, reason: 'Cài giờ rồi thêm ảnh món' })).status).toBe(200);
+    expect(await audits(id, 'admin.shop.request_info.v1')).toBe(2);
+    // The request changes no condition: the shop is still not public and a locked or complete shop has nothing to ask for.
+    expect((await app.call('GET', `/shops/${id}`, { basePath: '/v1' })).status).toBe(403);
+    expect(codeOf(await write(manager, `/shops/${alpha.shopId}/request-info`, { expected_version: (await shopRow(alpha.shopId)).version, reason: 'Không cần' }))).toEqual({ status: 409, code: 'SHOP_STATE_CONFLICT' });
+    // Withdrawing: once changes; the second finds nothing pending and logs nothing.
+    const clear = { expected_version: version, reason: 'Đã trao đổi' };
+    const cleared = await write(manager, `/shops/${id}/clear-request`, clear);
+    expect(cleared.status).toBe(200);
+    expect(adminData(cleared)).toMatchObject({ setup: { state: 'INCOMPLETE', request: null } });
+    expect((await write(manager2, `/shops/${id}/clear-request`, clear)).status).toBe(200);
+    expect(await audits(id, 'admin.shop.clear_request.v1')).toBe(1);
+    expect(await events(id, 'shop.setup_request_cleared.v1')).toBe(1);
+    expect(await shopRow(id)).toMatchObject({ status: 'ACTIVE', version });
   });
 
   it('disable: reason and version are mandatory, one audit row and one outbox event, nothing else changes (owner account, profile, schedule, dishes, running orders)', async () => {
@@ -502,7 +590,10 @@ describe('admin shop management (API)', () => {
     await app.pool.query('DELETE FROM app.shop_business_hours WHERE shop_id = $1::uuid', [id]);
     const done = await write(manager, `/shops/${id}/enable`, { expected_version: current.version, reason: 'Đã khắc phục' });
     expect(done.status).toBe(200);
-    expect(adminData(done)).toMatchObject({ status: 'ACTIVE', version: current.version + 1, allowed_actions: ['DISABLE'], availability: { online: false, reason: 'NO_BUSINESS_HOURS' } });
+    expect(adminData(done)).toMatchObject({ status: 'ACTIVE', version: current.version + 1, allowed_actions: ['DISABLE', 'REQUEST_INFO'], availability: { online: false, reason: 'NO_BUSINESS_HOURS' } });
+    // Issue #190: re-enabling cannot bypass the setup. The schedule is gone, so the shop stays hidden from customers and takes no order.
+    expect((await app.call('GET', `/shops/${id}`, { basePath: '/v1' })).status).toBe(403);
+    expect(adminData(done).setup).toMatchObject({ state: 'INCOMPLETE', public: false, missing: ['BUSINESS_HOURS'] });
     expect(await audits(id, 'admin.shop.enable.v1')).toBe(1);
     expect(await events(id, 'shop.enabled_by_admin.v1')).toBe(1);
     const history = items(await read(viewer, `/shops/${id}/history`));
@@ -513,7 +604,7 @@ describe('admin shop management (API)', () => {
     for (const name of ['disable', 'enable']) {
       expect(codeOf(await write(manager, `/shops/${draft.shopId}/${name}`, { expected_version: draftVersion, reason: 'Nháp' }))).toEqual({ status: 409, code: 'SHOP_STATE_CONFLICT' });
     }
-    expect(adminData(await read(manager, `/shops/${draft.shopId}`)).allowed_actions).toEqual([]);
+    expect(adminData(await read(manager, `/shops/${draft.shopId}`)).allowed_actions).toEqual(['REQUEST_INFO']);
     expect(await shopRow(draft.shopId)).toMatchObject({ status: 'INCOMPLETE', version: draftVersion });
     // An unknown shop.
     expect(codeOf(await write(manager, `/shops/${randomUUID()}/disable`, { expected_version: 1, reason: 'Không có' }))).toEqual({ status: 404, code: 'SHOP_NOT_FOUND' });

@@ -16,6 +16,8 @@ import 'menu_views.dart';
 import 'preview_views.dart';
 import 'schedule.dart';
 import 'shop_ops_controller.dart';
+import 'shop_setup_controller.dart';
+import 'shop_setup_views.dart';
 
 // Q01 (Quản lý cửa hàng) and Q02 (Hồ sơ quán). Reads GET /v1/shop/me; writes PUT /v1/shop/me/profile. See shop_ops_controller.dart for
 // the pending / conflict / read-back rules these screens only display.
@@ -65,13 +67,18 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
     _watchSession();
     ops.load();
     ops.startPolling();
+    setup.load();
+    setup.startPolling();
   }
+
+  ShopSetupController get setup => widget.flows.setup;
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _unwatchSession();
     ops.stopPolling();
+    setup.stopPolling();
     super.dispose();
   }
 
@@ -79,6 +86,7 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ops.refresh();
+      setup.refresh();
     }
   }
 
@@ -87,13 +95,27 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
     await Navigator.of(context).push(n11Route(screen));
     if (mounted) {
       ops.refresh();
+      setup.refresh();
+    }
+  }
+
+  /// A step of the checklist that is not done: the screen where it is done. Shop info with no schedule goes to the schedule; any other missing
+  /// shop info and the location go to the profile editor (its address field takes the GPS point at the shop); the first dish goes to the menu.
+  void _openSetupStep(String key, List<String> missing) {
+    switch (key) {
+      case 'SHOP_INFO':
+        _open(missing.contains('BUSINESS_HOURS') && missing.length == 1 ? HoursScreen(flows: widget.flows) : ShopProfileScreen(flows: widget.flows, startEditing: true));
+      case 'LOCATION':
+        _open(ShopProfileScreen(flows: widget.flows, startEditing: true));
+      case 'FIRST_ITEM':
+        _open(MenuListScreen(flows: widget.flows));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ops,
+      listenable: Listenable.merge(<Listenable>[ops, setup]),
       builder: (BuildContext context, Widget? child) {
         final ShopOverview? o = ops.overview;
         final List<Widget> body;
@@ -121,6 +143,7 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
   List<Widget> _content(ShopOverview o) {
     final ({String label, String text, ChipKind kind}) copy = availabilityCopy(o.availability.reason);
     final DateTime? at = ops.lastUpdated;
+    final ShopSetup? progress = setup.setup;
     final bool incomplete = o.isIncomplete;
     final String hoursSub = !o.hasHours
         ? 'Chưa cài'
@@ -141,6 +164,12 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
       case 'OUTSIDE_BUSINESS_HOURS':
         cta = o.availability.reason == 'NO_BUSINESS_HOURS' ? 'Cài giờ hoạt động' : 'Xem giờ hoạt động';
         ctaAction = () => _open(HoursScreen(flows: widget.flows));
+      case 'NO_PICKUP_POINT':
+        cta = 'Cập nhật vị trí quán';
+        ctaAction = () => _open(ShopProfileScreen(flows: widget.flows, startEditing: true));
+      case 'NO_SELLABLE_ITEM':
+        cta = 'Thêm món đang bán';
+        ctaAction = () => _open(MenuListScreen(flows: widget.flows));
       case 'SHOP_INCOMPLETE':
         cta = 'Hoàn tất hồ sơ';
         final onboarding = widget.flows.onboarding;
@@ -159,6 +188,7 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
       _ => (N11Colors.white, N11Colors.line, Icons.nightlight_outlined),
     };
     return <Widget>[
+      if (setup.justActivated) ShopSetupReadyBanner(onClose: setup.acknowledgeActivation),
       Text(o.name, key: const Key('manage-name'), style: const TextStyle(fontSize: 26, height: 1.2, fontWeight: FontWeight.w800, color: N11Colors.black)),
       Align(alignment: Alignment.centerLeft, child: N11Chip(profileChip.$1, kind: profileChip.$2)),
       if (ops.stale)
@@ -170,6 +200,10 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
           meta: at == null ? null : 'Lần cập nhật gần nhất: ${_hhmm(at)}',
           trailing: N11Button(key: const Key('manage-reload'), label: 'Thử lại', compact: true, onPressed: ops.refresh),
         ),
+      // Issue #190: the checklist stays until the server says the shop is set up; it disappears by itself afterwards.
+      if (progress != null && !progress.isActivated) ShopSetupChecklist(setup: progress, stale: setup.stale, onRetry: setup.refresh, onStep: _openSetupStep),
+      if (progress == null && setup.loadState == SetupLoad.failed)
+        N11Banner(key: const Key('setup-failed'), kind: BannerKind.warn, title: 'Chưa đọc được các bước thiết lập', text: 'Kiểm tra kết nối rồi thử lại.', trailing: N11Button(key: const Key('setup-reload'), label: 'Thử lại', compact: true, onPressed: setup.load)),
       Container(
         key: const Key('status-card'),
         padding: const EdgeInsets.all(N11Space.gap4),

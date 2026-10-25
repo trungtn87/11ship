@@ -10,20 +10,7 @@ import {
   registerUser,
   startAuthApp,
 } from './support/auth-fixtures';
-import {
-  createShopOwner,
-  getShop,
-  hoursBody,
-  hoursOf,
-  interval,
-  localSlot,
-  profileBody,
-  putHours,
-  putProfile,
-  ShopOwner,
-  shopState,
-  Wire,
-} from './support/shop-management-fixtures';
+import { createShopOwner, getShop, hoursBody, hoursOf, interval, localSlot, profileBody, putHours, putProfile, ShopOwner, shopState, Wire, completeSetup } from './support/shop-management-fixtures';
 
 // M02-A — Shop management through the REAL Nest pipeline on a REAL PostgreSQL: acceptance A01-A05, A07, A09, A16.
 // Races, faults and replay authorization live in sibling suites; the availability boundaries in
@@ -398,6 +385,7 @@ describe('M02-A — Shop management', () => {
 
     it('a 24-hour interval started 30 minutes ago is ONLINE; one that opens in two hours is OFFLINE; and back', async () => {
       const owner = await createShopOwner(app);
+      await completeSetup(app, owner, { hours: false });
       const ago = await localSlot(app.pool, -30);
       // start = end with +1 day is exactly 24 hours from `ago`, so now is inside it whatever the weekday.
       const covering = interval(ago.weekday, ago.minute, ago.minute, 1);
@@ -418,6 +406,7 @@ describe('M02-A — Shop management', () => {
 
     it('the legacy accepting_orders value (true or false) does not change availability', async () => {
       const owner = await createShopOwner(app);
+      await completeSetup(app, owner, { hours: false });
       const ago = await localSlot(app.pool, -30);
       await putHours(app, owner.token, hoursBody([interval(ago.weekday, ago.minute, ago.minute, 1)]));
       const seen: unknown[] = [];

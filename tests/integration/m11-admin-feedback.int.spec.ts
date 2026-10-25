@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { sessionCookies } from './support/admin-fixtures';
 import { adminData, adminErrorCode, AdminResponse } from './support/admin-fixtures';
 import { dataOf, errorCode } from './support/auth-fixtures';
-import { createShopOwner } from './support/shop-management-fixtures';
+import { completeSetup, createShopOwner } from './support/shop-management-fixtures';
 import { AdminLogin, Json, M11World, PNG_BASE64, Shipper } from './support/m11-harness';
 
 // M11.03 on a REAL Nest pipeline and PostgreSQL, through the REAL administration pipeline (session cookie, CSRF, idempotency): who may read and who may
@@ -250,6 +250,7 @@ describe('M11.03 — administration, moderation and adjustments', () => {
 
   it('hiding a rating needs a reason, keeps the original, removes it from the page and from the score; restoring brings it back; stars and text are never editable', async () => {
     const shop2 = await createShopOwner(w.app);
+    await completeSetup(w.app, shop2);
     const customer = await w.newCustomer('Lê Thu Hà');
     const other = await w.newCustomer('Người Khác');
     const bad = w.newOrder(customer, { shopId: shop2.shopId });

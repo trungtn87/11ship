@@ -28,6 +28,10 @@
     "1796342400000_m07-fee-revision": {
       "sha256": "b5bb531d00e40f89bb01c2b637b0b27e5dd7335b6f22bf2bfddeca1f43135518",
       "review": "M07 fee negotiation fix; compatibility review 2026-10-24: Up adds two nullable columns and a check on the fee agreement, widens the status guard by one transition (ACCEPTED to PROPOSED for AGREED) and the event types by two. Existing rows are unchanged; the previous backend never sets the new columns and ignores them."
+    },
+    "1796428800000_shop-setup-readiness": {
+      "sha256": "6fbe0f22ff82da6983da5b6be7a0b07b3c60b40602f320157b9bc2933a1705e9",
+      "review": "Issue #190; compatibility review 2026-10-25: Up adds three nullable columns to app.shops (activated_at, setup_request_note, setup_request_at) with two CHECKs that every existing row satisfies (all NULL), and one backfill UPDATE that sets activated_at only for non-draft shops that already have schedule, pickup point, service area and a sellable dish. No grant, order, delivery or account row changes; the previous backend names its columns explicitly and ignores the new ones."
     }
   }
 }

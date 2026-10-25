@@ -31,6 +31,10 @@ export const AVAILABILITY_REASONS = [
   'SHOP_INCOMPLETE',
   'SERVICE_AREA_INACTIVE',
   'NO_BUSINESS_HOURS',
+  // Issue #190: the pickup point and the first sellable dish are conditions of the setup, so a shop lacking either is "not set up", not "closed".
+  // NO_SELLABLE_ITEM is known only to the coordinators that also read the menu (shop-setup); the snapshot of this module never says it.
+  'NO_PICKUP_POINT',
+  'NO_SELLABLE_ITEM',
   'OUTSIDE_BUSINESS_HOURS',
   'ONLINE',
 ] as const;

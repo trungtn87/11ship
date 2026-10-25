@@ -48,6 +48,7 @@ void main() {
 
   testWidgets('F09: the preview leaves hidden dishes out and says so; showing a dish brings it back', (WidgetTester tester) async {
     final Harness h = await harness(tester, menu: seeded());
+    h.server.reason = 'OUTSIDE_BUSINESS_HOURS'; // issue #190: customers see a shop that is set up (open or closed by its schedule)
     await show(tester, PreviewScreen(flows: h.flows));
     expect(find.text('Xem trước'), findsOneWidget);
     expect(find.text('Ốc hương hấp'), findsOneWidget);
@@ -74,6 +75,12 @@ void main() {
     expect(find.byKey(const Key('preview-not-public')), findsOneWidget);
     expect(find.text('Quán chưa có món để hiển thị.'), findsOneWidget);
     expect(find.byKey(const Key('preview-as-customer')), findsNothing);
+  });
+
+  testWidgets('issue #190: the preview of a shop that is not set up (no schedule) says customers cannot see it yet', (WidgetTester tester) async {
+    final Harness h = await harness(tester, menu: seeded());
+    await show(tester, PreviewScreen(flows: h.flows)); // the server fixture has no schedule: NO_BUSINESS_HOURS
+    expect(find.byKey(const Key('preview-not-public')), findsOneWidget);
   });
 
   testWidgets('the preview where the menu is not connected says so and shows no dish', (WidgetTester tester) async {

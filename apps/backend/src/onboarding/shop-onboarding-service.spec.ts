@@ -13,6 +13,7 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { ServiceAreaRepository } from '../shop/service-area-repository';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
 import { TransactionContext } from '../transaction/transaction-context';
+import { ShopActivation } from '../shop-setup/shop-activation';
 import { ShopOnboardingService } from './shop-onboarding-service';
 import { ShopCompleteInput, ShopProfileInput } from './shop-onboarding-validation';
 
@@ -136,7 +137,7 @@ function rig(options: {
   } as unknown as OutboxWriter;
 
   return {
-    service: new ShopOnboardingService(executor, sessionAuth, roleGrants, shops, serviceAreas, audit, outboxWriter),
+    service: new ShopOnboardingService(executor, sessionAuth, roleGrants, shops, serviceAreas, audit, outboxWriter, { reconcile: async () => false } as unknown as ShopActivation),
     events,
     requests,
     audits,

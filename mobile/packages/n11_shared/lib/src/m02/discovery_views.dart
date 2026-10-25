@@ -11,13 +11,14 @@ import '../widgets/components.dart';
 import 'discovery_controller.dart';
 import 'discovery_models.dart';
 import 'm02_format.dart';
+import 'route_distance.dart';
 import '../m11/m11_source.dart';
 import 'm02_widgets.dart';
 import 'menu_models.dart';
 import 'preview_views.dart';
 
 // M02-KP01/KP02/KP03: Owner layout 22/10/2026 (M02-home-shop-detail-UI-OWNER-20261022.md).
-// Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; distance is a foreground estimate. Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
+// Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; the distance is the ROAD distance from the foreground position (issue #190). Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
 
 void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings}) {
   Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
@@ -30,14 +31,34 @@ void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop,
     case 'OUTSIDE_BUSINESS_HOURS':
       return (label: 'Đã đóng cửa', kind: ChipKind.neutral);
     default:
-      return (label: 'Chưa cài giờ hoạt động', kind: ChipKind.warn);
+      // Issue #190: a shop that is not set up is never listed (the server and the controller drop it); this is only the fallback of a chip.
+      return (label: 'Chưa hiển thị', kind: ChipKind.neutral);
+  }
+}
+
+/// The one line a card (Home and Search alike) shows for the distance. Issue #190: a number appears ONLY as a road distance; a missing position or
+/// an unknown road says so, and the straight line, when shown at all, is labelled as such.
+String distanceLine(ShopCardData shop, RouteDistance distance, LocationFix? fix, {bool locating = false}) {
+  if (locating) return 'Đang định vị…';
+  switch (distance.kind) {
+    case RouteDistanceKind.route:
+      return '≈ ${RouteDistance.text(distance.meters!)} · đường đi';
+    case RouteDistanceKind.loading:
+      return 'Đang tính quãng đường…';
+    case RouteDistanceKind.noPosition:
+      return 'Chưa xác định quãng đường';
+    case RouteDistanceKind.unavailable:
+      final double? straight = shop.straightLineKm(fix);
+      return straight == null ? 'Chưa xác định quãng đường' : 'Chưa xác định quãng đường · ≈ ${straight.toStringAsFixed(1).replaceAll('.', ',')} km đường chim bay';
   }
 }
 
 class ShopCard extends StatelessWidget {
-  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false});
+  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition});
 
+  /// Only for the labelled straight-line reference when the road is unknown; never for the route number.
   final LocationFix? customerLocation;
+  final RouteDistance distance;
   final bool locating;
   final ShopCardData shop;
   final VoidCallback onTap;
@@ -45,12 +66,11 @@ class ShopCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ({String label, ChipKind kind}) chip = _stateChip(shop.reason);
-    final double? km = shop.distanceKm(customerLocation);
     final String rating = shop.ratingCount == 0 || shop.ratingAverage == null ? 'Chưa có đánh giá' : '★ ${shop.ratingAverage!.toStringAsFixed(1)}/5 (${shop.ratingCount} đánh giá)';
-    final String distance = locating ? 'Đang định vị…' : km == null ? 'Chưa xác định' : '≈ ${km.toStringAsFixed(1)} km · đường chim bay';
+    final String distanceText = distanceLine(shop, distance, customerLocation, locating: locating);
     return Semantics(
       button: true,
-      label: '${shop.name}, $rating, $distance, ${chip.label}',
+      label: '${shop.name}, $rating, $distanceText, ${chip.label}',
       excludeSemantics: true,
       onTap: onTap,
       child: InkWell(
@@ -74,7 +94,7 @@ class ShopCard extends StatelessWidget {
                     Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w700, color: N11Colors.black)),
                     if (shop.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(shop.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
                     Text(rating, key: Key('shop-rating-${shop.shopId}'), style: N11Text.caption),
-                    Text(distance, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
+                    Text(distanceText, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
                     Padding(padding: const EdgeInsets.only(top: 6), child: N11Chip(chip.label, kind: chip.kind)),
                   ],
                 ),
@@ -183,8 +203,12 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[c, _position]),
+      listenable: Listenable.merge(<Listenable>[c, _position, c.distances]),
       builder: (BuildContext context, Widget? child) {
+        // Road distances: asked after the frame, only for cards not known yet (a pure lookup otherwise), so a rebuild never becomes a request.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(c.distances.want(c.shops, _position.fix));
+        });
         final List<Widget> body = <Widget>[_header()];
         switch (c.choicesState) {
           case DiscoveryLoad.idle:
@@ -317,7 +341,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
           }
         } else {
           for (final ShopCardData s in c.shops) {
-            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, customerLocation: _position.fix, locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
+            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, customerLocation: _position.fix, distance: c.distances.of(s, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
           }
           if (c.hasMore) {
             out.add(N11Button(key: const Key('home-more'), label: c.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: c.loadingMore, onPressed: c.loadingMore ? null : c.loadMore));
@@ -479,8 +503,12 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _areaChanged() => _search.setArea(widget.discovery?.areaId);
 
+  /// Home's controller when Search was opened from it (one cache: the same shop shows the same road distance in both), otherwise its own.
+  late final RouteDistanceController _distances = widget.discovery?.distances ?? RouteDistanceController(api: widget.api);
+
   @override
   void dispose() {
+    if (widget.discovery == null) _distances.dispose();
     if (widget.position == null) _position.dispose();
     widget.discovery?.removeListener(_areaChanged);
     _search.dispose();
@@ -494,8 +522,12 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundColor: N11Colors.bg,
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge(<Listenable>[_search, _position, if (widget.discovery != null) widget.discovery!]),
-          builder: (BuildContext context, Widget? child) => Column(
+          listenable: Listenable.merge(<Listenable>[_search, _position, _distances, if (widget.discovery != null) widget.discovery!]),
+          builder: (BuildContext context, Widget? child) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) unawaited(_distances.want(_search.groupedShops, _position.fix));
+            });
+            return Column(
             children: <Widget>[
               Container(
                 padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, 4, N11Space.gap2),
@@ -529,7 +561,8 @@ class _SearchScreenState extends State<SearchScreen> {
               _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false, outsideCoverage: widget.discovery?.outsideCoverage ?? false),
               Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
             ],
-          ),
+          );
+          },
         ),
       ),
     );
@@ -570,7 +603,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return <Widget>[
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
       for (final ShopCardData shop in s.groupedShops) ...<Widget>[
-        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, customerLocation: _position.fix, locating: _position.loading,
+        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
           onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings))),
         for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
           gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish,

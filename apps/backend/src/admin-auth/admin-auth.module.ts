@@ -27,6 +27,7 @@ import { AdminOrderService } from '../admin-orders/admin-order-service';
 import { OrdersCoreModule } from '../orders/orders-core.module';
 import { OrderViews } from '../orders/order-views';
 import { ShopModule } from '../shop/shop.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
 import { AdminDeliveryController } from '../admin-deliveries/admin-delivery.controller';
 import { AdminAccessController } from '../admin-access/admin-access.controller';
 import { AdminAccessRepository } from '../admin-access/admin-access-repository';
@@ -151,6 +152,8 @@ export class AdminAuthModule implements NestModule {
         // M10.05 order management for the Admin routes below (the Order tables' SQL and the three records through their owner, the shop read port).
         OrdersCoreModule,
         ShopModule,
+        // Issue #190: the setup gate and the automatic activation (the administration list, preview and re-enable use the very same rules).
+        ShopSetupCoreModule,
         // M08.06 notification administration (read-only SQL; the worker itself lives in NotificationsModule, never twice).
         NotificationsReadModule,
         // M13 operations: its SQL, engine and Discord sender (the worker lives in OpsModule, never twice).

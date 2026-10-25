@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../account/session_controller.dart';
@@ -17,6 +18,7 @@ import '../m10/m10_customer_views.dart';
 import 'menu_models.dart';
 import 'public_shop_controller.dart';
 import 'schedule.dart';
+import 'shop_contact.dart';
 import 'shop_ops_controller.dart';
 
 // Q07 (Xem trước thực đơn), K01 (khách xem quán và thực đơn) and K02 (giờ hoạt động phía khách). Q07 and K01 share one body, so the
@@ -48,7 +50,11 @@ class ShopMenuContent extends StatefulWidget {
     this.focusItemId,
     this.orderShopId,
     this.ratings,
+    this.contactLauncher = const MethodChannelContactLauncher(),
   });
+
+  /// Opens the dialer / Zalo / Messenger for the quick-contact buttons (issue #190). Tests pass a fake.
+  final ContactLauncher contactLauncher;
 
   /// The shop being viewed by a CUSTOMER: when set (and orders exist in this app) each dish gets the + / − and a note sheet. Null in the owner's preview.
   final String? orderShopId;
@@ -136,7 +142,8 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
     ].where((PublicCategory c) => c.items.isNotEmpty).toList();
     return vstack(<Widget>[
       N11Card(
-        child: LayoutBuilder(builder: (context, constraints) => Row(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        LayoutBuilder(builder: (context, constraints) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             SizedBox(width: constraints.maxWidth * .33, child: ShopLogoImage(key: const Key('shop-view-logo'), url: view.logoUrl, bytes: view.logoBytes)),
@@ -155,6 +162,8 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
             )),
           ],
         )),
+        if (!widget.preview && !view.contact.isEmpty) ShopContactBar(contact: view.contact, launcher: widget.contactLauncher),
+        ]),
       ),
       if (!view.hasItems)
         N11InfoCard(key: const Key('shop-view-empty'), title: widget.emptyText)
@@ -251,7 +260,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
           body = const <Widget>[M02Skeleton(rows: 1, height: 110), M02Skeleton(rows: 4, height: 76)];
         } else {
           final ShopMenuView view = previewOf(name: o.name, address: o.addressText, reason: o.availability.reason, serverNow: o.availability.evaluatedAt, hours: o.hours, menu: snapshot, logoBytes: o.logo?.bytes);
-          final bool shown = o.isActive && o.availability.reason != 'SERVICE_AREA_INACTIVE';
+          // Issue #190: customers see the shop only when it is set up (open now, or closed by its schedule); every other reason hides it.
+          final bool shown = o.isActive && (o.availability.reason == 'ONLINE' || o.availability.reason == 'OUTSIDE_BUSINESS_HOURS');
           body = <Widget>[
             if (!shown) const N11Banner(key: Key('preview-not-public'), kind: BannerKind.warn, title: 'Quán hiện chưa hiển thị cho khách', text: 'Đây là bản xem trước dành cho chủ quán. Khách chưa tìm thấy quán này.'),
             if (ops.stale || menu.loadState != MenuLoad.ready) const N11Banner(kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.'),
@@ -278,7 +288,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
 /// K01: a customer opens a shop by its id (from the entry point that has it). Public fields only.
 class ShopPublicScreen extends StatefulWidget {
-  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId, this.ratings});
+  const ShopPublicScreen({super.key, required this.api, required this.shopId, this.focusItemId, this.ratings, this.contactLauncher = const MethodChannelContactLauncher()});
+
+  final ContactLauncher contactLauncher;
 
   final PublicShopApi api;
   final String shopId;
@@ -347,7 +359,7 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
               ShopMenuContent(
-                view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId,
+                view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, contactLauncher: widget.contactLauncher,
                 onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
                 ratings: widget.ratings == null ? null : _ShopRatingLink(
                   source: widget.ratings!, shopId: widget.shopId,
@@ -459,6 +471,56 @@ class PublicHoursScreen extends StatelessWidget {
           if (overnight) const Text('Ca qua đêm: giờ đóng thuộc ngày hôm sau.', style: N11Text.caption),
         ],
       ],
+    );
+  }
+}
+
+
+/// Issue #190, B: the shop's own phone and the three quick actions, inside the shop information card. A button exists only for a value the app
+/// validated (see shop_contact.dart); one that cannot be opened (no app, no handler) never crashes: the number or link is copied and the person is
+/// told. Dialing only opens the phone app with the number filled in; it never places the call.
+class ShopContactBar extends StatelessWidget {
+  const ShopContactBar({super.key, required this.contact, required this.launcher});
+
+  final ShopContact contact;
+  final ContactLauncher launcher;
+
+  Future<void> _run(BuildContext context, Future<bool> Function() open, String copy, String what) async {
+    bool opened = false;
+    try {
+      opened = await open();
+    } on Object {
+      opened = false;
+    }
+    if (opened || !context.mounted) return;
+    await Clipboard.setData(ClipboardData(text: copy));
+    if (context.mounted) m02Toast(context, 'Không mở được $what. Đã sao chép để bạn dán vào ứng dụng khác.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String? phone = contact.phone;
+    final String? zalo = contact.zaloUrl;
+    final String? messenger = contact.messengerUrl;
+    return Padding(
+      padding: const EdgeInsets.only(top: N11Space.gap3),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        if (contact.phoneText != null)
+          Row(children: <Widget>[
+            const Icon(Icons.phone_outlined, size: 18, color: N11Colors.ink2),
+            const SizedBox(width: 6),
+            Expanded(child: Text('Điện thoại quán: ${contact.phoneText}', key: const Key('shop-contact-phone'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
+          ]),
+        if (phone != null || zalo != null || messenger != null)
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap2),
+            child: Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
+              if (phone != null) N11Button(key: const Key('shop-contact-call'), label: 'Gọi điện', icon: Icons.call_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => _run(context, () => launcher.dial(phone), phone, 'ứng dụng gọi điện')),
+              if (zalo != null) N11Button(key: const Key('shop-contact-zalo'), label: 'Zalo', icon: Icons.chat_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => _run(context, () => launcher.openUrl(zalo), zalo, 'Zalo')),
+              if (messenger != null) N11Button(key: const Key('shop-contact-messenger'), label: 'Messenger', icon: Icons.forum_outlined, compact: true, kind: ButtonKind.secondary, onPressed: () => _run(context, () => launcher.openUrl(messenger), messenger, 'Messenger')),
+            ]),
+          ),
+      ]),
     );
   }
 }

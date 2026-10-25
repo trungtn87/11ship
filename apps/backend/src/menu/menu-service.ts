@@ -12,6 +12,9 @@ import { requireActiveShop } from '../shop/shop-guards';
 import { AVAILABILITY_TIME_ZONE } from '../shop/shop-availability-sql';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { ShopRepository, ShopRow } from '../shop/shop-repository';
+import { ShopActivation } from '../shop-setup/shop-activation';
+import { publicContactOf } from '../shop-setup/shop-public-contact';
+import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import {
@@ -61,6 +64,8 @@ export class MenuService {
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     private readonly sales: OrderSalesReader,
+    private readonly activation: ShopActivation,
+    private readonly gate: ShopSetupGate,
   ) {}
 
   // ---- reads ----------------------------------------------------------------------------------------------------
@@ -88,9 +93,11 @@ export class MenuService {
   }
 
   /**
-   * GET /v1/shops/:shopId, for customers (no session). Only a shop that is ACTIVE in an ACTIVE service area is shown; an unknown
-   * id is SHOP_NOT_FOUND and everything else is the same SHOP_UNAVAILABLE (the reason is never told). The shop being closed is
-   * NOT a reason to hide it: the schedule only sets the chip. No phone, Zalo, Facebook, GPS or owner id is part of the answer.
+   * GET /v1/shops/:shopId, for customers (no session). Issue #190: only a shop that is SET UP (ACTIVE, owner not locked, an ACTIVE service area, a
+   * weekly schedule, a pickup point and a sellable dish) is shown, whatever old status it carries; an unknown id is SHOP_NOT_FOUND and everything else
+   * is the same SHOP_UNAVAILABLE (the reason is never told, so a direct link reveals neither menu nor contact of a shop that is not set up). The shop
+   * being CLOSED now is not a reason to hide it: the schedule only sets the chip and the order path refuses a new order. The quick-contact fields are
+   * the shop's own public contact (phone, Zalo, Messenger), validated server-side; no login phone, GPS owner id or customer data is part of the answer.
    */
   async readPublicShop(shopId: string): Promise<Record<string, unknown>> {
     if (!isCanonicalUuid(shopId)) {
@@ -101,10 +108,12 @@ export class MenuService {
       if (snapshot === undefined) {
         throw new AppError('SHOP_NOT_FOUND');
       }
-      const reason = snapshot.availability.reason;
-      if (snapshot.status !== 'ACTIVE' || reason === 'SHOP_DISABLED' || reason === 'SHOP_INCOMPLETE' || reason === 'SERVICE_AREA_INACTIVE') {
+      const gate = await this.gate.evaluate(context, snapshot);
+      if (!gate.publicVisible) {
         throw new AppError('SHOP_UNAVAILABLE');
       }
+      const reason = gate.availability.reason;
+      const contact = publicContactOf(snapshot);
       const [categories, items] = await Promise.all([
         this.menu.listCategories(context),
         this.menu.listPublicItems(context, shopId),
@@ -115,11 +124,17 @@ export class MenuService {
         ...(snapshot.logo == null ? {} : { logo_url: '/v1/shops/' + snapshot.shopId + '/logo?v=' + snapshot.version }),
         name: snapshot.name,
         address_text: snapshot.addressText,
+        contact: {
+          phone: contact.phone,
+          zalo_url: contact.zaloUrl,
+          messenger_url: contact.messengerUrl,
+          facebook_url: contact.facebookUrl,
+        },
         timezone: AVAILABILITY_TIME_ZONE,
         availability: {
-          online: snapshot.availability.online,
+          online: gate.availability.online,
           reason: reason,
-          evaluated_at: snapshot.availability.evaluatedAt,
+          evaluated_at: gate.availability.evaluatedAt,
         },
         hours: snapshot.hours.map(toWire),
         // Groups without a public dish are left out; the order is the group order, then the creation order of the dish.
@@ -198,6 +213,7 @@ export class MenuService {
         }
         const item = await this.menu.insertItem(context, randomUUID(), shop.shopId, input);
         await this.#record(context, requestId, actor.userId, item, MENU_ITEM_CREATE_OPERATION_ID);
+        await this.activation.reconcile(context, shop.shopId, requestId, 'menu_change');
         return { status: 201, replayGuard: guardOf(actor.userId, shop.shopId), payload: { item: toItemWire(item) } };
       },
     );
@@ -271,6 +287,7 @@ export class MenuService {
         }
         const item = await change(context, shop, current);
         await this.#record(context, requestId, actor.userId, item, operationId);
+        await this.activation.reconcile(context, shop.shopId, requestId, 'menu_change');
         return { status: 200, replayGuard: guardOf(actor.userId, shop.shopId), payload: { item: toItemWire(item) } };
       },
     );

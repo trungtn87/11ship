@@ -58,12 +58,18 @@ void main() {
     expect(find.text('Chưa cài giờ hoạt động'), findsWidgets);
     expect(find.byType(Switch), findsNothing);
 
+    // Issue #190: the setup checklist sits above the list, so the list is below the first screen: the owner scrolls to it.
+    expect(find.text('Hoàn tất thiết lập cửa hàng'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('manage-menu')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('manage-menu')));
     await tester.pumpAndSettle();
     expect(find.text('Chưa có món trong thực đơn'), findsOneWidget);
     await tester.tap(find.byTooltip('Quay lại').last);
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('manage-preview')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('manage-preview')));
     await tester.pumpAndSettle();
     expect(find.text('Quán chưa có món để hiển thị.'), findsOneWidget);

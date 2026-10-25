@@ -5,10 +5,10 @@ import { AdminLimiter } from '../admin-auth/admin-limiter';
 import { AdminRequest, AdminTransport, Csrf, StatusResponse } from '../admin-shippers/admin-shipper.controller';
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { AdminShopService } from './admin-shop-service';
-import { parseNoQuery, parseShopHistoryQuery, parseShopId, parseShopListQuery, parseShopMenuQuery, parseStatusChangeBody } from './admin-shop-validation';
+import { parseNoQuery, parseShopHistoryQuery, parseShopId, parseShopListQuery, parseSetupRequestBody, parseShopMenuQuery, parseStatusChangeBody } from './admin-shop-validation';
 
 /**
- * /v1/admin/shops (M02 "Quản lý quán", Administration web): GET list, GET detail, GET menu / history / preview of one shop, and POST disable / enable.
+ * /v1/admin/shops (M02 "Quản lý quán", Administration web): GET list, GET detail, GET menu / history / preview of one shop, and POST disable / enable / request-info / clear-request (issue #190: the setup readiness and the administrator's request to complete it).
  * The SESSION cookie is the only credential; the actor comes from the session and the target from the path, never from a body. Same order as every
  * administration write: transport, quota, strict parser, cookie/CSRF precheck, then the service authorizes again under locks. There is no route that
  * edits a profile, a schedule, a price or a dish, and none that creates or deletes a shop: the owner does that in 11Food. No-store comes from the module.
@@ -67,6 +67,27 @@ export class AdminShopController {
   @HttpCode(200)
   enable(@Param('shop_id') id: string, @Body() body: unknown, @Req() req: AdminRequest, @Res({ passthrough: true }) res: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
     return this.#command('enable', id, body, req, res, csrf, key);
+  }
+
+  @Post(':shop_id/request-info')
+  @HttpCode(200)
+  requestInfo(@Param('shop_id') id: string, @Body() body: unknown, @Req() req: AdminRequest, @Res({ passthrough: true }) res: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
+    return this.#setupCommand('request-info', id, body, req, res, csrf, key);
+  }
+
+  @Post(':shop_id/clear-request')
+  @HttpCode(200)
+  clearRequest(@Param('shop_id') id: string, @Body() body: unknown, @Req() req: AdminRequest, @Res({ passthrough: true }) res: StatusResponse, @Headers('x-csrf-token') csrf: Csrf, @Headers('idempotency-key') key: Csrf) {
+    return this.#setupCommand('clear-request', id, body, req, res, csrf, key);
+  }
+
+  async #setupCommand(name: 'request-info' | 'clear-request', id: string, body: unknown, request: AdminRequest, response: StatusResponse, csrf: Csrf, key: Csrf) {
+    const token = await this.#transport.write(request);
+    const shopId = parseShopId(id);
+    const input = parseSetupRequestBody(body);
+    const outcome = await this.shops.setupCommand(name, token, csrf, shopId, input, key, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
   }
 
   async #command(name: 'disable' | 'enable', id: string, body: unknown, request: AdminRequest, response: StatusResponse, csrf: Csrf, key: Csrf) {

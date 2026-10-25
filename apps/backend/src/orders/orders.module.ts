@@ -6,6 +6,7 @@ import { DeliveryCoreModule } from '../delivery/delivery-core.module';
 import { M14RoutingModule } from '../delivery/m14-routing.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { MenuModule } from '../menu/menu.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { OrderCustomerController } from './order-customer.controller';
@@ -28,7 +29,7 @@ export class OrdersModule {
   static register(auth: DynamicModule, delivery: DynamicModule): DynamicModule {
     return {
       module: OrdersModule,
-      imports: [DriverModule, auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, M14RoutingModule, TransactionModule, IdempotencyModule],
+      imports: [DriverModule, auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, ShopSetupCoreModule, M14RoutingModule, TransactionModule, IdempotencyModule],
       controllers: [OrderCustomerController, OrderShopController],
       providers: [OrderTimeoutSweeper, OrderCustomerService, OrderCustomerDeliveryService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
       exports: [OrderSweeper],

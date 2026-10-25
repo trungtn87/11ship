@@ -23,6 +23,7 @@ import {
   OwnerInfo,
   Preview,
   PreviewRead,
+  ShopCommandName,
   ShopCommandRequest,
   ShopCommandResult,
   ShopDetail,
@@ -30,6 +31,8 @@ import {
   ShopQuery,
   ShopRow,
   ShopSource,
+  SetupInfo,
+  SetupState,
   ShopStatus,
   SHOP_PAGE_SIZE,
 } from './shops.js';
@@ -39,7 +42,8 @@ export const SHOPS_BASE = '/v1';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUSES: readonly string[] = ['INCOMPLETE', 'ACTIVE', 'DISABLED'];
-const REASONS: readonly string[] = ['SHOP_DISABLED', 'SHOP_INCOMPLETE', 'SERVICE_AREA_INACTIVE', 'NO_BUSINESS_HOURS', 'OUTSIDE_BUSINESS_HOURS', 'ONLINE'];
+const REASONS: readonly string[] = ['SHOP_DISABLED', 'SHOP_INCOMPLETE', 'SERVICE_AREA_INACTIVE', 'NO_BUSINESS_HOURS', 'NO_PICKUP_POINT', 'NO_SELLABLE_ITEM', 'OUTSIDE_BUSINESS_HOURS', 'ONLINE'];
+const SETUP_STATES: readonly string[] = ['INCOMPLETE', 'ACTIVATED', 'LOCKED', 'NEEDS_REVIEW'];
 const whole = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const iso = (value: unknown): string | undefined => {
   const text = str(value);
@@ -70,6 +74,51 @@ function parseAvailability(value: unknown): Availability | undefined {
   return { online: raw.online, reason: raw.reason as AvailabilityReason, evaluatedAt };
 }
 
+const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? (value as string[]) : undefined);
+
+/** The setup block of the list row and the detail (issue #190). Any other shape is a failure: nothing is guessed. */
+export function parseSetup(value: unknown): SetupInfo | undefined {
+  const raw = record(value);
+  const missing = stringList(raw?.missing);
+  const stepsRaw = raw?.steps;
+  if (raw === undefined || typeof raw.state !== 'string' || !SETUP_STATES.includes(raw.state) || !whole(raw.completed_steps) || !whole(raw.total_steps) || missing === undefined || !Array.isArray(stepsRaw) || typeof raw.public !== 'boolean') {
+    return undefined;
+  }
+  const steps: SetupInfo['steps'][number][] = [];
+  for (const entry of stepsRaw) {
+    const step = record(entry);
+    const key = str(step?.key);
+    const stepMissing = stringList(step?.missing);
+    if (step === undefined || key === undefined || typeof step.done !== 'boolean' || stepMissing === undefined) {
+      return undefined;
+    }
+    steps.push({ key, done: step.done, missing: stepMissing });
+  }
+  let request: SetupInfo['request'] = null;
+  if (raw.request !== null && raw.request !== undefined) {
+    const entry = record(raw.request);
+    const note = str(entry?.note);
+    const requestedAt = iso(entry?.requested_at);
+    if (note === undefined || requestedAt === undefined) {
+      return undefined;
+    }
+    request = { note, requestedAt };
+  }
+  let lock: SetupInfo['lock'] = null;
+  if (raw.lock !== null && raw.lock !== undefined) {
+    const entry = record(raw.lock);
+    const kind = str(entry?.kind);
+    const reason = nullableStr(entry?.reason);
+    if (kind === undefined || reason === undefined) {
+      return undefined;
+    }
+    lock = { kind, reason };
+  }
+  const activatedRaw = raw.activated_at;
+  const activatedAt = activatedRaw === undefined || activatedRaw === null ? null : (iso(activatedRaw) ?? null);
+  return { state: raw.state as SetupState, completedSteps: raw.completed_steps, totalSteps: raw.total_steps, steps, missing, public: raw.public, request, lock, activatedAt };
+}
+
 function parseHours(value: unknown): BusinessInterval[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -85,6 +134,8 @@ function parseHours(value: unknown): BusinessInterval[] | undefined {
   return out;
 }
 
+const ACTION_NAMES: Readonly<Record<string, ShopCommandName | undefined>> = { DISABLE: 'disable', ENABLE: 'enable', REQUEST_INFO: 'request-info', CLEAR_REQUEST: 'clear-request' };
+
 function parseStatus(value: unknown): ShopStatus | undefined {
   return typeof value === 'string' && STATUSES.includes(value) ? (value as ShopStatus) : undefined;
 }
@@ -99,11 +150,12 @@ export function parseRow(value: unknown): ShopRow | undefined {
   const status = parseStatus(raw?.status);
   const availability = parseAvailability(raw?.availability);
   const area = raw?.service_area === null ? null : record(raw?.service_area);
-  if (raw === undefined || id === undefined || !UUID_RE.test(id) || code === undefined || name === undefined || addressText === undefined || owner === undefined || status === undefined || availability === undefined || area === undefined || !whole(raw.items_visible) || !whole(raw.items_total)) {
+  const setup = parseSetup(raw?.setup);
+  if (raw === undefined || id === undefined || !UUID_RE.test(id) || code === undefined || name === undefined || addressText === undefined || owner === undefined || status === undefined || availability === undefined || area === undefined || setup === undefined || !whole(raw.items_visible) || !whole(raw.items_total)) {
     return undefined;
   }
   const areaName = area === null ? null : (nullableStr(area.name) ?? null);
-  return { id, code, name, addressText, owner, areaName, status, availability, itemsVisible: raw.items_visible, itemsTotal: raw.items_total };
+  return { id, code, name, addressText, owner, areaName, status, availability, itemsVisible: raw.items_visible, itemsTotal: raw.items_total, setup };
 }
 
 export function parsePage(data: Record<string, unknown>): ShopListPage | undefined {
@@ -139,6 +191,7 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
   const owner = parseOwner(data.owner);
   const logoUrl = nullableStr(data.logo_url);
   const availability = parseAvailability(data.availability);
+  const setup = parseSetup(data.setup);
   const hours = parseHours(data.hours);
   const profile = record(data.profile);
   const menu = record(data.menu);
@@ -148,9 +201,9 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
   const timezone = str(data.timezone);
   if (
     id === undefined || !UUID_RE.test(id) || code === undefined || name === undefined || status === undefined || owner === undefined || logoUrl === undefined || availability === undefined ||
-    hours === undefined || profile === undefined || menu === undefined || work === undefined || createdAt === undefined || updatedAt === undefined || timezone === undefined ||
+    setup === undefined || hours === undefined || profile === undefined || menu === undefined || work === undefined || createdAt === undefined || updatedAt === undefined || timezone === undefined ||
     !whole(data.version) || data.version < 1 || typeof data.disable_blocked !== 'boolean' || !Array.isArray(data.enable_blockers) || !data.enable_blockers.every((entry) => typeof entry === 'string') ||
-    !Array.isArray(data.allowed_actions) || !data.allowed_actions.every((entry) => entry === 'DISABLE' || entry === 'ENABLE')
+    !Array.isArray(data.allowed_actions) || !data.allowed_actions.every((entry) => ACTION_NAMES[entry as string] !== undefined)
   ) {
     return undefined;
   }
@@ -171,11 +224,11 @@ export function parseDetail(data: Record<string, unknown>): ShopDetail | undefin
     id, code, name, status, version: data.version, logoUrl, owner, contactPhone, zalo, facebook, addressText,
     areaName: area === null ? null : (nullableStr(area.name) ?? null),
     areaActive: area === null ? null : area.status === 'ACTIVE',
-    pickupLat: lat, pickupLng: lng, availability, timezone, hours,
+    pickupLat: lat, pickupLng: lng, availability, setup, timezone, hours,
     menuVisible: menu.visible, menuHidden: menu.hidden,
     ordersOpen: work.orders_open, ordersPendingConfirmation: work.orders_pending_confirmation, ordersPreparing: work.orders_preparing, activeDeliveries: work.active_deliveries,
     disableBlocked: data.disable_blocked, enableBlockers: data.enable_blockers as string[],
-    actions: (data.allowed_actions as string[]).map((action) => (action === 'DISABLE' ? 'disable' : 'enable')),
+    actions: (data.allowed_actions as string[]).map((action) => ACTION_NAMES[action] as ShopCommandName),
     createdAt, updatedAt,
   };
 }
@@ -238,7 +291,8 @@ export function parseHistory(data: Record<string, unknown>): HistoryPage | undef
 
 export function parsePreview(data: Record<string, unknown>): Preview | undefined {
   if (data.visible_to_customers === false) {
-    return typeof data.reason === 'string' && REASONS.includes(data.reason) ? { visible: false, reason: data.reason as AvailabilityReason } : undefined;
+    const missing = data.missing === undefined ? [] : stringList(data.missing);
+    return typeof data.reason === 'string' && REASONS.includes(data.reason) && missing !== undefined ? { visible: false, reason: data.reason as AvailabilityReason, missing } : undefined;
   }
   const name = str(data.name);
   const addressText = str(data.address_text);
@@ -289,6 +343,7 @@ export class AdminShopApi extends ApiClient {
       area: filter.area === 'ALL' ? undefined : filter.area,
       profile: filter.profile === 'ALL' ? undefined : filter.profile,
       schedule: filter.schedule === 'ALL' ? undefined : filter.schedule,
+      setup: filter.setup === 'ALL' ? undefined : filter.setup,
       limit: String(SHOP_PAGE_SIZE),
       offset: offsetOf(filter.page, SHOP_PAGE_SIZE),
     })}`;

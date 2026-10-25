@@ -51,6 +51,19 @@ export const uploadImage = (app: AuthApp, token: string | undefined, body: unkno
 export const createItem = (app: AuthApp, token: string | undefined, body: unknown, key: string | null = randomUUID()): Promise<ApiResponse> =>
   call(app, 'POST', '/shop/me/menu/items', token, body, key);
 
+/**
+ * A dish that is ON SALE the way the shop setup needs it (issue #190): a picture is uploaded first and the dish points at it, so the shop with this
+ * first dish can be public. `createItem` with `image_id: null` stays for the tests of a dish without a picture.
+ */
+export async function createItemWithPicture(app: AuthApp, token: string | undefined, body: Record<string, unknown>, key: string | null = randomUUID()): Promise<ApiResponse> {
+  const upload = await uploadImage(app, token, { content_type: 'image/jpeg', data_base64: jpegBase64() });
+  const imageId = (upload.body.data as { image_id?: unknown } | undefined)?.image_id;
+  if (typeof imageId !== 'string') {
+    throw new Error(`fixture picture upload failed: ${upload.status} ${upload.text}`);
+  }
+  return createItem(app, token, { ...body, image_id: imageId }, key);
+}
+
 export const updateItem = (app: AuthApp, token: string | undefined, id: string, body: unknown, key: string | null = randomUUID()): Promise<ApiResponse> =>
   call(app, 'PUT', `/shop/me/menu/items/${id}`, token, body, key);
 

@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ShopManagementController } from './shop-management.controller';
@@ -25,7 +26,7 @@ export class ShopManagementModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: ShopManagementModule,
-      imports: [auth, ShopModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, ShopModule, ShopSetupCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShopManagementController, ShopLogoController],
       providers: [ShopManagementService, ShopLogoService],
     };

@@ -23,6 +23,8 @@ export interface ShopRow extends ShopProfileFields {
   readonly status: ShopStatus;
   readonly acceptingOrders: boolean;
   readonly version: number;
+  /** ISO 8601 UTC (ms): when the system first activated the shop; null until then (issue #190). */
+  readonly activatedAt?: string | null;
 }
 
 interface RawShop {
@@ -39,6 +41,7 @@ interface RawShop {
   status: ShopStatus;
   accepting_orders: boolean;
   version: string;
+  activated_at?: string | null;
 }
 
 function toShop(row: RawShop): ShopRow {
@@ -56,8 +59,10 @@ function toShop(row: RawShop): ShopRow {
     status: row.status,
     acceptingOrders: row.accepting_orders,
     version: toSafeInteger(row.version),
+    activatedAt: row.activated_at ?? null,
   };
 }
+
 
 /**
  * SQL for app.shops and app.shop_members. M02 owns both tables; no other module issues SQL against them.
@@ -74,6 +79,8 @@ export class ShopRepository {
     const result = await context.query<{ logo: ShopLogo }>(`SELECT s.logo FROM app.shops s
       JOIN app.service_areas a ON a.service_area_id = s.service_area_id
       WHERE s.shop_id = $1::uuid AND s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND s.logo IS NOT NULL
+      AND (s.pickup_lat IS NOT NULL AND s.pickup_lng IS NOT NULL AND NOT (s.pickup_lat = 0 AND s.pickup_lng = 0))
+      AND EXISTS (SELECT 1 FROM app.shop_business_hours bh WHERE bh.shop_id = s.shop_id)
       AND NOT EXISTS (SELECT 1 FROM app.shop_members m JOIN app.users u ON u.user_id = m.user_id
         WHERE m.shop_id = s.shop_id AND m.member_role = 'OWNER' AND u.status <> 'ACTIVE')`, [shopId]);
     return result.rows[0]?.logo;
@@ -110,7 +117,7 @@ export class ShopRepository {
     }
     const shop = await context.query<RawShop>(
       `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
-              service_area_id, status, accepting_orders, version, logo
+              service_area_id, status, accepting_orders, version, logo, to_char(date_trunc('milliseconds', activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at
          FROM app.shops
         WHERE shop_id = $1::uuid
           FOR UPDATE`,
@@ -128,7 +135,7 @@ export class ShopRepository {
   async lockShopShared(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
     const result = await context.query<RawShop>(
       `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
-              service_area_id, status, accepting_orders, version, logo
+              service_area_id, status, accepting_orders, version, logo, to_char(date_trunc('milliseconds', activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at
          FROM app.shops WHERE shop_id = $1::uuid FOR SHARE`,
       [shopId],
     );
@@ -143,7 +150,7 @@ export class ShopRepository {
   async lockShopForUpdate(context: TransactionContext, shopId: string): Promise<ShopRow | undefined> {
     const result = await context.query<RawShop>(
       `SELECT shop_id, name, contact_phone_normalized, zalo, facebook, address_text, pickup_lat, pickup_lng,
-              service_area_id, status, accepting_orders, version, logo
+              service_area_id, status, accepting_orders, version, logo, to_char(date_trunc('milliseconds', activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at
          FROM app.shops WHERE shop_id = $1::uuid FOR UPDATE`,
       [shopId],
     );
@@ -181,7 +188,8 @@ export class ShopRepository {
   async findOwnedShop(context: TransactionContext, userId: string): Promise<ShopRow | undefined> {
     const result = await context.query<RawShop>(
       `SELECT s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook, s.address_text, s.pickup_lat,
-              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version, s.logo
+              s.pickup_lng, s.service_area_id, s.status, s.accepting_orders, s.version, s.logo,
+              to_char(date_trunc('milliseconds', s.activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at
          FROM app.shop_members m
          JOIN app.shops s ON s.shop_id = m.shop_id
         WHERE m.user_id = $1::uuid AND m.member_role = $2`,
@@ -345,6 +353,52 @@ export class ShopRepository {
       throw new TechnicalError('internal', 'Shop version was not advanced');
     }
     return toSafeInteger(row.version);
+  }
+
+  /**
+   * Records, exactly once, that the system activated the shop (issue #190). The caller holds the shop row FOR UPDATE. Returns true only for the call that
+   * wrote the timestamp (activated_at was NULL, the shop is ACTIVE), so a repeated or concurrent attempt finds nothing to do and writes no second audit
+   * row. A pending administrator request is answered by the activation and cleared with it. The profile version is NOT advanced: no field the owner edits
+   * changed, so an open edit form is not turned into a version conflict.
+   */
+  async markActivated(context: TransactionContext, shopId: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.shops
+          SET activated_at = date_trunc('milliseconds', clock_timestamp()),
+              setup_request_note = NULL,
+              setup_request_at = NULL,
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND status = 'ACTIVE' AND activated_at IS NULL`,
+      [shopId],
+    );
+    return result.rowCount === 1;
+  }
+
+  /**
+   * Sets (or replaces) the administrator's request to complete the setup. The caller holds the shop row FOR UPDATE. Returns false when the shop already
+   * carries exactly this request, so a repeated command changes and logs nothing. The shop version is not advanced (same reason as markActivated).
+   */
+  async setSetupRequest(context: TransactionContext, shopId: string, note: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.shops
+          SET setup_request_note = $2,
+              setup_request_at = date_trunc('milliseconds', clock_timestamp()),
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND setup_request_note IS DISTINCT FROM $2`,
+      [shopId, note],
+    );
+    return result.rowCount === 1;
+  }
+
+  /** Clears the pending request. Returns false when there was none. */
+  async clearSetupRequest(context: TransactionContext, shopId: string): Promise<boolean> {
+    const result = await context.query(
+      `UPDATE app.shops
+          SET setup_request_note = NULL, setup_request_at = NULL, updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE shop_id = $1::uuid AND setup_request_note IS NOT NULL`,
+      [shopId],
+    );
+    return result.rowCount === 1;
   }
 
   /**

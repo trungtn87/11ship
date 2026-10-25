@@ -18,6 +18,9 @@ export const SCHEDULE_FILTERS = ['ALL', 'OPEN', 'CLOSED'] as const;
 export type ScheduleFilter = (typeof SCHEDULE_FILTERS)[number];
 export const MENU_STATUS_FILTERS = ['ALL', 'VISIBLE', 'HIDDEN'] as const;
 export type MenuStatusFilter = (typeof MENU_STATUS_FILTERS)[number];
+export const SETUP_FILTERS = ['ALL', 'INCOMPLETE', 'ACTIVATED', 'LOCKED', 'NEEDS_REVIEW'] as const;
+export type SetupFilter = (typeof SETUP_FILTERS)[number];
+export type SetupState = Exclude<SetupFilter, 'ALL'>;
 export const SHOP_TABS = ['profile', 'hours', 'menu', 'history'] as const;
 export type ShopTab = (typeof SHOP_TABS)[number];
 
@@ -27,19 +30,59 @@ export const PROFILE_FILTER_LABEL: Record<ProfileFilter, string> = { ALL: 'Mọi
 export const SCHEDULE_FILTER_LABEL: Record<ScheduleFilter, string> = { ALL: 'Mở/đóng theo lịch: tất cả', OPEN: 'Đang mở theo lịch', CLOSED: 'Đang đóng theo lịch' };
 export const MENU_STATUS_LABEL: Record<MenuStatusFilter, string> = { ALL: 'Hiện và ẩn', VISIBLE: 'Đang hiện', HIDDEN: 'Đang ẩn' };
 
+/** Issue #190: the four states of the shop setup (Owner decision 2026-10-24), computed by the server from the real data. */
+export const SETUP_FILTER_LABEL: Record<SetupFilter, string> = { ALL: 'Mọi trạng thái thiết lập', INCOMPLETE: 'Chưa hoàn tất', ACTIVATED: 'Đã kích hoạt', LOCKED: 'Tạm khóa', NEEDS_REVIEW: 'Cần kiểm tra' };
+export const SETUP_STATE: Record<SetupState, { readonly label: string; readonly tone: 'ok' | 'wait' | 'lock' | 'neutral' }> = {
+  INCOMPLETE: { label: 'Chưa hoàn tất', tone: 'wait' },
+  ACTIVATED: { label: 'Đã kích hoạt', tone: 'ok' },
+  LOCKED: { label: 'Tạm khóa', tone: 'lock' },
+  NEEDS_REVIEW: { label: 'Cần kiểm tra', tone: 'wait' },
+};
+export const SETUP_STEP_LABEL: Record<string, string> = {
+  ACCOUNT: 'Tạo tài khoản',
+  SHOP_INFO: 'Thông tin quán và giờ hoạt động',
+  LOCATION: 'Vị trí GPS tại quán',
+  FIRST_ITEM: 'Món đầu tiên đang bán (giá > 0, có ảnh)',
+};
+export const SETUP_MISSING_LABEL: Record<string, string> = {
+  NAME: 'Thiếu tên quán',
+  ADDRESS: 'Thiếu địa chỉ',
+  CONTACT_PHONE: 'Thiếu số điện thoại liên hệ',
+  SERVICE_AREA: 'Thiếu khu vực phục vụ đang hoạt động',
+  BUSINESS_HOURS: 'Chưa cài giờ hoạt động',
+  PICKUP_POINT: 'Chưa có vị trí GPS của quán',
+  SELLABLE_ITEM: 'Chưa có món đang bán hợp lệ (giá > 0, có ảnh)',
+};
+export const LOCK_KIND_LABEL: Record<string, string> = { ADMIN: 'Quản trị viên đã vô hiệu hóa quán', OWNER_ACCOUNT: 'Tài khoản chủ quán đang bị khóa' };
+
+export interface SetupInfo {
+  readonly state: SetupState;
+  readonly completedSteps: number;
+  readonly totalSteps: number;
+  readonly steps: readonly { readonly key: string; readonly done: boolean; readonly missing: readonly string[] }[];
+  readonly missing: readonly string[];
+  /** Customers can see the shop now (every condition holds, shop ACTIVE, owner not locked). */
+  readonly public: boolean;
+  readonly request: { readonly note: string; readonly requestedAt: string } | null;
+  readonly lock: { readonly kind: string; readonly reason: string | null } | null;
+  readonly activatedAt: string | null;
+}
+
 export const PROFILE_STATUS: Record<ShopStatus, { readonly label: string; readonly tone: 'ok' | 'wait' | 'lock' | 'neutral' }> = {
   ACTIVE: { label: 'Đang hoạt động', tone: 'ok' },
   DISABLED: { label: 'Đã vô hiệu hóa', tone: 'lock' },
   INCOMPLETE: { label: 'Hồ sơ nháp', tone: 'wait' },
 };
 
-export type AvailabilityReason = 'SHOP_DISABLED' | 'SHOP_INCOMPLETE' | 'SERVICE_AREA_INACTIVE' | 'NO_BUSINESS_HOURS' | 'OUTSIDE_BUSINESS_HOURS' | 'ONLINE';
+export type AvailabilityReason = 'SHOP_DISABLED' | 'SHOP_INCOMPLETE' | 'SERVICE_AREA_INACTIVE' | 'NO_BUSINESS_HOURS' | 'NO_PICKUP_POINT' | 'NO_SELLABLE_ITEM' | 'OUTSIDE_BUSINESS_HOURS' | 'ONLINE';
 
 /** The state "by the schedule" and why, in the order the server decides it. */
 export const AVAILABILITY_LABEL: Record<AvailabilityReason, { readonly label: string; readonly tone: 'ok' | 'wait' | 'lock' | 'neutral' }> = {
   ONLINE: { label: 'Đang mở', tone: 'ok' },
   OUTSIDE_BUSINESS_HOURS: { label: 'Đóng · ngoài giờ', tone: 'neutral' },
-  NO_BUSINESS_HOURS: { label: 'Đóng · chưa có lịch', tone: 'neutral' },
+  NO_BUSINESS_HOURS: { label: 'Chưa thiết lập · chưa có lịch', tone: 'wait' },
+  NO_PICKUP_POINT: { label: 'Chưa thiết lập · chưa có vị trí GPS', tone: 'wait' },
+  NO_SELLABLE_ITEM: { label: 'Chưa thiết lập · chưa có món bán', tone: 'wait' },
   SERVICE_AREA_INACTIVE: { label: 'Đóng · khu vực tạm ngưng', tone: 'wait' },
   SHOP_INCOMPLETE: { label: 'Đóng · hồ sơ nháp', tone: 'wait' },
   SHOP_DISABLED: { label: 'Đóng · bị vô hiệu hóa hoặc chủ quán bị khóa', tone: 'lock' },
@@ -54,6 +97,9 @@ export const ENABLE_BLOCKER_LABEL: Record<string, string> = {
 export const HISTORY_ACTION_LABEL: Record<string, string> = {
   'admin.shop.disable.v1': 'Quản trị viên vô hiệu hóa quán',
   'admin.shop.enable.v1': 'Quản trị viên kích hoạt lại quán',
+  'admin.shop.request_info.v1': 'Quản trị viên yêu cầu chủ quán bổ sung thiết lập',
+  'admin.shop.clear_request.v1': 'Quản trị viên rút yêu cầu bổ sung',
+  'shop.auto_activated.v1': 'Hệ thống tự động kích hoạt quán (đủ điều kiện thiết lập)',
   'shop.profile.update.v1': 'Chủ quán cập nhật hồ sơ',
   'shop.business_hours.replace.v1': 'Chủ quán cập nhật giờ hoạt động',
   'onboarding.shop.profile.save.v1': 'Chủ quán lưu hồ sơ nháp',
@@ -89,6 +135,7 @@ export interface ShopRow {
   readonly availability: Availability;
   readonly itemsVisible: number;
   readonly itemsTotal: number;
+  readonly setup: SetupInfo;
 }
 
 export interface ShopListPage {
@@ -121,6 +168,7 @@ export interface ShopDetail {
   readonly pickupLat: number | null;
   readonly pickupLng: number | null;
   readonly availability: Availability;
+  readonly setup: SetupInfo;
   readonly timezone: string;
   readonly hours: readonly BusinessInterval[];
   readonly menuVisible: number;
@@ -187,7 +235,7 @@ export interface HistoryPage {
 }
 
 export type Preview =
-  | { readonly visible: false; readonly reason: AvailabilityReason }
+  | { readonly visible: false; readonly reason: AvailabilityReason; readonly missing: readonly string[] }
   | {
       readonly visible: true;
       readonly name: string;
@@ -203,6 +251,7 @@ export interface ShopQuery {
   readonly area: string;
   readonly profile: ProfileFilter;
   readonly schedule: ScheduleFilter;
+  readonly setup: SetupFilter;
   readonly page: number;
 }
 
@@ -215,7 +264,7 @@ export type MenuRead = { readonly kind: 'ready'; readonly page: MenuPage } | { r
 export type HistoryRead = { readonly kind: 'ready'; readonly page: HistoryPage } | { readonly kind: 'not-found' } | NotWired | Refused;
 export type PreviewRead = { readonly kind: 'ready'; readonly preview: Preview } | { readonly kind: 'not-found' } | NotWired | Refused;
 
-export type ShopCommandName = 'disable' | 'enable';
+export type ShopCommandName = 'disable' | 'enable' | 'request-info' | 'clear-request';
 
 export interface ShopCommandRequest {
   readonly id: string;

@@ -1,3 +1,5 @@
+import { ShopSetupModule } from './shop-setup/shop-setup.module';
+import { DiscoveryRouteModule } from './discovery-route/discovery-route.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { ActivationOtpProvider } from './admin-activation/activation-otp-provider';
 import { ActivationSmsGatewayBinding } from './admin-activation/activation-otp-providers';
@@ -82,7 +84,7 @@ export class AppModule {
         HealthModule,
         ...(auth === undefined
           ? []
-          : [auth, OnboardingModule.register(auth), ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), DriverWalletModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), FeedbackModule.register(auth), NotificationsModule.register(auth), OpsModule.register(auth), AccountRecoveryModule.register(auth)]),
+          : [auth, OnboardingModule.register(auth), ShopSetupModule.register(auth), DiscoveryRouteModule, ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), DriverWalletModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), FeedbackModule.register(auth), NotificationsModule.register(auth), OpsModule.register(auth), AccountRecoveryModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),

@@ -8,6 +8,7 @@ import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../features.dart';
 import '../m02/m02_flows.dart';
+import '../m02/shop_setup_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import '../widgets/form_feedback.dart';
@@ -70,7 +71,10 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
   void initState() {
     super.initState();
     // After this frame: load() notifies at once, which must not mark a listening screen dirty while it is being built.
-    WidgetsBinding.instance.addPostFrameCallback((_) => widget.controller.load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.controller.load();
+      widget.m02?.setup.load();
+    });
     widget.controller.session.addListener(_leaveWhenSignedOut);
   }
 
@@ -86,11 +90,21 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
     }
   }
 
+  /// A step of the checklist that is not done. Until the profile is finished (the shop is INCOMPLETE) the info and the point are entered in the
+  /// profile form (its address field takes the GPS point at the shop); the first dish needs the shop mode, which the finished profile opens.
+  void _openStep(String key, List<String> missing) {
+    if (key == 'FIRST_ITEM') {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Hoàn tất thông tin và vị trí quán trước, rồi vào chế độ quản lý quán để thêm món.')));
+      return;
+    }
+    Navigator.of(context).push(n11Route(ShopFormScreen(controller: widget.controller, m02: widget.m02)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final ShopController controller = widget.controller;
     return ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge(<Listenable>[controller, if (widget.m02 != null) widget.m02!.setup]),
       builder: (BuildContext context, Widget? child) {
         final ShopProfile? profile = controller.profile;
         final bool loading = controller.loadState == ShopLoad.loading || controller.loadState == ShopLoad.idle;
@@ -115,6 +129,8 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
             ],
             if (ready && profile != null) ...<Widget>[
               _summary(profile),
+              if (profile.status == 'INCOMPLETE' && widget.m02?.setup.setup != null)
+                ShopSetupChecklist(setup: widget.m02!.setup.setup!, stale: widget.m02!.setup.stale, onRetry: widget.m02!.setup.refresh, onStep: _openStep),
               if (profile.status == 'INCOMPLETE') ...<Widget>[
                 if (profile.readyToComplete)
                   const N11Banner(kind: BannerKind.success, title: 'Đủ điều kiện để hoàn tất', text: 'Mở hồ sơ rồi bấm Hoàn tất hồ sơ. Sau đó tài khoản có thêm vai trò Chủ quán.')
@@ -138,7 +154,7 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
         title: profile.name,
         chip: N11Chip(incomplete ? (profile.readyToComplete ? 'Đủ điều kiện' : 'Chưa hoàn tất') : shopStatusLabel(profile.status), kind: incomplete ? (profile.readyToComplete ? ChipKind.ok : ChipKind.warn) : (profile.status == 'ACTIVE' ? ChipKind.ok : ChipKind.bad)),
       ),
-      if (incomplete)
+      if (incomplete && widget.m02?.setup.setup == null)
         N11CheckList(items: <N11CheckItem>[
           N11CheckItem('Tên cửa hàng', profile.name.trim().isNotEmpty ? CheckState.done : CheckState.missing),
           N11CheckItem('Số điện thoại liên hệ', profile.contactPhone.trim().isNotEmpty ? CheckState.done : CheckState.missing),

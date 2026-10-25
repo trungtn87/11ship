@@ -4,6 +4,7 @@ import { AuditModule } from '../audit/audit.module';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { DriverOnboardingController } from './driver-onboarding.controller';
@@ -30,7 +31,7 @@ export class OnboardingModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: OnboardingModule,
-      imports: [auth, ShopModule, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, ShopModule, ShopSetupCoreModule, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [ShopOnboardingController, DriverOnboardingController],
       providers: [ShopOnboardingService, ShopProfileQueryService, ShopServiceAreaQueryService, DriverOnboardingService],
     };
