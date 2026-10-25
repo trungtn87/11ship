@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
 import 'models.dart';
+import 'vn_mobile.dart';
 
 // REGISTER phone verification (issue #102): POST /v1/auth/phone-verifications {phone, purpose: REGISTER}, GET
 // /v1/auth/phone-verifications/{id} (delivery state), POST /v1/auth/phone-verifications/{id}/verify {otp}. Public routes: no
@@ -40,11 +41,19 @@ class PhoneVerificationController extends ChangeNotifier {
   DateTime? _resendAt;
   int _epoch = 0;
   bool _disposed = false;
+  bool _lockedOut = false;
 
   OtpStep get step => _step;
   OtpDelivery get delivery => _delivery;
   AuthFailure? get failure => _failure;
   String? get verifiedPhone => _step == OtpStep.verified ? _phone : null;
+
+  /// True after the server closed the challenge for too many wrong codes (OTP_LOCKED): the flow is back at its first step, its
+  /// temporary data is gone and the server still holds the cooldown. Cleared by the next request or by [reset].
+  bool get lockedOut => _lockedOut;
+
+  /// Tries left on the current challenge after a wrong code, as the SERVER counted them; null until a wrong code was answered.
+  int? get attemptsRemaining => _failure?.kind == AuthFailureKind.otpInvalid ? _failure?.attemptsRemaining : null;
 
   /// The number the current challenge was requested for (trimmed), if any.
   String? get phone => _phone;
@@ -95,6 +104,7 @@ class PhoneVerificationController extends ChangeNotifier {
     _phone = null;
     _token = null;
     _resendAt = null;
+    _lockedOut = false;
     _notify();
   }
 
@@ -102,7 +112,14 @@ class PhoneVerificationController extends ChangeNotifier {
     if (busy || !canResend) {
       return false;
     }
+    // Not an allocated Vietnamese mobile number: refused here, before any request (the backend refuses it too, creating nothing).
+    if (otpPhoneError(phone) != null) {
+      _failure = const AuthFailure(AuthFailureKind.invalidPhone);
+      _notify();
+      return false;
+    }
     final int epoch = ++_epoch;
+    _lockedOut = false;
     _step = OtpStep.requesting;
     _failure = null;
     _token = null;
@@ -144,6 +161,11 @@ class PhoneVerificationController extends ChangeNotifier {
       }
       _step = OtpStep.idle;
       _failure = failure;
+      // The cooldown / quota is the SERVER's: its remaining time becomes the wait shown and enforced on the button.
+      final int? wait = failure.kind == AuthFailureKind.rateLimited ? failure.retryAfterSeconds : null;
+      if (wait != null) {
+        _resendAt = _clock().add(Duration(seconds: wait));
+      }
       _notify();
       return false;
     }
@@ -227,6 +249,20 @@ class PhoneVerificationController extends ChangeNotifier {
       return true;
     } on AuthFailure catch (failure) {
       if (epoch != _epoch) {
+        return false;
+      }
+      if (failure.kind == AuthFailureKind.otpLocked) {
+        // The challenge is closed: back to the first step with nothing of this flow kept (no id, no number, no proof). The cooldown
+        // stays (`_resendAt` is the one set when the code was requested): going back is no way around it, and the server enforces it.
+        _epoch++;
+        _step = OtpStep.idle;
+        _delivery = OtpDelivery.pending;
+        _verificationId = null;
+        _phone = null;
+        _token = null;
+        _lockedOut = true;
+        _failure = failure;
+        _notify();
         return false;
       }
       // A wrong code can be retried on the same challenge (the server counts attempts and locks); an unknown outcome as well.

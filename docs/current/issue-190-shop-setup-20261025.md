@@ -22,7 +22,7 @@ API chủ quán: `GET /v1/onboarding/shop/setup` (x/4, từng bước, mục thi
 Danh sách/chi tiết có `setup` (x/4, mục thiếu, lý do khóa, yêu cầu), bộ lọc `setup=INCOMPLETE|ACTIVATED|LOCKED|NEEDS_REVIEW`. Lệnh mới `request-info` / `clear-request` (cần lý do, version, Idempotency-Key; chỉ ghi audit khi có thay đổi thật). Disable/enable giữ nguyên; mở lại không bỏ qua điều kiện.
 
 ## Migration
-`1796428800000_shop-setup-readiness.sql` (tiến, không sửa migration cũ): 3 cột nullable trên `app.shops`, 2 CHECK, backfill `activated_at` cho quán đã đủ điều kiện. Hash đã ghi trong `ops/selfhosted/reviewed-migrations.json`. Chưa chạy trên VPS.
+`1796515200000_shop-setup-readiness.sql` (tiến, không sửa migration cũ): 3 cột nullable trên `app.shops`, 2 CHECK, backfill `activated_at` cho quán đã đủ điều kiện. Hash đã ghi trong `ops/selfhosted/reviewed-migrations.json`. Chưa chạy trên VPS.
 
 ## Giới hạn
 Server không phân biệt tọa độ lấy từ GPS với ghim tay trên bản đồ (không có cột nguồn); “GPS tại quán” dựa vào việc app chỉ cho chọn vị trí qua bộ chọn hiện có. Xem trước menu của chủ quán không hiển thị nút liên hệ.

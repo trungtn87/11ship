@@ -37,7 +37,9 @@ export function authTestConfig(overrides: Partial<AuthConfig> = {}): AuthConfig 
 
 /** A fresh Vietnamese mobile number: local form (0XXXXXXXXX) and its normalized form. */
 export function randomPhone(): { local: string; normalized: string; international: string } {
-  const subscriber = `9${String(randomInt(0, 100_000_000)).padStart(8, '0')}`;
+  // Issue #117: an OTP goes only to an allocated mobile prefix, so the second digit skips 5 (095 is not allocated).
+  const second = [0, 1, 2, 3, 4, 6, 7, 8, 9][randomInt(0, 9)] as number;
+  const subscriber = `9${second}${String(randomInt(0, 10_000_000)).padStart(7, '0')}`;
   return { local: `0${subscriber}`, normalized: `+84${subscriber}`, international: `84${subscriber}` };
 }
 

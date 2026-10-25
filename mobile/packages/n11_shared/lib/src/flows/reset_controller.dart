@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../account/vn_mobile.dart';
 
 // Forgotten password (M01-RESET, F13/S15; issue #102). The SERVER mode decides, the app never guesses. The only mode this app
 // uses is SMS_OTP: POST /v1/account-recovery/otp {phone} -> POST .../otp/{id}/verify {otp} -> POST .../reset
@@ -59,6 +60,7 @@ class ResetController extends ChangeNotifier {
   String? _otpPhone;
   String? _proof;
   DateTime? _resendAt;
+  bool _lockedOut = false;
 
   ResetMode get mode => _mode;
   bool get busy => _busy;
@@ -70,7 +72,23 @@ class ResetController extends ChangeNotifier {
 
   /// The number the code was requested for (trimmed), if any.
   String? get otpPhone => _otpPhone;
+
+  /// True after the server closed the challenge for too many wrong codes (OTP_LOCKED): the flow is back at its first step and its
+  /// temporary data (id, proof, number) is gone; the server keeps the cooldown. No account is touched. Cleared by the next request.
+  bool get lockedOut => _lockedOut;
+
+  /// Tries left on the current challenge after a wrong code, as the SERVER counted them.
+  int? get attemptsRemaining => _failure?.kind == AuthFailureKind.otpInvalid ? _failure?.attemptsRemaining : null;
   DateTime get _now => DateTime.now();
+
+  /// Seconds left of the cooldown the SERVER set (rounded up); 0 when none is running.
+  int get resendSeconds {
+    final DateTime? at = _resendAt;
+    if (at == null) return 0;
+    final int millis = at.difference(_now).inMilliseconds;
+    return millis <= 0 ? 0 : (millis + 999) ~/ 1000;
+  }
+
   bool get canResend => _otpStep != ResetOtpStep.requesting && _otpStep != ResetOtpStep.verifying && _otpStep != ResetOtpStep.verified && (_resendAt == null || !_now.isBefore(_resendAt!));
 
   String _bodyFor(String phone, String password) => jsonEncode(<String, Object?>{'verification_token': _proof, 'password': password});
@@ -139,6 +157,7 @@ class ResetController extends ChangeNotifier {
   }
 
   void _clearOtp() {
+    _lockedOut = false;
     _otpStep = ResetOtpStep.idle;
     _verificationId = null;
     _otpPhone = null;
@@ -163,7 +182,14 @@ class ResetController extends ChangeNotifier {
     if (_busy || _mode != ResetMode.smsOtp || !canResend) {
       return false;
     }
+    // Not an allocated Vietnamese mobile number: refused here, before any request (the backend refuses it too, creating nothing).
+    if (otpPhoneError(phone) != null) {
+      _failure = const AuthFailure(AuthFailureKind.invalidPhone);
+      _notify();
+      return false;
+    }
     final int epoch = ++_epoch;
+    _lockedOut = false;
     _busy = true;
     _otpStep = ResetOtpStep.requesting;
     _failure = null;
@@ -193,6 +219,11 @@ class ResetController extends ChangeNotifier {
       }
       _otpStep = ResetOtpStep.idle;
       _failure = failure;
+      // The cooldown / quota is the SERVER's: its remaining time becomes the wait enforced on the button.
+      final int? wait = failure.kind == AuthFailureKind.rateLimited ? failure.retryAfterSeconds : null;
+      if (wait != null) {
+        _resendAt = _now.add(Duration(seconds: wait));
+      }
       _busy = false;
       _notify();
       return false;
@@ -227,6 +258,19 @@ class ResetController extends ChangeNotifier {
       return true;
     } on AuthFailure catch (failure) {
       if (epoch != _epoch) {
+        return false;
+      }
+      if (failure.kind == AuthFailureKind.otpLocked) {
+        // The challenge is closed: back to the first step, nothing of this flow kept. `_resendAt` stays, so going back is no way
+        // around the cooldown (the server enforces it anyway). The password intent of an unconfirmed write is not touched.
+        _otpStep = ResetOtpStep.idle;
+        _verificationId = null;
+        _otpPhone = null;
+        _proof = null;
+        _lockedOut = true;
+        _failure = failure;
+        _busy = false;
+        _notify();
         return false;
       }
       _otpStep = failure.kind == AuthFailureKind.otpInvalid || failure.outcomeUnknown ? ResetOtpStep.requested : ResetOtpStep.idle;

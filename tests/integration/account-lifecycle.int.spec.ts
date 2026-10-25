@@ -459,6 +459,11 @@ describe('account lifecycle, scopes and system settings', () => {
       expect((await app.pool.query<{ password_hash: string }>('SELECT password_hash FROM app.users WHERE user_id = $1::uuid', [system.account.userId])).rows[0]?.password_hash).toBe(adminHashBefore);
       expect(await count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE resource_id = $1 AND action = $2', [appUser.id, 'account.password.reset_otp.v1'])).toBe(1);
 
+      // Issue #117: the cooldown is ONE per phone for every flow, so the application reset above still holds it for this shared number: let it elapse.
+      await app.pool.query(
+        `UPDATE app.phone_verifications SET created_at = created_at - interval '2 minutes', expires_at = expires_at - interval '2 minutes', resend_not_before = resend_not_before - interval '2 minutes' WHERE phone_normalized = $1`,
+        [shared.normalized],
+      );
       // The administration reset: an ADMIN member only (never SYSTEM); it queues an SMS only for that scope.
       const sysAsk = await api(base(), 'POST', '/admin-recovery/otp', { body: { phone: shared.local } });
       expect(sysAsk.status).toBe(200);

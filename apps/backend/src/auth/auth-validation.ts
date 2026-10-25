@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AppError } from '../common/app-errors';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, REGISTER_PURPOSE } from './auth-constants';
 import { isOtpShape } from './otp';
-import { requireNormalizedPhone } from './phone';
+import { requireNormalizedPhone, requireVietnamMobile } from './phone';
 
 // Strict request-body parsers for Auth Core (task sections 4, 14 and 16). They are pure: no I/O, no Nest
 // pipeline magic. A body is accepted only when it is a plain JSON object whose keys are EXACTLY the allowed
@@ -97,7 +97,7 @@ export function parseOtpRequestBody(body: unknown): OtpRequestInput {
   if (parsed.purpose !== REGISTER_PURPOSE) {
     return reject();
   }
-  return { phoneNormalized: requireNormalizedPhone(parsed.phone), purpose: REGISTER_PURPOSE };
+  return { phoneNormalized: requireVietnamMobile(parsed.phone), purpose: REGISTER_PURPOSE };
 }
 
 export interface OtpVerifyInput {

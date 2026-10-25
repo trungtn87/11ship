@@ -51,6 +51,7 @@ describe('fixture mode closes OTP and registration before any side effect', () =
     untouchable('verifications') as never,
     untouchable('users') as never,
     untouchable('recorder') as never,
+    untouchable('policies') as never,
     CONFIG,
     untouchable('provider') as never,
     FIXTURE_POLICY,
@@ -69,7 +70,7 @@ describe('fixture mode closes OTP and registration before any side effect', () =
   );
 
   it('requestOtp answers AUTH_REGISTRATION_UNAVAILABLE and never reaches the database or the provider', async () => {
-    expect(await codeOf(() => verification.requestOtp('+84901000001', 'REGISTER'))).toBe('AUTH_REGISTRATION_UNAVAILABLE');
+    expect(await codeOf(() => verification.requestOtp('+84901000001', 'REGISTER', '203.0.113.7'))).toBe('AUTH_REGISTRATION_UNAVAILABLE');
   });
 
   it('verifyOtp answers AUTH_REGISTRATION_UNAVAILABLE before reading or counting anything', async () => {

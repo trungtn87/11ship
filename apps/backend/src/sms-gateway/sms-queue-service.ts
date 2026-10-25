@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { OtpPolicyRepository } from '../auth/otp-policy-repository';
 import { VerificationRepository } from '../auth/verification-repository';
-import { AppError, TechnicalError } from '../common/app-errors';
+import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { SmsGatewayConfig } from '../config/sms-gateway-config';
 import { CryptoError } from '../crypto/crypto-error';
@@ -61,7 +62,6 @@ export class SmsKeyringHolder {
   }
 }
 
-const HOUR_SECONDS = 3600;
 const DAY_SECONDS = 86_400;
 
 /**
@@ -78,6 +78,7 @@ export class SmsQueueService {
     private readonly transactions: TransactionManager,
     private readonly repository: SmsGatewayRepository,
     private readonly verifications: VerificationRepository,
+    private readonly policies: OtpPolicyRepository,
     private readonly telemetry: OpsTelemetryRepository,
     private readonly updates: OpsGatewayUpdate,
     @Inject(APP_CONFIG) appConfig: AppConfig,
@@ -95,12 +96,13 @@ export class SmsQueueService {
 
   /**
    * Checks that a message could be queued right now, WITHOUT looking at any account, so that the answer is identical for a
-   * registered and an unregistered number: kill switch, a ready gateway, the global cap and the per-phone caps (counted over
-   * the OTP challenges of the phone, which exist for unknown numbers too). Throws 503 (not ready) or 429 (a cap).
+   * registered and an unregistered number: kill switch, a ready gateway and the whole-gateway daily cap. The per-phone and per-IP
+   * quotas are NOT checked here: they are reserved atomically with the challenge row (VerificationService). Throws 503 (not ready)
+   * or 429 (the cap).
    */
   async assertReady(phoneNormalized: string): Promise<Readiness> {
     return this.transactions.withTransaction(async (context) => {
-      await this.#gate(context, phoneNormalized, true);
+      await this.#gate(context);
       return { deliverable: this.#recipientAllowed(phoneNormalized) };
     });
   }
@@ -122,7 +124,7 @@ export class SmsQueueService {
     const inserted = await this.transactions.withTransaction(async (context) => {
       await this.repository.lockEnqueue(context);
       // Re-checked under the lock: the global cap and the kill switch cannot be raced past by concurrent requests.
-      await this.#gate(context, phoneNormalized, false);
+      await this.#gate(context);
       return this.repository.insertJob(context, {
         jobId,
         verificationId: delivery.verificationId,
@@ -156,7 +158,7 @@ export class SmsQueueService {
     plaintext.fill(0);
     const inserted = await this.transactions.withTransaction(async (context) => {
       await this.repository.lockEnqueue(context);
-      await this.#gate(context, phoneNormalized, false);
+      await this.#gate(context);
       return this.repository.insertActivationJob(context, {
         jobId,
         challengeId: delivery.challengeId,
@@ -185,23 +187,21 @@ export class SmsQueueService {
     }
   }
 
-  async #gate(context: TransactionContext, phoneNormalized: string, checkPhoneCaps: boolean): Promise<void> {
+  /**
+   * Kill switch, a ready gateway and the SYSTEM-configured whole-gateway daily cap (rolling 24 hours, counting EVERY queued SMS:
+   * account OTPs and the administrators' activation SMS alike). The queue methods call it under the enqueue lock, so concurrent
+   * requests of any purpose cannot pass the cap together.
+   */
+  async #gate(context: TransactionContext): Promise<void> {
     if (!(await this.repository.sendingEnabled(context))) {
       throw new TechnicalError('unavailable', 'SMS sending is disabled');
     }
     if ((await this.repository.countReadyDevices(context, this.config.onlineWindowSeconds)) < 1) {
       throw new TechnicalError('unavailable', 'No SMS gateway is online');
     }
-    if ((await this.repository.countJobsSince(context, DAY_SECONDS)) >= this.config.limitGlobalPerDay) {
-      throw new AppError('OTP_RATE_LIMITED');
-    }
-    if (checkPhoneCaps) {
-      if (
-        (await this.repository.countChallengesSince(context, phoneNormalized, HOUR_SECONDS)) >= this.config.limitPhonePerHour ||
-        (await this.repository.countChallengesSince(context, phoneNormalized, DAY_SECONDS)) >= this.config.limitPhonePerDay
-      ) {
-        throw new AppError('OTP_RATE_LIMITED');
-      }
+    const limit = (await this.policies.read(context)).values.global_per_day;
+    if ((await this.repository.countJobsSince(context, DAY_SECONDS)) >= limit) {
+      throw new OtpRefusalError('OTP_RATE_LIMITED', { reason: 'GLOBAL_DAY' });
     }
   }
 

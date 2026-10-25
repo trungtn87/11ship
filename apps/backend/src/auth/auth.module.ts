@@ -48,6 +48,8 @@ import { SessionAuthorizationParticipant } from './session-authorization-partici
 import { SessionRepository } from './session-repository';
 import { SessionService } from './session-service';
 import { UserRepository } from './user-repository';
+import { OtpClientIp } from './otp-client-ip';
+import { OtpPolicyRepository } from './otp-policy-repository';
 import { VerificationRepository } from './verification-repository';
 import { VerificationService } from './verification-service';
 
@@ -143,6 +145,9 @@ export class AuthModule {
         ClientSessionService,
         ClientPasswordService,
         VerificationRepository,
+        // Issue #117: SYSTEM-configured OTP limits + per-IP counter, and the client-address identity they use.
+        OtpPolicyRepository,
+        OtpClientIp,
         ProofRepository,
         UserRepository,
         CustomerProfileRepository,
@@ -193,6 +198,8 @@ export class AuthModule {
         PASSWORD_HASHER,
         // Issue #102: the SMS OTP reset reuses the OTP request/verify engine and the proof store.
         VerificationService,
+        OtpClientIp,
+        OtpPolicyRepository,
         ProofRepository,
         SystemSettingsRepository,
         SystemSettingsReader,

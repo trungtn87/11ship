@@ -20,4 +20,18 @@ describe('Cài đặt › Đơn hàng: Thời gian trả lời đề xuất phí
     const text = describeChange({ at: '2026-10-24T01:00:00.000Z', group: 'orders', action: 'admin.order_parameters.update.v1', actorName: 'S', resourceVersion: 2, metadata: { param_key: 'fee_answer_minutes', old_value: 5, new_value: 10 } } as never);
     expect(text).toBe('Thời gian trả lời đề xuất phí: 5 phút → 10 phút');
   });
+
+  it('describes a change of the SMS OTP limits with before and after of every value that changed', () => {
+    const text = describeChange({
+      at: '2026-10-24T01:00:00.000Z',
+      group: 'security',
+      action: 'admin.otp_policy.update.v1',
+      actorName: 'S',
+      resourceVersion: 2,
+      metadata: { from_values: { cooldown_seconds: 60, max_wrong_attempts: 3, phone_per_hour: 3, phone_per_day: 5, ip_per_hour: 10, global_per_day: 30 }, to_values: { cooldown_seconds: 90, max_wrong_attempts: 3, phone_per_hour: 3, phone_per_day: 5, ip_per_hour: 20, global_per_day: 30 }, changed_keys: ['cooldown_seconds', 'ip_per_hour'] },
+    } as never);
+    expect(text).toContain('→ 90 giây');
+    expect(text).toContain('10 → 20 lần');
+    expect(text).not.toContain('Số lần nhập sai');
+  });
 });

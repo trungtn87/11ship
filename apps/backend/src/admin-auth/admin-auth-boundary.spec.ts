@@ -48,6 +48,8 @@ describe('Administration authentication boundary (M01-D-LOGIN)', () => {
       'admin-session-revocation-participant',
       'auth-db',
       'auth-validation',
+      // Issue #117: the SMS OTP limits are a SYSTEM parameter group; the admin module wires the repository that owns that table.
+      'otp-policy-repository',
       'password-hasher',
       'phone',
       'tokens',

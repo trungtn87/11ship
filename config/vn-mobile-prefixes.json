@@ -1,0 +1,285 @@
+{
+  "version": 2,
+  "reviewedOn": "2026-10-25",
+  "scope": "Vietnam terrestrial mobile numbers (10 national digits, leading 0). Accepted mobile prefixes, including 075 and 095 explicitly approved by the Owner on 2026-10-25. Acceptance validates format only, not subscriber existence, activity or current operator.",
+  "matching": "A national number (0 + 9 digits) is accepted when it starts with any listed prefix. Prefixes may have 3 or more digits and must not overlap.",
+  "verification": {
+    "status": "PENDING_OFFICIAL_CONFIRMATION",
+    "note": "The full regulator allocation table has not been independently verified; PENDING_OFFICIAL_CONFIRMATION remains a provenance status, not a runtime rejection. Owner decision 2026-10-25 explicitly accepts 075 and 095 for OTP validation. This does not assert that allocation or in-service status was independently confirmed.",
+    "confirmedScope": "Auction results for 095 (2026-07-10) and 075 (2026-10-15) as reported; nothing else.",
+    "unverifiedScope": [
+      "all accepted prefixes against vnta.gov.vn tinTucID=4480",
+      "any block longer than 3 digits",
+      "allocation changes after 2026-04-17 other than the 095 and 075 auctions",
+      "whether 095 and 075 have an allocation decision or are in service"
+    ]
+  },
+  "officialSourcesToConfirm": [
+    {
+      "title": "Luat Vien thong 24/2023/QH15 (national numbering is a regulated resource)",
+      "issuer": "Quoc hoi"
+    },
+    {
+      "title": "Quy hoach kho so vien thong va tai nguyen Internet (mobile network codes 03x/05x/07x/08x/09x)",
+      "issuer": "Cuc Vien thong - Bo Khoa hoc va Cong nghe (mst.gov.vn)"
+    },
+    {
+      "title": "Thong tu 21/2025/TT-BKHCN (noi dung, trinh tu phe duyet quy hoach kho so vien thong)",
+      "issuer": "Bo Khoa hoc va Cong nghe"
+    },
+    {
+      "title": "Bảng phân bổ mã mạng di động (tinTucID=4480) — NOT opened: egress 403",
+      "issuer": "Cục Viễn thông",
+      "url": "https://vnta.gov.vn/doanhnghiep/trang/tinchitiet.aspx?tinTucID=4480"
+    }
+  ],
+  "secondarySourcesConsulted": [
+    {
+      "title": "iTel (087) - first virtual network, allocated 25/04/2019, on Vinaphone infrastructure",
+      "kind": "press",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Reddi/Wintel (055) - virtual network, in service 03/06/2020",
+      "kind": "press",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Gmobile 0199 -> 059; Vietnamobile 0186/0188 -> 056/058 (11-digit to 10-digit conversion 2018)",
+      "kind": "operator and press pages",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Operator prefix summaries (Viettel 03x/086/096-098, Vinaphone 081-085/088/091/094, MobiFone 070/076-079/089/090/093, Vietnamobile 052/056/058/092, Gmobile 059/099)",
+      "kind": "aggregator",
+      "accessed": "2026-10-24"
+    },
+    {
+      "title": "Search summaries of mst.gov.vn and press on the 095 and 075 auctions (pages not opened)",
+      "kind": "press/ministry portal via search",
+      "accessed": "2026-10-24"
+    }
+  ],
+  "prefixes": [
+    {
+      "prefix": "032",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "033",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "034",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "035",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "036",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "037",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "038",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "039",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "052",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "055",
+      "operator": "Wintel (Reddi)",
+      "kind": "MVNO"
+    },
+    {
+      "prefix": "056",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "058",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "059",
+      "operator": "Gmobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "070",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "075",
+      "operator": "Vietnam Post (Pottel)",
+      "kind": "MVNO",
+      "acceptance": "OWNER_APPROVED_2026_10_25",
+      "sources": [
+        "https://vnpost.vn/vi/hoat-dong-nganh/vietnam-post-dau-gia-thanh-cong-quyen-su-dung-ma-mang-75",
+        "https://mst.gov.vn/tong-cong-ty-buu-dien-viet-nam-trung-dau-gia-dau-so-075-197261015144808297.htm",
+        "https://mst.gov.vn/thong-tin-dau-gia-quyen-su-dung-ma-so-vien-thong-ma-mang-di-dong-h2h-75-197261006143225927.htm",
+        "https://www.sggp.org.vn/vietnam-post-dau-gia-thanh-cong-dau-so-di-dong-075-post876704.html",
+        "https://vneconomy.vn/dau-so-075-ve-tay-vietnam-post.htm"
+      ]
+    },
+    {
+      "prefix": "076",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "077",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "078",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "079",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "081",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "082",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "083",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "084",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "085",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "086",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "087",
+      "operator": "iTel",
+      "kind": "MVNO"
+    },
+    {
+      "prefix": "088",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "089",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "090",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "091",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "092",
+      "operator": "Vietnamobile",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "093",
+      "operator": "MobiFone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "094",
+      "operator": "Vinaphone",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "095",
+      "operator": "Viettel",
+      "kind": "MNO",
+      "acceptance": "OWNER_APPROVED_2026_10_25",
+      "sources": [
+        "https://mst.gov.vn/ve-viec-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260620145614961.htm",
+        "https://mst.gov.vn/thong-bao-dau-gia-quyen-su-dung-ma-mang-di-dong-95-197260703164851827.htm",
+        "https://tuoitre.vn/viettel-so-huu-them-dau-so-di-dong-095-100260711094049285.htm",
+        "https://thanhnien.vn/nha-mang-viettel-co-them-dau-so-095-185260710192936059.htm",
+        "https://www.sggp.org.vn/viettel-so-huu-dau-so-095-mo-rong-tai-nguyen-kho-so-di-dong-post861695.html"
+      ]
+    },
+    {
+      "prefix": "096",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "097",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "098",
+      "operator": "Viettel",
+      "kind": "MNO"
+    },
+    {
+      "prefix": "099",
+      "operator": "Gmobile",
+      "kind": "MNO"
+    }
+  ],
+  "matchingDecisionRule": "Use the accepted prefixes below for OTP validation. Owner explicitly approved accepting 075 and 095 on 2026-10-25 without waiting for further allocation evidence. Provenance uncertainty must not reject these two prefixes.",
+  "pendingPrefixes": [],
+  "ownerDecisions": [
+    {
+      "date": "2026-10-25",
+      "prefixes": [
+        "075",
+        "095"
+      ],
+      "decision": "ACCEPT_FOR_OTP_VALIDATION",
+      "instruction": "Coi như 2 đầu số đấy đã triển khai, đưa vào điều kiện kiểm tra luôn",
+      "officialAllocationIndependentlyConfirmed": false
+    }
+  ]
+}
