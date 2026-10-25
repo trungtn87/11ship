@@ -1,3 +1,4 @@
+import { createCategory, createItemWithPicture } from './menu-fixtures';
 import { randomUUID } from 'node:crypto';
 import { expect } from '@jest/globals';
 import { Pool } from 'pg';
@@ -250,4 +251,21 @@ export async function installHoursInsertStall(pool: Pool, shopId: string, key: r
 export async function removeHoursInsertStall(pool: Pool): Promise<void> {
   await pool.query('DROP TRIGGER IF EXISTS test_stall_hours_insert ON app.shop_business_hours');
   await pool.query('DROP FUNCTION IF EXISTS app.test_stall_hours_insert()');
+}
+
+/**
+ * Makes the owner's shop SET UP (issue #190): a schedule that is open all week (weekday 1-7, 00:00-24:00) and one sellable dish (on sale, price > 0, a
+ * picture). The shop row from `createShopOwner` already has its pickup point. Pass `hours: false` / `dish: false` to leave one condition missing.
+ */
+export async function completeSetup(app: AuthApp, owner: ShopOwner, options: { hours?: boolean; dish?: boolean; categoryId?: string; dishName?: string } = {}): Promise<void> {
+  if (options.hours !== false) {
+    await insertHours(app.pool, owner.shopId, [1, 2, 3, 4, 5, 6, 7].map((weekday) => interval(weekday, 0, 1440)));
+  }
+  if (options.dish !== false) {
+    const category = options.categoryId ?? (await createCategory(app.pool, 'Nhóm thiết lập'));
+    const created = await createItemWithPicture(app, owner.token, { name: options.dishName ?? 'Món đầu tiên', price_vnd: 30000, category_id: category });
+    if (created.status !== 201) {
+      throw new Error(`fixture dish failed: ${created.status} ${created.text}`);
+    }
+  }
 }

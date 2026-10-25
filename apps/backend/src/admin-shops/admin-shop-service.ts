@@ -17,10 +17,14 @@ import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-
 import { AVAILABILITY_TIME_ZONE } from '../shop/shop-availability-sql';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShopAvailability } from '../shop/shop-types';
+import { ShopActivation } from '../shop-setup/shop-activation';
+import { gateOf } from '../shop-setup/shop-setup-gate';
+import { SHOP_SETUP_AUDIT_ACTIONS, SHOP_SETUP_EVENT_SCHEMA_VERSION, SHOP_SETUP_REQUEST_CLEARED_EVENT_TYPE, SHOP_SETUP_REQUESTED_EVENT_TYPE } from '../shop-setup/shop-setup-constants';
+import { evaluateSetup, factsOf, SetupEvaluation } from '../shop-setup/shop-setup-rules';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AdminShopReadRepository, HistoryRow, OwnerFacts } from './admin-shop-read-repository';
-import { ShopHistoryQuery, ShopListQuery, ShopMenuQuery, StatusChangeBody } from './admin-shop-validation';
+import { SetupRequestBody, ShopHistoryQuery, ShopListQuery, ShopMenuQuery, StatusChangeBody } from './admin-shop-validation';
 
 export type ShopStatusCommand = 'disable' | 'enable';
 
@@ -35,7 +39,9 @@ const EVENT: Readonly<Record<ShopStatusCommand, string>> = {
 const RESOURCE = 'shop';
 
 /** Reasons the audit rows carry; the screen turns the operation name into a sentence. */
-export const SHOP_ADMIN_AUDIT_ACTIONS: readonly string[] = [OPERATION.disable, OPERATION.enable];
+export const SHOP_ADMIN_AUDIT_ACTIONS: readonly string[] = [OPERATION.disable, OPERATION.enable, SHOP_SETUP_AUDIT_ACTIONS.requestInfo, SHOP_SETUP_AUDIT_ACTIONS.clearRequest, SHOP_SETUP_AUDIT_ACTIONS.autoActivated];
+
+export type ShopSetupCommand = 'request-info' | 'clear-request';
 
 interface Authorized {
   readonly role: AdminRole;
@@ -65,6 +71,18 @@ function enableBlockers(snapshot: ShopSnapshot, areaStatus: string | null): stri
   }
   return blockers;
 }
+
+const setupView = (setup: SetupEvaluation, extra: { request: { note: string; atMs: number } | null; lock: { kind: string; reason: string | null } | null; activatedAtMs?: number | null }): JsonObject => ({
+  state: setup.state,
+  completed_steps: setup.completedSteps,
+  total_steps: setup.steps.length,
+  steps: setup.steps.map((step) => ({ key: step.key, done: step.done, missing: [...step.missing] })),
+  missing: [...setup.missing],
+  public: setup.publicVisible,
+  request: extra.request === null ? null : { note: extra.request.note, requested_at: iso(extra.request.atMs) },
+  lock: extra.lock === null ? null : { kind: extra.lock.kind, reason: extra.lock.reason },
+  ...(extra.activatedAtMs === undefined ? {} : { activated_at: extra.activatedAtMs === null ? null : iso(extra.activatedAtMs) }),
+});
 
 function historyView(row: HistoryRow): JsonObject {
   const meta = row.metadata;
@@ -107,6 +125,7 @@ export class AdminShopService {
     private readonly areas: ServiceAreaRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly activation: ShopActivation,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
@@ -115,7 +134,7 @@ export class AdminShopService {
   async list(sessionToken: string | undefined, query: ShopListQuery): Promise<JsonObject> {
     const known = await this.actor.precheck(sessionToken, { required: false });
     return this.#read(known, async (context) => {
-      const page = await this.reads.list(context, { name: query.name, digits: query.digits, areaId: query.areaId, profile: query.profile, schedule: query.schedule }, query.limit, query.offset);
+      const page = await this.reads.list(context, { name: query.name, digits: query.digits, areaId: query.areaId, profile: query.profile, schedule: query.schedule, setup: query.setup }, query.limit, query.offset);
       const areas = await this.areas.listAll(context);
       return {
         items: page.rows.map((row) => ({
@@ -130,6 +149,7 @@ export class AdminShopService {
           availability: availabilityView(row.availability),
           items_visible: row.itemsVisible,
           items_total: row.itemsTotal,
+          setup: setupView(row.setup, { request: row.setupRequest, lock: row.lock }),
         })),
         total: page.total,
         limit: query.limit,
@@ -189,9 +209,11 @@ export class AdminShopService {
       if (snapshot === undefined) {
         throw new AppError('SHOP_NOT_FOUND');
       }
-      const reason = snapshot.availability.reason;
-      if (snapshot.status !== 'ACTIVE' || reason === 'SHOP_DISABLED' || reason === 'SHOP_INCOMPLETE' || reason === 'SERVICE_AREA_INACTIVE') {
-        const hidden: JsonObject = { visible_to_customers: false, reason, shop_id: shopId };
+      const facts = await this.reads.facts(context, shopId);
+      const gate = gateOf(snapshot, facts?.hasSellableItem === true);
+      if (!gate.publicVisible) {
+        // Issue #190: the same gate as the customer page. The answer says WHY (the setup is incomplete, or the shop is locked), never an invented preview.
+        const hidden: JsonObject = { visible_to_customers: false, reason: gate.availability.reason, shop_id: shopId, setup_state: gate.setup.state, missing: [...gate.setup.missing] };
         return hidden;
       }
       const items = await this.reads.previewItems(context, shopId);
@@ -211,7 +233,7 @@ export class AdminShopService {
         name: snapshot.name,
         address_text: snapshot.addressText,
         timezone: AVAILABILITY_TIME_ZONE,
-        availability: availabilityView(snapshot.availability),
+        availability: availabilityView(gate.availability),
         hours: snapshot.hours.map(toWire),
         categories: groups,
       };
@@ -269,6 +291,11 @@ export class AdminShopService {
         }
         const to = name === 'disable' ? 'DISABLED' : 'ACTIVE';
         const version = await this.shops.changeStatus(context, shopId, from, to, shop.version);
+        if (name === 'enable') {
+          // Re-enabling never bypasses the setup: the shop is public only if every condition holds. A shop that never was set up and now is complete
+          // (it was locked before its first dish, say) is activated by the system here, once, with its own audit row.
+          await this.activation.reconcile(context, shopId, meta.requestId, 'admin_enable');
+        }
         await this.audit.append(context, {
           requestId: meta.requestId,
           actorType: auth.role,
@@ -302,6 +329,82 @@ export class AdminShopService {
     );
   }
 
+  /**
+   * request-info / clear-request (issue #190): the administrator's "please complete the setup" note and its withdrawal. SYSTEM, or an ADMIN with the
+   * shop-management right. They change one pair of columns (note + time), never a condition of the setup, a status or the profile version. A command
+   * that finds the shop already in the wanted state changes and logs NOTHING (a second key, a retry, a double tap), so the history carries one row per
+   * real transition. Lock order: the executor's record -> the actor's locks -> the shop row FOR UPDATE -> audit -> outbox.
+   */
+  async setupCommand(
+    name: ShopSetupCommand,
+    sessionToken: string | undefined,
+    csrfHeader: unknown,
+    shopId: string,
+    body: SetupRequestBody,
+    idempotencyKey: string | readonly string[] | undefined,
+    meta: { requestId: string },
+  ): Promise<IdempotentOutcome> {
+    const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
+    const operation = name === 'request-info' ? SHOP_SETUP_AUDIT_ACTIONS.requestInfo : SHOP_SETUP_AUDIT_ACTIONS.clearRequest;
+    return this.executor.execute(
+      {
+        scopeType: PROVISIONING_SCOPE_TYPE,
+        scopeId: known.userId,
+        operationId: operation,
+        idempotencyKey,
+        logicalRequest: { shop_id: shopId, expected_version: body.expectedVersion, reason: body.reason },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, known, shopId) },
+      },
+      async (context) => {
+        const auth = await this.#authorize(context, known, 'manage');
+        const shop = await this.shops.lockShopForUpdate(context, shopId);
+        if (shop === undefined) {
+          throw new AppError('SHOP_NOT_FOUND');
+        }
+        if (shop.version !== body.expectedVersion) {
+          throw new AppError('VERSION_CONFLICT');
+        }
+        let changed: boolean;
+        if (name === 'request-info') {
+          const snapshot = await this.snapshots.snapshotOfShop(context, shopId);
+          const facts = await this.reads.facts(context, shopId);
+          if (snapshot === undefined || facts === undefined) {
+            throw new AppError('SHOP_NOT_FOUND');
+          }
+          // A locked shop is the owner's no-go zone and a complete one has nothing to ask for.
+          if (shop.status === 'DISABLED' || snapshot.ownerLocked || evaluateSetup(factsOf(snapshot, facts.hasSellableItem)).complete) {
+            throw new AppError('SHOP_STATE_CONFLICT');
+          }
+          changed = await this.shops.setSetupRequest(context, shopId, body.reason);
+        } else {
+          changed = await this.shops.clearSetupRequest(context, shopId);
+        }
+        if (changed) {
+          await this.audit.append(context, {
+            requestId: meta.requestId,
+            actorType: auth.role,
+            actorId: auth.actorId,
+            action: operation,
+            resourceType: RESOURCE,
+            resourceId: shopId,
+            resourceVersion: shop.version,
+            outcome: 'SUCCESS',
+            metadata: { shop_id: shopId, reason: body.reason, version: shop.version },
+          });
+          await this.outbox.append(context, {
+            eventType: name === 'request-info' ? SHOP_SETUP_REQUESTED_EVENT_TYPE : SHOP_SETUP_REQUEST_CLEARED_EVENT_TYPE,
+            eventSchemaVersion: SHOP_SETUP_EVENT_SCHEMA_VERSION,
+            resourceType: RESOURCE,
+            resourceId: shopId,
+            resourceVersion: shop.version,
+            payload: { shop_id: shopId, version: shop.version },
+          });
+        }
+        return { status: 200, replayGuard: { actor_user_id: auth.actorId, shop_id: shopId }, payload: await this.#detailView(context, auth, shopId) };
+      },
+    );
+  }
+
   async #read<T>(known: SessionLookup, body: (context: TransactionContext, auth: Authorized) => Promise<T>): Promise<T> {
     return this.transactions.withTransaction(async (context): Promise<T> => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
@@ -321,6 +424,8 @@ export class AdminShopService {
     if (snapshot === undefined || facts === undefined) {
       throw new AppError('SHOP_NOT_FOUND');
     }
+    const gate = gateOf(snapshot, facts.hasSellableItem);
+    const setup = gate.setup;
     const actions: string[] = [];
     if (auth.manage && snapshot.status === 'ACTIVE') {
       actions.push('DISABLE');
@@ -328,6 +433,14 @@ export class AdminShopService {
     const blocked = snapshot.status === 'ACTIVE' && (work.ordersOpen > 0 || work.activeDeliveries > 0);
     if (auth.manage && snapshot.status === 'DISABLED') {
       actions.push('ENABLE');
+    }
+    // Issue #190: an administrator can ask the owner to complete the setup only while something is missing, and can withdraw that request. Neither
+    // changes a condition: the shop becomes public only when the real rows satisfy all of them.
+    if (auth.manage && snapshot.status !== 'DISABLED' && !snapshot.ownerLocked && !setup.complete) {
+      actions.push('REQUEST_INFO');
+    }
+    if (auth.manage && snapshot.setupRequest !== null) {
+      actions.push('CLEAR_REQUEST');
     }
     return {
       shop_id: snapshot.shopId,
@@ -346,7 +459,12 @@ export class AdminShopService {
         pickup_lat: snapshot.pickupLat,
         pickup_lng: snapshot.pickupLng,
       },
-      availability: availabilityView(snapshot.availability),
+      availability: availabilityView(gate.availability),
+      setup: setupView(setup, {
+        request: facts.setupRequest,
+        lock: snapshot.status === 'DISABLED' ? { kind: 'ADMIN', reason: facts.lockReason } : snapshot.ownerLocked ? { kind: 'OWNER_ACCOUNT', reason: null } : null,
+        activatedAtMs: facts.activatedAtMs,
+      }),
       timezone: AVAILABILITY_TIME_ZONE,
       hours: snapshot.hours.map(toWire),
       menu: { visible: facts.itemsVisible, hidden: facts.itemsHidden },

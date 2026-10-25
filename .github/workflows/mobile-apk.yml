@@ -198,6 +198,21 @@ jobs:
           path: ${{ runner.temp }}/food-m10-ui/*.png
           if-no-files-found: ignore
 
+      - name: Render 11Food setup checklist, quick contact and road distance for review (issue 190)
+        if: matrix.app == 'food'
+        working-directory: mobile/food
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/food-issue190-ui
+        run: flutter test test/issue190_screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Food issue 190 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Food-issue190-ui-widget-renders
+          path: ${{ runner.temp }}/food-issue190-ui/*.png
+          if-no-files-found: ignore
+
       - name: M14 map-only package contracts
         working-directory: mobile/packages/n11_m14_map
         run: |

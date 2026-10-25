@@ -6,6 +6,7 @@ import '../account/session_controller.dart';
 import 'discovery_models.dart';
 import 'menu_models.dart';
 import 'schedule.dart';
+import 'shop_contact.dart';
 
 // The HTTP side of the M02 ports: the owner's menu (signed, device-bound requests of the session), the public shop view and the public
 // discovery routes (plain HTTPS, no session). Every answer is parsed strictly; a body that is not what the contract says is
@@ -135,6 +136,7 @@ class HttpPublicShopApi implements PublicShopApi {
       logoUrl: data['logo_url'] == null ? null : base.resolve(_str(data['logo_url'])).toString(),
       name: _str(data['name']),
       address: _str(data['address_text']),
+      contact: ShopContact.fromWire(data['contact']),
       availabilityReason: _str(availability['reason']),
       serverNow: at is String ? DateTime.tryParse(at) : null,
       hours: hours,
@@ -177,6 +179,26 @@ class HttpDiscoveryApi implements DiscoveryApi {
     if (raw == null) return null;
     final Map<String, Object?> area = _obj(raw);
     return AreaChoice(id: _str(area['service_area_id']), name: _str(area['name']));
+  }
+
+  @override
+  Future<Map<String, int?>> routeDistances(double latitude, double longitude, List<String> shopIds) async {
+    final ApiResponse response = await transport.send(
+      'POST',
+      '/v1/discovery/route-distances',
+      body: utf8.encode(jsonEncode(<String, Object?>{'origin': <String, Object?>{'lat': latitude, 'lng': longitude}, 'shop_ids': shopIds})),
+    );
+    if (response.status != 200) throw failureOf(response);
+    final Map<String, Object?> data = _obj(_obj(response.json)['data']);
+    final Map<String, int?> out = <String, int?>{};
+    for (final Object? raw in _list(data['distances'])) {
+      final Map<String, Object?> entry = _obj(raw);
+      final String id = _str(entry['shop_id']);
+      final Object? meters = entry['distance_m'];
+      // Only a clean ROUTE with a whole, non-negative length counts; anything else is "not known", never a guessed number.
+      out[id] = entry['status'] == 'ROUTE' && meters is int && meters >= 0 ? meters : null;
+    }
+    return out;
   }
 
   String _query(DiscoveryQuery q) {

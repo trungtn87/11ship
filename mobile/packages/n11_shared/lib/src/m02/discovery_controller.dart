@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../account/models.dart';
 import '../flows/location.dart';
 import 'discovery_models.dart';
+import 'route_distance.dart';
 
 // The state behind the Home discovery (M02-KP01), the filter sheet (KP03) and the search screen (KP02). Rules that matter:
 //  - GPS areas come only from configured backend coverage; manual choices remain available when location fails;
@@ -16,8 +17,12 @@ import 'discovery_models.dart';
 enum DiscoveryLoad { idle, loading, ready, failed, notConnected }
 
 class DiscoveryController extends ChangeNotifier {
-  DiscoveryController({required this.api, DiscoveryPosition? position})
-      : position = position ?? DiscoveryPosition();
+  DiscoveryController({required this.api, DiscoveryPosition? position, RouteDistanceController? distances})
+      : position = position ?? DiscoveryPosition(),
+        distances = distances ?? RouteDistanceController(api: api);
+
+  /// The road distances of the shop cards of Home AND Search (one cache, so the same shop shows the same number in both).
+  final RouteDistanceController distances;
 
   final DiscoveryPosition position;
   bool outsideCoverage = false;
@@ -57,6 +62,7 @@ class DiscoveryController extends ChangeNotifier {
         final String? next = found?.id;
         if (next != areaId || found == null) {
           areaId = next;
+          distances.reset();
           _epoch++; // Invalidate an old area page, including loadMore.
           _shops = const <ShopCardData>[];
           _hasMore = _loadingMore = _stale = false;
@@ -197,7 +203,7 @@ class DiscoveryController extends ChangeNotifier {
       if (epoch != _epoch) {
         return;
       }
-      _shops = page.items;
+      _shops = onlyPublic(page.items);
       _hasMore = page.hasMore;
       _list = DiscoveryLoad.ready;
       _stale = false;
@@ -245,7 +251,7 @@ class DiscoveryController extends ChangeNotifier {
       final Set<String> seen = _shops.map((ShopCardData s) => s.shopId).toSet();
       _shops = <ShopCardData>[
         ..._shops,
-        for (final ShopCardData s in page.items)
+        for (final ShopCardData s in onlyPublic(page.items))
           if (!seen.contains(s.shopId)) s,
       ];
       _hasMore = page.hasMore;
@@ -270,6 +276,7 @@ class DiscoveryController extends ChangeNotifier {
     resolvingArea = false;
     manualArea = true;
     areaId = id;
+    distances.reset();
     _shops = const <ShopCardData>[];
     _hasMore = false;
     _list = DiscoveryLoad.idle;
@@ -301,6 +308,7 @@ class DiscoveryController extends ChangeNotifier {
     categoryId = category;
     openOnly = open;
     if (areaChanged) {
+      distances.reset();
       _shops = const <ShopCardData>[];
       _hasMore = false;
       _list = DiscoveryLoad.idle;
@@ -480,7 +488,7 @@ class DishSearchController extends ChangeNotifier {
         shops = <String, ShopCardData>{
           for (final ShopCardData s in <ShopCardData>[
             if (more) ...shops,
-            ...sp.items,
+            ...onlyPublic(sp.items),
           ])
             s.shopId: s,
         }.values.toList();
@@ -489,7 +497,7 @@ class DishSearchController extends ChangeNotifier {
       if (dp != null) {
         _dishOffset = dishQuery.offset + dp.items.length;
         dishes = <String, DishHit>{
-          for (final DishHit d in <DishHit>[if (more) ...dishes, ...dp.items])
+          for (final DishHit d in <DishHit>[if (more) ...dishes, ...dp.items.where((DishHit d) => d.shop.isPublic)])
             d.itemId: d,
         }.values.toList();
         _moreDishes = dp.hasMore;

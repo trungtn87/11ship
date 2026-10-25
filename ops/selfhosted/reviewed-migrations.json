@@ -33,6 +33,10 @@
       "sha256": "06e84b8b8036334e96351484ce8ef80ec7e899012c4cf55f5cd96ebaab26e218",
       "review": "Issue #117; compatibility review 2026-10-24: Up only adds three new tables (app.otp_policy single row seeded 60/3/3/5/10/30 with CHECK bounds, app.otp_policy_changes history that the runtime role can only SELECT and INSERT, app.otp_ip_requests holding only an HMAC of the client address) with their own indexes; no existing table, column, constraint, grant or row changes. The previous backend never reads the new tables and keeps enforcing its environment limits, so it keeps working against the new schema. The new backend requires the migration (it reads app.otp_policy on every OTP request), so the migration runs before the backend restart; the runtime role grants are in ops/selfhosted/02-runtime-grants.sql."
     },
+    "1796515200000_shop-setup-readiness": {
+      "sha256": "6fbe0f22ff82da6983da5b6be7a0b07b3c60b40602f320157b9bc2933a1705e9",
+      "review": "Issue #190; compatibility review 2026-10-25: Up adds three nullable columns to app.shops (activated_at, setup_request_note, setup_request_at) with two CHECKs that every existing row satisfies (all NULL), and one backfill UPDATE that sets activated_at only for non-draft shops that already have schedule, pickup point, service area and a sellable dish. No grant, order, delivery or account row changes; the previous backend names its columns explicitly and ignores the new ones."
+    },
     "1796601600000_create-order-chat": {
       "sha256": "e50eb583f56f017bcc392e121bf7dd407b601278d0e7157be76ddbdb0ddade52",
       "review": "Issue #191; compatibility review 2026-10-25: Up only adds one new table app.order_chat_messages (text messages of an order or a direct delivery) with its foreign keys, CHECKs, unique sender key, three indexes and a trigger that refuses updates; no existing table, column, constraint, grant or row changes. The previous backend never reads or writes the table and keeps working against the new schema; the new backend needs the migration before it restarts. The runtime role grant (SELECT, INSERT) is in ops/selfhosted/02-runtime-grants.sql."

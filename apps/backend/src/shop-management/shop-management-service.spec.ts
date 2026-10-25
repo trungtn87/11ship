@@ -1,3 +1,5 @@
+import { ShopActivation } from '../shop-setup/shop-activation';
+import { gateOf, ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { readFileSync } from 'node:fs';
 import { parseShopLogo } from '../shop/shop-logo';
 import { LOGICAL_REQUEST_POLICY } from '../shared/json/json-policy';
@@ -179,6 +181,8 @@ function rig(
       reader,
       audit,
       outboxWriter,
+      { reconcile: async () => false } as unknown as ShopActivation,
+      { evaluate: async (_c: unknown, snap: ShopSnapshot) => gateOf(snap, true) } as unknown as ShopSetupGate,
     ),
     events,
     requests,
@@ -385,6 +389,11 @@ describe('ShopManagementService.read', () => {
     version: 4,
     hours: [iv(1, 480, 1020, 0)],
     availability: { online: false, reason: 'OUTSIDE_BUSINESS_HOURS', evaluatedAt: '2026-10-05T03:00:00.000Z' },
+    hasPickupPoint: true,
+    activatedAt: null,
+    setupRequest: null,
+    ownerLocked: false,
+    areaStatus: 'ACTIVE',
   };
 
   it('returns exactly the documented keys and never accepting_orders', async () => {

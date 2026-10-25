@@ -14,7 +14,7 @@ import {
   updateItem,
   uploadImage,
 } from './support/menu-fixtures';
-import { createShopOwner, insertHours, ShopOwner } from './support/shop-management-fixtures';
+import { completeSetup, createShopOwner, insertHours, ShopOwner } from './support/shop-management-fixtures';
 
 // M02-MON / M02-XEM — the menu and the public shop view through the REAL Nest pipeline on a REAL PostgreSQL.
 describe('M02 — menu and public shop view', () => {
@@ -299,49 +299,108 @@ describe('M02 — menu and public shop view', () => {
   });
 
   describe('the public view of a shop (customers, no session)', () => {
-    it('shows an ACTIVE shop that has no schedule: the chip says so, the menu is there, and no private field leaks', async () => {
+    /** A shop that is SET UP (issue #190): open all week, one sellable dish with a picture (in group `ownGroup`, so group lists stay exact). */
+    async function setUpOwner(dishName = 'Món nền', group = active): Promise<ShopOwner> {
       const o = await owner();
-      await createItem(app, o.token, dish(active, { name: 'Ốc hương hấp' }));
+      await completeSetup(app, o, { categoryId: group, dishName });
+      return o;
+    }
+
+    it('shows a set-up shop with its menu and its public contact, and no private field leaks', async () => {
+      const o = await setUpOwner('Ốc hương hấp');
       await createItem(app, o.token, dish(second, { name: 'Mực nướng', price_vnd: 150000 }));
+      await app.pool.query(`UPDATE app.shops SET zalo = '0912345678', facebook = 'https://www.facebook.com/quan.oc.11' WHERE shop_id = $1::uuid`, [o.shopId]);
       const response = await publicShop(app, o.shopId);
       expect(response.status).toBe(200);
       const data = dataOf(response);
-      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'hours', 'name', 'shop_id', 'timezone'].sort());
+      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'shop_id', 'timezone'].sort());
       expect(data).toMatchObject({ shop_id: o.shopId, name: 'Fixture shop', address_text: 'Fixture address', timezone: 'Asia/Ho_Chi_Minh' });
-      expect((data.availability as Record<string, unknown>).reason).toBe('NO_BUSINESS_HOURS');
+      expect((data.availability as Record<string, unknown>).reason).toBe('ONLINE');
+      // The shop's OWN contact from its profile: the contact phone (not the login phone), a Zalo link and a Messenger link, nothing else.
+      expect(data.contact).toEqual({ phone: '+84900000001', zalo_url: 'https://zalo.me/0912345678', messenger_url: 'https://m.me/quan.oc.11', facebook_url: 'https://www.facebook.com/quan.oc.11' });
       const categories = data.categories as { name: string; items: { name: string; price_vnd: number }[] }[];
       expect(categories.map((c) => c.name)).toEqual(['Ốc', 'Hải sản']);
       expect(categories[1]?.items).toEqual([expect.objectContaining({ name: 'Mực nướng', price_vnd: 150000 })]);
-      expect(response.text).not.toMatch(/contact_phone|zalo|facebook|pickup_|user_id|accepting/i);
+      expect(response.text).not.toMatch(/user_id|accepting|pickup_|owner|password|token/i);
       expect(response.headers.get('cache-control')).toBe('no-store');
     });
 
+    it('hides a malformed, hostile or foreign Zalo / Facebook value instead of passing it on', async () => {
+      const o = await setUpOwner();
+      const cases: [string | null, string | null][] = [
+        ['javascript:alert(1)', 'intent://scan/#Intent;scheme=zxing;end'],
+        ['https://evil.example/zalo.me/0912345678', 'https://evil.example/facebook.com/quan.oc.11'],
+        ['12345', 'Quán ốc 11'],
+        [null, null],
+      ];
+      for (const [zalo, facebook] of cases) {
+        await app.pool.query('UPDATE app.shops SET zalo = $2, facebook = $3 WHERE shop_id = $1::uuid', [o.shopId, zalo, facebook]);
+        const contact = dataOf(await publicShop(app, o.shopId)).contact as Record<string, unknown>;
+        expect([zalo, facebook, contact.zalo_url, contact.messenger_url, contact.facebook_url]).toEqual([zalo, facebook, null, null, null]);
+        expect(contact.phone).toBe('+84900000001');
+      }
+    });
+
+    it('issue #190: an ACTIVE shop that has no schedule is NOT public: no menu, no contact, the same UNAVAILABLE as a locked shop', async () => {
+      const o = await setUpOwner();
+      await app.pool.query('DELETE FROM app.shop_business_hours WHERE shop_id = $1::uuid', [o.shopId]);
+      const response = await publicShop(app, o.shopId);
+      expect([response.status, errorCode(response)]).toEqual([403, 'SHOP_UNAVAILABLE']);
+      expect(response.text).not.toMatch(/NO_BUSINESS_HOURS|Fixture|contact|categories/);
+    });
+
+    it.each([
+      ['a (0, 0) pickup placeholder', `UPDATE app.shops SET pickup_lat = 0, pickup_lng = 0 WHERE shop_id = $1::uuid`],
+      ['no dish on sale (hidden)', `UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE shop_id = $1::uuid`],
+      ['a dish without a picture', `UPDATE app.menu_items SET image_id = NULL WHERE shop_id = $1::uuid`],
+      ['the owner account locked', `UPDATE app.users SET status = 'DISABLED' WHERE user_id = (SELECT user_id FROM app.shop_members WHERE shop_id = $1::uuid AND member_role = 'OWNER')`],
+    ])('issue #190: a shop with %s is not public', async (label, sql) => {
+      const o = await setUpOwner();
+      expect((await publicShop(app, o.shopId)).status).toBe(200);
+      await app.pool.query(sql, [o.shopId]);
+      const response = await publicShop(app, o.shopId);
+      expect([label, response.status, errorCode(response)]).toEqual([label, 403, 'SHOP_UNAVAILABLE']);
+    });
+
+    it('a closed shop that IS set up stays visible with its menu and contact (only a new order is refused)', async () => {
+      const o = await setUpOwner();
+      await app.pool.query('DELETE FROM app.shop_business_hours WHERE shop_id = $1::uuid', [o.shopId]);
+      const now = new Date();
+      const vnMinute = (now.getUTCHours() * 60 + now.getUTCMinutes() + 7 * 60) % 1440;
+      const start = vnMinute >= 230 && vnMinute <= 250 ? 960 : 240;
+      await insertHours(app.pool, o.shopId, [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, start_minute: start, end_minute: start + 1, end_day_offset: 0 })));
+      const closed = dataOf(await publicShop(app, o.shopId));
+      expect((closed.availability as Record<string, unknown>).reason).toBe('OUTSIDE_BUSINESS_HOURS');
+      expect((closed.availability as Record<string, unknown>).online).toBe(false);
+      expect(closed.contact).toMatchObject({ phone: '+84900000001' });
+      expect((closed.categories as unknown[]).length).toBe(1);
+    });
+
     it('a hidden or deleted dish is gone for customers and a hidden-only group disappears; showing it brings it back', async () => {
-      const o = await owner();
-      const id = String(itemOf(await createItem(app, o.token, dish(active))).item_id);
-      expect((dataOf(await publicShop(app, o.shopId)).categories as unknown[]).length).toBe(1);
+      const o = await setUpOwner();
+      const id = String(itemOf(await createItem(app, o.token, dish(second))).item_id);
+      expect((dataOf(await publicShop(app, o.shopId)).categories as unknown[]).length).toBe(2);
       await itemAction(app, o.token, id, 'hide', 1);
-      expect(dataOf(await publicShop(app, o.shopId)).categories).toEqual([]);
-      await itemAction(app, o.token, id, 'show', 2);
       expect((dataOf(await publicShop(app, o.shopId)).categories as unknown[]).length).toBe(1);
+      await itemAction(app, o.token, id, 'show', 2);
+      expect((dataOf(await publicShop(app, o.shopId)).categories as unknown[]).length).toBe(2);
       await itemAction(app, o.token, id, 'delete', 3);
-      expect(dataOf(await publicShop(app, o.shopId)).categories).toEqual([]);
+      expect((dataOf(await publicShop(app, o.shopId)).categories as unknown[]).length).toBe(1);
     });
 
     it('a dish whose group was switched off stays visible (the link is kept, it is not a reason to hide it)', async () => {
-      const o = await owner();
+      const o = await setUpOwner();
       const gone = await createCategory(app.pool, 'Tạm ngưng', 'ACTIVE', 9);
       await createItem(app, o.token, dish(gone, { name: 'Món nhóm cũ' }));
       await app.pool.query(`UPDATE app.menu_categories SET status = 'INACTIVE', updated_at = clock_timestamp() WHERE category_id = $1::uuid`, [gone]);
       const categories = dataOf(await publicShop(app, o.shopId)).categories as { name: string; items: unknown[] }[];
-      expect(categories.map((c) => c.name)).toEqual(['Tạm ngưng']);
+      expect(categories.map((c) => c.name)).toEqual(['Ốc', 'Tạm ngưng']);
       const menu = dataOf(await getMenu(app, o.token)).categories as { name: string; status: string }[];
       expect(menu).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Tạm ngưng', status: 'INACTIVE' })]));
     });
 
     it('reports the schedule: ONLINE inside an interval, OUTSIDE outside it, the hours as saved', async () => {
-      const o = await owner();
-      await insertHours(app.pool, o.shopId, [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, start_minute: 0, end_minute: 1440, end_day_offset: 0 })));
+      const o = await setUpOwner();
       const open = dataOf(await publicShop(app, o.shopId));
       expect((open.availability as Record<string, unknown>).reason).toBe('ONLINE');
       expect(open.hours as unknown[]).toHaveLength(7);
@@ -353,7 +412,7 @@ describe('M02 — menu and public shop view', () => {
       await insertHours(app.pool, o.shopId, [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, start_minute: start, end_minute: start + 1, end_day_offset: 0 })));
       const closed = dataOf(await publicShop(app, o.shopId));
       expect((closed.availability as Record<string, unknown>).reason).toBe('OUTSIDE_BUSINESS_HOURS');
-      expect(closed.categories).toEqual([]);
+      expect((closed.categories as unknown[]).length).toBe(1);
     });
 
     it('answers NOT_FOUND for an unknown or malformed id and UNAVAILABLE (never the reason) for a shop that is not shown', async () => {
@@ -361,8 +420,7 @@ describe('M02 — menu and public shop view', () => {
         const response = await publicShop(app, id);
         expect([response.status, errorCode(response)]).toEqual([404, 'SHOP_NOT_FOUND']);
       }
-      const o = await owner();
-      await createItem(app, o.token, dish(active));
+      const o = await setUpOwner();
       const closedArea = await createServiceArea(app.pool, 'INACTIVE');
       const cases: [string, string, unknown[]][] = [
         ['DISABLED', `UPDATE app.shops SET status = 'DISABLED', updated_at = clock_timestamp() WHERE shop_id = $1::uuid`, [o.shopId]],

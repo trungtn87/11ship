@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { expect } from '@jest/globals';
 import { ApiResponse, AuthApp, dataOf, obtainProof, PASSWORD, randomPhone } from './auth-fixtures';
-import { createItem, createCategory } from './menu-fixtures';
+import { createItemWithPicture, createCategory } from './menu-fixtures';
 
 // M10 fixtures: a customer account on the 11Food app, a Shipper with a funded wallet and a position, the shop's weekly schedule, the dishes and the cleanup of
 // the rows an Order test leaves (orders and deliveries are never deleted by the application, so a test removes exactly its own rows with the user triggers of
@@ -72,7 +72,7 @@ export interface Dish {
 
 export async function newDish(app: AuthApp, shopToken: string, name: string, price: number): Promise<Dish> {
   const category = await createCategory(app.pool, `Nhóm M10 ${tag}`);
-  const created = await createItem(app, shopToken, { name, price_vnd: price, category_id: category, image_id: null });
+  const created = await createItemWithPicture(app, shopToken, { name, price_vnd: price, category_id: category });
   expect([created.status, created.text.slice(0, 200)]).toEqual([201, created.text.slice(0, 200)]);
   const item = (dataOf(created) as Json).item as Json;
   return { itemId: String(item.item_id), name, price };

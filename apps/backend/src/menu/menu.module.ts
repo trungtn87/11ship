@@ -4,6 +4,8 @@ import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OrdersCoreModule } from '../orders/orders-core.module';
 import { OutboxModule } from '../outbox/outbox.module';
+import { ShopSetupCoreModule } from '../shop-setup/shop-setup-core.module';
+import { MenuReadinessModule } from './menu-readiness.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { DiscoveryController, MenuOwnerController, MenuPublicController } from './menu.controller';
@@ -21,7 +23,7 @@ export class MenuModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: MenuModule,
-      imports: [auth, FeedbackReadModule, ShopModule, OrdersCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
+      imports: [auth, FeedbackReadModule, ShopModule, ShopSetupCoreModule, MenuReadinessModule, OrdersCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
       providers: [MenuService, MenuRepository, DiscoveryService],
       // The dish reads an Order needs (M10) go through the owner of the tables.

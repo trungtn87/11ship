@@ -8,14 +8,19 @@ const reply = (status: number, body: unknown, headers: Record<string, string> = 
 const errorBody = (code: string) => ({ error: { code, message: 'x', request_id: 'r', details: {} } });
 const availability = (over: Record<string, unknown> = {}) => ({ online: true, reason: 'ONLINE', evaluated_at: '2026-10-24T03:00:00.000Z', ...over });
 const owner = { name: 'Nguyễn Văn B', phone: '+84901234567', locked: false };
+const setup = (over: Record<string, unknown> = {}) => ({
+  state: 'INCOMPLETE', completed_steps: 2, total_steps: 4,
+  steps: [{ key: 'ACCOUNT', done: true, missing: [] }, { key: 'SHOP_INFO', done: true, missing: [] }, { key: 'LOCATION', done: false, missing: ['PICKUP_POINT'] }, { key: 'FIRST_ITEM', done: false, missing: ['SELLABLE_ITEM'] }],
+  missing: ['PICKUP_POINT', 'SELLABLE_ITEM'], public: false, request: null, lock: null, ...over,
+});
 const listRow = (over: Record<string, unknown> = {}) => ({
   shop_id: ID, code: 'K01', name: 'Phở Ngon', address_text: 'Số 9, Cao Bằng', owner, service_area: { service_area_id: AREA, name: 'Cao Bằng' }, status: 'ACTIVE', version: 3,
-  availability: availability(), items_visible: 2, items_total: 3, ...over,
+  availability: availability(), items_visible: 2, items_total: 3, setup: setup(), ...over,
 });
 const detail = (over: Record<string, unknown> = {}) => ({
   shop_id: ID, code: 'K01', name: 'Phở Ngon', status: 'ACTIVE', version: 3, logo_url: null, owner,
   profile: { contact_phone: '+84911000222', zalo: null, facebook: null, address_text: 'Số 9, Cao Bằng', service_area: { service_area_id: AREA, name: 'Cao Bằng', status: 'ACTIVE' }, pickup_lat: 22.66, pickup_lng: 106.25 },
-  availability: availability(), timezone: 'Asia/Ho_Chi_Minh', hours: [{ weekday: 1, start_minute: 0, end_minute: 1440, end_day_offset: 0 }], menu: { visible: 2, hidden: 1 },
+  availability: availability(), setup: setup(), timezone: 'Asia/Ho_Chi_Minh', hours: [{ weekday: 1, start_minute: 0, end_minute: 1440, end_day_offset: 0 }], menu: { visible: 2, hidden: 1 },
   open_work: { orders_open: 3, orders_pending_confirmation: 1, orders_preparing: 2, active_deliveries: 0 }, disable_blocked: true, enable_blockers: [], allowed_actions: ['DISABLE'],
   created_at: '2026-10-01T03:00:00.000Z', updated_at: '2026-10-02T03:00:00.000Z', ...over,
 });
@@ -49,8 +54,22 @@ describe('admin web shops - parsers', () => {
     });
     expect(menu).toMatchObject({ total: 1, items: [{ status: 'HIDDEN', categoryActive: false }], groups: [{ active: false }] });
     expect(parseHistory({ items: [{ audit_id: ID, occurred_at: '2026-10-02T03:00:00.000Z', actor: { type: 'ADMIN', name: 'QT' }, action: 'admin.shop.disable.v1', version: 4, reason: 'Vi phạm', from_status: 'ACTIVE', to_status: 'DISABLED' }], total: 1 })).toMatchObject({ entries: [{ version: 4, fromStatus: 'ACTIVE' }] });
-    expect(parsePreview({ visible_to_customers: false, reason: 'SHOP_DISABLED', shop_id: ID })).toEqual({ visible: false, reason: 'SHOP_DISABLED' });
+    expect(parsePreview({ visible_to_customers: false, reason: 'SHOP_DISABLED', shop_id: ID })).toEqual({ visible: false, reason: 'SHOP_DISABLED', missing: [] });
+    expect(parsePreview({ visible_to_customers: false, reason: 'NO_SELLABLE_ITEM', shop_id: ID, setup_state: 'INCOMPLETE', missing: ['SELLABLE_ITEM'] })).toEqual({ visible: false, reason: 'NO_SELLABLE_ITEM', missing: ['SELLABLE_ITEM'] });
     expect(parsePreview({ visible_to_customers: true, shop_id: ID, logo_url: null, name: 'Phở', address_text: 'A', timezone: 'x', availability: availability(), hours: [], categories: [{ category_id: AREA, name: 'G', items: [{ item_id: ID, name: 'Phở', price_vnd: 1000, image_url: null }] }] })).toMatchObject({ visible: true, categories: [{ items: [{ priceVnd: 1000 }] }] });
+  });
+
+  it('issue #190: maps the setup block (state, x/4 steps, what is missing, a lock and a pending request) and the two new commands', () => {
+    expect(parseRow(listRow())).toMatchObject({ setup: { state: 'INCOMPLETE', completedSteps: 2, totalSteps: 4, missing: ['PICKUP_POINT', 'SELLABLE_ITEM'], public: false, request: null, lock: null } });
+    const locked = parseRow(listRow({ setup: setup({ state: 'LOCKED', lock: { kind: 'ADMIN', reason: 'Bán hàng giả' } }) }));
+    expect(locked?.setup).toMatchObject({ state: 'LOCKED', lock: { kind: 'ADMIN', reason: 'Bán hàng giả' } });
+    const asked = parseDetail(detail({ setup: setup({ state: 'NEEDS_REVIEW', request: { note: 'Bổ sung ảnh món', requested_at: '2026-10-24T03:00:00.000Z' }, activated_at: null }), allowed_actions: ['DISABLE', 'REQUEST_INFO', 'CLEAR_REQUEST'] }));
+    expect(asked).toMatchObject({ setup: { state: 'NEEDS_REVIEW', request: { note: 'Bổ sung ảnh món' } }, actions: ['disable', 'request-info', 'clear-request'] });
+    for (const bad of [{ state: 'DONE' }, { completed_steps: -1 }, { steps: [{ key: 'ACCOUNT' }] }, { public: 'yes' }, { request: { note: 'x' } }, { lock: { kind: 1 } }]) {
+      expect(parseRow(listRow({ setup: setup(bad) }))).toBeUndefined();
+    }
+    expect(parseRow(listRow({ setup: undefined }))).toBeUndefined();
+    expect(parseDetail(detail({ setup: null }))).toBeUndefined();
   });
 
   it('refuses anything that is not exactly the documented shape', () => {
@@ -70,10 +89,13 @@ describe('admin web shops - parsers', () => {
 describe('admin web shops - requests', () => {
   it('lists with search, filters and the page as limit/offset 20', async () => {
     const { transport, requests } = scripted(reply(200, { data: { items: [], total: 0, areas: [] } }));
-    await new AdminShopApi(transport).list({ query: ' phở ', area: AREA, profile: 'DISABLED', schedule: 'CLOSED', page: 3 });
+    await new AdminShopApi(transport).list({ query: ' phở ', area: AREA, profile: 'DISABLED', schedule: 'CLOSED', setup: 'ALL', page: 3 });
     expect(requests[0]).toMatchObject({ method: 'GET', path: `/admin/shops?q=ph%E1%BB%9F&area=${AREA}&profile=DISABLED&schedule=CLOSED&limit=20&offset=40` });
+    const filtered = scripted(reply(200, { data: { items: [], total: 0, areas: [] } }));
+    await new AdminShopApi(filtered.transport).list({ query: '', area: 'ALL', profile: 'ALL', schedule: 'ALL', setup: 'NEEDS_REVIEW', page: 1 });
+    expect(filtered.requests[0]).toMatchObject({ path: '/admin/shops?setup=NEEDS_REVIEW&limit=20&offset=0' });
     const empty = scripted(reply(200, { data: { items: [], total: 0, areas: [] } }));
-    await new AdminShopApi(empty.transport).list({ query: '', area: 'ALL', profile: 'ALL', schedule: 'ALL', page: 1 });
+    await new AdminShopApi(empty.transport).list({ query: '', area: 'ALL', profile: 'ALL', schedule: 'ALL', setup: 'ALL', page: 1 });
     expect(empty.requests[0]?.path).toBe('/admin/shops?limit=20&offset=0');
   });
 
@@ -97,6 +119,15 @@ describe('admin web shops - requests', () => {
     const source = createShopSource(new AdminShopApi(transport), session().port);
     expect(await source.command(command)).toEqual({ kind: 'ok' });
     expect(requests).toEqual([{ method: 'POST', path: `/admin/shops/${ID}/disable`, body: { expected_version: 3, reason: 'Vi phạm' }, csrf: 'csrf-1', idempotencyKey: 'key-1' }]);
+  });
+
+  it('issue #190: request-info and clear-request are one POST each, with the same version / reason / key rules', async () => {
+    for (const name of ['request-info', 'clear-request'] as const) {
+      const { transport, requests } = scripted(reply(200, { data: detail() }));
+      const source = createShopSource(new AdminShopApi(transport), session().port);
+      expect(await source.command({ ...command, name, reason: 'Bổ sung ảnh món', key: `key-${name}` })).toEqual({ kind: 'ok' });
+      expect(requests).toEqual([{ method: 'POST', path: `/admin/shops/${ID}/${name}`, body: { expected_version: 3, reason: 'Bổ sung ảnh món' }, csrf: 'csrf-1', idempotencyKey: `key-${name}` }]);
+    }
   });
 });
 
@@ -143,6 +174,6 @@ describe('admin web shops - what a command result means', () => {
     expect(await source.detail(ID)).toEqual({ kind: 'not-found' });
     expect(await source.menu(ID, { query: '', category: 'ALL', status: 'ALL', page: 1 })).toMatchObject({ kind: 'failed', failure: 'forbidden' });
     expect(await source.history(ID, 1)).toMatchObject({ kind: 'failed', failure: 'offline' });
-    expect(await source.list({ query: '', area: 'ALL', profile: 'ALL', schedule: 'ALL', page: 1 })).toMatchObject({ kind: 'failed' });
+    expect(await source.list({ query: '', area: 'ALL', profile: 'ALL', schedule: 'ALL', setup: 'ALL', page: 1 })).toMatchObject({ kind: 'failed' });
   });
 });

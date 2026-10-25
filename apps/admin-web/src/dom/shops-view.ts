@@ -25,6 +25,14 @@ import {
   SCHEDULE_FILTERS,
   ScheduleFilter,
   SEARCH_MAX,
+  LOCK_KIND_LABEL,
+  SETUP_FILTER_LABEL,
+  SETUP_FILTERS,
+  SETUP_MISSING_LABEL,
+  SETUP_STATE,
+  SETUP_STEP_LABEL,
+  SetupFilter,
+  SetupInfo,
   ShopCommandName,
   ShopDetail,
   ShopQuery,
@@ -76,6 +84,17 @@ function badge(label: string, tone: Tone): HTMLElement {
 }
 
 const availabilityBadge = (availability: Availability): HTMLElement => badge(AVAILABILITY_LABEL[availability.reason].label, AVAILABILITY_LABEL[availability.reason].tone);
+
+const setupBadge = (setup: SetupInfo): HTMLElement => badge(SETUP_STATE[setup.state].label, SETUP_STATE[setup.state].tone);
+
+/** One line under the badge: how far the setup got and what is missing (the server's list, in the server's order). */
+function setupSummary(setup: SetupInfo): string {
+  const progress = `${String(setup.completedSteps)}/${String(setup.totalSteps)} bước`;
+  if (setup.lock !== null) {
+    return `${progress} · ${LOCK_KIND_LABEL[setup.lock.kind] ?? 'Đang bị khóa'}${setup.lock.reason === null ? '' : `: ${setup.lock.reason}`}`;
+  }
+  return setup.missing.length === 0 ? progress : `${progress} · ${setup.missing.map((code) => SETUP_MISSING_LABEL[code] ?? code).join('; ')}`;
+}
 
 function definition(items: ReadonlyArray<readonly [string, string | HTMLElement]>): HTMLElement {
   return h('dl', { class: 'kvs' }, ...items.map(([label, value]) => h('div', { class: 'kv' }, h('dt', {}, label), h('dd', {}, value))));
@@ -135,6 +154,7 @@ export class ShopListView {
   readonly #area: HTMLSelectElement;
   readonly #profile: HTMLSelectElement;
   readonly #schedule: HTMLSelectElement;
+  readonly #setup: HTMLSelectElement;
   readonly #results: HTMLElement;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #latest = 0;
@@ -144,7 +164,7 @@ export class ShopListView {
   constructor(
     private readonly root: HTMLElement,
     private readonly host: ShopHost,
-    initial: { readonly q?: string; readonly area?: string; readonly profile?: ProfileFilter; readonly schedule?: ScheduleFilter } = {},
+    initial: { readonly q?: string; readonly area?: string; readonly profile?: ProfileFilter; readonly schedule?: ScheduleFilter; readonly setup?: SetupFilter } = {},
   ) {
     const remembered = Object.keys(initial).length === 0 ? host.memory.value : undefined;
     this.#search = h('input', { id: 'shop-search', type: 'search', class: 'search-input', placeholder: 'Tìm theo tên quán, mã quán hoặc số điện thoại', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Tìm quán', maxlength: String(SEARCH_MAX) });
@@ -159,6 +179,8 @@ export class ShopListView {
     this.#profile.value = initial.profile ?? remembered?.profile ?? 'ALL';
     this.#schedule = h('select', { id: 'shop-schedule', class: 'select', 'aria-label': 'Mở hoặc đóng theo lịch' }, ...SCHEDULE_FILTERS.map((value) => h('option', { value }, SCHEDULE_FILTER_LABEL[value])));
     this.#schedule.value = initial.schedule ?? remembered?.schedule ?? 'ALL';
+    this.#setup = h('select', { id: 'shop-setup', class: 'select', 'aria-label': 'Trạng thái thiết lập' }, ...SETUP_FILTERS.map((value) => h('option', { value }, SETUP_FILTER_LABEL[value])));
+    this.#setup.value = initial.setup ?? remembered?.setup ?? 'ALL';
     this.#page = remembered?.page ?? 1;
     const refresh = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('refresh', 18), 'Làm mới');
     this.#results = h('div', { class: 'results' });
@@ -167,7 +189,7 @@ export class ShopListView {
       clearTimeout(this.#timer);
       this.#timer = setTimeout(() => void this.load(), SEARCH_PAUSE_MS);
     });
-    for (const select of [this.#area, this.#profile, this.#schedule]) {
+    for (const select of [this.#area, this.#profile, this.#schedule, this.#setup]) {
       select.addEventListener('change', () => {
         this.#page = 1;
         void this.load();
@@ -183,7 +205,7 @@ export class ShopListView {
           { class: 'page-head' },
           h('div', {}, h('h1', { class: 'title', tabindex: '-1', id: 'shop-title' }, 'Quán'), h('p', { class: 'lead lead-last' }, 'Hồ sơ, giờ hoạt động và thực đơn của các quán. Chủ quán tự cập nhật trong ứng dụng 11Food; quản trị viên xem tại đây và có thể vô hiệu hóa hoặc kích hoạt lại quán khi có quyền.')),
         ),
-        h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#area, this.#profile, this.#schedule, refresh),
+        h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#area, this.#setup, this.#profile, this.#schedule, refresh),
         this.#results,
       ),
     );
@@ -200,6 +222,7 @@ export class ShopListView {
       area: this.#area.value === '' ? 'ALL' : this.#area.value,
       profile: PROFILE_FILTERS.find((value) => value === this.#profile.value) ?? 'ALL',
       schedule: SCHEDULE_FILTERS.find((value) => value === this.#schedule.value) ?? 'ALL',
+      setup: SETUP_FILTERS.find((value) => value === this.#setup.value) ?? 'ALL',
       page: this.#page,
     };
   }
@@ -231,7 +254,7 @@ export class ShopListView {
     this.#syncAreas(read.page.areas);
     const effective = this.#query();
     this.host.memory.value = { ...effective, page: this.#page };
-    const filtered = effective.query.trim() !== '' || effective.area !== 'ALL' || effective.profile !== 'ALL' || effective.schedule !== 'ALL';
+    const filtered = effective.query.trim() !== '' || effective.area !== 'ALL' || effective.profile !== 'ALL' || effective.schedule !== 'ALL' || effective.setup !== 'ALL';
     if (read.page.rows.length === 0) {
       const pages = Math.max(1, Math.ceil(read.page.total / SHOP_PAGE_SIZE));
       if (read.page.total > 0 && this.#page > pages) {
@@ -247,6 +270,7 @@ export class ShopListView {
         this.#area.value = 'ALL';
         this.#profile.value = 'ALL';
         this.#schedule.value = 'ALL';
+        this.#setup.value = 'ALL';
         this.#page = 1;
         void this.load();
       });
@@ -264,7 +288,7 @@ export class ShopListView {
   }
 
   #card(body: { readonly rows: readonly HTMLElement[] } | { readonly panel: HTMLElement }): HTMLElement {
-    const columns = ['Quán', 'Chủ quán', 'Khu vực', 'Hồ sơ', 'Theo lịch', 'Món hiện/tổng', 'Thao tác'];
+    const columns = ['Quán', 'Chủ quán', 'Khu vực', 'Thiết lập', 'Hồ sơ', 'Theo lịch', 'Món hiện/tổng', 'Thao tác'];
     const head = h('tr', {}, ...columns.map((label) => h('th', { scope: 'col', class: label === 'Thao tác' ? 'cell-end' : '' }, label)));
     const rows = 'rows' in body ? body.rows : [h('tr', { class: 'row-panel' }, h('td', { colspan: String(columns.length) }, body.panel))];
     return h('div', { class: 'table-card' }, h('table', { class: 'table' }, h('caption', { class: 'sr-only' }, 'Danh sách quán'), h('thead', {}, head), h('tbody', {}, ...rows)));
@@ -279,6 +303,7 @@ export class ShopListView {
       h('td', { 'data-label': 'Quán', class: 'cell-name' }, h('span', { class: 'row-name' }, row.name), h('span', { class: 'cell-sub' }, `${row.code} · ${row.addressText}`)),
       h('td', { 'data-label': 'Chủ quán' }, row.owner === null ? 'Chưa có' : h('span', {}, row.owner.name ?? 'Chủ quán', h('span', { class: 'cell-sub' }, displayPhone(row.owner.phone)))),
       h('td', { 'data-label': 'Khu vực' }, row.areaName ?? 'Chưa có'),
+      h('td', { 'data-label': 'Thiết lập' }, setupBadge(row.setup), h('span', { class: 'cell-sub' }, setupSummary(row.setup)), row.setup.request === null ? undefined : h('span', { class: 'cell-sub' }, `Đã yêu cầu bổ sung: ${row.setup.request.note}`)),
       h('td', { 'data-label': 'Hồ sơ' }, badge(status.label, status.tone)),
       h('td', { 'data-label': 'Theo lịch' }, availabilityBadge(row.availability)),
       h('td', { 'data-label': 'Món hiện/tổng', class: 'cell-num' }, `${String(row.itemsVisible)}/${String(row.itemsTotal)}`),
@@ -292,6 +317,15 @@ export class ShopListView {
 const COMMAND_TEXT: Record<ShopCommandName, { readonly title: string; readonly button: string; readonly confirm: string; readonly danger: boolean }> = {
   disable: { title: 'Vô hiệu hóa quán', button: 'Vô hiệu hóa quán', confirm: 'Vô hiệu hóa', danger: true },
   enable: { title: 'Kích hoạt lại quán', button: 'Kích hoạt lại', confirm: 'Kích hoạt lại', danger: false },
+  'request-info': { title: 'Yêu cầu chủ quán bổ sung thiết lập', button: 'Yêu cầu bổ sung', confirm: 'Gửi yêu cầu', danger: false },
+  'clear-request': { title: 'Rút yêu cầu bổ sung', button: 'Rút yêu cầu bổ sung', confirm: 'Rút yêu cầu', danger: false },
+};
+
+const DONE_NOTICE: Record<ShopCommandName, string> = {
+  disable: 'Đã vô hiệu hóa quán.',
+  enable: 'Đã kích hoạt lại quán.',
+  'request-info': 'Đã gửi yêu cầu bổ sung cho chủ quán.',
+  'clear-request': 'Đã rút yêu cầu bổ sung.',
 };
 
 export class ShopDetailView {
@@ -417,10 +451,10 @@ export class ShopDetailView {
         'header',
         { class: 'page-head' },
         h('div', {}, h('h1', { class: 'title', tabindex: '-1', id: 'shop-detail-title' }, shop.name), h('p', { class: 'lead lead-last' }, `Mã quán ${shop.code}`)),
-        h('div', { class: 'detail-status' }, badge(status.label, status.tone), availabilityBadge(shop.availability)),
+        h('div', { class: 'detail-status' }, setupBadge(shop.setup), badge(status.label, status.tone), availabilityBadge(shop.availability)),
       ),
       actions.length === 0 ? undefined : h('div', { class: 'detail-actions' }, ...actions),
-      shop.status === 'INCOMPLETE' ? h('p', { class: 'message message-warning' }, 'Hồ sơ còn là bản nháp. Chủ quán hoàn thiện và kích hoạt trong 11Food; Web Admin không kích hoạt thay.') : undefined,
+      shop.status === 'INCOMPLETE' ? h('p', { class: 'message message-warning' }, 'Hồ sơ còn là bản nháp. Chủ quán hoàn thiện trong 11Food; Web Admin không hoàn tất hay kích hoạt thay.') : undefined,
       shop.status === 'DISABLED' ? h('p', { class: 'message message-warning' }, 'Quán đang bị vô hiệu hóa: không hiển thị công khai và không nhận đơn mới. Dữ liệu hồ sơ, lịch và thực đơn được giữ nguyên.') : undefined,
       shop.owner?.locked === true ? h('p', { class: 'message message-warning' }, 'Tài khoản chủ quán đang bị khóa nên quán không nhận đơn mới, kể cả khi hồ sơ đang hoạt động. Mở khóa ở mục Tài khoản › Người dùng.') : undefined,
       this.#tabs,
@@ -459,6 +493,7 @@ export class ShopDetailView {
   #profile(shop: ShopDetail): HTMLElement[] {
     const coordinates = shop.pickupLat === null || shop.pickupLng === null ? 'Chưa có tọa độ' : `${String(shop.pickupLat)}, ${String(shop.pickupLng)}`;
     const blocks: HTMLElement[] = [
+      this.#setupBlock(shop),
       h(
         'section',
         { class: 'detail-block' },
@@ -502,6 +537,30 @@ export class ShopDetailView {
       ),
     ];
     return blocks;
+  }
+
+  /**
+   * Issue #190: the setup checklist as the server computed it (x/4, each step with what is missing), the reason of a lock and the pending request.
+   * The page decides none of it, and no button here can skip a condition: an administrator may ask the owner to complete the setup, lock or re-enable the
+   * shop, but a shop is visible to customers only when the real data satisfies every step.
+   */
+  #setupBlock(shop: ShopDetail): HTMLElement {
+    const setup = shop.setup;
+    return h(
+      'section',
+      { class: 'detail-block', 'aria-labelledby': 'shop-setup-title' },
+      h('h3', { class: 'subtitle', id: 'shop-setup-title' }, `Thiết lập cửa hàng · ${String(setup.completedSteps)}/${String(setup.totalSteps)}`),
+      h('p', {}, setupBadge(shop.setup), ' ', setup.public ? 'Khách đang thấy quán này trong danh sách và có thể xem thực đơn.' : 'Khách chưa thấy quán này và quán chưa nhận đơn mới.'),
+      h(
+        'ul',
+        { class: 'plain-list' },
+        ...setup.steps.map((step) => h('li', {}, `${step.done ? '✓' : '○'} ${SETUP_STEP_LABEL[step.key] ?? step.key}`, ...step.missing.map((code) => h('span', { class: 'cell-sub' }, SETUP_MISSING_LABEL[code] ?? code)))),
+      ),
+      setup.lock === null ? undefined : h('p', { class: 'message message-warning' }, `${LOCK_KIND_LABEL[setup.lock.kind] ?? 'Đang bị khóa'}${setup.lock.reason === null ? '.' : `. Lý do: ${setup.lock.reason}`}`),
+      setup.request === null ? undefined : h('p', { class: 'message message-warning' }, `Đã yêu cầu chủ quán bổ sung (${formatDateTime(setup.request.requestedAt)}): ${setup.request.note}`),
+      setup.activatedAt === null ? undefined : h('p', { class: 'hint' }, `Hệ thống đã kích hoạt quán lúc ${formatDateTime(setup.activatedAt)}.`),
+      h('p', { class: 'hint' }, 'Quán tự được kích hoạt khi đủ 4 bước; không có bước gửi duyệt. Quản trị viên không thể bỏ qua điều kiện: thiếu dữ liệu thật thì quán vẫn không hiển thị.'),
+    );
   }
 
   // -- tab B: hours
@@ -662,12 +721,13 @@ export class ShopDetailView {
   #previewBody(preview: Preview): HTMLElement[] {
     if (!preview.visible) {
       return [
-        h('p', { class: 'message message-warning' }, `Khách hiện không xem được quán này (${AVAILABILITY_LABEL[preview.reason].label.toLowerCase()}). Quán không xuất hiện trong tìm kiếm và không nhận đơn mới.`),
+        h('p', { class: 'message message-warning' }, `Khách hiện không xem được quán này (${AVAILABILITY_LABEL[preview.reason].label.toLowerCase()}). Quán không xuất hiện trong tìm kiếm, không mở được bằng liên kết trực tiếp và không nhận đơn mới.`),
+        ...(preview.missing.length === 0 ? [] : [h('ul', { class: 'hint-list' }, ...preview.missing.map((code) => h('li', {}, SETUP_MISSING_LABEL[code] ?? code)))]),
       ];
     }
     const lines = weekLines(preview.hours);
     return [
-      h('p', { class: 'hint' }, 'Đây là những gì khách thấy: chỉ món đang hiện, không có số điện thoại, Zalo, Facebook hay tọa độ.'),
+      h('p', { class: 'hint' }, 'Đây là những gì khách thấy: chỉ món đang hiện. Số điện thoại, Zalo và Messenger của quán hiển thị trên ứng dụng khách; không có tọa độ hay thông tin riêng của khách hoặc shipper.'),
       ...[picture(preview.logoUrl, 'shop-logo')].filter((node): node is HTMLElement => node !== undefined),
       h('h3', { class: 'subtitle' }, preview.name),
       h('p', {}, preview.addressText),
@@ -762,7 +822,7 @@ export class ShopDetailView {
     const confirm = spec.danger ? h('button', { type: 'button', class: 'btn btn-danger-solid' }, spec.confirm) : primary(spec.confirm, 'button');
     const warning = h('div', {});
     const drawWarning = (current: ShopDetail): void => {
-      const lines: HTMLElement[] = [];
+      const lines: (HTMLElement | undefined)[] = [];
       if (name === 'disable') {
         lines.push(
           h('p', { class: 'dialog-warning dialog-warning-danger', role: 'note' }, icon('alert', 18), h('span', {}, 'Quán sẽ ngừng hiển thị công khai và ngừng nhận đơn mới. Dữ liệu hồ sơ, lịch, thực đơn được giữ; tài khoản chủ quán không bị khóa.')),
@@ -770,13 +830,20 @@ export class ShopDetailView {
             ? h('p', { class: 'dialog-warning dialog-warning-danger', role: 'alert' }, icon('alert', 18), h('span', {}, `${OPEN_WORK_BLOCKED} ${OPEN_WORK_COUNTS(current.ordersOpen, current.ordersPendingConfirmation, current.ordersPreparing, current.activeDeliveries)}`))
             : h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Hiện không còn đơn hoặc giao hàng chưa kết thúc. Máy chủ kiểm tra lại khi ghi.')),
         );
+      } else if (name === 'request-info') {
+        lines.push(
+          h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Chủ quán thấy nội dung này trong checklist thiết lập của 11Food. Yêu cầu không thay đổi điều kiện nào và không ép quán hoạt động: quán chỉ hiển thị với khách khi dữ liệu thật đã đủ.')),
+          current.setup.missing.length === 0 ? undefined : h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, `Hiện còn thiếu: ${current.setup.missing.map((code) => SETUP_MISSING_LABEL[code] ?? code).join('; ')}.`)),
+        );
+      } else if (name === 'clear-request') {
+        lines.push(h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Yêu cầu bổ sung sẽ biến mất khỏi checklist của chủ quán. Điều kiện thiết lập không thay đổi.')));
       } else {
         lines.push(h('p', { class: 'dialog-warning dialog-warning-info', role: 'note' }, icon('info', 18), h('span', {}, 'Quán hoạt động trở lại khi hồ sơ còn đủ điều kiện. Việc mở hay đóng vẫn theo lịch hoạt động, không bị ép mở.')));
         for (const blocker of current.enableBlockers) {
           lines.push(h('p', { class: 'dialog-warning dialog-warning-danger', role: 'note' }, icon('alert', 18), h('span', {}, ENABLE_BLOCKER_LABEL[blocker] ?? blocker)));
         }
       }
-      warning.replaceChildren(...lines);
+      warning.replaceChildren(...lines.filter((line): line is HTMLElement => line !== undefined));
     };
     let changedElsewhere = false;
     const paint = (): void => {
@@ -841,7 +908,7 @@ export class ShopDetailView {
         const fresh = await this.#read();
         if (fresh !== undefined) {
           this.#shop = fresh;
-          setMessage(this.#notice, name === 'disable' ? 'Đã vô hiệu hóa quán.' : 'Đã kích hoạt lại quán.');
+          setMessage(this.#notice, DONE_NOTICE[name]);
           this.#draw(fresh);
           void this.#loadTab();
         }

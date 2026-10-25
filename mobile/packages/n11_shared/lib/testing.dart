@@ -268,6 +268,13 @@ class FakeShopOpsServer {
     };
     transport.routes['GET /v1/onboarding/shop/service-areas'] = (String m, String p, Map<String, String> h, String b) async =>
         json(200, <String, Object?>{'data': <Map<String, String>>[<String, String>{'service_area_id': areaId, 'name': 'Khu trung tâm'}, <String, String>{'service_area_id': otherAreaId, 'name': 'Khu Hòa An'}]});
+    transport.routes['GET /v1/onboarding/shop/setup'] = (String m, String p, Map<String, String> h, String b) async {
+      setupReads++;
+      if (setupFailure != null) {
+        return apiError(setupFailure!, 'SERVICE_UNAVAILABLE');
+      }
+      return json(200, <String, Object?>{'data': setupView()});
+    };
     transport.routes['PUT /v1/shop/me/profile'] = (String m, String p, Map<String, String> h, String b) => _write(h, b, 'profile', (Map<String, Object?> body) {
           if (body.containsKey('logo')) logo = body['logo'] as Map<String, Object?>?;
           name = body['name']! as String;
@@ -311,6 +318,39 @@ class FakeShopOpsServer {
   final List<String> arrived = <String>[];
   final Map<String, ApiResponse> _byKey = <String, ApiResponse>{};
   final Map<String, String> _bodyOfKey = <String, String>{};
+
+  /// Issue #190: the setup checklist as the server computes it from this fixture (schedule, point) and [hasSellableDish].
+  bool hasSellableDish = false;
+  String? requestNote;
+  int? setupFailure;
+  int setupReads = 0;
+
+  Map<String, Object?> setupView() {
+    final bool info = hours.isNotEmpty;
+    final bool location = lat != null && lng != null && !(lat == 0 && lng == 0);
+    final List<bool> done = <bool>[true, info, location, hasSellableDish];
+    const List<String> keys = <String>['ACCOUNT', 'SHOP_INFO', 'LOCATION', 'FIRST_ITEM'];
+    const List<List<String>> codes = <List<String>>[<String>[], <String>['BUSINESS_HOURS'], <String>['PICKUP_POINT'], <String>['SELLABLE_ITEM']];
+    final bool complete = done.every((bool d) => d);
+    final bool locked = status == 'DISABLED';
+    final String state = locked ? 'LOCKED' : requestNote != null ? 'NEEDS_REVIEW' : complete && status == 'ACTIVE' ? 'ACTIVATED' : 'INCOMPLETE';
+    return <String, Object?>{
+      'shop_id': '44444444-4444-4444-8444-444444444444',
+      'status': status,
+      'version': version,
+      'state': state,
+      'completed_steps': done.where((bool d) => d).length,
+      'total_steps': 4,
+      'steps': <Object?>[for (int i = 0; i < 4; i++) <String, Object?>{'key': keys[i], 'done': done[i], 'missing': done[i] ? <String>[] : codes[i]}],
+      'missing': <String>[for (int i = 0; i < 4; i++) if (!done[i]) ...codes[i]],
+      'public': complete && status == 'ACTIVE',
+      'activated': complete && status == 'ACTIVE',
+      'activated_at': complete && status == 'ACTIVE' ? '2026-10-25T01:00:00.000Z' : null,
+      'request': requestNote == null ? null : <String, Object?>{'note': requestNote, 'requested_at': '2026-10-25T00:00:00.000Z'},
+      'lock': locked ? 'ADMIN' : null,
+      'availability': <String, Object?>{'online': false, 'reason': reason, 'evaluated_at': '2026-10-25T01:00:00.000Z'},
+    };
+  }
 
   Map<String, Object?> view() => <String, Object?>{
         'shop_id': '44444444-4444-4444-8444-444444444444',
@@ -572,6 +612,22 @@ class FakeDiscoveryApi implements DiscoveryApi {
   List<CategoryChoice> categoryList;
   List<FakeShopEntry> entries;
   bool offline = false;
+
+  /// Road distances in metres by shop id (issue #190). A shop missing here, or mapped to null, has no known road.
+  Map<String, int?> roads = <String, int?>{};
+  final List<({double latitude, double longitude, List<String> shopIds})> routeRequests = <({double latitude, double longitude, List<String> shopIds})>[];
+  bool routeOffline = false;
+  Future<void> Function()? routeGate;
+
+  @override
+  Future<Map<String, int?>> routeDistances(double latitude, double longitude, List<String> shopIds) async {
+    routeRequests.add((latitude: latitude, longitude: longitude, shopIds: List<String>.of(shopIds)));
+    await routeGate?.call();
+    if (routeOffline) {
+      throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    }
+    return <String, int?>{for (final String id in shopIds) if (roads.containsKey(id)) id: roads[id]};
+  }
   Future<void> Function(DiscoveryQuery query, String kind)? gate;
   final List<DiscoveryQuery> queries = <DiscoveryQuery>[];
 
@@ -626,7 +682,7 @@ class FakeDiscoveryApi implements DiscoveryApi {
 }
 
 class FakeShopEntry {
-  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[]});
+  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[], this.latitude, this.longitude});
 
   final String id;
   final String name;
@@ -634,8 +690,10 @@ class FakeShopEntry {
   final String reason;
   final String address;
   final List<FakeDishEntry> dishes;
+  final double? latitude;
+  final double? longitude;
 
-  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason);
+  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason, latitude: latitude, longitude: longitude);
 }
 
 class FakeDishEntry {
@@ -855,4 +913,27 @@ void installOtpRoutes(FakeApiTransport transport, {bool queued = true, List<Stri
   };
   transport.routes['POST /v1/auth/phone-verifications/$id/verify'] = (String m, String p, Map<String, String> h, String b) async =>
       b.contains('"123456"') ? json(200, <String, Object?>{'data': <String, Object?>{'verification_token': 'REGISTER-PROOF-TOKEN-0123456789', 'purpose': 'REGISTER', 'expires_in_seconds': 600}}) : apiError(400, 'OTP_INVALID');
+}
+
+
+/// A [ContactLauncher] that records what was asked and answers as told (issue #190): [result] false = "no app can handle it".
+class FakeContactLauncher implements ContactLauncher {
+  bool result = true;
+  bool throwing = false;
+  final List<String> dialed = <String>[];
+  final List<String> opened = <String>[];
+
+  @override
+  Future<bool> dial(String phone) async {
+    if (throwing) throw StateError('no dialer');
+    dialed.add(phone);
+    return result;
+  }
+
+  @override
+  Future<bool> openUrl(String url) async {
+    if (throwing) throw StateError('no handler');
+    opened.add(url);
+    return result;
+  }
 }

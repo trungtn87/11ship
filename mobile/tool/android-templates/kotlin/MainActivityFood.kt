@@ -7,6 +7,7 @@ import vn.eleven.n11.N11DeviceChannel
 import vn.eleven.n11.N11DialerChannel
 import vn.eleven.n11.N11PushChannel
 import vn.eleven.n11.N11UpdateChannel
+import vn.eleven.n11.N11LaunchChannel
 import vn.eleven.n11.N11LocationChannel
 
 // 11Food only: the device bridge plus the one-shot foreground location channel for the shop position.
@@ -19,6 +20,7 @@ class MainActivity : FlutterActivity() {
         N11DeviceChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
         N11UpdateChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
         N11DialerChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
+        N11LaunchChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
         location = N11LocationChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         push = N11PushChannel(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
         N11PushChannel.handleIntent(intent)
