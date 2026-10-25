@@ -373,6 +373,68 @@ void main() {
     });
   });
 
+  group('shop owner busy probe (#193)', () {
+    ShopOrderCounts counts({int pending = 0, int preparing = 0, int scheduled = 0, int delivering = 0, int attention = 0}) =>
+        ShopOrderCounts(pending: pending, preparing: preparing, scheduled: scheduled, delivering: delivering, attention: attention);
+
+    Future<bool> busy({SessionStatus status = SessionStatus.signedIn, List<String>? roles = const <String>['CUSTOMER', 'SHOP_OWNER'], required Future<ShopOrderCounts> Function() read}) =>
+        shopOwnerBusy(status: status, roles: roles, counts: read);
+
+    test('orders the shop is handling are work in hand, whichever stage', () async {
+      expect(await busy(read: () async => counts(preparing: 1)), isTrue);
+      expect(await busy(read: () async => counts(scheduled: 2)), isTrue);
+      expect(await busy(read: () async => counts(delivering: 1)), isTrue);
+      expect(await busy(read: () async => counts(attention: 1)), isTrue);
+    });
+
+    test('the shop has finished everything, or only has orders it has not accepted yet: free (those cannot be started until the app is updated)', () async {
+      expect(await busy(read: () async => counts()), isFalse);
+      expect(await busy(read: () async => counts(pending: 4)), isFalse);
+    });
+
+    test('a person without a shop, or nobody signed in, is free; the server is not even asked', () async {
+      int asked = 0;
+      Future<ShopOrderCounts> read() async {
+        asked += 1;
+        return counts(preparing: 9);
+      }
+
+      expect(await busy(roles: const <String>['CUSTOMER'], read: read), isFalse);
+      expect(await busy(status: SessionStatus.guest, roles: null, read: read), isFalse);
+      expect(asked, 0);
+    });
+
+    test('an unreadable answer or a session not known yet is never "idle": the probe throws', () async {
+      await expectLater(busy(read: () async => throw const SocketException('down')), throwsA(isA<SocketException>()));
+      await expectLater(busy(status: SessionStatus.starting, roles: null, read: () async => counts()), throwsA(isA<StateError>()));
+      await expectLater(busy(status: SessionStatus.unverified, roles: const <String>['CUSTOMER'], read: () async => counts()), throwsA(isA<StateError>()));
+      await expectLater(busy(roles: null, read: () async => counts()), throwsA(isA<StateError>()));
+    });
+
+    test('with the update controller: an order in hand defers the REQUIRED update, finishing it brings the screen, and a failing read keeps it deferred', () async {
+      ShopOrderCounts now = counts(preparing: 1);
+      bool failing = false;
+      Future<bool> probe() => busy(read: () async {
+            if (failing) throw const SocketException('down');
+            return now;
+          });
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: probe);
+      await c.check();
+      expect(c.deferred, isTrue);
+      expect(c.blocking, isFalse);
+      expect(c.blocksNewWork, isTrue, reason: 'no new work while the update waits behind the order in hand');
+      failing = true;
+      now = counts();
+      await c.refreshBusy();
+      expect(c.deferred, isTrue, reason: 'a failed read is not read as "the shop is free"');
+      expect(c.blocking, isFalse);
+      failing = false;
+      await c.refreshBusy();
+      expect(c.blocking, isTrue, reason: 'the last order is done: the update screen may come');
+      expect(c.deferred, isFalse);
+    });
+  });
+
   group('update screens', () {
     Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold(body: Text('trang chính')));
 

@@ -36,5 +36,5 @@ Cold start gọi `/check` (không cần đăng nhập); resume dùng giới hạ
 
 - Chưa kiểm trên máy thật/VPS; chưa publish release nào; `OPS_ARTIFACT_DIR` và việc kích hoạt vẫn theo `M13-owner-checklist-20261023.md`.
 - Backend không gắn header phiên bản vào mọi API nên **không tự từ chối từng request của APK cũ**; bảo vệ là bước 1 (API tương thích) + preflight.
-- Chủ quán (11Food) có đơn đang xử lý: màn bắt buộc đã hoãn theo `busyProbe`; 11Food hiện không truyền `busyProbe` (chưa có nguồn "đang xử lý đơn" trong app) — cần quyết định riêng nếu muốn hoãn cho chủ quán.
+- Chủ quán (11Food): `busyProbe` đọc **số đơn quán đang xử lý từ máy chủ** (`counts` của danh sách đơn: đang chuẩn bị, hẹn giờ, đang giao, cần xử lý). Có đơn → chỉ banner, không khóa ngang; xong hết → hiện màn cập nhật. Đơn **chờ nhận** không giữ cập nhật lại, nhưng khi biết có bản bắt buộc quán **không xác nhận được đơn mới** (vẫn từ chối được; đơn đã nhận xử lý bình thường). Không đọc được trạng thái, hoặc phiên chưa xác định → coi là **bận**, không bao giờ suy ra rảnh; chỉ khách chưa đăng nhập hoặc tài khoản không có quán mới được coi là rảnh. Chưa thử trên máy thật.
 - Chưa có số tài khoản/máy dùng bản cũ theo thời gian ngoài `ops_version_reports` M13 hiện có.

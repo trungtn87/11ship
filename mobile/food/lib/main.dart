@@ -12,8 +12,14 @@ void main() {
   final AppFlows flows = createFlows(ClientApp.food, session, config, picker: DeviceImagePicker(), pushPort: MethodChannelPushPort(), orderMapBuilder: foodMapBuilder(), orderPinPicker: foodPinPicker());
   // Cold start: the stored token is checked with the server (`me`) before anything personal is shown.
   session.start();
-  // M13: update check, version report and the offline error queue. Null when this build has no server address.
-  final OpsClient? ops = createOpsClient(ClientApp.food, session, config);
+  // M13: update check, version report and the offline error queue. Null when this build has no server address. A REQUIRED update never covers the shop's
+  // orders in progress: that is read from the server's own counts, and a failure to read it counts as busy, never as idle.
+  final OrderRuntime? orders = flows.orders;
+  final OpsClient? ops = createOpsClient(ClientApp.food, session, config, busyProbe: orders == null ? null : shopBusyProbe(session, orders.shop));
+  if (ops != null && orders != null) {
+    // The shop keeps handling accepted orders but cannot start new work (accept a waiting order) until the app is updated.
+    orders.newWorkBlocked = () => ops.updates.blocksNewWork;
+  }
   ops?.installCrashHooks();
   ops?.start();
   runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: foodNotificationRouter(flows), push: flows.push))));
