@@ -293,7 +293,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#192](https://github.com/trungtn87/11ship/pull/192) M01 #117: chính sách SMS &amp; OTP chỉnh từ Admin Web + kiể… | Đã merge (`MERGED`) | — | — | — | `90bc8a4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#195](https://github.com/trungtn87/11ship/pull/195) feat(#190): checklist thiết lập quán, chặn quán chưa đủ điề… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `af9d553` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#196](https://github.com/trungtn87/11ship/pull/196) M13 #193: tương thích APK–backend, preflight chặn deploy br… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `bf6a737` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#197](https://github.com/trungtn87/11ship/pull/197) 11Ship #194: cảnh báo nổi bật GPS/mạng trên Home và minh bạ… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `085608a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#197](https://github.com/trungtn87/11ship/pull/197) 11Ship #194: cảnh báo nổi bật GPS/mạng trên Home và minh bạ… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `085608a` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
