@@ -45,11 +45,16 @@ def find(label):
     return min(matches)[1] if matches else None
 
 
-def wait(label):
-    for _ in range(12):
+def wait(label, scroll=False):
+    for attempt in range(12):
         position = find(label)
         if position is not None:
             return position
+        # On the 360x640 guest income screen, larger V4 text places the empty
+        # state below the summary card. Reveal it with a real content swipe;
+        # the expected label must still be present before this check can pass.
+        if scroll and attempt in (2, 5, 8):
+            adb('shell', 'input', 'swipe', '180', '460', '180', '240', '350')
         time.sleep(1)
     raise AssertionError(f'Android UI did not expose: {label}')
 
@@ -94,7 +99,7 @@ try:
         ('Tài khoản', 'Tạo tài khoản', '05-account'),
     ]:
         tap(tab)
-        wait(title)
+        wait(title, scroll=tab == 'Thu nhập')
         capture(name)
     tap('Tạo tài khoản')
     wait('Đăng ký shipper')

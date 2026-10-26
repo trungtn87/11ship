@@ -16,6 +16,9 @@ void main() {
       fonts.addFont(Future<ByteData>.value(ByteData.sublistView(File('assets/fonts/PlusJakartaSans-$weight.ttf').readAsBytesSync())));
     }
     await fonts.load();
+    final FontLoader icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
 
   testWidgets('loading and disabled buttons never dispatch; enabled action dispatches once', (WidgetTester tester) async {
