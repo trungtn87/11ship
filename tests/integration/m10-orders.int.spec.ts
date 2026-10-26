@@ -238,7 +238,7 @@ describe('M10 — food orders', () => {
     ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
     // Hiding the last VISIBLE dish still removes readiness, irrespective of its picture.
     await app.pool.query("UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE item_id = $1::uuid", [dish.itemId]);
-    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }))).toEqual({ status: 409, code: 'ORDER_CART_CHANGED' });
     expect(ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS }))).toMatchObject({ ok: false, blockers: expect.arrayContaining(['SHOP_NOT_OPEN']) });
     expect(refused(await asCustomer(alice, 'PUT', '/customers/me/cart', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }] }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
     // The Order placed earlier is exactly as it was and the shop still sees and handles it.
