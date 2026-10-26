@@ -47,6 +47,8 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
   it('keeps the new entitlement trigger inventory explicit alongside the older migration inventory',async()=>{
     const triggers=await admin.pool.query<{tgname:string}>(`SELECT tgname FROM pg_trigger WHERE tgrelid='app.shop_entitlement_grants'::regclass AND NOT tgisinternal ORDER BY tgname`);
     expect(triggers.rows.map(r=>r.tgname)).toEqual(['shop_entitlement_grants_guard','shop_entitlement_grants_immutable','shop_entitlement_grants_no_truncate']);
+    const legacyLink=await admin.pool.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='app' AND table_name='shop_entitlement_grants' AND column_name='payment_request_id'`);
+    expect(legacyLink.rowCount).toBe(0);
   });
   it('locks before checking financial history during rollback, preserving a concurrent committed request',async()=>{
     const id=randomUUID();const writer=await admin.pool.connect();const migrator=await admin.pool.connect();
@@ -97,14 +99,21 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect(read.capabilities).toMatchObject({can_send:true,can_record:false,can_manage_entitlement:false});
     expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE source_id=$1`,[id])).rows[0].n).toBe(0);
     expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_finance_messages WHERE request_id=$1 AND body LIKE 'Người nộp báo%'`,[id])).rows[0].n).toBe(1);
-    const confirmed=await postAs(admin,systemLoginOf(system),url+'/confirm',{...confirmation(),canonical_transaction_id:'ENT-'+randomUUID()});
-    expect(confirmed.status).toBe(200);
-    expect(adminData(await client(shop,'GET','/requests/'+id)).entitlement).toMatchObject({expanded:false});
     const grantUrl='/business/shops/'+shop.shopId+'/entitlement';
-    const grantBody={action:'GRANT',reason:'Đã kiểm tra, cấp quyền thủ công',expected_version:'0',payment_request_id:id};
+    const grantBody={action:'GRANT',reason:'Cấp quyền độc lập với giao dịch',expected_version:'0'};
+    // A manual entitlement does not accept a payment link and works even before money is confirmed.
+    expect((await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,payment_request_id:id})).status).toBe(400);
     const grantKey=randomUUID();
     const grant=await postAs(admin,systemLoginOf(system),grantUrl,grantBody,grantKey);expect(grant.status).toBe(200);
     const replay=await postAs(admin,systemLoginOf(system),grantUrl,grantBody,grantKey);expect(replay.status).toBe(200);expect(adminData(replay)).toEqual(adminData(grant));
+    const stillPending=adminData(await client(shop,'GET','/requests/'+id));
+    expect(stillPending.request).toMatchObject({state:'PENDING',actual_amount_vnd:null});
+    expect(stillPending.entitlement).toMatchObject({expanded:true});
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE source_id=$1`,[id])).rows[0].n).toBe(0);
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_finance_messages WHERE request_id=$1 AND body LIKE 'Quản trị đã cấp quyền%'`,[id])).rows[0].n).toBe(0);
+    const confirmed=await postAs(admin,systemLoginOf(system),url+'/confirm',{...confirmation(),canonical_transaction_id:'ENT-'+randomUUID()});
+    expect(confirmed.status).toBe(200);
+    expect(adminData(await client(shop,'GET','/requests/'+id)).entitlement).toMatchObject({expanded:true});
     expect((await client(shop,'POST',`/requests/${id}/messages`,{body:'Không mở lại chat'})).status).toBe(409);
     const version=String(adminData(grant).version);
     expect((await postAs(admin,systemLoginOf(system),grantUrl,{action:'REVOKE',reason:'Thu hồi có lý do',expected_version:version})).status).toBe(200);
