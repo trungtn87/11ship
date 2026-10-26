@@ -90,6 +90,7 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect(read.request).toMatchObject({state:'PENDING',actual_amount_vnd:null,version:1});
     expect((read.request as {reported_at:unknown}).reported_at).not.toBeNull();
     expect(read.entitlement).toMatchObject({expanded:false,version:'0'});
+    expect(read.capabilities).toMatchObject({can_send:true,can_record:false,can_manage_entitlement:false});
     expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE source_id=$1`,[id])).rows[0].n).toBe(0);
     expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_finance_messages WHERE request_id=$1 AND body LIKE 'Người nộp báo%'`,[id])).rows[0].n).toBe(1);
     const confirmed=await postAs(admin,systemLoginOf(system),url+'/confirm',{...confirmation(),canonical_transaction_id:'ENT-'+randomUUID()});

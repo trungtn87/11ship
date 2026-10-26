@@ -71,7 +71,7 @@ export class BusinessFinanceService {
     return this.tx.withTransaction(async c=>{const a=await this.authorize(c,who);return this.repo.list(c,a.userId,who.kind==='admin',state,before,a.kinds);});
   }
   read(who:FinanceIdentity,id:string,before:string|null):Promise<JsonObject> {
-    return this.tx.withTransaction(async c=>{await this.authorize(c,who);const row=await this.room(c,who,id);const canRecord=await this.canHandle(c,who,row.kind);
+    return this.tx.withTransaction(async c=>{await this.authorize(c,who);const row=await this.room(c,who,id);const canRecord=who.kind==='admin'&&await this.canHandle(c,who,row.kind);
       const canManage=who.kind==='admin'&&row.kind==='SHOP_PAYMENT'&&await this.has(c,who,SHOP_ENTITLEMENT_MANAGE);
       return {request:await this.repo.namedView(c,row),messages:await this.repo.messages(c,id,before),capabilities:{can_send:row.state==='PENDING'&&(who.kind==='client'||canRecord),can_record:canRecord,can_manage_entitlement:canManage},entitlement:row.shop_id?await this.entitlements.view(c,row.shop_id):null};});
   }
@@ -125,7 +125,7 @@ export class BusinessFinanceService {
         if(receipt.rowCount!==1)throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');
       }
       await c.query(`UPDATE app.business_finance_requests SET state=$2,actual_amount_vnd=$3,version=version+1,resolved_at=clock_timestamp(),resolved_by=$4 WHERE request_id=$1`,[id,command==='confirm'?'CONFIRMED':'REJECTED',confirm?String(confirm.actualAmountVnd):null,a.userId]);
-      if(!confirm)await this.repo.message(c,id,a.userId,a.role,`Lý do từ chối: ${reasonText((body as RejectBody).reasonCode)}`,'CREATED');
+      if(!confirm)await this.event(c,id,`Lý do từ chối: ${reasonText((body as RejectBody).reasonCode)}`);
       await this.repo.publish(c,id);
       return financeView((await this.repo.find(c,id))!);
     },true,SHOP_PAYMENT_RECORD);
@@ -185,7 +185,7 @@ export class BusinessFinanceService {
       await c.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,payment_request_id,created_at) VALUES($1,$2,'MENU_EXPANDED',$3,$4,$5,$6,clock_timestamp())`,[randomUUID(),shopId,action,reason,a.userId,paymentId]);
       const result=await this.entitlements.view(c,shopId);
       // Entitlement events may be appended to a closed room; human chat remains closed.
-      const rooms=(await c.query<{request_id:string}>(`SELECT request_id FROM app.business_finance_requests WHERE shop_id=$1 ORDER BY created_at DESC LIMIT 1`,[shopId])).rows;
+      const rooms=(await c.query<{request_id:string}>(`SELECT request_id FROM app.business_finance_requests WHERE shop_id=$1 ORDER BY (request_id=$2::uuid) DESC NULLS LAST,created_at DESC LIMIT 1`,[shopId,paymentId])).rows;
       if(rooms[0])await this.event(c,rooms[0].request_id,action==='GRANT'?'Quản trị đã cấp quyền mở rộng thực đơn.':'Quản trị đã thu hồi quyền mở rộng thực đơn. Các món hiện có được giữ nguyên.');
       if(rooms[0])await this.repo.publish(c,rooms[0].request_id);
       await this.audit.append(c,{requestId,actorType:a.role==='SYSTEM'?'SYSTEM':'ADMIN',actorId:a.userId,action:'shop.entitlement.'+action.toLowerCase()+'.v1',resourceType:'shop_entitlement',resourceId:shopId,resourceVersion:Number(result.version),outcome:'SUCCESS',metadata:{reason,payment_request_id:paymentId}});
