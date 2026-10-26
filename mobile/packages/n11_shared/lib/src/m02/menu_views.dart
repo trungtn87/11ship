@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../account/models.dart';
@@ -133,7 +132,10 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
             } else if (menu.writeFailure != null && menu.form == null) {
               body.add(N11Banner(key: const Key('menu-error'), kind: BannerKind.error, title: 'Chưa thực hiện được', text: m02FailureText(menu.writeFailure!)));
             }
-            if (snapshot!.items.isEmpty) {
+            if (snapshot!.visibleLimit != null) {
+              body.add(N11Banner(kind: BannerKind.info, title: snapshot.expanded ? 'Đã mở rộng thực đơn' : '${snapshot.items.where((MenuItem item) => !item.hidden).length}/${snapshot.visibleLimit} món đang hiển thị', text: 'Món ẩn không tính vào giới hạn. Liên hệ quản trị nếu cần mở rộng thực đơn.'));
+            }
+            if (snapshot.items.isEmpty) {
               body.addAll(<Widget>[
                 const N11StateBlock(kind: StateKind.warn, icon: Icons.restaurant_menu, title: 'Chưa có món trong thực đơn', text: 'Thêm món đầu tiên để khách xem được thực đơn của quán.'),
                 if (!readOnly) N11Button(key: const Key('menu-add-empty'), label: 'Thêm món', onPressed: menu.locked ? null : () => _openForm(null)),
@@ -247,6 +249,7 @@ class DishFormScreen extends StatefulWidget {
 class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOut<DishFormScreen> {
   late final TextEditingController _name;
   late final TextEditingController _price;
+  late final TextEditingController _description;
   int _seenRevision = -1;
   int _seenNotice = 0;
   bool _conflictOpen = false;
@@ -262,6 +265,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     super.initState();
     _name = TextEditingController();
     _price = TextEditingController();
+    _description = TextEditingController();
     _seenNotice = menu.noticeSeq;
     _sync();
     menu.addListener(_onMenu);
@@ -274,6 +278,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     _unwatchSession();
     _name.dispose();
     _price.dispose();
+    _description.dispose();
     super.dispose();
   }
 
@@ -284,6 +289,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     _seenRevision = menu.formRevision;
     final ItemForm? f = menu.form;
     _name.text = f?.name ?? '';
+    _description.text = f?.description ?? '';
     _price.text = groupDigits(f?.priceDigits ?? '');
   }
 
@@ -306,7 +312,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     final ItemForm? f = menu.form;
     if (f != null && f.errors.isNotEmpty && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final String first = <String>['name', 'price', 'category', 'image'].firstWhere(f.errors.containsKey, orElse: () => '');
+        final String first = <String>['name', 'price', 'category', 'description', 'image'].firstWhere(f.errors.containsKey, orElse: () => '');
         final BuildContext? target = first.isEmpty ? null : _keys[first]?.currentContext;
         if (target != null) {
           Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 150), alignment: 0.2);
@@ -489,6 +495,15 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
               ),
             ),
             KeyedSubtree(key: _key('category'), child: _categories(f, snapshot, choices, lock)),
+            TextField(
+              key: const Key('dish-description'), controller: _description,
+              enabled: !lock, minLines: 3, maxLines: 5, maxLength: 300,
+              maxLengthEnforcement: MaxLengthEnforcement.enforced,
+              onChanged: menu.setDescription,
+              decoration: InputDecoration(labelText: 'Mô tả món (không bắt buộc)',
+                hintText: 'Ví dụ: 1 đĩa khoảng 500g; hấp sả lá chanh; có thể làm không cay.',
+                errorText: f.errors['description'], border: const OutlineInputBorder()),
+            ),
             KeyedSubtree(key: _key('image'), child: _image(f, lock)),
             if (!f.isNew && !lock)
               N11InfoCard(title: 'Hiển thị với khách', text: f.baseHidden ? 'Món đang ẩn, khách không thấy.' : 'Món đang hiện trong thực đơn của khách.'),

@@ -105,6 +105,8 @@ WITH expected(table_name, privileges) AS (
     ('business_push_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('business_finance_messages', ARRAY['SELECT', 'INSERT']::text[]),
     ('business_bank_receipts', ARRAY['SELECT', 'INSERT']::text[]),
+    ('shop_finance_policy', ARRAY['SELECT', 'UPDATE']::text[]),
+    ('shop_entitlement_grants', ARRAY['SELECT', 'INSERT']::text[]),
     ('notification_push_tokens', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notification_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notifications', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
@@ -156,6 +158,7 @@ WITH expected(table_name, privileges) AS (
 ), checks AS (
   SELECT * FROM table_checks
   UNION ALL SELECT * FROM function_checks
+  UNION ALL SELECT 'shop_entitlement_grants_seq_seq:USAGE', CASE WHEN NOT has_sequence_privilege('ship11_app', 'app.shop_entitlement_grants_seq_seq', 'USAGE') THEN 'MISSING_PRIVILEGE' ELSE 'OK' END
   UNION ALL SELECT 'app:USAGE', CASE WHEN NOT has_schema_privilege('ship11_app', 'app', 'USAGE') THEN 'MISSING_PRIVILEGE' ELSE 'OK' END
   UNION ALL SELECT 'database', CASE WHEN current_database() = 'ship11_staging' THEN 'OK' ELSE 'WRONG_DATABASE' END
 )

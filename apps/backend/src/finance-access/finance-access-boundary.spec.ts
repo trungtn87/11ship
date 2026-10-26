@@ -59,7 +59,7 @@ describe('M04-B2.2a boundary', () => {
   });
 
   it('only the read, topup and the three withdrawal rights can be granted today; the reserved names grant nothing', () => {
-    expect([...GRANTABLE_FINANCE_PERMISSIONS]).toEqual(['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile']);
+    expect([...GRANTABLE_FINANCE_PERMISSIONS]).toEqual(['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage', 'wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile']);
     for (const reserved of RESERVED_FINANCE_PERMISSIONS) {
       expect(isGrantableFinancePermission(reserved)).toBe(false);
       expect(() => parseGrantBody({ permission_key: reserved, expected_version: 0 })).toThrow();

@@ -18,7 +18,7 @@ function rig(options:{expired?:boolean;denied?:boolean;attempts?:number}={}){
     writes.push([sql,...values]);return {rows:[],rowCount:1};
   }} as unknown as TransactionContext;
   const tx={withTransaction:async<T>(f:(c:TransactionContext)=>Promise<T>)=>f(c)} as TransactionManager;
-  const finance={authorize:jest.fn(async()=>{if(options.denied)throw new AppError('ADMIN_FORBIDDEN');return {userId:'admin',role:'SYSTEM'};})} as unknown as BusinessFinanceService;
+  const finance={room:jest.fn(async()=>{if(options.denied)throw new AppError('ADMIN_FORBIDDEN');return {userId:'admin',role:'SYSTEM'};})} as unknown as BusinessFinanceService;
   const sessions={findByDigest:jest.fn(async()=>({sessionId:session,revoked:false,expiredAtLookup:options.expired??false}))} as unknown as AdminSessionRepository;
   const vapid=webpush.generateVAPIDKeys();
   const config={appEnv:'test',businessPush:{publicKey:vapid.publicKey,privateKey:vapid.privateKey,subject:'mailto:test@example.com'}} as AppConfig;
@@ -27,7 +27,7 @@ function rig(options:{expired?:boolean;denied?:boolean;attempts?:number}={}){
 describe('Business Web Push privacy, revocation and durable retry',()=>{
   it('sends only a neutral reminder with a validated chat deep link, after checking the bound session',async()=>{
     const send=jest.spyOn(webpush,'sendNotification').mockResolvedValue({statusCode:201,body:'',headers:{}});const r=rig();
-    expect(await r.service.sendOne()).toBe(true);expect(r.finance.authorize).toHaveBeenCalledTimes(1);
+    expect(await r.service.sendOne()).toBe(true);expect(r.finance.room).toHaveBeenCalledTimes(1);
     const payload=JSON.parse(String(send.mock.calls[0]![1])) as Record<string,string>;
     expect(payload).toEqual({title:'11Ship',body:'Có cập nhật mới cần kiểm tra.',url:`/business/chat?request=${r.request}`});
     expect(r.writes.some(w=>w[4]==='SENT')).toBe(true);

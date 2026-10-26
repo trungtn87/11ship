@@ -7,6 +7,13 @@ export async function purgeBusinessFinanceOfPhone(pool:Pool,phone:string):Promis
     await c.query('BEGIN');
     const users=`SELECT user_id FROM app.users WHERE phone_normalized=$1`;
     const rooms=`SELECT request_id FROM app.business_finance_requests WHERE owner_user_id IN (${users}) OR resolved_by IN (${users}) OR request_id IN(SELECT request_id FROM app.business_finance_messages WHERE sender_user_id IN(${users}))`;
+    if((await c.query("SELECT to_regclass('app.shop_entitlement_grants') AS t")).rows[0]?.t!=null){
+      await c.query('ALTER TABLE app.shop_entitlement_grants DISABLE TRIGGER USER');
+      await c.query(`DELETE FROM app.shop_entitlement_grants WHERE actor_user_id IN(${users}) OR shop_id IN(SELECT shop_id FROM app.shop_members WHERE user_id IN(${users}) AND member_role='OWNER') OR payment_request_id IN(${rooms})`,[phone]);
+      await c.query('ALTER TABLE app.shop_entitlement_grants ENABLE TRIGGER USER');
+    }
+    await c.query(`DELETE FROM app.notification_pushes WHERE notification_id IN(SELECT notification_id FROM app.notifications WHERE target_type='FINANCE_REQUEST' AND target_id IN(${rooms}))`,[phone]);
+    await c.query(`DELETE FROM app.notifications WHERE target_type='FINANCE_REQUEST' AND target_id IN(${rooms})`,[phone]);
     await c.query('ALTER TABLE app.business_finance_messages DISABLE TRIGGER USER');
     await c.query('ALTER TABLE app.business_bank_receipts DISABLE TRIGGER USER');
     await c.query(`DELETE FROM app.business_push_jobs WHERE message_sequence IN(SELECT sequence_no FROM app.business_finance_messages WHERE request_id IN(${rooms})) OR subscription_id IN(SELECT subscription_id FROM app.business_push_subscriptions WHERE user_id IN(${users}))`,[phone]);

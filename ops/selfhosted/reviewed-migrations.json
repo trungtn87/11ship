@@ -44,6 +44,14 @@
     "1796688000000_business-dashboard": {
       "sha256": "980aa5a30d7446bc87877769f79d32cec8272a19fa88a40cde6bc867cd0fe3aa",
       "review": "PR #201; compatibility review 2026-10-25: Up adds finance request/chat/read markers, Web Push subscriptions/jobs, and a global bank receipt identity registry. Existing topups and bank transaction identities are backfilled without changing their amounts, states, balances or ledger. Narrow SECURITY DEFINER trigger functions with fixed pg_catalog search_path and fully qualified objects maintain the additive tables for existing topup/state/bank inserts; they change no wallet, role, shop status or source financial row. This preserves old-code writes before runtime grants are applied and after code rollback. Duplicate bank identities remain refused across both payment types. New endpoints require the scoped table/function grants before new code startup. No offline financial storage; no destructive Up. Down locks both request and receipt tables before checking history, then refuses when any financial history exists; concurrent commits cannot bypass the refusal."
+    },
+    "1796774400000_menu-item-description": {
+      "sha256": "3a6eed1567b662298c6b7a262097f1218b9afa80c8f0857c1e5079a8015706f7",
+      "review": "PR #224 / #207; compatibility review 2026-10-26: Up adds only nullable text column description to app.menu_items, no rewrite/backfill, constraint or permission change. Existing explicit-column inserts default to NULL; the previous backend ignores the column and works after code rollback. Existing orders/snapshots, prices, images and quota are unchanged. New backend requires this additive migration before restart. Prefer code rollback while retaining the column and descriptions; Down drops the column and must not be used on populated production data without a separate data-preservation plan. This repository review does not apply any remote migration or authorize deployment."
+    },
+    "1796860800000_shop-finance-entitlements": {
+      "sha256": "ebb8b9ea6806bf1df280e2522ae3ebdfae5114b49943efa439c5fe34cb91cdb0",
+      "review": "PR #225 / #198 #199: additive reported_at, configurable menu/chat limits and immutable manual entitlement history. Reuses existing business_finance requests/messages and global receipt identities; no wallet, ledger, activation, fees or retention writes. Widens chat body preserving legacy evidence. Push recipients now require the room-kind read right. Old backend remains schema-compatible but cannot enforce new quota/rights; roll back code only with finance writes paused pending compatible code. Down refuses report/grant/long-message evidence. New runtime table/sequence grants required before restart. No remote migration or deployment authorized."
     }
   }
 }

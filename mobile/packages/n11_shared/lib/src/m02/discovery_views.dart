@@ -20,8 +20,9 @@ import 'preview_views.dart';
 // M02-KP01/KP02/KP03: Owner layout 22/10/2026 (M02-home-shop-detail-UI-OWNER-20261022.md).
 // Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; the distance is the ROAD distance from the foreground position (issue #190). Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
 
-void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings}) {
-  Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
+Future<void> _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings, Future<void> Function()? onReturn}) async {
+  await Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
+  if (context.mounted) await onReturn?.call();
 }
 
 ({String label, ChipKind kind}) _stateChip(String reason) {
@@ -54,18 +55,19 @@ String distanceLine(ShopCardData shop, RouteDistance distance, LocationFix? fix,
 }
 
 class ShopCard extends StatelessWidget {
-  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition});
+  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition, this.stale = false});
 
   /// Only for the labelled straight-line reference when the road is unknown; never for the route number.
   final LocationFix? customerLocation;
   final RouteDistance distance;
   final bool locating;
   final ShopCardData shop;
+  final bool stale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = _stateChip(shop.reason);
+    final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(shop.reason);
     final String rating = shop.ratingCount == 0 || shop.ratingAverage == null ? 'Chưa có đánh giá' : '★ ${shop.ratingAverage!.toStringAsFixed(1)}/5 (${shop.ratingCount} đánh giá)';
     final String distanceText = distanceLine(shop, distance, customerLocation, locating: locating);
     return Semantics(
@@ -161,6 +163,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    c.freshness.observe();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (c.choicesState != DiscoveryLoad.ready) await c.start();
@@ -191,13 +194,14 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     );
   }
 
-  void _openSearch() {
+  Future<void> _openSearch() async {
     final String? area = c.areaId;
     if (area == null) {
       m02Toast(context, 'Chưa xác định được khu vực từ GPS. Hãy thử định vị lại.');
       return;
     }
-    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
+    await Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
+    if (mounted) await c.freshness.reload();
   }
 
   @override
@@ -341,7 +345,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
           }
         } else {
           for (final ShopCardData s in c.shops) {
-            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, customerLocation: _position.fix, distance: c.distances.of(s, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
+            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, stale: c.stale, customerLocation: _position.fix, distance: c.distances.of(s, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings, onReturn: c.freshness.reload)));
           }
           if (c.hasMore) {
             out.add(N11Button(key: const Key('home-more'), label: c.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: c.loadingMore, onPressed: c.loadingMore ? null : c.loadMore));
@@ -499,6 +503,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     widget.discovery?.addListener(_areaChanged);
+    _search.freshness.observe();
   }
 
   void _areaChanged() => _search.setArea(widget.discovery?.areaId);
@@ -603,12 +608,12 @@ class _SearchScreenState extends State<SearchScreen> {
     return <Widget>[
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
       for (final ShopCardData shop in s.groupedShops) ...<Widget>[
-        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
-          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings))),
+        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, stale: s.stale, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
+          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload))),
         for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
-          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish,
-            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings))),
-        gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings), child: const Text('Xem tất cả'))),
+          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, stale: s.stale,
+            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings, onReturn: s.freshness.reload))),
+        gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload), child: const Text('Xem tất cả'))),
       ],
       if (s.hasMore) gap(N11Button(key: const Key('search-more'), label: s.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: s.loadingMore, onPressed: s.loadingMore ? null : s.loadMore)),
     ];
@@ -616,14 +621,15 @@ class _SearchScreenState extends State<SearchScreen> {
 }
 
 class _DishResult extends StatelessWidget {
-  const _DishResult({super.key, required this.dish, required this.onTap});
+  const _DishResult({super.key, required this.dish, required this.onTap, this.stale = false});
 
   final DishHit dish;
+  final bool stale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = _stateChip(dish.shop.reason);
+    final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(dish.shop.reason);
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
@@ -645,7 +651,7 @@ class _DishResult extends StatelessWidget {
                   Padding(padding: const EdgeInsets.only(top: 4), child: N11Chip(chip.label, kind: chip.kind)),
                 ]),
               ),
-              if (dish.shop.open && OrderRuntime.current != null)
+              if (!stale && dish.shop.open && OrderRuntime.current != null)
                 DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
                   itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
               else const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),

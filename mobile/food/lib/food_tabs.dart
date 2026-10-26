@@ -16,6 +16,8 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
       }
       final NavigatorState navigator = Navigator.of(context);
       switch (target.type) {
+        case TargetType.financeRequest:
+          if (target.id != null) await navigator.push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: true, requestId: target.id)));
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
           if (source != null && target.id != null) {

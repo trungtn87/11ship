@@ -201,3 +201,6 @@ GRANT SELECT, INSERT, UPDATE ON app.business_push_subscriptions TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.business_push_jobs TO ship11_app;
 GRANT SELECT, INSERT ON app.business_finance_messages TO ship11_app;
 GRANT SELECT, INSERT ON app.business_bank_receipts TO ship11_app;
+GRANT SELECT, UPDATE ON app.shop_finance_policy TO ship11_app;
+GRANT SELECT, INSERT ON app.shop_entitlement_grants TO ship11_app;
+GRANT USAGE ON SEQUENCE app.shop_entitlement_grants_seq_seq TO ship11_app;

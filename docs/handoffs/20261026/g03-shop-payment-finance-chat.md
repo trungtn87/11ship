@@ -1,7 +1,7 @@
 # Nhóm 3 — Thanh toán quán, cấp quyền thủ công và chat tài chính
 
 ## Trạng thái và người thực hiện
-PR nháp giao việc theo yêu cầu Owner ngày 26/10/2026. Hiện chỉ có tài liệu phạm vi, chưa triển khai tính năng, chưa có bằng chứng kiểm thử sản phẩm. Không merge PR chỉ có tài liệu giao việc; AI triển khai tiếp tục đúng nhánh/PR này, bổ sung code và thay mô tả bằng kết quả thực tế.
+Đã tiếp tục implementation trên đúng nhánh theo Owner ngày 26/10/2026. Kết quả và giới hạn tại `docs/current/G03-shop-finance-chat-20261026.md`; required CI trên SHA mới còn chờ. Không merge PR chỉ có tài liệu giao việc; AI triển khai tiếp tục đúng nhánh/PR này, bổ sung code và thay mô tả bằng kết quả thực tế.
 
 Chủ trì: Codex.
 
@@ -45,3 +45,8 @@ Chạy focused tests phù hợp thay đổi và required CI trên code cuối. K
 - [ ] Chỉ đổi sang Ready khi có implementation và bằng chứng; không tự merge/deploy hoặc đóng issue khi mới có bản giao việc.
 
 Không có thay đổi code sản phẩm tại thời điểm tạo PR. Các điều kiện nghiệp vụ chưa chốt phải báo cụ thể, tiếp tục phần độc lập không bị chặn.
+
+## Phạm vi thực thi 26/10
+PR #224 đã merge. Đã cập nhật main, giữ nhánh Claude cũ làm nguồn tham khảo. Sửa các file finance-service/repository/validation/controller/push của Business Dashboard, finance-access constants/participant, menu-service/repository/module, đăng ký DI tại admin-auth.module; Admin business-view/business-api và danh sách quyền; mobile finance_views và quota menu; migration mới 1796860800000, runtime grants/manifest và tests phụ thuộc. Không sửa shell/router, token UI hay luồng đơn/vận chuyển của các nhóm 4–12. Các PR nhóm sau hiện là bàn giao, chưa có implementation chồng phạm vi.
+
+M08: chỉ bổ sung case mở FINANCE_REQUEST trong food_tabs/ship_tabs, không đổi shell/bố cục. Đã nối M08 qua BusinessFinanceRepository, giữ chủ sở hữu SQL hiện tại.

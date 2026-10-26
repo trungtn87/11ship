@@ -177,6 +177,11 @@ export class NotificationInboxService {
         }
         return { kind: facts.ended ? 'ENDED' : 'OK', state: facts.status };
       }
+      case 'FINANCE_REQUEST': {
+        const room=n.targetId===null?undefined:await this.recipients.financeFacts(context,n.targetId);
+        if(!room||room.owner_user_id!==actor.userId||(room.kind==='TOPUP')!==(actor.app==='SHIP'))return {kind:'NO_ACCESS',state:null};
+        return {kind:room.state==='PENDING'?'OK':'ENDED',state:room.state};
+      }
       case 'WALLET_TXN': {
         const owner = n.targetId === null ? undefined : await this.recipients.topupOwner(context, n.targetId);
         return owner === actor.userId ? { kind: 'ENDED', state: null } : { kind: 'NO_ACCESS', state: null };

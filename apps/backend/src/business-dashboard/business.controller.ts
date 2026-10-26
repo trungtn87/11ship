@@ -32,6 +32,21 @@ export class BusinessAdminController {
   async confirm(@Req()r:AdminRequest,@Param('id')value:string,@Body()body:unknown,@Headers('x-csrf-token')csrf:Csrf,@Headers('idempotency-key')key:Csrf){return {data:await this.finance.resolveShop(await this.write(r,csrf),id(value),'confirm',parseConfirmBody(body),key,r.requestId??randomUUID())};}
   @Post('requests/:id/reject') @HttpCode(200)
   async reject(@Req()r:AdminRequest,@Param('id')value:string,@Body()body:unknown,@Headers('x-csrf-token')csrf:Csrf,@Headers('idempotency-key')key:Csrf){return {data:await this.finance.resolveShop(await this.write(r,csrf),id(value),'reject',parseRejectBody(body),key,r.requestId??randomUUID())};}
+  @Get('receiving-accounts')
+  async accounts(@Req()r:AdminRequest){return {data:await this.finance.receivingAccounts(await this.finance.admin(this.transport.read(r)))};}
+  @Get('policy')
+  async policy(@Req()r:AdminRequest){return {data:await this.finance.policy(await this.finance.admin(this.transport.read(r)))};}
+  @Post('policy') @HttpCode(200)
+  async changePolicy(@Req()r:AdminRequest,@Body()body:unknown,@Headers('x-csrf-token')csrf:Csrf,@Headers('idempotency-key')key:Csrf){const b=object(body,['visible_limit','messages_per_minute','expected_version','reason']);return {data:await this.finance.changePolicy(await this.write(r,csrf),positive(b.visible_limit,300),positive(b.messages_per_minute,60),positive(b.expected_version),text(b.reason,300),key,r.requestId??randomUUID())};}
+  @Get('shops/:id/entitlement')
+  async entitlement(@Req()r:AdminRequest,@Param('id')value:string){return {data:await this.finance.entitlement(await this.finance.admin(this.transport.read(r)),id(value))};}
+  @Post('shops/:id/entitlement') @HttpCode(200)
+  async changeEntitlement(@Req()r:AdminRequest,@Param('id')value:string,@Body()body:unknown,@Headers('x-csrf-token')csrf:Csrf,@Headers('idempotency-key')key:Csrf){
+    const b=object(body,['action','reason','expected_version','payment_request_id']);
+    if(b.action!=='GRANT'&&b.action!=='REVOKE')throw new AppError('ADMIN_INPUT_INVALID');
+    const reason=text(b.reason,300);if([...reason].length<3||[...reason].length>300)throw new AppError('ADMIN_INPUT_INVALID');
+    return {data:await this.finance.changeEntitlement(await this.write(r,csrf),id(value),b.action,reason,sequence(b.expected_version),b.payment_request_id===null||b.payment_request_id===undefined?null:id(b.payment_request_id),key,r.requestId??randomUUID())};
+  }
   @Get('notifications')
   async notifications(@Req()r:AdminRequest,@Query()q:unknown){return {data:await this.finance.notifications(await this.finance.admin(this.transport.read(r)),page(q).before===null?null:sequence(page(q).before))};}
   @Get('push')
@@ -57,6 +72,10 @@ export class BusinessClientController {
   async send(@Req()r:AuthenticatedRequest,@Param('id')value:string,@Body()body:unknown,@Headers('idempotency-key')key:Csrf){const b=object(body,['body']);return {data:await this.finance.send(this.who(r),id(value),text(b.body),key,r.requestId??randomUUID())};}
   @Post('requests/:id/read') @HttpCode(200)
   async seen(@Req()r:AuthenticatedRequest,@Param('id')value:string,@Body()body:unknown,@Headers('idempotency-key')key:Csrf){const b=object(body,['sequence']);return {data:await this.finance.seen(this.who(r),id(value),sequence(b.sequence),key,r.requestId??randomUUID())};}
+  @Get('receiving-accounts')
+  async accounts(@Req()r:AuthenticatedRequest){return {data:await this.finance.receivingAccounts(this.who(r))};}
+  @Post('requests/:id/report-transfer') @HttpCode(200)
+  async report(@Req()r:AuthenticatedRequest,@Param('id')value:string,@Body()body:unknown,@Headers('idempotency-key')key:Csrf){object(body,[]);return {data:await this.finance.reportTransfer(this.who(r),id(value),key,r.requestId??randomUUID())};}
   @Get('notifications')
   async notifications(@Req()r:AuthenticatedRequest,@Query()q:unknown){return {data:await this.finance.notifications(this.who(r),page(q).before===null?null:sequence(page(q).before))};}
 }

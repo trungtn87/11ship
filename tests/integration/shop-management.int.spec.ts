@@ -36,7 +36,7 @@ describe('M02-A — Shop management', () => {
       const data = dataOf(response);
       expect(Object.keys(data).sort()).toEqual(
         [
-          'address_text', 'availability', 'contact_phone', 'facebook', 'hours', 'name', 'pickup_lat', 'pickup_lng',
+          'address_text', 'availability', 'contact_phone', 'facebook', 'hours', 'name', 'next_refresh_ms', 'pickup_lat', 'pickup_lng',
           'service_area_id', 'shop_id', 'status', 'timezone', 'version', 'zalo',
         ].sort(),
       );

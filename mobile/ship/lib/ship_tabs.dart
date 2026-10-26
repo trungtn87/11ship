@@ -17,6 +17,8 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
       }
       final NavigatorState navigator = Navigator.of(context);
       switch (target.type) {
+        case TargetType.financeRequest:
+          if (target.id != null) await navigator.push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: false, requestId: target.id)));
         case TargetType.delivery:
           final ShipperDeliverySource? source = flows.shipperDeliveries;
           if (source != null && target.id != null) {

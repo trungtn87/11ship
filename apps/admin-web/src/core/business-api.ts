@@ -1,7 +1,8 @@
 import { AdminAuthController } from './controller.js';
-export interface FinanceRequest {request_id:string;kind:'TOPUP'|'SHOP_PAYMENT';label:string;state:string;version:number;amount_requested_vnd:number;actual_amount_vnd:number|null;created_at:string;resolved_at:string|null;unread:number}
-export interface FinanceMessage {sequence:string;role:string;body:string;created_at:string}
-export interface FinanceRoom {request:FinanceRequest;messages:{items:FinanceMessage[];has_more:boolean;next_before:string|null}}
+export interface FinanceRequest {request_id:string;shop_id:string|null;reported_at:string|null;entitlement_recorded:boolean;kind:'TOPUP'|'SHOP_PAYMENT';label:string;state:string;version:number;amount_requested_vnd:number;actual_amount_vnd:number|null;created_at:string;resolved_at:string|null;unread:number}
+export interface FinanceMessage {sequence:string;role:string;sender_name:string|null;body:string;created_at:string}
+export interface Entitlement {shop_id:string;expanded:boolean;version:string;history:{action:string;reason:string;created_at:string}[]}
+export interface FinanceRoom {capabilities:{can_send:boolean;can_record:boolean;can_manage_entitlement:boolean};entitlement:Entitlement|null;request:FinanceRequest;messages:{items:FinanceMessage[];has_more:boolean;next_before:string|null}}
 export interface FinanceList {items:FinanceRequest[];has_more:boolean;next_before:string|null}
 export interface Notices {unread:number;items:{sequence:string;request_id:string;kind:string;created_at:string;unread:boolean}[];next_before:string|null}
 export interface Summary {key:string;label:string;value:number|string|null;format:string;note?:string}
