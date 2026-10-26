@@ -306,6 +306,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#230](https://github.com/trungtn87/11ship/pull/230) (Nhóm 08) Tiền tip, thanh toán và đánh giá trong đơn (#205,… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `fbda1a4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#231](https://github.com/trungtn87/11ship/pull/231) (Nhóm 09) Gọi shipper dùng chung, thu hộ và màn nhận chuyến… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `fea53ea` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#232](https://github.com/trungtn87/11ship/pull/232) (Nhóm 10) Xin đổi địa chỉ và hướng dẫn xử lý trong đơn (#21… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f24ff86` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#233](https://github.com/trungtn87/11ship/pull/233) (Nhóm 11) Xử lý lại điều chỉnh đang chờ tài chính (#219) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `29ecb77` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#234](https://github.com/trungtn87/11ship/pull/234) (Nhóm 12) Hoàn thiện Việc cần xử lý trên Admin (#216) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f83ebd8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -320,6 +322,8 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #230: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #231: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #232: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #233: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #234: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
