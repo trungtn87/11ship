@@ -119,7 +119,12 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect((await postAs(admin,systemLoginOf(system),grantUrl,{action:'REVOKE',reason:'Thu hồi có lý do',expected_version:version})).status).toBe(200);
     const after=adminData(await getAs(admin,systemLoginOf(system),grantUrl));expect(after.expanded).toBe(false);
     expect((after.history as unknown[]).length).toBe(2);
-    expect((await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,expected_version:after.version})).status).toBe(409);
+    // A stale version must conflict, but a manual grant after revocation is valid without linking a payment.
+    expect((await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,expected_version:version})).status).toBe(409);
+    const regrant=await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,expected_version:after.version});
+    expect(regrant.status).toBe(200);
+    expect(adminData(regrant)).toMatchObject({expanded:true});
+    expect((adminData(regrant).history as unknown[]).length).toBe(3);
   });
   it('enforces sender-wide configured chat rate while idempotent retries cost no new message',async()=>{
     const otherId=String(adminData(await client(other,'POST','/shop-payments',{amount_vnd:100,note:'Thử giới hạn'})).request_id);
