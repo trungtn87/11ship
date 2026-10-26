@@ -308,7 +308,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#232](https://github.com/trungtn87/11ship/pull/232) (Nhóm 10) Xin đổi địa chỉ và hướng dẫn xử lý trong đơn (#21… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f24ff86` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#233](https://github.com/trungtn87/11ship/pull/233) (Nhóm 11) Xử lý lại điều chỉnh đang chờ tài chính (#219) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `29ecb77` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#234](https://github.com/trungtn87/11ship/pull/234) (Nhóm 12) Hoàn thiện Việc cần xử lý trên Admin (#216) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f83ebd8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#240](https://github.com/trungtn87/11ship/pull/240) (V4 · PR 1/3) Shared Flutter design-system foundation for 1… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f83d918` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#240](https://github.com/trungtn87/11ship/pull/240) (V4 · PR 1/3) Shared Flutter design-system foundation for 1… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `a1b61cc` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
