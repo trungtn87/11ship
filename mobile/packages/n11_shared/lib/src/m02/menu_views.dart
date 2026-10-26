@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../account/models.dart';
@@ -247,6 +248,7 @@ class DishFormScreen extends StatefulWidget {
 class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOut<DishFormScreen> {
   late final TextEditingController _name;
   late final TextEditingController _price;
+  late final TextEditingController _description;
   int _seenRevision = -1;
   int _seenNotice = 0;
   bool _conflictOpen = false;
@@ -262,6 +264,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     super.initState();
     _name = TextEditingController();
     _price = TextEditingController();
+    _description = TextEditingController();
     _seenNotice = menu.noticeSeq;
     _sync();
     menu.addListener(_onMenu);
@@ -274,6 +277,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     _unwatchSession();
     _name.dispose();
     _price.dispose();
+    _description.dispose();
     super.dispose();
   }
 
@@ -284,6 +288,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     _seenRevision = menu.formRevision;
     final ItemForm? f = menu.form;
     _name.text = f?.name ?? '';
+    _description.text = f?.description ?? '';
     _price.text = groupDigits(f?.priceDigits ?? '');
   }
 
@@ -306,7 +311,7 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     final ItemForm? f = menu.form;
     if (f != null && f.errors.isNotEmpty && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final String first = <String>['name', 'price', 'category', 'image'].firstWhere(f.errors.containsKey, orElse: () => '');
+        final String first = <String>['name', 'price', 'category', 'description', 'image'].firstWhere(f.errors.containsKey, orElse: () => '');
         final BuildContext? target = first.isEmpty ? null : _keys[first]?.currentContext;
         if (target != null) {
           Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 150), alignment: 0.2);
@@ -489,6 +494,15 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
               ),
             ),
             KeyedSubtree(key: _key('category'), child: _categories(f, snapshot, choices, lock)),
+            TextField(
+              key: const Key('dish-description'), controller: _description,
+              enabled: !lock, minLines: 3, maxLines: 5, maxLength: 300,
+              maxLengthEnforcement: MaxLengthEnforcement.enforced,
+              onChanged: menu.setDescription,
+              decoration: InputDecoration(labelText: 'Mô tả món (không bắt buộc)',
+                hintText: 'Ví dụ: 1 đĩa khoảng 500g; hấp sả lá chanh; có thể làm không cay.',
+                errorText: f.errors['description'], border: const OutlineInputBorder()),
+            ),
             KeyedSubtree(key: _key('image'), child: _image(f, lock)),
             if (!f.isNew && !lock)
               N11InfoCard(title: 'Hiển thị với khách', text: f.baseHidden ? 'Món đang ẩn, khách không thấy.' : 'Món đang hiện trong thực đơn của khách.'),

@@ -18,6 +18,7 @@ export interface MenuItemRow {
   readonly name: string;
   readonly priceVnd: number;
   readonly imageId: string | null;
+  readonly description?: string | null;
   readonly status: MenuItemStatus;
   readonly version: number;
 }
@@ -28,12 +29,13 @@ interface RawItem {
   category_id: string;
   name: string;
   price_vnd: number;
+  description?: string | null;
   image_id: string | null;
   status: MenuItemStatus;
   version: string;
 }
 
-const ITEM_COLUMNS = 'item_id, shop_id, category_id, name, price_vnd, image_id, status, version';
+const ITEM_COLUMNS = 'item_id, shop_id, category_id, name, price_vnd, image_id, description, status, version';
 
 function toItem(row: RawItem): MenuItemRow {
   return {
@@ -43,6 +45,7 @@ function toItem(row: RawItem): MenuItemRow {
     name: row.name,
     priceVnd: row.price_vnd,
     imageId: row.image_id,
+    description: row.description ?? null,
     status: row.status,
     version: toSafeInteger(row.version),
   };
@@ -53,6 +56,7 @@ export interface PublicMenuItem {
   readonly name: string;
   readonly priceVnd: number;
   readonly imageId: string | null;
+  readonly description?: string | null;
   readonly categoryId: string;
 }
 
@@ -88,10 +92,11 @@ export class MenuRepository {
       item_id: string;
       name: string;
       price_vnd: number;
+      description?: string | null;
       image_id: string | null;
       category_id: string;
     }>(
-      `SELECT i.item_id, i.name, i.price_vnd, i.image_id, i.category_id
+      `SELECT i.item_id, i.name, i.price_vnd, i.image_id, i.description, i.category_id
          FROM app.menu_items i
          JOIN app.menu_categories c ON c.category_id = i.category_id
         WHERE i.shop_id = $1::uuid AND i.status = 'VISIBLE'
@@ -103,6 +108,7 @@ export class MenuRepository {
       name: row.name,
       priceVnd: row.price_vnd,
       imageId: row.image_id,
+      description: row.description ?? null,
       categoryId: row.category_id,
     }));
   }
@@ -165,11 +171,11 @@ export class MenuRepository {
 
   async insertItem(context: TransactionContext, itemId: string, shopId: string, fields: MenuItemFields): Promise<MenuItemRow> {
     const result = await context.query<RawItem>(
-      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, image_id, status, version, created_at, updated_at)
-       SELECT $1::uuid, $2::uuid, $3::uuid, $4, $5::integer, $6::uuid, 'VISIBLE', 1, clock.t, clock.t
+      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, image_id, description, status, version, created_at, updated_at)
+       SELECT $1::uuid, $2::uuid, $3::uuid, $4, $5::integer, $6::uuid, $7::text, 'VISIBLE', 1, clock.t, clock.t
          FROM (SELECT date_trunc('milliseconds', clock_timestamp()) AS t) AS clock
        RETURNING ${ITEM_COLUMNS}`,
-      [itemId, shopId, fields.categoryId, fields.name, fields.priceVnd, fields.imageId],
+      [itemId, shopId, fields.categoryId, fields.name, fields.priceVnd, fields.imageId, fields.description ?? null],
     );
     const row = result.rows[0];
     if (row === undefined) {
@@ -182,8 +188,8 @@ export class MenuRepository {
     return this.#update(
       context,
       current,
-      `name = $3, price_vnd = $4::integer, category_id = $5::uuid, image_id = $6::uuid`,
-      [fields.name, fields.priceVnd, fields.categoryId, fields.imageId],
+      `name = $3, price_vnd = $4::integer, category_id = $5::uuid, image_id = $6::uuid, description = $7::text`,
+      [fields.name, fields.priceVnd, fields.categoryId, fields.imageId, fields.description === undefined ? current.description ?? null : fields.description],
       "status <> 'DELETED'",
     );
   }

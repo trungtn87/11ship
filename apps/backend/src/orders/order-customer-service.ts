@@ -1,3 +1,4 @@
+import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { CUSTOMER_ROLE } from '../auth/auth-constants';
@@ -130,6 +131,7 @@ export class OrderCustomerService {
       });
     }
     return {
+      next_refresh_ms: snapshot === undefined ? null : businessHoursRefreshMs(snapshot.hours, snapshot.availability.evaluatedAt),
       shop: { shop_id: shopId, name: snapshot?.name ?? null, online: gate?.acceptsOrders === true, reason: snapshot === undefined || gate === undefined ? 'SHOP_NOT_FOUND' : snapshot.status === 'ACTIVE' ? gate.availability.reason : 'SHOP_DISABLED' },
       lines: out,
       note,
@@ -214,6 +216,7 @@ export class OrderCustomerService {
       const lines = checked.lines.map((l) => ({ item_id: l.itemId, name: l.name, note: l.note, quantity: l.quantity, unit_price_vnd: l.priceVnd, issue: l.issue }));
       const total = totalOf(checked.lines.filter((l) => l.priceVnd !== null).map((l) => ({ unitPriceVnd: l.priceVnd as number, quantity: l.quantity })));
       return {
+        next_refresh_ms: checked.shop === undefined ? null : businessHoursRefreshMs(checked.shop.hours, checked.shop.availability.evaluatedAt),
         ok: checked.blockers.length === 0 && checked.lines.every((l) => l.issue === null),
         blockers: checked.blockers,
         shop: { shop_id: input.shopId, name: checked.shop?.name ?? null, online: checked.shop?.status === 'ACTIVE' && checked.shop.availability.online },

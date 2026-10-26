@@ -1,5 +1,6 @@
 import '../flows/shop_logo_data.dart';
 import 'dart:async';
+import 'availability_refresh.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -179,7 +180,12 @@ class ShopOpsController extends ChangeNotifier {
   String? _notice;
   int _noticeSeq = 0;
 
-  Timer? _timer;
+  late final AvailabilityRefresh _freshness = AvailabilityRefresh(refresh: refresh, invalidate: () {
+    _stale = true;
+    _notify();
+  });
+  bool _polling = false;
+  int? _nextRefreshMs;
   int _epoch = 0;
   int _sessionEpoch = 0;
   bool _disposed = false;
@@ -276,7 +282,7 @@ class ShopOpsController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _timer?.cancel();
+    _freshness.dispose();
     session.removeListener(_onSession);
     super.dispose();
   }
@@ -343,6 +349,8 @@ class ShopOpsController extends ChangeNotifier {
       }
       final bool keepDrafts = !replaceDrafts && (profileDirty || hoursDirty || _pending != null || _conflict);
       _overview = parsed;
+      _nextRefreshMs = (response.data as Map<String, Object?>)['next_refresh_ms'] as int?;
+      if (_polling) _freshness.arm(_nextRefreshMs);
       _lastUpdated = DateTime.now();
       _stale = false;
       _load = OpsLoad.ready;
@@ -380,16 +388,13 @@ class ShopOpsController extends ChangeNotifier {
   }
 
   void startPolling() {
-    _timer?.cancel();
-    if (pollEvery == Duration.zero) {
-      return;
-    }
-    _timer = Timer.periodic(pollEvery, (Timer _) => unawaited(refresh()));
+    _polling = true;
+    if (pollEvery != Duration.zero) _freshness.arm(_nextRefreshMs);
   }
 
   void stopPolling() {
-    _timer?.cancel();
-    _timer = null;
+    _polling = false;
+    _freshness.arm(null);
   }
 
   Future<void> loadAreas() async {

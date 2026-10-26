@@ -89,6 +89,7 @@ export class DiscoveryService {
       const summaries = await this.reviews.shopSummaries(context, page.map((shop) => shop.shopId));
       return {
         shops: page.map((shop) => ({ shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, pickup_lat: shop.pickupLat ?? null, pickup_lng: shop.pickupLng ?? null, rating: summaries.get(shop.shopId) ?? { count: 0, average: null }, availability: availabilityOf(shop) })),
+        next_refresh_ms: await this.shopReader.nextRefreshMs(context, query.areaId),
         has_more: matching.length > query.offset + query.limit,
       };
     });
@@ -126,6 +127,7 @@ export class DiscoveryService {
                 },
               ];
         }),
+        next_refresh_ms: await this.shopReader.nextRefreshMs(context, query.areaId),
         has_more: found.length > query.limit,
       };
     });

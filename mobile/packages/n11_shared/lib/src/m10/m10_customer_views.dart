@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../m02/availability_refresh.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -66,7 +67,7 @@ class DishStepper extends StatelessWidget {
       }
       replace = true;
     }
-    await cart.add(shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace);
+    await cart.add(shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace, description: description, canAdd: canAdd);
   }
 
   @override
@@ -96,7 +97,7 @@ class DishStepper extends StatelessWidget {
 }
 
 /// Tap a dish: choose the quantity and a note for it ("ít cay"). The same dish with the same note joins one line; another note is another line.
-Future<void> showDishSheet(BuildContext context, {required CartController cart, required String shopId, required String shopName, required String itemId, required String name, required int priceVnd}) async {
+Future<void> showDishSheet(BuildContext context, {required CartController cart, required String shopId, required String shopName, required String itemId, required String name, required int priceVnd, String? description, bool Function()? canAdd}) async {
   var replace = false;
   if (cart.needsReplace(shopId)) {
     final String? choice = await showDecision(
@@ -117,12 +118,12 @@ Future<void> showDishSheet(BuildContext context, {required CartController cart, 
     context: context,
     isScrollControlled: true,
     backgroundColor: N11Colors.white,
-    builder: (BuildContext sheet) => _DishSheet(cart: cart, shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace),
+    builder: (BuildContext sheet) => _DishSheet(cart: cart, shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace, description: description, canAdd: canAdd),
   );
 }
 
 class _DishSheet extends StatefulWidget {
-  const _DishSheet({required this.cart, required this.shopId, required this.shopName, required this.itemId, required this.name, required this.priceVnd, required this.replace});
+  const _DishSheet({required this.cart, required this.shopId, required this.shopName, required this.itemId, required this.name, required this.priceVnd, required this.replace, this.description, this.canAdd});
 
   final CartController cart;
   final String shopId;
@@ -131,6 +132,8 @@ class _DishSheet extends StatefulWidget {
   final String name;
   final int priceVnd;
   final bool replace;
+  final String? description;
+  final bool Function()? canAdd;
 
   @override
   State<_DishSheet> createState() => _DishSheetState();
@@ -148,7 +151,7 @@ class _DishSheetState extends State<_DishSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Form(child: Padding(
+    return Form(child: SingleChildScrollView(child: Padding(
       padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, MediaQuery.of(context).viewInsets.bottom + N11Space.gap4),
       child: Column(
         key: const Key('dish-sheet'),
@@ -157,6 +160,7 @@ class _DishSheetState extends State<_DishSheet> {
         children: <Widget>[
           Text(widget.name, style: N11Text.h2),
           Text(m10Money(widget.priceVnd), style: N11Text.bodyStrong),
+          ExpandableDishDescription(text: widget.description),
           const SizedBox(height: N11Space.gap3),
           Row(
             children: <Widget>[
@@ -172,6 +176,10 @@ class _DishSheetState extends State<_DishSheet> {
             key: const Key('sheet-add'), validate: true,
             label: 'Thêm vào giỏ · ${m10Money(widget.priceVnd * _qty)}',
             onPressed: () async {
+              if (widget.canAdd != null && !widget.canAdd!()) {
+                m02Toast(context, 'Trạng thái quán đã thay đổi. Vui lòng tải lại quán.');
+                return;
+              }
               final NavigatorState navigator = Navigator.of(context);
               await widget.cart.add(shopId: widget.shopId, shopName: widget.shopName, itemId: widget.itemId, name: widget.name, priceVnd: widget.priceVnd, note: _note.text, by: _qty, replace: widget.replace);
               navigator.pop();
@@ -179,7 +187,32 @@ class _DishSheetState extends State<_DishSheet> {
           ),
         ],
       ),
-    ));
+    )));
+  }
+}
+
+class ExpandableDishDescription extends StatefulWidget {
+  const ExpandableDishDescription({super.key, this.text});
+  final String? text;
+  @override
+  State<ExpandableDishDescription> createState() => _ExpandableDishDescriptionState();
+}
+class _ExpandableDishDescriptionState extends State<ExpandableDishDescription> {
+  bool expanded = false;
+  @override
+  Widget build(BuildContext context) {
+    final String text = widget.text ?? '';
+    if (text.trim().isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(builder: (context, constraints) {
+      final TextPainter measure = TextPainter(text: TextSpan(text: text, style: N11Text.body), maxLines: 3, textDirection: Directionality.of(context))..layout(maxWidth: constraints.maxWidth);
+      final bool long = measure.didExceedMaxLines;
+      measure.dispose();
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const SizedBox(height: 12),
+        Text(text, key: const Key('dish-description-text'), style: N11Text.body, maxLines: expanded ? null : 3, overflow: expanded ? null : TextOverflow.ellipsis),
+        if (long) TextButton(key: const Key('dish-description-expand'), onPressed: () => setState(() => expanded = !expanded), child: Text(expanded ? 'Thu gọn' : 'Xem thêm')),
+      ]);
+    });
   }
 }
 
@@ -249,6 +282,8 @@ class _CartScreenState extends State<CartScreen> {
           sample,
           <Widget>[
             Text(cart.shopName, key: const Key('cart-shop'), style: N11Text.h2),
+            Text(cart.availabilityStale ? 'Chưa cập nhật trạng thái quán' : cart.online ? 'Đang mở cửa' : 'Đã đóng cửa', key: const Key('cart-shop-availability')),
+            if (cart.availabilityStale) TextButton(onPressed: cart.load, child: const Text('Thử lại')),
             if (cart.failure != null) N11Banner(key: const Key('cart-unsaved'), kind: BannerKind.warn, title: 'Chưa lưu được giỏ', text: 'Giỏ trên máy có thể mới hơn giỏ trên máy chủ. Sẽ lưu lại khi có mạng.', icon: Icons.cloud_off_outlined),
             if (cart.hasUnavailable) const N11Banner(key: Key('cart-unavailable'), kind: BannerKind.error, title: 'Có món không còn bán', text: 'Hãy xóa các món đó khỏi giỏ rồi tiếp tục.'),
             N11Card(
@@ -295,7 +330,7 @@ class _CartScreenState extends State<CartScreen> {
               N11Button(
                 key: const Key('cart-continue'),
                 label: cart.feeEstimateVnd == null ? 'Tiếp tục' : 'Tiếp tục · ${m10Money(cart.itemsVnd + cart.feeEstimateVnd!)}',
-                onPressed: cart.hasUnavailable ? null : () => Navigator.of(context).push(n11Route(CheckoutScreen(runtime: widget.runtime, addresses: widget.addresses ?? widget.runtime.addresses, session: widget.session ?? widget.runtime.session))),
+                onPressed: cart.hasUnavailable || cart.availabilityStale ? null : () => Navigator.of(context).push(n11Route(CheckoutScreen(runtime: widget.runtime, addresses: widget.addresses ?? widget.runtime.addresses, session: widget.session ?? widget.runtime.session))),
               ),
               const SizedBox(height: N11Space.gap2),
               N11Link('Xóa giỏ hàng', key: const Key('cart-clear'), onPressed: () async {
@@ -341,6 +376,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   CheckoutPreview? _preview;
   M07Failure? _failure;
   bool _previewing = false;
+  bool _previewFresh = false;
+  int _previewEpoch = 0;
+  late final AvailabilityRefresh _freshness = AvailabilityRefresh(refresh: _check, invalidate: () {
+    if (mounted) setState(() => _previewFresh = false);
+  });
   bool _changed = false;
   _Attempt _attempt = _Attempt.none;
   String _clientRef = newIdempotencyKey();
@@ -372,6 +412,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _phone.dispose();
     _note.dispose();
     _typed.dispose();
+    _freshness.dispose();
     super.dispose();
   }
 
@@ -399,7 +440,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   /// An address edit makes a new order attempt; an unchanged retry retains its key.
   void _touch() {
+    _previewEpoch++;
     setState(() {
+      _previewFresh = false;
       _clientRef = newIdempotencyKey();
       _key = newIdempotencyKey();
       _attempt = _Attempt.none;
@@ -427,17 +470,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _check() async {
+    if (_previewing || _attempt != _Attempt.none) return;
     final CheckoutDraft? draft = _draft();
     if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null) {
       setState(() => _preview = null);
       return;
     }
+    final int epoch = _previewEpoch;
     setState(() => _previewing = true);
     try {
       final CheckoutPreview p = await source.preview(draft);
+      if (mounted && epoch != _previewEpoch) {
+        _previewing = false;
+        unawaited(_check());
+        return;
+      }
       if (mounted) {
         setState(() {
           _preview = p;
+          _previewFresh = true;
+          _freshness.arm(p.nextRefreshMs);
           _previewing = false;
         });
       }
@@ -445,6 +497,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (mounted) {
         setState(() {
           _failure = failure;
+          _previewFresh = false;
+          _freshness.failed();
           _previewing = false;
         });
       }
@@ -509,6 +563,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _failure = failure;
           _changed = failure.code == 'ORDER_CART_CHANGED';
         });
+        if (failure.code == 'ORDER_SHOP_NOT_OPEN') {
+          await _freshness.reload();
+          await cart.freshness.reload();
+        }
         if (failure.code == 'ORDER_CART_CHANGED') {
           // The cart is read again: new prices, dishes that are gone. The person checks and sends again (a new attempt).
           await cart.load();
@@ -555,7 +613,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final CheckoutPreview? p = _preview;
     final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
-    final bool ready = !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
+    final bool ready = _previewFresh && !_previewing && p != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
     final int items = p?.itemsVnd ?? cart.itemsVnd;
     final int? estimateFee = p == null ? cart.feeEstimateVnd : p.feeEstimateVnd;
     final int? expectedTotal = p == null ? (estimateFee == null ? null : items + estimateFee) : p.expectedTotalVnd;
@@ -627,6 +685,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               else const ReasonNote(kNoFeeNote, icon: Icons.warning_amber_rounded),
               if (estimateFee != null && (p == null || p.feeDistanceM == null))
                 const ReasonNote(kFeeEstimateNote, icon: Icons.warning_amber_rounded),
+              if (!_previewFresh && !_previewing) TextButton(onPressed: _check, child: const Text('Cập nhật trạng thái quán')),
               if (_previewing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: LinearProgressIndicator()),
               const SizedBox(height: N11Space.gap2),
               const ReasonNote(kDirectPayNote, icon: Icons.info_outline),

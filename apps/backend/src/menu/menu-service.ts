@@ -1,3 +1,4 @@
+import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { OrderSalesReader } from '../orders/order-sales-reader';
@@ -136,6 +137,7 @@ export class MenuService {
           reason: reason,
           evaluated_at: gate.availability.evaluatedAt,
         },
+        next_refresh_ms: businessHoursRefreshMs(snapshot.hours, gate.availability.evaluatedAt),
         hours: snapshot.hours.map(toWire),
         // Groups without a public dish are left out; the order is the group order, then the creation order of the dish.
         categories: categories
@@ -147,6 +149,7 @@ export class MenuService {
               .map((item) => ({
                 item_id: item.itemId,
                 name: item.name,
+                description: item.description ?? null,
                 price_vnd: item.priceVnd,
                 sold_count: sold.get(item.itemId) ?? 0,
                 image_id: item.imageId,
@@ -369,6 +372,7 @@ function guardOf(userId: string, shopId: string): JsonObject {
 function toLogical(input: MenuItemFields & { expectedVersion?: number; itemId?: string }): JsonObject {
   return {
     ...(input.expectedVersion === undefined ? {} : { expected_version: input.expectedVersion }),
+    ...(input.description === undefined ? {} : { description: input.description }),
     name: input.name,
     price_vnd: input.priceVnd,
     category_id: input.categoryId,
@@ -384,6 +388,7 @@ export function toItemWire(item: MenuItemRow): JsonObject {
   return {
     item_id: item.itemId,
     name: item.name,
+    description: item.description ?? null,
     price_vnd: item.priceVnd,
     category_id: item.categoryId,
     image_id: item.imageId,

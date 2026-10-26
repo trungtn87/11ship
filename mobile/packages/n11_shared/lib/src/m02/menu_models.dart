@@ -28,10 +28,11 @@ class MenuCategory {
 
 @immutable
 class MenuItem {
-  const MenuItem({required this.id, required this.name, required this.priceVnd, required this.categoryId, required this.imageRef, required this.imageUrl, required this.hidden, required this.version});
+  const MenuItem({required this.id, required this.name, this.description, required this.priceVnd, required this.categoryId, required this.imageRef, required this.imageUrl, required this.hidden, required this.version});
 
   final String id;
   final String name;
+  final String? description;
   final int priceVnd;
   final String categoryId;
 
@@ -86,9 +87,10 @@ class PickedImage {
 /// The fields of a dish as they are sent. [imageRef] is what an earlier upload returned (null = no picture).
 @immutable
 class MenuItemInput {
-  const MenuItemInput({required this.name, required this.priceVnd, required this.categoryId, required this.imageRef});
+  const MenuItemInput({required this.name, this.description, required this.priceVnd, required this.categoryId, required this.imageRef});
 
   final String name;
+  final String? description;
   final int priceVnd;
   final String categoryId;
   final String? imageRef;
@@ -149,10 +151,11 @@ class NoImagePicker implements ImagePickerPort {
 
 @immutable
 class PublicItem {
-  const PublicItem({required this.id, required this.name, required this.priceVnd, required this.imageUrl, this.soldCount});
+  const PublicItem({required this.id, required this.name, this.description, required this.priceVnd, required this.imageUrl, this.soldCount});
 
   final String id;
   final String name;
+  final String? description;
   final int priceVnd;
   final int? soldCount;
   final String? imageUrl;
@@ -169,7 +172,7 @@ class PublicCategory {
 /// What a customer (or the owner's preview) sees of a shop. Only public fields.
 @immutable
 class ShopMenuView {
-  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories, this.logoUrl, this.logoBytes, this.contact = ShopContact.none});
+  const ShopMenuView({required this.name, required this.address, required this.availabilityReason, required this.serverNow, required this.hours, required this.categories, this.logoUrl, this.logoBytes, this.contact = ShopContact.none, this.nextRefreshMs});
 
   final String name;
   final String address;
@@ -184,6 +187,7 @@ class ShopMenuView {
 
   /// The server's instant (UTC), used only to mark today in the schedule; never to decide open/closed.
   final DateTime? serverNow;
+  final int? nextRefreshMs;
   final WeekSchedule hours;
   final List<PublicCategory> categories;
 
@@ -218,7 +222,7 @@ ShopMenuView previewOf({
   for (final MenuCategory category in menu.categories) {
     final List<PublicItem> items = <PublicItem>[
       for (final MenuItem i in menu.items)
-        if (i.categoryId == category.id && !i.hidden) PublicItem(id: i.id, name: i.name, priceVnd: i.priceVnd, imageUrl: i.imageUrl),
+        if (i.categoryId == category.id && !i.hidden) PublicItem(id: i.id, name: i.name, priceVnd: i.priceVnd, description: i.description, imageUrl: i.imageUrl),
     ];
     if (items.isNotEmpty) {
       categories.add(PublicCategory(name: category.name, items: items));

@@ -1,9 +1,12 @@
 # Issue #190 — Checklist thiết lập quán, chặn quán chưa đủ điều kiện, liên hệ nhanh, khoảng cách đường đi
 
+## Điều chỉnh của Owner 25/10/2026 — Ảnh món không bắt buộc
+Quán được tính xong bước FIRST_ITEM khi có ít nhất 1 món `VISIBLE` với giá > 0; `image_id = NULL` hợp lệ và không được chặn kích hoạt/công khai/nhận đơn. Ảnh món vẫn được tải lên và hiển thị nếu có, nhưng không tham gia điều kiện 4/4. Áp dụng cho cả quán mới và quán đã có món không ảnh đang kẹt 3/4; khi đọc checklist, backend tự reconcile kích hoạt nếu các điều kiện khác đều đạt. Chỉ thay đổi readiness trên backend, văn bản giao diện và test. **Không sửa migration #190 đã tồn tại**: backfill lịch sử ở migration đó có điều kiện ảnh cũ, nhưng `GET /v1/onboarding/shop/setup` hiện có cơ chế kích hoạt bù; không cần migration mới. Không nới yêu cầu GPS, giờ hoạt động, giá, trạng thái món, khóa ADMIN hay các guard đơn.
+
 Cập nhật 25/10/2026. Một PR tổng: backend + 11Food + Admin Web. Chưa merge/deploy/migrate VPS.
 
 ## Nguồn sự thật: server tính từ dữ liệu thật
-Bốn bước (không lưu cờ, tính lại mỗi lần đọc): (1) tài khoản; (2) tên, địa chỉ, SĐT liên hệ, khu vực đang hoạt động **và lịch hoạt động**; (3) tọa độ lấy hàng (không phải (0,0), địa chỉ nhập tay không thay GPS); (4) ≥1 món `VISIBLE`, giá > 0, có ảnh. Quy tắc một chỗ: `apps/backend/src/shop-setup/shop-setup-rules.ts` (+ `menu/menu-readiness-sql.ts`, `shop/shop-availability-sql.ts::hasPickupPointSql`).
+Bốn bước (không lưu cờ, tính lại mỗi lần đọc): (1) tài khoản; (2) tên, địa chỉ, SĐT liên hệ, khu vực đang hoạt động **và lịch hoạt động**; (3) tọa độ lấy hàng (không phải (0,0), địa chỉ nhập tay không thay GPS); (4) ≥1 món `VISIBLE`, giá > 0; **ảnh là tùy chọn**. Quy tắc một chỗ: `apps/backend/src/shop-setup/shop-setup-rules.ts` (+ `menu/menu-readiness-sql.ts`, `shop/shop-availability-sql.ts::hasPickupPointSql`).
 
 Công khai = quán `ACTIVE` + chủ quán không bị khóa + đủ 4 bước. Mọi API công khai dùng cùng cổng `ShopSetupGate`: `GET /v1/shops/:id`, `/v1/shops/:id/reviews`, logo, `GET /v1/discovery/shops|dishes` (và lọc nhóm món), giỏ/kiểm tra/đặt/đặt lại (M10), xem trước của Admin. Quán cũ `ACTIVE` thiếu điều kiện bị chặn như quán mới. Ngoài giờ nhưng đã thiết lập: vẫn xem được menu/liên hệ, chỉ không đặt mới. Đơn đã tạo không bị đụng.
 

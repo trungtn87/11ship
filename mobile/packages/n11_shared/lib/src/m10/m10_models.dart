@@ -515,7 +515,7 @@ class CartLine {
 }
 
 class CartView {
-  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd, this.feeEstimateVnd});
+  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd, this.feeEstimateVnd, this.nextRefreshMs});
 
   factory CartView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -524,6 +524,7 @@ class CartView {
       shopId: _str(shop['shop_id']),
       shopName: _strOrNull(shop['name']) ?? 'Quán',
       online: _bool(shop['online']),
+      nextRefreshMs: m['next_refresh_ms'] as int?,
       lines: <CartLine>[for (final Object? l in _list(m['lines'])) CartLine.fromJson(l)],
       note: _strOrNull(m['note']),
       itemsVnd: _int(m['items_total_vnd']),
@@ -534,6 +535,7 @@ class CartView {
   final String shopId;
   final String shopName;
   final bool online;
+  final int? nextRefreshMs;
   final List<CartLine> lines;
   final String? note;
   final int itemsVnd;
@@ -596,13 +598,14 @@ class CheckoutDraft {
 }
 
 class CheckoutPreview {
-  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd});
+  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.nextRefreshMs});
 
   factory CheckoutPreview.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
     final Map<String, Object?> fee = _obj(m['fee']);
     return CheckoutPreview(
       ok: _bool(m['ok']),
+      nextRefreshMs: m['next_refresh_ms'] as int?,
       blockers: <String>[for (final Object? b in _list(m['blockers'])) _str(b)],
       lines: <PreviewLine>[for (final Object? l in _list(m['lines'])) PreviewLine.fromJson(l)],
       itemsVnd: _int(m['items_total_vnd']),
@@ -613,6 +616,7 @@ class CheckoutPreview {
   }
 
   final bool ok;
+  final int? nextRefreshMs;
 
   /// SHOP_NOT_OPEN, SCHEDULE_TOO_SOON, SCHEDULE_TOO_FAR, SCHEDULE_OUTSIDE_HOURS, ADDRESS_NOT_FOUND.
   final List<String> blockers;

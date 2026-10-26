@@ -141,7 +141,7 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
   }
 
   List<Widget> _content(ShopOverview o) {
-    final ({String label, String text, ChipKind kind}) copy = availabilityCopy(o.availability.reason);
+    final ({String label, String text, ChipKind kind}) copy = availabilityCopy(ops.stale ? 'STALE' : o.availability.reason);
     final DateTime? at = ops.lastUpdated;
     final ShopSetup? progress = setup.setup;
     final bool incomplete = o.isIncomplete;
