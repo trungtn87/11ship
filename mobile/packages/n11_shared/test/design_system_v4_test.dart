@@ -145,7 +145,7 @@ void main() {
         if (screenshots != null && scale == 1) {
           final RenderRepaintBoundary render = tester.renderObject(find.byKey(boundary));
           final ui.Image image = (await tester.runAsync(() => render.toImage(pixelRatio: 1.5)))!;
-          final ByteData bytes = (await tester.runAsync(() => image.toByteData(format: ui.ImageByteFormat.png)))!;
+          final ByteData bytes = (await tester.runAsync<ByteData?>(() => image.toByteData(format: ui.ImageByteFormat.png)))!;
           Directory(screenshots).createSync(recursive: true);
           File('$screenshots/foundation-${width.toInt()}.png').writeAsBytesSync(bytes.buffer.asUint8List());
           image.dispose();

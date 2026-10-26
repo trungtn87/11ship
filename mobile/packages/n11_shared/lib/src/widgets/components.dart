@@ -418,9 +418,9 @@ class N11StateBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (Color background, Color ink, String glyph) = switch (kind) {
-      StateKind.ok => (N11Colors.success, N11Colors.white, '✓'),
-      StateKind.error => (N11Colors.error, N11Colors.white, '!'),
-      StateKind.warn => (N11Colors.yellow, N11Colors.black, '!'),
+      StateKind.ok => (N11Colors.successSoft, N11Colors.success, '✓'),
+      StateKind.error => (N11Colors.errorSoft, N11Colors.error, '!'),
+      StateKind.warn => (N11Colors.warningSoft, N11Colors.warning, '!'),
     };
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
