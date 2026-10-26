@@ -297,7 +297,7 @@ void main() {
       expect(find.text('Alpha Hải Sản'), findsOneWidget);
     });
 
-    testWidgets('the layout follows the approved reference: brand and bell, area, group chips, then Quán gần bạn beside search and filters; the bell says M08 is not there yet', (WidgetTester tester) async {
+    testWidgets('V4 layout: brand and bell, area, full-width search with filter, group chips, then shop heading', (WidgetTester tester) async {
       phone(tester);
       final DiscoveryController c = DiscoveryController(api: seeded());
       addTearDown(c.dispose);
@@ -308,11 +308,10 @@ void main() {
       final double chips = tester.getTopLeft(find.byKey(const Key('home-cat-all'))).dy;
       final double heading = tester.getTopLeft(find.text('Quán gần bạn')).dy;
       final double firstShop = tester.getTopLeft(find.byKey(const Key('shop-s1'))).dy;
-      expect(<double>[bell, area, chips, search, firstShop], orderedEquals(<double>[bell, area, chips, search, firstShop]..sort()));
-      expect((search - heading).abs(), lessThan(24));
-      expect(tester.getTopLeft(find.byKey(const Key('home-search'))).dx, greaterThan(tester.getTopLeft(find.text('Quán gần bạn')).dx));
-      expect(tester.getTopLeft(find.byKey(const Key('home-filter'))).dx, greaterThan(tester.getTopLeft(find.text('Quán gần bạn')).dx), reason: 'the filter button sits at the end of the heading row');
-      expect((tester.getTopLeft(find.byKey(const Key('home-filter'))).dy - heading).abs(), lessThan(24));
+      expect(<double>[bell, area, search, chips, heading, firstShop], orderedEquals(<double>[bell, area, search, chips, heading, firstShop]..sort()));
+      expect(tester.getSize(find.byKey(const Key('home-search'))).width, greaterThan(240));
+      expect(tester.getTopLeft(find.byKey(const Key('home-filter'))).dx, greaterThan(tester.getTopLeft(find.byKey(const Key('home-search'))).dx));
+      expect((tester.getTopLeft(find.byKey(const Key('home-filter'))).dy - search).abs(), lessThan(24));
       await tapKey(tester, 'home-bell');
       expect(find.text('Thông báo sẽ có ở bản sau.'), findsOneWidget);
       expect(find.text('Trang chủ'), findsNothing, reason: 'no page title bar above the brand header');
@@ -525,7 +524,7 @@ void main() {
     });
   });
 
-  for (final double width in <double>[360, 390]) {
+  for (final double width in <double>[320, 360, 390, 600]) {
     testWidgets('layout at ${width.toInt()}px: Home with a long shop name, the filter sheet with the keyboard region and search results do not overflow', (WidgetTester tester) async {
       phone(tester, width: width);
       final DiscoveryController c = DiscoveryController(

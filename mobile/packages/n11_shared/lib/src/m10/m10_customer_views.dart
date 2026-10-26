@@ -86,9 +86,9 @@ class DishStepper extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SizedBox(width: 40, height: 40, child: IconButton(key: Key('dish-minus-$itemId'), tooltip: 'Bớt $name', onPressed: () => unawaited(cart.decrease(itemId)), icon: const Icon(Icons.remove_circle_outline))),
-            SizedBox(width: 24, child: Text('$q', key: Key('dish-qty-$itemId'), textAlign: TextAlign.center, style: N11Text.bodyStrong)),
-            SizedBox(width: 40, height: 40, child: IconButton(key: Key('dish-plus-$itemId'), tooltip: 'Thêm $name', onPressed: () => unawaited(_add(context)), icon: const Icon(Icons.add_circle, color: N11Colors.yellowStrong))),
+            SizedBox(width: kTapMin, height: kTapMin, child: IconButton(key: Key('dish-minus-$itemId'), tooltip: 'Bớt $name', onPressed: () => unawaited(cart.decrease(itemId)), icon: const Icon(Icons.remove_circle_outline))),
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: 24), child: Text('$q', key: Key('dish-qty-$itemId'), textAlign: TextAlign.center, style: N11Text.bodyStrong)),
+            SizedBox(width: kTapMin, height: kTapMin, child: IconButton(key: Key('dish-plus-$itemId'), tooltip: 'Thêm $name', onPressed: () => unawaited(_add(context)), icon: const Icon(Icons.add_circle, color: N11Colors.black))),
           ],
         );
       },
