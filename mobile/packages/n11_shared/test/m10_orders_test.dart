@@ -44,6 +44,28 @@ final SampleDish tea = kSampleDishes[2];
 
 void main() {
   group('cart', () {
+    testWidgets('cart quantity actions remain usable on a small phone with large text', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: 'Phở bò tái phần đặc biệt', priceVnd: 45000);
+      await mount(tester, Builder(builder: (BuildContext context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+        child: CartScreen(runtime: runtime),
+      )));
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      await tap(tester, key('cart-plus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 2);
+      await tap(tester, key('cart-minus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 1);
+      await tap(tester, key('cart-remove-${pho.id}'));
+      expect(key('cart-empty'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
     test('one shop; the same dish with the same note joins one line, another note is another line; the server keeps it', () async {
       final SampleOrderStore store = SampleOrderStore();
       final CartController cart = CartController(source: SampleCustomerOrders(store));

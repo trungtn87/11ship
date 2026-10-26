@@ -23,7 +23,7 @@ class N11SearchField extends StatelessWidget {
   final String hint;
   final bool autofocus;
   final bool enabled;
-  final int maxLength;
+  final int? maxLength;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<TextEditingValue>(

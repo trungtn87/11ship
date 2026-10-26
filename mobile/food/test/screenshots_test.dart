@@ -16,7 +16,8 @@ import 'package:n11_shared/testing.dart';
 
 const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
-HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(status: 200, body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}');
+HealthTransport healthy() =>
+    (Uri uri, Duration t) async => RawHealthResponse(status: 200, body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}');
 
 void main() {
   final String? out = Platform.environment['N11_SCREENSHOTS'];
@@ -31,6 +32,9 @@ void main() {
       loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
     }
     await loader.load();
+    final FontLoader icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
 
   final GlobalKey boundary = GlobalKey();
@@ -50,7 +54,18 @@ void main() {
   }
 
   Future<void> pumpApp(WidgetTester tester, SessionController session, AppFlows flows) async {
-    await tester.pumpWidget(RepaintBoundary(key: boundary, child: N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero)));
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: boundary,
+        child: N11App(
+          brand: foodBrand,
+          tabs: buildFoodTabs(session, flows: flows),
+          config: config,
+          transport: healthy(),
+          pollInterval: Duration.zero,
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump();
   }

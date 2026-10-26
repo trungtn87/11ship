@@ -308,7 +308,17 @@ class DishThumb extends StatelessWidget {
 
 /// One row of a dish list (owner list, preview and customer view share it; [dim] is a hidden dish).
 class DishRow extends StatelessWidget {
-  const DishRow({super.key, required this.name, required this.price, required this.imageUrl, this.sub, this.chip, this.dim = false, this.highlight = false, this.onTap});
+  const DishRow({
+    super.key,
+    required this.name,
+    required this.price,
+    required this.imageUrl,
+    this.sub,
+    this.chip,
+    this.dim = false,
+    this.highlight = false,
+    this.onTap,
+  });
 
   final String name;
   final String price;
@@ -322,48 +332,53 @@ class DishRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: onTap != null,
-      label: '$name, $price',
-      excludeSemantics: true,
+  Widget build(BuildContext context) => Semantics(
+    button: onTap != null,
+    label: '$name, $price',
+    onTap: onTap,
+    child: InkWell(
       onTap: onTap,
-      child: InkWell(
-        onTap: onTap,
-        child: ColoredBox(
-          color: highlight ? N11Colors.yellowSoft : Colors.transparent,
-          child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 76),
-          child: Opacity(
-            opacity: dim ? 0.62 : 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: <Widget>[
-                  DishThumb(url: imageUrl),
-                  const SizedBox(width: N11Space.gap3),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
-                        const SizedBox(height: 2),
-                        Text(price, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.yellowStrong)),
-                        if (sub != null) Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: N11Colors.ink2)),
-                      ],
+      child: ColoredBox(
+        color: highlight ? N11Colors.yellowSoft : Colors.transparent,
+        child: Opacity(
+          opacity: dim ? 0.62 : 1,
+          child: Padding(
+            padding: const EdgeInsets.all(N11Space.gap3),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    DishThumb(url: imageUrl, size: 72),
+                    const SizedBox(width: N11Space.gap3),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong),
+                          const SizedBox(height: N11Space.gap1),
+                          Text(price, style: N11Text.bodyStrong),
+                          if (sub != null) Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+                          if (chip != null && stacked)
+                            Padding(
+                              padding: const EdgeInsets.only(top: N11Space.gap2),
+                              child: Align(alignment: Alignment.centerLeft, child: chip),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (chip != null) ...<Widget>[const SizedBox(width: N11Space.gap2), chip!],
-                  if (onTap != null) ...<Widget>[const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
-                ],
-              ),
+                    if (chip != null && !stacked) ...<Widget>[const SizedBox(width: N11Space.gap2), chip!],
+                    if (onTap != null) ...<Widget>[const SizedBox(width: N11Space.gap1), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
+                  ],
+                );
+              },
             ),
           ),
         ),
-        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// One day of the week: its name and its lines (or "Đóng cửa"). [onTap] null = read-only (K02, read-only shop).

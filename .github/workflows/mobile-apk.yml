@@ -193,6 +193,21 @@ jobs:
           path: ${{ runner.temp }}/ship-home-alerts/*.png
           if-no-files-found: ignore
 
+      - name: Render 11Food V4 discovery, menu and forms for review
+        if: matrix.app == 'food'
+        working-directory: mobile/food
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/food-v4-ui
+        run: flutter test test/m02_screenshots_test.dart test/screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Food V4 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Food-v4-ui-widget-renders
+          path: ${{ runner.temp }}/food-v4-ui/*.png
+          if-no-files-found: ignore
+
       - name: Render 11Food M10 order screens for review
         if: matrix.app == 'food'
         working-directory: mobile/food
