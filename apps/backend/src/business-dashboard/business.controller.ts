@@ -42,10 +42,10 @@ export class BusinessAdminController {
   async entitlement(@Req()r:AdminRequest,@Param('id')value:string){return {data:await this.finance.entitlement(await this.finance.admin(this.transport.read(r)),id(value))};}
   @Post('shops/:id/entitlement') @HttpCode(200)
   async changeEntitlement(@Req()r:AdminRequest,@Param('id')value:string,@Body()body:unknown,@Headers('x-csrf-token')csrf:Csrf,@Headers('idempotency-key')key:Csrf){
-    const b=object(body,['action','reason','expected_version','payment_request_id']);
+    const b=object(body,['action','reason','expected_version']);
     if(b.action!=='GRANT'&&b.action!=='REVOKE')throw new AppError('ADMIN_INPUT_INVALID');
     const reason=text(b.reason,300);if([...reason].length<3||[...reason].length>300)throw new AppError('ADMIN_INPUT_INVALID');
-    return {data:await this.finance.changeEntitlement(await this.write(r,csrf),id(value),b.action,reason,sequence(b.expected_version),b.payment_request_id===null||b.payment_request_id===undefined?null:id(b.payment_request_id),key,r.requestId??randomUUID())};
+    return {data:await this.finance.changeEntitlement(await this.write(r,csrf),id(value),b.action,reason,sequence(b.expected_version),key,r.requestId??randomUUID())};
   }
   @Get('notifications')
   async notifications(@Req()r:AdminRequest,@Query()q:unknown){return {data:await this.finance.notifications(await this.finance.admin(this.transport.read(r)),page(q).before===null?null:sequence(page(q).before))};}
