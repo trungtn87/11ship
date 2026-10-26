@@ -117,10 +117,11 @@ class _OrdersBodyState extends State<OrdersBody> {
   @override
   Widget build(BuildContext context) {
     return vstack(<Widget>[
-      Row(
+      Wrap(
+        spacing: N11Space.gap3,
+        runSpacing: N11Space.gap2,
         children: <Widget>[
           N11Button(key: const Key('orders-active'), label: 'Đang giao', compact: true, kind: _view == OrdersView.active ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = OrdersView.active)),
-          const SizedBox(width: N11Space.gap3),
           N11Button(key: const Key('orders-history'), label: 'Lịch sử', compact: true, kind: _view == OrdersView.history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = OrdersView.history)),
         ],
       ),

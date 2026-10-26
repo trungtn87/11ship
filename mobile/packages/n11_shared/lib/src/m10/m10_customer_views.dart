@@ -950,10 +950,10 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
 
   Widget? _bottom(OrderView o) {
     if (o.can['cancel'] ?? false) {
-      return DangerButton(label: 'Hủy đơn', onPressed: busy ? null : () => unawaited(_cancel(o)));
+      return OrderActionsBar(destructive: DangerButton(key: const Key('order-cancel'), label: 'Hủy đơn', outlined: false, onPressed: busy ? null : () => unawaited(_cancel(o))));
     }
     if (o.can['cancel_after_pickup'] ?? false) {
-      return DangerButton(key: const Key('order-cancel-after-pickup'), label: 'Hủy đơn (shipper đã lấy hàng)', onPressed: busy ? null : () => unawaited(_cancelAfterPickup(o)));
+      return OrderActionsBar(destructive: DangerButton(key: const Key('order-cancel-after-pickup'), label: 'Hủy đơn (shipper đã lấy hàng)', outlined: false, onPressed: busy ? null : () => unawaited(_cancelAfterPickup(o))));
     }
     if (o.ended) {
       return N11Button(key: const Key('order-reorder'), label: 'Đặt lại', loading: busy, onPressed: () => unawaited(_reorder(o)));
