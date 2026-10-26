@@ -65,17 +65,91 @@ const double kRadiusPill = 999;
 const String kFontFamily = 'PlusJakartaSans';
 
 abstract final class N11Text {
-  static const TextStyle body = TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w500, color: N11Colors.black);
-  static const TextStyle bodyStrong = TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w700, color: N11Colors.black);
-  static const TextStyle caption = TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w500, color: N11Colors.ink2);
-  static const TextStyle captionInk2 = TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w500, color: N11Colors.ink2);
-  static const TextStyle label = TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w600, color: N11Colors.black);
-  static const TextStyle display = TextStyle(fontSize: 28, height: 36 / 28, fontWeight: FontWeight.w800, letterSpacing: -0.64, color: N11Colors.black);
-  static const TextStyle title = TextStyle(fontSize: 24, height: 32 / 24, fontWeight: FontWeight.w800, letterSpacing: -0.24, color: N11Colors.black);
-  static const TextStyle barTitle = TextStyle(fontSize: 20, height: 1.4, fontWeight: FontWeight.w700, color: N11Colors.black);
-  static const TextStyle h2 = TextStyle(fontSize: 18, height: 1.3, fontWeight: FontWeight.w700, color: N11Colors.black);
-  static const TextStyle lead = TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500, color: N11Colors.ink2);
+  static const TextStyle body = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 16,
+    height: 1.5,
+    fontWeight: FontWeight.w500,
+    color: N11Colors.black,
+  );
+  static const TextStyle bodyStrong = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 16,
+    height: 1.5,
+    fontWeight: FontWeight.w700,
+    color: N11Colors.black,
+  );
+  static const TextStyle caption = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
+    color: N11Colors.ink2,
+  );
+  static const TextStyle captionInk2 = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
+    color: N11Colors.ink2,
+  );
+  static const TextStyle label = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w600,
+    color: N11Colors.black,
+  );
+  static const TextStyle display = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 28,
+    height: 36 / 28,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.64,
+    color: N11Colors.black,
+  );
+  static const TextStyle title = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 24,
+    height: 32 / 24,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.24,
+    color: N11Colors.black,
+  );
+  static const TextStyle barTitle = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 20,
+    height: 1.4,
+    fontWeight: FontWeight.w700,
+    color: N11Colors.black,
+  );
+  static const TextStyle h2 = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 18,
+    height: 1.3,
+    fontWeight: FontWeight.w700,
+    color: N11Colors.black,
+  );
+  static const TextStyle lead = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 14,
+    height: 1.5,
+    fontWeight: FontWeight.w500,
+    color: N11Colors.ink2,
+  );
   static const TextStyle link = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
     fontSize: 14,
     fontWeight: FontWeight.w700,
     color: N11Colors.yellowStrong,
