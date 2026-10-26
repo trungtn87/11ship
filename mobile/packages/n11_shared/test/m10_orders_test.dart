@@ -445,7 +445,7 @@ void main() {
       await tap(tester, key('order-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       await tap(tester, key('m07-reason-back'));
-      expect(containing('Xác nhận đơn đã chỉnh'), findsOneWidget);
+      expect(containing('Xác nhận đơn đã sửa'), findsOneWidget);
       await tap(tester, key('order-confirm'));
       await tester.enterText(key('m07-reason-field'), 'Hết bún, khách đồng ý bớt');
       await settle(tester);
