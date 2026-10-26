@@ -26,41 +26,30 @@ CREATE TABLE app.shop_entitlement_grants (
   action varchar(6) NOT NULL,
   reason varchar(300) NOT NULL,
   actor_user_id uuid NOT NULL,
-  payment_request_id uuid,
   created_at timestamptz NOT NULL,
 
   CONSTRAINT shop_entitlement_grants_pkey PRIMARY KEY (grant_id),
   CONSTRAINT shop_entitlement_grants_seq_uq UNIQUE (seq),
   CONSTRAINT shop_entitlement_grants_shop_fk FOREIGN KEY (shop_id) REFERENCES app.shops (shop_id) ON DELETE RESTRICT,
   CONSTRAINT shop_entitlement_grants_actor_fk FOREIGN KEY (actor_user_id) REFERENCES app.users (user_id) ON DELETE RESTRICT,
-  CONSTRAINT shop_entitlement_grants_request_fk FOREIGN KEY (payment_request_id) REFERENCES app.business_finance_requests (request_id) ON DELETE RESTRICT,
   CONSTRAINT shop_entitlement_grants_entitlement_ck CHECK (entitlement IN ('MENU_EXPANDED')),
   CONSTRAINT shop_entitlement_grants_action_ck CHECK (action IN ('GRANT', 'REVOKE')),
-  CONSTRAINT shop_entitlement_grants_reason_ck CHECK (reason = btrim(reason) AND char_length(reason) BETWEEN 3 AND 300),
-  CONSTRAINT shop_entitlement_grants_payment_ck CHECK (payment_request_id IS NULL OR action = 'GRANT')
+  CONSTRAINT shop_entitlement_grants_reason_ck CHECK (reason = btrim(reason) AND char_length(reason) BETWEEN 3 AND 300)
 );
 CREATE INDEX shop_entitlement_grants_shop_idx ON app.shop_entitlement_grants (shop_id, entitlement, seq DESC);
-CREATE UNIQUE INDEX shop_entitlement_grants_payment_uq ON app.shop_entitlement_grants (payment_request_id) WHERE payment_request_id IS NOT NULL;
 CREATE TRIGGER shop_entitlement_grants_immutable BEFORE UPDATE OR DELETE ON app.shop_entitlement_grants
   FOR EACH ROW EXECUTE FUNCTION app.business_finance_immutable();
 CREATE TRIGGER shop_entitlement_grants_no_truncate BEFORE TRUNCATE ON app.shop_entitlement_grants
   FOR EACH STATEMENT EXECUTE FUNCTION app.business_finance_immutable();
 
--- A grant that names a payment request needs that request CONFIRMED (money recorded), and the sequence of a shop's rows must alternate: no GRANT on a granted
--- right, no REVOKE on a right that is not granted (the application checks under the shop lock; this is the database's own proof).
+-- Manual entitlement actions are independent of shop payment requests. The sequence of a shop's rows must alternate:
+-- no GRANT on a granted right, no REVOKE on a right that is not granted (the application checks under the shop lock).
 CREATE FUNCTION app.shop_entitlement_grants_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
 DECLARE
-  request_state varchar(12);
   last_action varchar(6);
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('entitlement|' || NEW.shop_id::text || '|' || NEW.entitlement, 0));
-  IF NEW.payment_request_id IS NOT NULL THEN
-    SELECT state INTO request_state FROM app.business_finance_requests WHERE request_id = NEW.payment_request_id AND shop_id = NEW.shop_id AND kind = 'SHOP_PAYMENT' FOR SHARE;
-    IF request_state IS DISTINCT FROM 'CONFIRMED' THEN
-      RAISE EXCEPTION 'SHOP_ENTITLEMENT_REQUIRES_CONFIRMED_PAYMENT' USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
   SELECT g.action INTO last_action FROM app.shop_entitlement_grants g WHERE g.shop_id = NEW.shop_id AND g.entitlement = NEW.entitlement ORDER BY g.seq DESC LIMIT 1;
   IF (NEW.action = 'GRANT' AND last_action = 'GRANT') OR (NEW.action = 'REVOKE' AND last_action IS DISTINCT FROM 'GRANT') THEN
     RAISE EXCEPTION 'SHOP_ENTITLEMENT_STATE_CONFLICT' USING ERRCODE = 'restrict_violation';
