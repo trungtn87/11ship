@@ -130,7 +130,7 @@ export class BusinessDashboard implements ShellHost {
     if(list.next_before)panel.append(button('Xem tiếp',()=>void this.requests(finance,list.next_before!,true).catch(e=>this.showError(e))));
     if(append)this.content.append(panel);else this.content.replaceChildren(panel);
   }
-  private requestCard(r:FinanceRequest):HTMLElement{return button(`${r.label} · ${money(r.amount_requested_vnd)}\n${stateText[r.state]??r.state}${r.kind==='SHOP_PAYMENT'&&r.state==='CONFIRMED'&&!r.entitlement_recorded?' · Chưa ghi nhận cấp quyền':''} · ${time(r.created_at)}${r.unread?' · '+r.unread+' chưa đọc':''}`,()=>this.navigate('chat',r.request_id),'business-request');}
+  private requestCard(r:FinanceRequest):HTMLElement{return button(`${r.label} · ${money(r.amount_requested_vnd)}\n${stateText[r.state]??r.state} · ${time(r.created_at)}${r.unread?' · '+r.unread+' chưa đọc':''}`,()=>this.navigate('chat',r.request_id),'business-request');}
   private async room(id:string,force:boolean):Promise<void>{
     const epoch=this.mountEpoch;
     if(this.detailId===id&&this.pollRoom&&!force){await this.pollRoom();return;}
@@ -151,7 +151,7 @@ export class BusinessDashboard implements ShellHost {
     }else if(request.state!=='PENDING')panel.append(h('p',{},'Yêu cầu đã kết thúc. Lịch sử trao đổi được giữ lại.'));
     if(request.state==='PENDING'&&room.capabilities.can_record)panel.append(await this.settlement(request));
     if(request.reported_at)panel.append(h('p',{},'Đã báo chuyển khoản: '+time(request.reported_at)));
-    if(room.entitlement)panel.append(this.entitlementForm(room.entitlement,room.capabilities.can_manage_entitlement,request));
+    if(room.entitlement)panel.append(this.entitlementForm(room.entitlement,room.capabilities.can_manage_entitlement));
     const update=async()=>{const r=await this.api.call<FinanceRoom>(BASE+'/requests/'+id);if(!this.current(epoch)||this.detailId!==id)return;if(JSON.stringify([r.request,r.capabilities,r.entitlement])!==JSON.stringify([room.request,room.capabilities,room.entitlement])){this.detailId=undefined;this.pollRoom=undefined;await this.room(id,true);return;}render(r);await this.markRead(r);};
     if(!this.current(epoch))return;
     this.pollRoom=update;this.content.replaceChildren(panel);await this.markRead(room);
@@ -172,7 +172,7 @@ export class BusinessDashboard implements ShellHost {
     const reject=button('Từ chối yêu cầu',()=>{reject.disabled=true;void this.api.call(base+'/reject',{expected_version:r.version,reason_code:reason.value}).then(()=>{this.detailId=undefined;void this.refresh(true);}).catch(e=>this.showError(e)).finally(()=>{reject.disabled=false;});},'business-danger');
     box.append(form,h('hr'),reason,reject);return box;
   }
-  private entitlementForm(e:Entitlement,canManage:boolean,r?:FinanceRequest):HTMLElement {
+  private entitlementForm(e:Entitlement,canManage:boolean):HTMLElement {
     const box=h('section',{class:'business-panel'},h('h3',{},'Quyền mở rộng thực đơn'),h('p',{},e.expanded?'Đã được cấp, không có ngày hết hạn.':'Chưa có quyền mở rộng. Món đang hiển thị được giữ nguyên.'));
     for(const row of e.history)box.append(h('p',{},`${row.action==='GRANT'?'Cấp':'Thu hồi'} · ${time(row.created_at)} · ${row.reason}`));
     if(canManage){
@@ -180,7 +180,7 @@ export class BusinessDashboard implements ShellHost {
       const submit=h('button',{type:'submit',class:'business-button'},e.expanded?'Thu hồi quyền mở rộng':'Cấp quyền mở rộng');
       const form=h('form',{},h('p',{},'Thao tác riêng, không ghi nhận tiền và không mở lại chat. Bắt buộc có lý do.'),reason,submit);
       form.onsubmit=event=>{event.preventDefault();const text=reason.value.trim();if([...text].length<3||[...text].length>300){this.error.hidden=false;this.error.textContent='Lý do cần từ 3 đến 300 ký tự.';return;}submit.disabled=true;
-        void this.api.call(BASE+'/shops/'+e.shop_id+'/entitlement',{action:e.expanded?'REVOKE':'GRANT',reason:text,expected_version:e.version,payment_request_id:!e.expanded&&r?.state==='CONFIRMED'&&!r.entitlement_recorded?r.request_id:null}).then(()=>{this.detailId=undefined;void this.refresh(true);}).catch(error=>this.showError(error)).finally(()=>{submit.disabled=false;});};box.append(form);
+        void this.api.call(BASE+'/shops/'+e.shop_id+'/entitlement',{action:e.expanded?'REVOKE':'GRANT',reason:text,expected_version:e.version}).then(()=>{this.detailId=undefined;void this.refresh(true);}).catch(error=>this.showError(error)).finally(()=>{submit.disabled=false;});};box.append(form);
     }return box;
   }
   private manualEntitlement():HTMLElement {
