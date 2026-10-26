@@ -11,7 +11,7 @@ Chủ trì: Codex.
 Đọc đầy đủ nội dung issue mới nhất, đặc biệt quyết định bổ sung của Owner; không dùng bản thiết kế cũ đã bị thay thế. Đây là bàn giao nhóm được Owner yêu cầu, thay yêu cầu PR riêng từng issue trước đó.
 
 ## Kết quả cần đạt
-Hoàn thiện phần còn thiếu trên Business Dashboard hiện có: báo chuyển khoản / xác nhận thực nhận / cấp hoặc thu hồi quyền là các bước riêng; quota 20 món theo chính sách cấu hình; chat đúng quyền xem/gửi, 500 ký tự, sự kiện thật và đóng phòng đúng lifecycle. Không thuê bao, không ví quán, không hardcode 29k, không tự mở quyền. Chưa chốt mức thu hoặc retention thì không bật thu phí/purge. Tận dụng nền finance hiện hữu, không tạo hệ thống song song.
+Hoàn thiện phần còn thiếu trên Business Dashboard hiện có: báo chuyển khoản / xác nhận thực nhận / cấp hoặc thu hồi quyền là các bước độc lập, không liên kết payment ID với entitlement; quota 20 món theo chính sách cấu hình; chat đúng quyền xem/gửi, 500 ký tự, sự kiện thật và đóng phòng đúng lifecycle. Không thuê bao, không ví quán, không hardcode 29k, không tự mở quyền. Chưa chốt mức thu hoặc retention thì không bật thu phí/purge. Tận dụng nền finance hiện hữu, không tạo hệ thống song song.
 
 ## Điều kiện bắt đầu
 Nhóm 2: https://github.com/trungtn87/11ship/pull/224
