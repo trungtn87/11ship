@@ -335,7 +335,7 @@ describe('M02 — menu and public shop view', () => {
       const response = await publicShop(app, o.shopId);
       expect(response.status).toBe(200);
       const data = dataOf(response);
-      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'shop_id', 'timezone'].sort());
+      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'next_refresh_ms', 'shop_id', 'timezone'].sort());
       expect(data).toMatchObject({ shop_id: o.shopId, name: 'Fixture shop', address_text: 'Fixture address', timezone: 'Asia/Ho_Chi_Minh' });
       expect((data.availability as Record<string, unknown>).reason).toBe('ONLINE');
       // The shop's OWN contact from its profile: the contact phone (not the login phone), a Zalo link and a Messenger link, nothing else.
