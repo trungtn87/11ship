@@ -611,7 +611,7 @@ class _SearchScreenState extends State<SearchScreen> {
         gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, stale: s.stale, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
           onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload))),
         for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
-          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish,
+          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, stale: s.stale,
             onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings, onReturn: s.freshness.reload))),
         gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload), child: const Text('Xem tất cả'))),
       ],
@@ -621,14 +621,15 @@ class _SearchScreenState extends State<SearchScreen> {
 }
 
 class _DishResult extends StatelessWidget {
-  const _DishResult({super.key, required this.dish, required this.onTap});
+  const _DishResult({super.key, required this.dish, required this.onTap, this.stale = false});
 
   final DishHit dish;
+  final bool stale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = _stateChip(dish.shop.reason);
+    final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(dish.shop.reason);
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
@@ -650,7 +651,7 @@ class _DishResult extends StatelessWidget {
                   Padding(padding: const EdgeInsets.only(top: 4), child: N11Chip(chip.label, kind: chip.kind)),
                 ]),
               ),
-              if (dish.shop.open && OrderRuntime.current != null)
+              if (!stale && dish.shop.open && OrderRuntime.current != null)
                 DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
                   itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
               else const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
