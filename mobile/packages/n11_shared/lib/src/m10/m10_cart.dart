@@ -65,9 +65,15 @@ class CartController extends ChangeNotifier {
   /// Reads the saved cart (prices and availability as the server has them NOW).
   Future<void> load() async {
     if (_reading) return;
-    if (_dirty || _syncing) {
+    if (_syncing) {
       freshness.failed();
-      return; // A refresh never replaces unsaved edits.
+      return;
+    }
+    if (_dirty) {
+      // Retry the same cart contents before reading, so reconnect never discards edits
+      // and the explicit Retry button can recover a previously failed save.
+      await _save();
+      if (_dirty || _disposed) return;
     }
     _reading = true;
     final int epoch = _mutationEpoch;

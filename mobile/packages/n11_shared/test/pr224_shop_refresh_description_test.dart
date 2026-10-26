@@ -28,6 +28,16 @@ class BoundaryDiscoveryApi extends FakeDiscoveryApi {
   }
 }
 
+class ReconnectCartSource extends SampleCustomerOrders {
+  ReconnectCartSource() : super(SampleOrderStore());
+  bool offline = true;
+  @override
+  Future<CartView?> saveCart({required String shopId, required List<DraftLine> lines, String? note}) {
+    if (offline) throw const M07Failure(M07FailureKind.offline);
+    return super.saveCart(shopId: shopId, lines: lines, note: note);
+  }
+}
+
 class LateCartSource extends SampleCustomerOrders {
   LateCartSource() : super(SampleOrderStore());
   final Completer<CartView?> pending = Completer<CartView?>();
@@ -90,6 +100,22 @@ void main() {
     await tester.pump();
     expect(controller.shops.single.reason, 'ONLINE');
     controller.dispose();
+  });
+
+  testWidgets('#204: reconnect saves the pending cart before refreshing availability', (tester) async {
+    final source = ReconnectCartSource();
+    final cart = CartController(source: source);
+    final dish = kSampleDishes.first;
+    await cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: dish.id, name: dish.name, priceVnd: dish.priceVnd, by: 2);
+    expect(cart.unsaved, isTrue);
+    expect(cart.availabilityStale, isTrue);
+    source.offline = false;
+    await cart.load();
+    expect(cart.unsaved, isFalse);
+    expect(cart.count, 2);
+    expect(cart.online, isTrue);
+    expect((await source.cart())!.lines.single.quantity, 2);
+    cart.dispose();
   });
 
   testWidgets('#204: an old refresh cannot overwrite a newer adopted cart', (tester) async {
