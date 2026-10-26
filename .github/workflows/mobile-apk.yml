@@ -139,6 +139,8 @@ jobs:
           done
 
       - name: Test
+        env:
+          N11_V4_SCREENSHOTS: ${{ runner.temp }}/v4-foundation-ui
         run: |
           dirs="mobile/${{ matrix.app }}"
           if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
@@ -146,6 +148,14 @@ jobs:
             (cd "$d" && flutter test --reporter expanded) 2>&1 | tee "$RUNNER_TEMP/t.log" || {
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
+
+      - name: Upload V4 foundation widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4-foundation-ui-widget-renders
+          path: ${{ runner.temp }}/v4-foundation-ui/*.png
+          if-no-files-found: ignore
 
       - name: 11Ship home with offline map enabled
         if: matrix.app == 'ship'

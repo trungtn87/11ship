@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import '../widgets/discovery_controls.dart';
 import '../flows/location.dart';
 import '../m10/m10_cart.dart';
 import '../m10/m10_customer_views.dart' show DishStepper;
@@ -539,25 +541,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 decoration: const BoxDecoration(color: N11Colors.white, border: Border(bottom: BorderSide(color: N11Colors.line))),
                 child: Row(children: <Widget>[
                   Expanded(
-                    child: TextField(
-                      key: const Key('search-field'),
+                    child: N11SearchField(
+                      fieldKey: const Key('search-field'),
+                      clearKey: const Key('search-clear'),
                       controller: _text,
                       autofocus: true,
-                      maxLength: 100,
-                      textInputAction: TextInputAction.search,
                       onChanged: _search.setTerm,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
-                      decoration: InputDecoration(
-                        hintText: 'Tìm quán hoặc món',
-                        hintStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder),
-                        counterText: '',
-                        filled: true,
-                        fillColor: N11Colors.bg,
-                        prefixIcon: const Icon(Icons.search, color: N11Colors.ink2),
-                        suffixIcon: _text.text.isEmpty ? null : IconButton(key: const Key('search-clear'), tooltip: 'Xóa nội dung tìm kiếm', icon: const Icon(Icons.close, size: 20), onPressed: () { _text.clear(); _search.setTerm(''); setState(() {}); }),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: BorderSide.none),
-                      ),
                     ),
                   ),
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),

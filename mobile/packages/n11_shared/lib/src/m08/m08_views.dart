@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../widgets/discovery_controls.dart';
+
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart' show n11Route;
@@ -104,13 +106,7 @@ class NotificationBell extends StatelessWidget {
                 Positioned(
                   right: 4,
                   top: 4,
-                  child: Container(
-                    key: const Key('bell-count'),
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    constraints: const BoxConstraints(minWidth: 18),
-                    decoration: BoxDecoration(color: N11Colors.error, borderRadius: BorderRadius.circular(kRadiusPill)),
-                    child: Text(unread > 99 ? '99+' : '$unread', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, height: 1.3, fontWeight: FontWeight.w800, color: N11Colors.white)),
-                  ),
+                  child: NotificationBadge(key: const Key('bell-count'), count: unread),
                 ),
             ],
           ),
