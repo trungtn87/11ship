@@ -44,6 +44,10 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     const r=await client(shop,'POST','/shop-payments',{amount_vnd:29000,note:'Đã chuyển khoản, nhờ kiểm tra'});expect(r.status).toBe(201);return String(adminData(r).request_id);
   };
   const confirmation=(version=1)=>({expected_version:version,actual_amount_vnd:29000,bank_id:'VCB',system_owned_account_id:accountId,canonical_transaction_id:bankTransaction,received_at:new Date().toISOString()});
+  it('keeps the new entitlement trigger inventory explicit alongside the older migration inventory',async()=>{
+    const triggers=await admin.pool.query<{tgname:string}>(`SELECT tgname FROM pg_trigger WHERE tgrelid='app.shop_entitlement_grants'::regclass AND NOT tgisinternal ORDER BY tgname`);
+    expect(triggers.rows.map(r=>r.tgname)).toEqual(['shop_entitlement_grants_guard','shop_entitlement_grants_immutable','shop_entitlement_grants_no_truncate']);
+  });
   it('locks before checking financial history during rollback, preserving a concurrent committed request',async()=>{
     const id=randomUUID();const writer=await admin.pool.connect();const migrator=await admin.pool.connect();
     try{
