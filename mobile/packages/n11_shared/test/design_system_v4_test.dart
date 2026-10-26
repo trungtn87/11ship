@@ -142,6 +142,9 @@ void main() {
         expect(tester.takeException(), isNull);
         await tester.tap(find.byKey(const Key('tab-account')));
         expect(selected, 4);
+        // Flush the navigation ink repaint before capturing; loading spinners
+        // intentionally keep ticking, so pumpAndSettle cannot be used here.
+        await tester.pump(const Duration(milliseconds: 200));
         if (screenshots != null && scale == 1) {
           final RenderRepaintBoundary render = tester.renderObject(find.byKey(boundary));
           final ui.Image image = (await tester.runAsync(() => render.toImage(pixelRatio: 1.5)))!;
