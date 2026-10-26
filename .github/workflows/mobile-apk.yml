@@ -141,6 +141,7 @@ jobs:
       - name: Test
         env:
           N11_V4_SCREENSHOTS: ${{ runner.temp }}/v4-foundation-ui
+          N11_SHIP_V4_SCREENSHOTS: ${{ runner.temp }}/ship-v4-ui
         run: |
           dirs="mobile/${{ matrix.app }}"
           if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
@@ -155,6 +156,14 @@ jobs:
         with:
           name: v4-foundation-ui-widget-renders
           path: ${{ runner.temp }}/v4-foundation-ui/*.png
+          if-no-files-found: ignore
+
+      - name: Upload 11Ship V4 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'ship'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-v4-ui-widget-renders
+          path: ${{ runner.temp }}/ship-v4-ui/*.png
           if-no-files-found: ignore
 
       - name: 11Ship home with offline map enabled
