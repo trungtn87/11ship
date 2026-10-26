@@ -67,7 +67,7 @@ class DishStepper extends StatelessWidget {
       }
       replace = true;
     }
-    await cart.add(shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace, description: description, canAdd: canAdd);
+    await cart.add(shopId: shopId, shopName: shopName, itemId: itemId, name: name, priceVnd: priceVnd, replace: replace);
   }
 
   @override

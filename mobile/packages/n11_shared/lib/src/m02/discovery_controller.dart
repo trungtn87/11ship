@@ -378,7 +378,6 @@ class DiscoveryPosition extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    freshness.dispose();
     super.dispose();
   }
 }

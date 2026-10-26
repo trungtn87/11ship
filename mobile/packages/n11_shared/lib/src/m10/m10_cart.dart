@@ -29,6 +29,7 @@ class CartController extends ChangeNotifier {
   bool get online => _online && !_availabilityStale;
   bool get availabilityStale => _availabilityStale;
   bool _reading = false;
+  int _mutationEpoch = 0;
   final CustomerOrderSource source;
 
   String? _shopId;
@@ -69,8 +70,10 @@ class CartController extends ChangeNotifier {
       return; // A refresh never replaces unsaved edits.
     }
     _reading = true;
+    final int epoch = _mutationEpoch;
     try {
       final CartView? view = await source.cart();
+      if (_disposed || epoch != _mutationEpoch) return;
       _apply(view);
       _loaded = true;
       _failure = null;
@@ -179,6 +182,7 @@ class CartController extends ChangeNotifier {
 
   /// Replaces the cart with what the server answered (after "đặt lại" or a refresh).
   void adopt(CartView? view) {
+    _mutationEpoch++;
     _apply(view);
     _loaded = true;
     _dirty = false;
@@ -188,12 +192,14 @@ class CartController extends ChangeNotifier {
 
   /// The Order was sent: the cart of that shop has become the Order (the server emptied it too).
   void sent() {
+    _mutationEpoch++;
     _apply(null);
     _dirty = false;
     _notify();
   }
 
   Future<void> _save() async {
+    _mutationEpoch++;
     _dirty = true;
     _notify();
     if (_syncing) {

@@ -1,8 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
-import 'package:n11_shared/src/m02/public_shop_controller.dart';
-import 'package:n11_shared/src/m10/m10_customer_views.dart';
 import 'm02_shop_views_test.dart' show harness, show;
 import 'm02_menu_views_test.dart' show textOf;
 
@@ -18,6 +17,13 @@ class ClockShopApi implements PublicShopApi {
       serverNow: DateTime.utc(2026, 10, 25, 14, 59, 59), hours: emptyWeek(),
       nextRefreshMs: 1000, categories: const <PublicCategory>[]);
   }
+}
+
+class LateCartSource extends SampleCustomerOrders {
+  LateCartSource() : super(SampleOrderStore());
+  final Completer<CartView?> pending = Completer<CartView?>();
+  @override
+  Future<CartView?> cart() => pending.future;
 }
 
 void main() {
@@ -64,6 +70,18 @@ void main() {
     expect(api.calls, 2);
   });
 
+  testWidgets('#204: an old refresh cannot overwrite a newer adopted cart', (tester) async {
+    final source = LateCartSource();
+    final cart = CartController(source: source);
+    final read = cart.load();
+    cart.adopt(const CartView(shopId: 'new', shopName: 'Giỏ mới', online: true, lines: <CartLine>[], note: null, itemsVnd: 0));
+    source.pending.complete(null);
+    await read;
+    expect(cart.shopId, 'new');
+    expect(cart.shopName, 'Giỏ mới');
+    cart.dispose();
+  });
+
   testWidgets('#207: small-screen text expands, preserves lines and hides the empty description', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
@@ -93,7 +111,7 @@ void main() {
     final text = '👨‍👩‍👦' * 300;
     h.flows.menu.setDescription(text);
     expect(h.flows.menu.validate(h.flows.menu.form!), isEmpty);
-    h.flows.menu.setDescription(text + 'x');
+    h.flows.menu.setDescription('${text}x');
     expect(h.flows.menu.validate(h.flows.menu.form!)['description'], isNotNull);
     h.flows.menu.setDescription('1 đĩa 500g\nÍt cay');
     expect(await h.flows.menu.save(), isTrue);

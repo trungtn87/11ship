@@ -279,7 +279,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
               hiddenCount: menu.hiddenCount,
               onHours: () async {
                   await Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)));
-                  if (mounted) await _controller.freshness.reload();
+                  if (mounted) await ops.refresh();
                 },
             ),
             if (shown)
