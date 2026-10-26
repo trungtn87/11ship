@@ -171,24 +171,15 @@ export class BusinessFinanceService {
   entitlement(who:FinanceIdentity,shopId:string):Promise<JsonObject> {
     return this.tx.withTransaction(async c=>{await this.authorize(c,who,SHOP_ENTITLEMENT_MANAGE);if(who.kind!=='admin')throw new AppError('ADMIN_FORBIDDEN');return this.entitlements.view(c,shopId);});
   }
-  changeEntitlement(who:FinanceIdentity,shopId:string,action:'GRANT'|'REVOKE',reason:string,expectedVersion:string,paymentId:string|null,key:Key,requestId:string):Promise<JsonObject> {
-    return this.command(who,'entitlement',{shop_id:shopId,action,reason,expected_version:expectedVersion,payment_request_id:paymentId},key,requestId,async(c,a)=>{
+  changeEntitlement(who:FinanceIdentity,shopId:string,action:'GRANT'|'REVOKE',reason:string,expectedVersion:string,key:Key,requestId:string):Promise<JsonObject> {
+    return this.command(who,'entitlement',{shop_id:shopId,action,reason,expected_version:expectedVersion},key,requestId,async(c,a)=>{
       if(who.kind!=='admin')throw new AppError('ADMIN_FORBIDDEN');
       if(!await this.shops.lockShopForUpdate(c,shopId))throw new AppError('SHOP_NOT_FOUND');
       const current=await this.entitlements.view(c,shopId);
       if(current.version!==expectedVersion||current.expanded===(action==='GRANT'))throw new AppError('VERSION_CONFLICT');
-      if(paymentId){
-        const row=await this.repo.find(c,paymentId,true);
-        if(action!=='GRANT'||row?.shop_id!==shopId||row.kind!=='SHOP_PAYMENT'||row.state!=='CONFIRMED')throw new AppError('ADMIN_INPUT_INVALID');
-        if((await c.query(`SELECT 1 FROM app.shop_entitlement_grants WHERE payment_request_id=$1`,[paymentId])).rowCount)throw new AppError('VERSION_CONFLICT');
-      }
-      await c.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,payment_request_id,created_at) VALUES($1,$2,'MENU_EXPANDED',$3,$4,$5,$6,clock_timestamp())`,[randomUUID(),shopId,action,reason,a.userId,paymentId]);
+      await c.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,created_at) VALUES($1,$2,'MENU_EXPANDED',$3,$4,$5,clock_timestamp())`,[randomUUID(),shopId,action,reason,a.userId]);
       const result=await this.entitlements.view(c,shopId);
-      // Entitlement events may be appended to a closed room; human chat remains closed.
-      const rooms=(await c.query<{request_id:string}>(`SELECT request_id FROM app.business_finance_requests WHERE shop_id=$1 ORDER BY (request_id=$2::uuid) DESC NULLS LAST,created_at DESC LIMIT 1`,[shopId,paymentId])).rows;
-      if(rooms[0])await this.event(c,rooms[0].request_id,action==='GRANT'?'Quản trị đã cấp quyền mở rộng thực đơn.':'Quản trị đã thu hồi quyền mở rộng thực đơn. Các món hiện có được giữ nguyên.');
-      if(rooms[0])await this.repo.publish(c,rooms[0].request_id);
-      await this.audit.append(c,{requestId,actorType:a.role==='SYSTEM'?'SYSTEM':'ADMIN',actorId:a.userId,action:'shop.entitlement.'+action.toLowerCase()+'.v1',resourceType:'shop_entitlement',resourceId:shopId,resourceVersion:Number(result.version),outcome:'SUCCESS',metadata:{reason,payment_request_id:paymentId}});
+      await this.audit.append(c,{requestId,actorType:a.role==='SYSTEM'?'SYSTEM':'ADMIN',actorId:a.userId,action:'shop.entitlement.'+action.toLowerCase()+'.v1',resourceType:'shop_entitlement',resourceId:shopId,resourceVersion:Number(result.version),outcome:'SUCCESS',metadata:{reason}});
       await this.outbox.append(c,{eventType:'shop.entitlement.changed.v1',eventSchemaVersion:1,resourceType:'shop_entitlement',resourceId:shopId,resourceVersion:Number(result.version),payload:{shop_id:shopId,action,version:result.version}});
       return result;
     },false,SHOP_ENTITLEMENT_MANAGE);
