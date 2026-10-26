@@ -86,9 +86,9 @@ class DishStepper extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SizedBox(width: 40, height: 40, child: IconButton(key: Key('dish-minus-$itemId'), tooltip: 'Bớt $name', onPressed: () => unawaited(cart.decrease(itemId)), icon: const Icon(Icons.remove_circle_outline))),
-            SizedBox(width: 24, child: Text('$q', key: Key('dish-qty-$itemId'), textAlign: TextAlign.center, style: N11Text.bodyStrong)),
-            SizedBox(width: 40, height: 40, child: IconButton(key: Key('dish-plus-$itemId'), tooltip: 'Thêm $name', onPressed: () => unawaited(_add(context)), icon: const Icon(Icons.add_circle, color: N11Colors.yellowStrong))),
+            SizedBox(width: kTapMin, height: kTapMin, child: IconButton(key: Key('dish-minus-$itemId'), tooltip: 'Bớt $name', onPressed: () => unawaited(cart.decrease(itemId)), icon: const Icon(Icons.remove_circle_outline))),
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: 24), child: Text('$q', key: Key('dish-qty-$itemId'), textAlign: TextAlign.center, style: N11Text.bodyStrong)),
+            SizedBox(width: kTapMin, height: kTapMin, child: IconButton(key: Key('dish-plus-$itemId'), tooltip: 'Thêm $name', onPressed: () => unawaited(_add(context)), icon: const Icon(Icons.add_circle, color: N11Colors.black))),
           ],
         );
       },
@@ -269,6 +269,65 @@ class _CartScreenState extends State<CartScreen> {
     unawaited(cart.load());
   }
 
+  Widget _cartLine(DraftLine line) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final Widget details = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(line.name, style: N11Text.bodyStrong.copyWith(decoration: cart.isUnavailable(line) ? TextDecoration.lineThrough : null)),
+          if (line.note != null) Text('Ghi chú: ${line.note}', style: N11Text.caption),
+          Text(
+            cart.isUnavailable(line) ? 'Không còn bán' : m10Money(line.priceVnd),
+            style: N11Text.bodyStrong.copyWith(color: cart.isUnavailable(line) ? N11Colors.error : N11Colors.black),
+          ),
+        ],
+      );
+      final Widget controls = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            key: Key('cart-minus-${line.itemId}'),
+            tooltip: 'Bớt',
+            onPressed: () => unawaited(cart.setQuantity(line, line.quantity - 1)),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          Text('${line.quantity}', key: Key('cart-qty-${line.itemId}'), style: N11Text.bodyStrong),
+          IconButton(
+            key: Key('cart-plus-${line.itemId}'),
+            tooltip: 'Thêm',
+            onPressed: () => unawaited(cart.setQuantity(line, line.quantity + 1)),
+            icon: const Icon(Icons.add_circle, color: N11Colors.black),
+          ),
+          IconButton(
+            key: Key('cart-remove-${line.itemId}'),
+            tooltip: 'Xóa khỏi giỏ',
+            onPressed: () => unawaited(cart.setQuantity(line, 0)),
+            icon: const Icon(Icons.delete_outline, color: N11Colors.error),
+          ),
+        ],
+      );
+      final bool stacked = constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(16) > 21;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: N11Space.gap2),
+        child: stacked
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  details,
+                  const SizedBox(height: N11Space.gap2),
+                  Align(alignment: Alignment.centerRight, child: controls),
+                ],
+              )
+            : Row(
+                children: <Widget>[
+                  Expanded(child: details),
+                  controls,
+                ],
+              ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -276,54 +335,80 @@ class _CartScreenState extends State<CartScreen> {
       builder: (BuildContext context, Widget? _) {
         final bool sample = widget.runtime.customer.isSample;
         if (cart.isEmpty) {
-          return m07Page('Giỏ hàng', sample, const <Widget>[EmptyState(key: Key('cart-empty'), icon: Icons.shopping_basket_outlined, title: 'Giỏ hàng trống', text: 'Chọn món ở trang quán để thêm vào giỏ.')]);
+          return m07Page('Giỏ hàng', sample, const <Widget>[
+            EmptyState(key: Key('cart-empty'), icon: Icons.shopping_basket_outlined, title: 'Giỏ hàng trống', text: 'Chọn món ở trang quán để thêm vào giỏ.'),
+          ]);
         }
         return m07Page(
           'Giỏ hàng',
           sample,
           <Widget>[
-            Text(cart.shopName, key: const Key('cart-shop'), style: N11Text.h2),
-            Text(cart.availabilityStale ? 'Chưa cập nhật trạng thái quán' : cart.online ? 'Đang mở cửa' : 'Đã đóng cửa', key: const Key('cart-shop-availability')),
-            if (cart.availabilityStale) TextButton(onPressed: cart.load, child: const Text('Thử lại')),
-            if (cart.failure != null) N11Banner(key: const Key('cart-unsaved'), kind: BannerKind.warn, title: 'Chưa lưu được giỏ', text: 'Giỏ trên máy có thể mới hơn giỏ trên máy chủ. Sẽ lưu lại khi có mạng.', icon: Icons.cloud_off_outlined),
-            if (cart.hasUnavailable) const N11Banner(key: Key('cart-unavailable'), kind: BannerKind.error, title: 'Có món không còn bán', text: 'Hãy xóa các món đó khỏi giỏ rồi tiếp tục.'),
             N11Card(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  for (final DraftLine l in cart.lines)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: <Widget>[
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(l.name, style: N11Text.bodyStrong.copyWith(decoration: cart.isUnavailable(l) ? TextDecoration.lineThrough : null)),
-                                if (l.note != null) Text('Ghi chú: ${l.note}', style: N11Text.caption),
-                                Text(cart.isUnavailable(l) ? 'Không còn bán' : m10Money(l.priceVnd), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cart.isUnavailable(l) ? N11Colors.error : N11Colors.yellowStrong)),
-                              ],
-                            ),
-                          ),
-                          IconButton(key: Key('cart-minus-${l.itemId}'), tooltip: 'Bớt', onPressed: () => unawaited(cart.setQuantity(l, l.quantity - 1)), icon: const Icon(Icons.remove_circle_outline)),
-                          Text('${l.quantity}', key: Key('cart-qty-${l.itemId}'), style: N11Text.bodyStrong),
-                          IconButton(key: Key('cart-plus-${l.itemId}'), tooltip: 'Thêm', onPressed: () => unawaited(cart.setQuantity(l, l.quantity + 1)), icon: const Icon(Icons.add_circle, color: N11Colors.yellowStrong)),
-                          IconButton(key: Key('cart-remove-${l.itemId}'), tooltip: 'Xóa khỏi giỏ', onPressed: () => unawaited(cart.setQuantity(l, 0)), icon: const Icon(Icons.delete_outline, color: N11Colors.error)),
-                        ],
+                  Row(
+                    children: <Widget>[
+                      const Icon(Icons.storefront_outlined, size: 20, color: N11Colors.ink2),
+                      const SizedBox(width: N11Space.gap2),
+                      Expanded(
+                        child: Text(cart.shopName, key: const Key('cart-shop'), style: N11Text.h2),
                       ),
-                    ),
-                  const Divider(color: N11Colors.line),
-                  Row(children: <Widget>[const Expanded(child: Text('Tiền món', style: N11Text.bodyStrong)), Text(m10Money(cart.itemsVnd), key: const Key('cart-total'), style: N11Text.bodyStrong)]),
-                  Row(children: <Widget>[const Expanded(child: Text('Phí giao (dự tính)', style: N11Text.body)), Text(cart.feeEstimateVnd == null ? 'Chưa có bảng giá' : m10Money(cart.feeEstimateVnd!), key: const Key('cart-fee-estimate'), style: N11Text.body)]),
-                  if (cart.feeEstimateVnd != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(cart.itemsVnd + cart.feeEstimateVnd!), key: const Key('cart-expected-total'), style: N11Text.bodyStrong)]),
+                    ],
+                  ),
+                  const SizedBox(height: N11Space.gap2),
+                  Text(
+                    cart.availabilityStale
+                        ? 'Chưa cập nhật trạng thái quán'
+                        : cart.online
+                        ? 'Đang mở cửa'
+                        : 'Đã đóng cửa',
+                    key: const Key('cart-shop-availability'),
+                    style: N11Text.caption,
+                  ),
                 ],
               ),
             ),
-            ReasonNote(cart.feeEstimateVnd == null
-              ? kNoFeeNote
-              : kFeeEstimateNote,
-              icon: Icons.warning_amber_rounded),
+            if (cart.availabilityStale) TextButton(onPressed: cart.load, child: const Text('Thử lại')),
+            if (cart.failure != null)
+              N11Banner(
+                key: const Key('cart-unsaved'),
+                kind: BannerKind.warn,
+                title: 'Chưa lưu được giỏ',
+                text: 'Giỏ trên máy có thể mới hơn giỏ trên máy chủ. Sẽ lưu lại khi có mạng.',
+                icon: Icons.cloud_off_outlined,
+              ),
+            if (cart.hasUnavailable)
+              const N11Banner(
+                key: Key('cart-unavailable'),
+                kind: BannerKind.error,
+                title: 'Có món không còn bán',
+                text: 'Hãy xóa các món đó khỏi giỏ rồi tiếp tục.',
+              ),
+            N11Card(child: Column(children: <Widget>[for (final DraftLine l in cart.lines) _cartLine(l)])),
+            N11Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const Text('Tạm tính', style: N11Text.h2),
+                  const SizedBox(height: N11Space.gap3),
+                  KeyValueRows(
+                    <(String, String)>[
+                      ('Tiền món', m10Money(cart.itemsVnd)),
+                      ('Phí giao (dự tính)', cart.feeEstimateVnd == null ? 'Chưa có bảng giá' : m10Money(cart.feeEstimateVnd!)),
+                      if (cart.feeEstimateVnd != null) ('Tổng dự kiến', m10Money(cart.itemsVnd + cart.feeEstimateVnd!)),
+                    ],
+                    valueKeys: const <String, Key>{
+                      'Tiền món': Key('cart-total'),
+                      'Phí giao (dự tính)': Key('cart-fee-estimate'),
+                      'Tổng dự kiến': Key('cart-expected-total'),
+                    },
+                    responsive: true,
+                  ),
+                ],
+              ),
+            ),
+            ReasonNote(cart.feeEstimateVnd == null ? kNoFeeNote : kFeeEstimateNote, icon: Icons.warning_amber_rounded),
           ],
           bottom: Column(
             mainAxisSize: MainAxisSize.min,
@@ -331,15 +416,34 @@ class _CartScreenState extends State<CartScreen> {
               N11Button(
                 key: const Key('cart-continue'),
                 label: cart.feeEstimateVnd == null ? 'Tiếp tục' : 'Tiếp tục · ${m10Money(cart.itemsVnd + cart.feeEstimateVnd!)}',
-                onPressed: cart.hasUnavailable || cart.availabilityStale ? null : () => Navigator.of(context).push(n11Route(CheckoutScreen(runtime: widget.runtime, addresses: widget.addresses ?? widget.runtime.addresses, session: widget.session ?? widget.runtime.session))),
+                onPressed: cart.hasUnavailable || cart.availabilityStale
+                    ? null
+                    : () => Navigator.of(context).push(
+                        n11Route(
+                          CheckoutScreen(
+                            runtime: widget.runtime,
+                            addresses: widget.addresses ?? widget.runtime.addresses,
+                            session: widget.session ?? widget.runtime.session,
+                          ),
+                        ),
+                      ),
               ),
               const SizedBox(height: N11Space.gap2),
-              N11Link('Xóa giỏ hàng', key: const Key('cart-clear'), onPressed: () async {
-                final bool yes = await showConfirmDialog(context, title: 'Xóa giỏ hàng?', content: const Text('Tất cả món trong giỏ sẽ bị xóa.'), confirmLabel: 'Xóa giỏ');
-                if (yes) {
-                  await cart.clear();
-                }
-              }),
+              N11Link(
+                'Xóa giỏ hàng',
+                key: const Key('cart-clear'),
+                onPressed: () async {
+                  final bool yes = await showConfirmDialog(
+                    context,
+                    title: 'Xóa giỏ hàng?',
+                    content: const Text('Tất cả món trong giỏ sẽ bị xóa.'),
+                    confirmLabel: 'Xóa giỏ',
+                  );
+                  if (yes) {
+                    await cart.clear();
+                  }
+                },
+              ),
             ],
           ),
         );
@@ -635,6 +739,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (_changed)
           N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
         if (p != null && p.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: p.blockers.map(_blockerText).join('\n')),
+        const Text('Người nhận', style: N11Text.h2),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
         N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
         N11Card(
@@ -678,7 +783,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Thanh toán trực tiếp', style: N11Text.label),
+              const Text('Thanh toán trực tiếp', style: N11Text.h2),
               KeyValueRows(<(String, String)>[
                 ('Tiền món', m10Money(items)),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa có bảng giá' : m10Money(estimateFee)),

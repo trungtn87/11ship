@@ -445,28 +445,51 @@ Future<bool> showConfirmDialog(BuildContext context, {required String title, req
 // ---- cards -----------------------------------------------------------------------------------------------------------
 
 class KeyValueRows extends StatelessWidget {
-  const KeyValueRows(this.rows, {super.key});
+  const KeyValueRows(this.rows, {super.key, this.valueKeys = const <String, Key>{}, this.responsive = false});
 
   final List<(String, String)> rows;
+  final Map<String, Key> valueKeys;
+  final bool responsive;
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
+  Widget _line(BuildContext context, String label, String value) {
+    final Widget caption = Text(label, style: N11Text.caption);
+    final Widget amount = Text(value, key: valueKeys[label], textAlign: TextAlign.right, style: N11Text.bodyStrong);
+    final Widget row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final (String label, String value) in rows)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(flex: 4, child: Text(label, style: N11Text.caption)),
-                Expanded(flex: 6, child: Text(value, textAlign: TextAlign.right, style: N11Text.bodyStrong)),
-              ],
-            ),
-          ),
+        Expanded(flex: 4, child: caption),
+        Expanded(flex: 6, child: amount),
       ],
     );
+    // Existing callers retain their layout, including intrinsic-sized dialogs.
+    if (!responsive) return row;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < 280 || MediaQuery.textScalerOf(context).scale(16) > 21) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              caption,
+              const SizedBox(height: N11Space.gap1),
+              amount,
+            ],
+          );
+        }
+        return row;
+      },
+    );
   }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: <Widget>[
+      for (final (String label, String value) in rows)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: N11Space.gap1),
+          child: _line(context, label, value),
+        ),
+    ],
+  );
 }
 
 /// Server-clock countdown of the search with the 5 / 15 / 30 minute marks.

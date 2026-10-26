@@ -6,6 +6,7 @@ import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/discovery_controls.dart';
 import 'm02_flows.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
@@ -152,23 +153,13 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
   List<Widget> _listBody(MenuSnapshot snapshot, bool readOnly) {
     final List<MenuItem> shown = menu.visibleItems;
     return <Widget>[
-      TextField(
-        key: const Key('menu-search'),
+      N11SearchField(
+        fieldKey: const Key('menu-search'),
+        clearKey: const Key('menu-search-clear'),
         controller: _search,
-        textInputAction: TextInputAction.search,
+        maxLength: null,
+        hint: 'Tìm món trong thực đơn',
         onChanged: menu.setQuery,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
-        decoration: InputDecoration(
-          hintText: 'Tìm món trong thực đơn',
-          hintStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder),
-          filled: true,
-          fillColor: N11Colors.white,
-          prefixIcon: const Icon(Icons.search, color: N11Colors.ink2),
-          suffixIcon: menu.query.isEmpty ? null : IconButton(key: const Key('menu-search-clear'), tooltip: 'Xóa nội dung tìm kiếm', icon: const Icon(Icons.close, size: 20), onPressed: () { _search.clear(); menu.setQuery(''); }),
-          contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 14),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.yellow, width: 2)),
-        ),
       ),
       _chips(<(String, String)>[('all', 'Tất cả'), ('on', 'Đang hiện'), ('off', 'Đang ẩn')], menu.filter, menu.setFilter, 'menu-filter'),
       if (snapshot.categories.length > 1)

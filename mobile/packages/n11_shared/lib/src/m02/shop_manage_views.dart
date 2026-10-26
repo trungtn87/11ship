@@ -184,12 +184,12 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
     final (Color bg, Color border, IconData icon) tone = switch (copy.kind) {
       ChipKind.ok => (N11Colors.successSoft, N11Colors.successBorder, Icons.storefront),
       ChipKind.bad => (N11Colors.errorSoft, N11Colors.errorBorder, Icons.block),
-      ChipKind.warn => (N11Colors.yellowSoft, N11Colors.yellow, Icons.schedule),
+      ChipKind.warn => (N11Colors.warningSoft, N11Colors.warningSoft, Icons.schedule),
       _ => (N11Colors.white, N11Colors.line, Icons.nightlight_outlined),
     };
     return <Widget>[
       if (setup.justActivated) ShopSetupReadyBanner(onClose: setup.acknowledgeActivation),
-      Text(o.name, key: const Key('manage-name'), style: const TextStyle(fontSize: 26, height: 1.2, fontWeight: FontWeight.w800, color: N11Colors.black)),
+      Text(o.name, key: const Key('manage-name'), style: N11Text.title),
       Align(alignment: Alignment.centerLeft, child: N11Chip(profileChip.$1, kind: profileChip.$2)),
       if (ops.stale)
         N11Banner(
@@ -207,7 +207,7 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
       Container(
         key: const Key('status-card'),
         padding: const EdgeInsets.all(N11Space.gap4),
-        decoration: BoxDecoration(color: tone.$1, border: Border.all(color: tone.$2, width: 2), borderRadius: BorderRadius.circular(kRadiusCard)),
+        decoration: BoxDecoration(color: tone.$1, border: Border.all(color: tone.$2), borderRadius: BorderRadius.circular(kRadiusCard)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[

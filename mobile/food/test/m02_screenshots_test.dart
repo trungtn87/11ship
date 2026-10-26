@@ -27,6 +27,9 @@ void main() {
       loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
     }
     await loader.load();
+    final FontLoader icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
 
   final GlobalKey boundary = GlobalKey();
@@ -51,20 +54,33 @@ void main() {
     final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
-    final FakeMenuApi menu = FakeMenuApi(items: <MenuItem>[
-      FakeMenuApi.item('a', 'Ốc hương hấp', 120000, 'c1'),
-      FakeMenuApi.item('b', 'Ngao hấp', 60000, 'c2'),
-      FakeMenuApi.item('c', 'Ốc móng tay xào tỏi', 135000, 'c1', hidden: true),
-      FakeMenuApi.item('d', 'Sò điệp nướng mỡ hành phô mai đặc biệt phần lớn ăn kèm bánh tráng và rau thơm các loại', 180000, 'c2'),
-    ]);
-    final M02Flows flows = createM02Flows(session: session, location: FakeLocationProvider(), menuApi: menu, picker: FakeImagePicker(), pollEvery: Duration.zero);
+    final FakeMenuApi menu = FakeMenuApi(
+      items: <MenuItem>[
+        FakeMenuApi.item('a', 'Ốc hương hấp', 120000, 'c1'),
+        FakeMenuApi.item('b', 'Ngao hấp', 60000, 'c2'),
+        FakeMenuApi.item('c', 'Ốc móng tay xào tỏi', 135000, 'c1', hidden: true),
+        FakeMenuApi.item('d', 'Sò điệp nướng mỡ hành phô mai đặc biệt phần lớn ăn kèm bánh tráng và rau thơm các loại', 180000, 'c2'),
+      ],
+    );
+    final M02Flows flows = createM02Flows(
+      session: session,
+      location: FakeLocationProvider(),
+      menuApi: menu,
+      picker: FakeImagePicker(),
+      pollEvery: Duration.zero,
+    );
     addTearDown(flows.dispose);
 
     Future<void> screen(Widget widget, String name, {double width = 390, double height = 800}) async {
       tester.view.physicalSize = Size(width * 2, height * 2);
       tester.view.devicePixelRatio = 2;
       await tester.pumpWidget(const SizedBox());
-      await tester.pumpWidget(RepaintBoundary(key: boundary, child: MaterialApp(debugShowCheckedModeBanner: false, theme: buildN11Theme(), home: widget)));
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: MaterialApp(debugShowCheckedModeBanner: false, theme: buildN11Theme(), home: widget),
+        ),
+      );
       await tester.pumpAndSettle();
       await shot(tester, name);
     }
@@ -94,23 +110,71 @@ void main() {
       serverNow: DateTime.utc(2026, 10, 14, 11, 30),
       hours: scheduleFromWire(server.hours)!,
       categories: const <PublicCategory>[
-        PublicCategory(name: 'Ốc', items: <PublicItem>[PublicItem(id: 'a', name: 'Ốc hương hấp', priceVnd: 120000, imageUrl: null)]),
-        PublicCategory(name: 'Hải sản', items: <PublicItem>[PublicItem(id: 'b', name: 'Ngao hấp', priceVnd: 60000, imageUrl: null)]),
+        PublicCategory(
+          name: 'Ốc',
+          items: <PublicItem>[PublicItem(id: 'a', name: 'Ốc hương hấp', priceVnd: 120000, imageUrl: null)],
+        ),
+        PublicCategory(
+          name: 'Hải sản',
+          items: <PublicItem>[PublicItem(id: 'b', name: 'Ngao hấp', priceVnd: 60000, imageUrl: null)],
+        ),
       ],
     );
     await screen(ShopPublicScreen(api: FakePublicShopApi(view), shopId: 's'), 'k01-shop');
     await screen(PublicHoursScreen(view: view), 'k02-hours');
-    await screen(MenuListScreen(flows: createM02Flows(session: session, location: FakeLocationProvider(), pollEvery: Duration.zero)), 'q05-not-connected');
+    await screen(
+      MenuListScreen(
+        flows: createM02Flows(session: session, location: FakeLocationProvider(), pollEvery: Duration.zero),
+      ),
+      'q05-not-connected',
+    );
 
-    final FakeDiscoveryApi discovery = FakeDiscoveryApi(shops: <FakeShopEntry>[
-      FakeShopEntry('s1', 'Ốc 11', dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Ốc hương hấp', 120000, 'c1')]),
-      FakeShopEntry('s2', 'Hải Sản Phố Cổ', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d2', 'Ngao hấp', 60000, 'c2')]),
-      FakeShopEntry('s3', 'Quán Ăn Chưa Có Lịch Hoạt Động Tên Rất Dài Để Thử Bố Cục', reason: 'NO_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d3', 'Mực nướng', 150000, 'c2')]),
-    ]);
+    final FakeDiscoveryApi discovery = FakeDiscoveryApi(
+      shops: <FakeShopEntry>[
+        FakeShopEntry('s1', 'Ốc 11', dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Ốc hương hấp', 120000, 'c1')]),
+        FakeShopEntry('s2', 'Hải Sản Phố Cổ', reason: 'OUTSIDE_BUSINESS_HOURS', dishes: const <FakeDishEntry>[FakeDishEntry('d2', 'Ngao hấp', 60000, 'c2')]),
+        FakeShopEntry(
+          's3',
+          'Quán Ăn Chưa Có Lịch Hoạt Động Tên Rất Dài Để Thử Bố Cục',
+          reason: 'NO_BUSINESS_HOURS',
+          dishes: const <FakeDishEntry>[FakeDishEntry('d3', 'Mực nướng', 150000, 'c2')],
+        ),
+      ],
+    );
     final DiscoveryController home = DiscoveryController(api: discovery);
-    await screen(Scaffold(body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view))), 'kp01-home');
-    await screen(Scaffold(body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view))), 'kp01-home-360', width: 360);
+    await screen(
+      Scaffold(
+        body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view)),
+      ),
+      'kp01-home',
+    );
+    await screen(
+      Scaffold(
+        body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view)),
+      ),
+      'kp01-home-360',
+      width: 360,
+    );
+    await screen(
+      Scaffold(
+        body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view)),
+      ),
+      'kp01-home-320',
+      width: 320,
+    );
+    await screen(
+      Scaffold(
+        body: DiscoveryHome(controller: home, publicApi: FakePublicShopApi(view)),
+      ),
+      'kp01-home-600',
+      width: 600,
+    );
     await screen(SearchScreen(api: discovery, publicApi: FakePublicShopApi(view), areaId: 'a1', debounce: Duration.zero), 'kp02-search-empty');
-    await screen(Scaffold(body: Builder(builder: (BuildContext context) => FilterSheet(controller: home))), 'kp03-filter');
+    await screen(
+      Scaffold(
+        body: Builder(builder: (BuildContext context) => FilterSheet(controller: home)),
+      ),
+      'kp03-filter',
+    );
   });
 }

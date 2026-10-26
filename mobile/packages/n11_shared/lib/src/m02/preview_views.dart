@@ -5,6 +5,7 @@ import '../account/account_views.dart';
 import '../account/session_controller.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/discovery_controls.dart';
 import '../m11/m11_rating_views.dart';
 import '../m11/m11_source.dart';
 import '../m11/m11_models.dart';
@@ -154,12 +155,12 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
         LayoutBuilder(builder: (context, constraints) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            SizedBox(width: constraints.maxWidth * .33, child: ShopLogoImage(key: const Key('shop-view-logo'), url: view.logoUrl, bytes: view.logoBytes)),
+            SizedBox(width: 88, height: 88, child: ShopLogoImage(key: const Key('shop-view-logo'), url: view.logoUrl, bytes: view.logoBytes)),
             const SizedBox(width: N11Space.gap3),
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(view.name, key: const Key('shop-view-name'), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black)),
+                Text(view.name, key: const Key('shop-view-name'), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, height: 1.3, fontWeight: FontWeight.w700, color: N11Colors.black)),
                 if (widget.preview) const N11Chip('Xem trước', kind: ChipKind.dark),
                 if (view.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(view.address, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
                 const SizedBox(height: N11Space.gap2),
@@ -176,22 +177,13 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
       if (!view.hasItems)
         N11InfoCard(key: const Key('shop-view-empty'), title: widget.emptyText)
       else ...<Widget>[
-        TextField(
-          key: const Key('shop-view-search'),
+        N11SearchField(
+          fieldKey: const Key('shop-view-search'),
+          clearKey: const Key('shop-view-search-clear'),
           controller: _search,
-          onChanged: (String _) => setState(() {}),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
-          decoration: InputDecoration(
-            hintText: 'Tìm món trong quán',
-            hintStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder),
-            filled: true,
-            fillColor: N11Colors.white,
-            prefixIcon: const Icon(Icons.search, color: N11Colors.ink2),
-            suffixIcon: _search.text.isEmpty ? null : IconButton(key: const Key('shop-view-search-clear'), tooltip: 'Xóa nội dung tìm kiếm', icon: const Icon(Icons.close, size: 20), onPressed: () => setState(_search.clear)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 14),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.line)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: const BorderSide(color: N11Colors.yellow, width: 2)),
-          ),
+          maxLength: null,
+          hint: 'Tìm món trong quán',
+          onChanged: (_) => setState(() {}),
         ),
         if (groups.isEmpty)
           const N11StateBlock(key: Key('shop-view-nomatch'), kind: StateKind.warn, icon: Icons.search_off, title: 'Không tìm thấy món phù hợp', text: 'Thử từ khóa khác.')
