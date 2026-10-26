@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 import 'm02_shop_views_test.dart' show harness, show;
 import 'm02_menu_views_test.dart' show textOf;
 
@@ -16,6 +17,14 @@ class ClockShopApi implements PublicShopApi {
     return ShopMenuView(name: 'Ốc 11', address: 'Cao Bằng', availabilityReason: reason,
       serverNow: DateTime.utc(2026, 10, 25, 14, 59, 59), hours: emptyWeek(),
       nextRefreshMs: 1000, categories: const <PublicCategory>[]);
+  }
+}
+
+class BoundaryDiscoveryApi extends FakeDiscoveryApi {
+  @override
+  Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) async {
+    final page = await super.shops(query);
+    return DiscoveryPage<ShopCardData>(items: page.items, hasMore: page.hasMore, nextRefreshMs: 1000);
   }
 }
 
@@ -70,6 +79,19 @@ void main() {
     expect(api.calls, 2);
   });
 
+  testWidgets('#204: open-only discovery refreshes even when the closed shop is absent', (tester) async {
+    final api = BoundaryDiscoveryApi();
+    api.entries = <FakeShopEntry>[FakeShopEntry('s1', 'Ốc 11', reason: 'OUTSIDE_BUSINESS_HOURS')];
+    final controller = DiscoveryController(api: api)..openOnly = true;
+    await controller.start();
+    expect(controller.shops, isEmpty);
+    api.entries = <FakeShopEntry>[FakeShopEntry('s1', 'Ốc 11', reason: 'ONLINE')];
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(controller.shops.single.reason, 'ONLINE');
+    controller.dispose();
+  });
+
   testWidgets('#204: an old refresh cannot overwrite a newer adopted cart', (tester) async {
     final source = LateCartSource();
     final cart = CartController(source: source);
@@ -120,6 +142,9 @@ void main() {
     h.flows.menu.startEdit(item.id);
     await show(tester, DishFormScreen(flows: h.flows));
     expect(textOf(tester, 'dish-description'), '1 đĩa 500g\nÍt cay');
+    await tester.enterText(find.byKey(const Key('dish-description')), '👨‍👩‍👦' * 301);
+    expect(textOf(tester, 'dish-description'), '👨‍👩‍👦' * 300);
+    await tester.enterText(find.byKey(const Key('dish-description')), '1 đĩa 500g\nÍt cay');
     h.flows.menu.setCategory('c2');
     await tester.pump();
     expect(textOf(tester, 'dish-description'), '1 đĩa 500g\nÍt cay');
