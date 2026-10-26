@@ -8,10 +8,10 @@ import { TransactionContext } from '../transaction/transaction-context';
 export interface FinanceRow {
   request_id: string; kind: 'TOPUP' | 'SHOP_PAYMENT'; owner_user_id: string; shop_id: string | null;
   amount_requested_vnd: string; actual_amount_vnd: string | null; state: string; version: string;
-  entitlement_recorded?:boolean; reported_at:Date|null; created_at: Date; resolved_at: Date | null; unread?: string; label?: string;
+  reported_at:Date|null; created_at: Date; resolved_at: Date | null; unread?: string; label?: string;
 }
 export function financeView(r: FinanceRow): JsonObject {
-  return { request_id:r.request_id,shop_id:r.shop_id,entitlement_recorded:r.entitlement_recorded??false,reported_at:r.reported_at?.toISOString()??null,kind:r.kind,amount_requested_vnd:Number(r.amount_requested_vnd),actual_amount_vnd:r.actual_amount_vnd===null?null:Number(r.actual_amount_vnd),state:r.state,version:Number(r.version),created_at:r.created_at.toISOString(),resolved_at:r.resolved_at?.toISOString()??null,unread:Number(r.unread??0),label:r.label??(r.kind==='TOPUP'?'Nạp ví shipper':'Thanh toán của quán') };
+  return { request_id:r.request_id,shop_id:r.shop_id,reported_at:r.reported_at?.toISOString()??null,kind:r.kind,amount_requested_vnd:Number(r.amount_requested_vnd),actual_amount_vnd:r.actual_amount_vnd===null?null:Number(r.actual_amount_vnd),state:r.state,version:Number(r.version),created_at:r.created_at.toISOString(),resolved_at:r.resolved_at?.toISOString()??null,unread:Number(r.unread??0),label:r.label??(r.kind==='TOPUP'?'Nạp ví shipper':'Thanh toán của quán') };
 }
 @Injectable()
 export class BusinessFinanceRepository {
@@ -21,10 +21,10 @@ export class BusinessFinanceRepository {
     return financeView({...row,label:row.shop_id?names.get(row.shop_id):`Nạp ví · ${codes.get(row.owner_user_id)??'Shipper'}`});
   }
   async find(c: TransactionContext, requestId: string, lock = false): Promise<FinanceRow | undefined> {
-    return (await c.query<FinanceRow>(`SELECT r.*,EXISTS(SELECT 1 FROM app.shop_entitlement_grants g WHERE g.payment_request_id=r.request_id) AS entitlement_recorded FROM app.business_finance_requests r WHERE request_id=$1::uuid${lock?' FOR UPDATE':''}`,[requestId])).rows[0];
+    return (await c.query<FinanceRow>(`SELECT * FROM app.business_finance_requests WHERE request_id=$1::uuid${lock?' FOR UPDATE':''}`,[requestId])).rows[0];
   }
   async list(c: TransactionContext, userId: string, admin: boolean, state: string | null, before: string | null,kinds:readonly string[]): Promise<JsonObject> {
-    const rows = (await c.query<FinanceRow>(`SELECT r.*,EXISTS(SELECT 1 FROM app.shop_entitlement_grants g WHERE g.payment_request_id=r.request_id) AS entitlement_recorded,
+    const rows = (await c.query<FinanceRow>(`SELECT r.*,
       (SELECT count(*) FROM app.business_finance_messages m WHERE m.request_id=r.request_id
         AND m.sender_user_id IS DISTINCT FROM $1::uuid AND m.sequence_no>COALESCE((SELECT sequence_no FROM app.business_finance_reads WHERE user_id=$1::uuid AND request_id=r.request_id),0))::text AS unread
       FROM app.business_finance_requests r WHERE ($2::boolean OR r.owner_user_id=$1::uuid)
