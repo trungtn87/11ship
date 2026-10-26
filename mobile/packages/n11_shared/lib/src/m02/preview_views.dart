@@ -26,6 +26,8 @@ import 'shop_ops_controller.dart';
 
 ({String label, ChipKind kind}) _chipOf(String reason) {
   switch (reason) {
+    case 'STALE':
+      return (label: 'Chưa cập nhật', kind: ChipKind.warn);
     case 'ONLINE':
       return (label: 'Đang mở cửa', kind: ChipKind.ok);
     case 'OUTSIDE_BUSINESS_HOURS':
@@ -46,6 +48,7 @@ class ShopMenuContent extends StatefulWidget {
     required this.preview,
     required this.onHours,
     this.hiddenCount = 0,
+    this.stale = false,
     this.emptyText = 'Quán chưa có món để hiển thị.',
     this.focusItemId,
     this.orderShopId,
@@ -63,6 +66,7 @@ class ShopMenuContent extends StatefulWidget {
   final bool preview;
   final VoidCallback onHours;
   final int hiddenCount;
+  final bool stale;
   final String emptyText;
   final String? focusItemId;
 
@@ -116,25 +120,29 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
 
   Widget? _stepper(BuildContext context, PublicItem item) {
     final OrderRuntime? runtime = _orders;
-    if (runtime == null || widget.view.availabilityReason == 'NO_BUSINESS_HOURS') {
+    if (runtime == null || widget.stale || widget.view.availabilityReason != 'ONLINE') {
       return null;
     }
     return DishStepper(cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd, canOrder: runtime.canOrder);
   }
 
   Future<void> _openDish(BuildContext context, PublicItem item) async {
-    final OrderRuntime runtime = _orders!;
-    if (!runtime.canOrder()) {
-      m02Toast(context, 'Đăng nhập tài khoản khách để đặt món.');
+    final OrderRuntime? runtime = _orders;
+    if (runtime == null || !runtime.canOrder() || widget.stale || widget.view.availabilityReason != 'ONLINE') {
+      await showModalBottomSheet<void>(context: context, isScrollControlled: true, builder: (_) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text(item.name, style: N11Text.h2), Text(formatVnd(item.priceVnd)),
+          ExpandableDishDescription(text: item.description),
+        ]))));
       return;
     }
-    await showDishSheet(context, cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd);
+    await showDishSheet(context, cart: runtime.cart, shopId: widget.orderShopId!, shopName: widget.view.name, itemId: item.id, name: item.name, priceVnd: item.priceVnd, description: item.description, canAdd: () => !widget.stale && widget.view.availabilityReason == 'ONLINE' && runtime.canOrder());
   }
 
   @override
   Widget build(BuildContext context) {
     final ShopMenuView view = widget.view;
-    final ({String label, ChipKind kind}) chip = _chipOf(view.availabilityReason);
+    final ({String label, ChipKind kind}) chip = _chipOf(widget.stale ? 'STALE' : view.availabilityReason);
     final String needle = foldVietnamese(_search.text.trim());
     final List<PublicCategory> groups = <PublicCategory>[
       for (final PublicCategory c in view.categories)
@@ -200,7 +208,7 @@ class _ShopMenuContentState extends State<ShopMenuContent> {
                   imageUrl: item.imageUrl,
                   highlight: item.id == _highlight,
                   chip: _stepper(context, item),
-                  onTap: _stepper(context, item) == null ? null : () => _openDish(context, item),
+                  onTap: () => _openDish(context, item),
                 ),
             ]),
           ],
@@ -269,7 +277,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
               view: view,
               preview: true,
               hiddenCount: menu.hiddenCount,
-              onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
+              onHours: () async {
+                  await Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)));
+                  if (mounted) await ops.refresh();
+                },
             ),
             if (shown)
               N11Button(
@@ -313,6 +324,7 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
   void initState() {
     super.initState();
     _controller = PublicShopController(api: widget.api, shopId: widget.shopId)..load();
+    _controller.freshness.observe();
   }
 
   @override
@@ -359,8 +371,11 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
                   trailing: N11Button(key: const Key('k01-reload'), label: 'Thử lại', compact: true, onPressed: _controller.load),
                 ),
               ShopMenuContent(
-                view: view!, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, contactLauncher: widget.contactLauncher,
-                onHours: () => Navigator.of(context).push(n11Route(PublicHoursScreen(view: view))),
+                view: view!, stale: _controller.stale, preview: false, orderShopId: widget.shopId, focusItemId: widget.focusItemId, contactLauncher: widget.contactLauncher,
+                onHours: () async {
+                  await Navigator.of(context).push(n11Route(PublicHoursScreen(view: view)));
+                  if (mounted) await _controller.freshness.reload();
+                },
                 ratings: widget.ratings == null ? null : _ShopRatingLink(
                   source: widget.ratings!, shopId: widget.shopId,
                   onTap: () => Navigator.of(context).push(n11Route(ShopReviewsScreen(source: widget.ratings!, shopId: widget.shopId, title: view.name))),

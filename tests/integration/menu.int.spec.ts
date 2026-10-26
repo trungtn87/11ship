@@ -86,6 +86,28 @@ describe('M02 — menu and public shop view', () => {
       expect(itemsOf(await getMenu(app, o.token))).toHaveLength(1);
     });
 
+    it('#207: round-trips 300 graphemes, preserves on legacy edit, clears explicitly and keeps shop isolation', async () => {
+      const o = await owner();
+      await completeSetup(app, o, { categoryId: active });
+      const description = '👨‍👩‍👦'.repeat(298) + 'ắ\n';
+      const created = itemOf(await createItem(app, o.token, dish(active, { description })));
+      expect(created.description).toBe(description);
+      const id = String(created.item_id);
+      const edit = async (version: unknown, extra: Record<string, unknown>) => updateItem(app, o.token, id, { expected_version: version, ...dish(active, extra) });
+      const legacy = itemOf(await edit(created.version, { name: 'Tên mới' }));
+      expect(legacy.description).toBe(description);
+      expect(itemsOf(await getMenu(app, o.token)).find((i) => i.item_id === id)?.description).toBe(description);
+      const pub = dataOf(await publicShop(app, o.shopId));
+      const publicItems = (pub.categories as { items: Record<string, unknown>[] }[]).flatMap((c) => c.items);
+      expect(publicItems.find((i) => i.item_id === id)?.description).toBe(description);
+      expect((await edit(legacy.version, { description: description + 'x' })).status).toBe(400);
+      const other = await owner();
+      expect((await updateItem(app, other.token, id, { expected_version: legacy.version, ...dish(active, { description: 'Không được sửa' }) })).status).toBe(404);
+      const cleared = itemOf(await edit(legacy.version, { description: '' }));
+      expect(cleared.description).toBeNull();
+      expect(itemsOf(await getMenu(app, o.token)).find((i) => i.item_id === id)?.description).toBeNull();
+    });
+
     it('trims the name, refuses a bad shape and any privileged extra field', async () => {
       const o = await owner();
       expect(itemOf(await createItem(app, o.token, dish(active, { name: '  Ngao hấp  ' }))).name).toBe('Ngao hấp');
@@ -313,7 +335,7 @@ describe('M02 — menu and public shop view', () => {
       const response = await publicShop(app, o.shopId);
       expect(response.status).toBe(200);
       const data = dataOf(response);
-      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'shop_id', 'timezone'].sort());
+      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'next_refresh_ms', 'shop_id', 'timezone'].sort());
       expect(data).toMatchObject({ shop_id: o.shopId, name: 'Fixture shop', address_text: 'Fixture address', timezone: 'Asia/Ho_Chi_Minh' });
       expect((data.availability as Record<string, unknown>).reason).toBe('ONLINE');
       // The shop's OWN contact from its profile: the contact phone (not the login phone), a Zalo link and a Messenger link, nothing else.
