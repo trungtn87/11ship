@@ -13,9 +13,14 @@ CREATE TABLE app.shop_finance_policy (
   version bigint NOT NULL DEFAULT 1 CHECK(version > 0)
 );
 INSERT INTO app.shop_finance_policy(singleton) VALUES(true);
+CREATE SEQUENCE app.shop_entitlement_grant_seq;
+CREATE FUNCTION app.next_shop_entitlement_sequence() RETURNS bigint LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog AS $$
+ SELECT nextval('app.shop_entitlement_grant_seq'::regclass)
+$$;
+REVOKE ALL ON FUNCTION app.next_shop_entitlement_sequence() FROM PUBLIC;
 CREATE TABLE app.shop_entitlement_grants (
   grant_id uuid NOT NULL,
-  seq bigint GENERATED ALWAYS AS IDENTITY,
+  seq bigint NOT NULL DEFAULT app.next_shop_entitlement_sequence(),
   shop_id uuid NOT NULL,
   entitlement varchar(16) NOT NULL,
   action varchar(6) NOT NULL,
@@ -125,6 +130,8 @@ BEGIN
   RETURN NEW;
 END $$;
 DROP TABLE app.shop_entitlement_grants;
+DROP FUNCTION app.next_shop_entitlement_sequence();
+DROP SEQUENCE app.shop_entitlement_grant_seq;
 DROP FUNCTION app.shop_entitlement_grants_guard();
 DROP TABLE app.shop_finance_policy;
 DROP INDEX app.business_finance_sender_time_idx;

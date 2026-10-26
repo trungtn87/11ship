@@ -147,7 +147,7 @@ WITH expected(table_name, privileges) AS (
               ELSE 'OK' END AS result
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'),
+  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
          ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,
@@ -158,7 +158,6 @@ WITH expected(table_name, privileges) AS (
 ), checks AS (
   SELECT * FROM table_checks
   UNION ALL SELECT * FROM function_checks
-  UNION ALL SELECT 'shop_entitlement_grants_seq_seq:USAGE', CASE WHEN NOT has_sequence_privilege('ship11_app', 'app.shop_entitlement_grants_seq_seq', 'USAGE') THEN 'MISSING_PRIVILEGE' ELSE 'OK' END
   UNION ALL SELECT 'app:USAGE', CASE WHEN NOT has_schema_privilege('ship11_app', 'app', 'USAGE') THEN 'MISSING_PRIVILEGE' ELSE 'OK' END
   UNION ALL SELECT 'database', CASE WHEN current_database() = 'ship11_staging' THEN 'OK' ELSE 'WRONG_DATABASE' END
 )

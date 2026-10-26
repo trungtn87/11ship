@@ -50,7 +50,7 @@
       "review": "PR #224 / #207; compatibility review 2026-10-26: Up adds only nullable text column description to app.menu_items, no rewrite/backfill, constraint or permission change. Existing explicit-column inserts default to NULL; the previous backend ignores the column and works after code rollback. Existing orders/snapshots, prices, images and quota are unchanged. New backend requires this additive migration before restart. Prefer code rollback while retaining the column and descriptions; Down drops the column and must not be used on populated production data without a separate data-preservation plan. This repository review does not apply any remote migration or authorize deployment."
     },
     "1796860800000_shop-finance-entitlements": {
-      "sha256": "ebb8b9ea6806bf1df280e2522ae3ebdfae5114b49943efa439c5fe34cb91cdb0",
+      "sha256": "c38cf42d94ebb63149859f2147a73ac18964e550c97b74fb69f374cde84b9e72",
       "review": "PR #225 / #198 #199: additive reported_at, configurable menu/chat limits and immutable manual entitlement history. Reuses existing business_finance requests/messages and global receipt identities; no wallet, ledger, activation, fees or retention writes. Widens chat body preserving legacy evidence. Push recipients now require the room-kind read right. Old backend remains schema-compatible but cannot enforce new quota/rights; roll back code only with finance writes paused pending compatible code. Down refuses report/grant/long-message evidence. New runtime table/sequence grants required before restart. No remote migration or deployment authorized."
     }
   }
