@@ -387,14 +387,16 @@ class _BalanceCard extends StatelessWidget {
         children: <Widget>[
           const Text('Số dư khả dụng', style: N11Text.bodyStrong),
           const SizedBox(height: 6),
-          Text(formatWalletVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.title.copyWith(fontSize: 28)),
+          Text(formatWalletVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.title),
           const SizedBox(height: N11Space.gap4),
-          Row(
-            children: <Widget>[
-              Expanded(child: _Mini(label: 'Tổng số dư', value: formatWalletVnd(wallet.total), valueKey: const Key('wallet-total'))),
-              Expanded(child: _Mini(label: 'Tiền tạm giữ', value: formatWalletVnd(wallet.held), valueKey: const Key('wallet-held'), end: true)),
-            ],
-          ),
+          LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+            final Widget total = _Mini(label: 'Tổng số dư', value: formatWalletVnd(wallet.total), valueKey: const Key('wallet-total'));
+            final Widget held = _Mini(label: 'Tiền tạm giữ', value: formatWalletVnd(wallet.held), valueKey: const Key('wallet-held'));
+            if (constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(16) > 21) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[total, const SizedBox(height: N11Space.gap3), held]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Expanded(child: total), const SizedBox(width: N11Space.gap4), Expanded(child: held)]);
+          }),
           const SizedBox(height: N11Space.gap2),
           const Text('Tiền tạm giữ là tiền giữ chỗ, chưa bị trừ khỏi sổ giao dịch.', key: Key('wallet-hold-note'), style: TextStyle(fontSize: 14, height: 1.4, color: N11Colors.black)),
         ],
