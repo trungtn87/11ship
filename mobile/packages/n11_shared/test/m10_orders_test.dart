@@ -293,16 +293,16 @@ void main() {
       final String pending = store.seed();
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: pending));
       expect(containing('Hủy đơn'), findsWidgets);
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Hủy đơn'));
+      await tap(tester, key('order-cancel'));
       await tap(tester, key('m07-confirm-yes'));
       expect(containing('Đã hủy'), findsWidgets);
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(key('order-reorder'), findsOneWidget);
       await unmount(tester);
 
       final String running = store.seed(status: 'PREPARING');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: running));
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(containing('Quán đang chuẩn bị'), findsWidgets);
       await unmount(tester);
     });
@@ -433,6 +433,11 @@ void main() {
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
       expect(key('order-edit-note'), findsOneWidget);
+      expect(find.text('Sửa đơn'), findsOneWidget);
+      final Rect editButton = tester.getRect(key('order-edit'));
+      final Rect rejectButton = tester.getRect(key('order-reject'));
+      expect(editButton.center.dy, closeTo(rejectButton.center.dy, 0.1));
+      expect(editButton.right, lessThan(rejectButton.left));
       await tap(tester, key('order-edit'));
       await tap(tester, key('edit-minus-line-1-0'));
       await tap(tester, key('edit-save'));
@@ -460,7 +465,7 @@ void main() {
       expect(key('order-confirm'), findsNothing, reason: 'starting new work is blocked');
       expect(key('order-confirm-blocked'), findsOneWidget);
       expect(containing('Cần cập nhật ứng dụng trước khi nhận đơn mới'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Từ chối đơn'), findsOneWidget, reason: 'the shop can still turn the order down');
+      expect(key('order-reject'), findsOneWidget, reason: 'the shop can still turn the order down');
       await unmount(tester);
       // Once the app is updated (or when no update is required) the same order confirms normally, and then its next steps are never blocked.
       runtime.newWorkBlocked = () => false;
@@ -482,7 +487,7 @@ void main() {
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Từ chối đơn'));
+      await tap(tester, key('order-reject'));
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);

@@ -668,15 +668,33 @@ class _M07Scaffold extends StatelessWidget {
   }
 }
 
-/// A red-outlined button for a cancelling action (the design: cancel is outlined red, success is yellow).
+/// Destructive action: outlined by default; the soft variant is used in order action bars.
 class DangerButton extends StatelessWidget {
-  const DangerButton({super.key, required this.label, required this.onPressed});
+  const DangerButton({super.key, required this.label, required this.onPressed, this.outlined = true});
 
   final String label;
   final VoidCallback? onPressed;
+  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
+    if (!outlined) {
+      return TextButton.icon(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: N11Colors.error,
+          backgroundColor: N11Colors.errorSoft,
+          disabledBackgroundColor: N11Colors.disabledBg,
+          disabledForegroundColor: N11Colors.disabledInk,
+          minimumSize: const Size(kTapMin, kControlHeight),
+          padding: const EdgeInsets.symmetric(horizontal: N11Space.gap4, vertical: N11Space.gap3),
+          textStyle: N11Text.bodyStrong,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
+        ),
+        icon: const Icon(Icons.close, size: 18),
+        label: Text(label, textAlign: TextAlign.center),
+      );
+    }
     return SizedBox(
       height: kControlHeight,
       child: OutlinedButton(

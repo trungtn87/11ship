@@ -82,3 +82,19 @@ bootstrap was stopped after automatic approval review detected a metadata-servic
 request; no further local Flutter execution is used. Analysis/widget tests and
 signed APK builds run in the existing GitHub-hosted workflow. The Test step emits
 foundation PNGs during its normal test run (no duplicate full test invocation).
+
+## Owner approval — order action bars (26/10/2026)
+
+Use “Sửa đơn” consistently, including the editor title and confirmation copy.
+In the shop's pending order footer, keep Confirm full-width above one row:
+Sửa đơn on the left, Từ chối đơn on the right. Destructive buttons in these
+order bars use a pale red fill and red text/icon, without a heavy outline.
+The footer fills screen width. Existing capability checks, callbacks, busy
+states, reason dialogs and cancellation rules are unchanged.
+
+Customer order detail reuses OrderActionsBar. Until #238 implements customer
+editing, show only the allowed cancellation action; do not add a dead or fake
+Sửa đơn button. The shared row accepts an edit action when that feature exists.
+The approved two-button customer image is a target layout, not implemented
+customer editing. Existing before-confirmation and after-pickup cancellation
+regressions still exercise the real controller callbacks.
