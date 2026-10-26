@@ -389,7 +389,10 @@ class ShopOpsController extends ChangeNotifier {
 
   void startPolling() {
     _polling = true;
-    if (pollEvery != Duration.zero) _freshness.arm(_nextRefreshMs);
+    if (pollEvery != Duration.zero) {
+      _freshness.observe();
+      _freshness.arm(_nextRefreshMs);
+    }
   }
 
   void stopPolling() {

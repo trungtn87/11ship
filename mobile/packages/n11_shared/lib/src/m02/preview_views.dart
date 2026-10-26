@@ -324,6 +324,7 @@ class _ShopPublicScreenState extends State<ShopPublicScreen> {
   void initState() {
     super.initState();
     _controller = PublicShopController(api: widget.api, shopId: widget.shopId)..load();
+    _controller.freshness.observe();
   }
 
   @override

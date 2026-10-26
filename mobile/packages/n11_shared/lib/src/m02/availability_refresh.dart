@@ -4,8 +4,14 @@ import 'package:flutter/widgets.dart';
 /// A server-relative one-shot alarm, never a device-clock decision about opening.
 /// A failed read keeps data stale and retries with bounded backoff. No background polling.
 class AvailabilityRefresh with WidgetsBindingObserver {
-  AvailabilityRefresh({required this.refresh, required this.invalidate}) {
-    WidgetsBinding.instance.addObserver(this);
+  AvailabilityRefresh({required this.refresh, required this.invalidate});
+  WidgetsBinding? _binding;
+
+  /// Called by mounted screens; controller-only tests need no Flutter binding.
+  void observe() {
+    if (_disposed || _binding != null) return;
+    _binding = WidgetsBinding.instance;
+    _binding!.addObserver(this);
   }
   final Future<void> Function() refresh;
   final VoidCallback invalidate;
@@ -58,6 +64,6 @@ class AvailabilityRefresh with WidgetsBindingObserver {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    _binding?.removeObserver(this);
   }
 }

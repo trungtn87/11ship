@@ -264,6 +264,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void initState() {
     super.initState();
+    cart.freshness.observe();
     // Today's prices and availability, from the server.
     unawaited(cart.load());
   }
@@ -394,6 +395,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _freshness.observe();
     final Identity? who = widget.session?.identity;
     _name.text = who?.profile.fullName ?? '';
     _phone.text = who == null ? '' : '0${who.phoneNormalized.replaceFirst('+84', '')}';

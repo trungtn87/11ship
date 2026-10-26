@@ -163,6 +163,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    c.freshness.observe();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (c.choicesState != DiscoveryLoad.ready) await c.start();
@@ -502,6 +503,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     widget.discovery?.addListener(_areaChanged);
+    _search.freshness.observe();
   }
 
   void _areaChanged() => _search.setArea(widget.discovery?.areaId);

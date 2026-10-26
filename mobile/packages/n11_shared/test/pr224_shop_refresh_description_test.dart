@@ -103,6 +103,7 @@ void main() {
 
   testWidgets('#207: Unicode 300/301 input, rebuild, save/edit/clear description', (tester) async {
     final h = await harness(tester);
+    await h.flows.ops.load();
     await h.flows.menu.load();
     h.flows.menu.startNew();
     h.flows.menu.setName('Ốc hấp');
