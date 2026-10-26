@@ -223,7 +223,7 @@ describe('M10 — food orders', () => {
     await cleanupOrders(app, { shopIds: [closed.shopId], customerIds: [], drivers: [], userIds: [] });
   });
 
-  it('issue #190: a shop that loses a setup condition (its only dish loses the picture, or the pickup point is a placeholder) takes no NEW order, and the Order already placed is untouched', async () => {
+  it('issue #209: removing a picture keeps orders eligible; losing the last VISIBLE dish or GPS still blocks new orders and preserves existing orders', async () => {
     const lost = await createShopOwner(app);
     extraShops.push(lost.shopId);
     extraUsers.push(lost.userId);
@@ -231,17 +231,21 @@ describe('M10 — food orders', () => {
     const dish = await newDish(app, lost.token, 'Món còn ảnh', 10_000);
     const first = ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
     const before = await orderRow(String(first.order_id));
-    // The only dish loses its picture: the shop has no first sellable dish any more. The dish is still on sale, but the shop is not set up.
+    // Removing the optional picture keeps cart, preview and checkout eligible.
     await app.pool.query('UPDATE app.menu_items SET image_id = NULL, version = version + 1 WHERE item_id = $1::uuid', [dish.itemId]);
+    ok(await asCustomer(alice, 'PUT', '/customers/me/cart', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }] }));
+    expect(ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS }))).toMatchObject({ ok: true });
+    ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
+    // Hiding the last VISIBLE dish still removes readiness, irrespective of its picture.
+    await app.pool.query("UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE item_id = $1::uuid", [dish.itemId]);
     expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
     expect(ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS }))).toMatchObject({ ok: false, blockers: expect.arrayContaining(['SHOP_NOT_OPEN']) });
     expect(refused(await asCustomer(alice, 'PUT', '/customers/me/cart', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }] }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
     // The Order placed earlier is exactly as it was and the shop still sees and handles it.
     expect(await orderRow(String(first.order_id))).toEqual(before);
     expect(ok(await asShop('GET', `/shop/me/orders/${String(first.order_id)}`, undefined, undefined, lost))).toMatchObject({ status: 'PENDING_CONFIRMATION' });
-    // Back to a picture: orders are accepted again, nothing else was needed.
-    const image = await app.pool.query<{ image_id: string }>('SELECT image_id FROM app.menu_images WHERE shop_id = $1::uuid LIMIT 1', [lost.shopId]);
-    await app.pool.query('UPDATE app.menu_items SET image_id = $2::uuid, version = version + 1 WHERE item_id = $1::uuid', [dish.itemId, image.rows[0]?.image_id]);
+    // Showing the dish restores orders without adding a picture.
+    await app.pool.query("UPDATE app.menu_items SET status = 'VISIBLE', version = version + 1 WHERE item_id = $1::uuid", [dish.itemId]);
     ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
     // A (0, 0) pickup placeholder is not a GPS point either.
     await app.pool.query('UPDATE app.shops SET pickup_lat = 0, pickup_lng = 0 WHERE shop_id = $1::uuid', [lost.shopId]);

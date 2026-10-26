@@ -84,6 +84,8 @@ describe('issue #190 — shop setup checklist and automatic activation', () => {
     // The first VISIBLE dish with a positive price is sufficient, even when image_id is NULL.
     const bare = await createItem(app, owner.token, dish({ image_id: null }));
     expect(bare.status).toBe(201);
+    expect(await activations(owner.shopId)).toBe(1);
+    expect(await activationEvents(owner.shopId)).toBe(1);
     const done = (await setupOf(owner.token)) as Json;
     expect(done).toMatchObject({ state: 'ACTIVATED', completed_steps: 4, missing: [], public: true, activated: true, request: null });
     expect(String(done.activated_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -113,6 +115,14 @@ describe('issue #190 — shop setup checklist and automatic activation', () => {
       body: { expected_version: item.version, ...dish({ image_id: imageId }) },
     });
     expect(updated.status).toBe(200);
+    // Removing it through the owner API also leaves readiness and activation unchanged.
+    const removed = await app.call('PUT', `/shop/me/menu/items/${String(item.item_id)}`, {
+      bearer: owner.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: { expected_version: (dataOf(updated).item as Json).version, ...dish({ image_id: null }) },
+    });
+    expect(removed.status).toBe(200);
+    expect(await isPublic(owner.shopId)).toBe(true);
     expect(await setupOf(owner.token)).toMatchObject({ state: 'ACTIVATED', completed_steps: 4 });
     expect(await activations(owner.shopId)).toBe(1);
     expect(await activationEvents(owner.shopId)).toBe(1);
