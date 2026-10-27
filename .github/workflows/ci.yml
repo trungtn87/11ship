@@ -68,7 +68,7 @@ jobs:
         run: git diff --exit-code -- package-lock.json
 
       - name: Agent governance and local sync regression tests
-        run: node --test tests/ai-governance/*.test.mjs
+        run: node --test tests/ai-governance/check-pr-report.test.mjs tests/ai-governance/sync-guard.test.mjs
 
       # Lint, typecheck and build also write their output to a file. When one of them fails, the tail
       # of that output becomes an annotation (the job log itself cannot always be downloaded).
@@ -629,7 +629,7 @@ jobs:
           cache: npm
 
       - name: Agent governance local sync regression tests (Windows)
-        run: node --test tests/ai-governance/*.test.mjs
+        run: node --test tests/ai-governance/check-pr-report.test.mjs tests/ai-governance/sync-guard.test.mjs
 
       # Needed only so the suite can check the generated TEST DATABASE_URL with the real PostgreSQL driver parser.
       - name: Install dependencies (npm ci)
