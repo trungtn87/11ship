@@ -78,7 +78,7 @@ function parseArgs(args) {
 export function runSync(options) {
   const { repo, phase } = options;
   // Fetch is non-destructive to local checked-out files; an offline failure is not a blanket stop.
-  const fetch = options.offline ? { ok: false } : git(repo, ['fetch', '--no-tags', 'origin'], true);
+  const fetch = options.offline ? { ok: false } : git(repo, ['fetch', '--prune', '--no-tags', 'origin'], true);
   const report = { phase, checkedAt: new Date().toISOString(), ...inspect(repo, fetch) };
   let action = permittedAction({
     phase, branch: report.branch, state: report.state, dirty: report.dirty,
