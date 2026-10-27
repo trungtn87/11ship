@@ -166,7 +166,7 @@ class ShipHomeLayout extends StatelessWidget {
         if (alert != null) alert! else if (connection != null) connection!,
         if (gpsStatus != null && locationView == null) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus!, key: const Key('home-gps-status'), style: N11Text.caption)),
         if (locationView == null) _HomeMap(height: mapHeight, position: position) else _MapWithLocation(height: mapHeight, position: position, view: locationView!),
-        ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem),
+        Padding(padding: const EdgeInsets.all(N11Space.pad), child: ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem)),
       ]),
     );
   });
@@ -261,7 +261,17 @@ class _HomeMapState extends State<_HomeMap> {
 
 /// Unknown until the real activity source is connected in M03.
 class ShipActivityPanel extends StatelessWidget {
-  const ShipActivityPanel({super.key, this.online, required this.reason, this.onToggle, this.footer, this.paused = false, this.busy = false, this.message, this.problem});
+  const ShipActivityPanel({
+    super.key,
+    this.online,
+    required this.reason,
+    this.onToggle,
+    this.footer,
+    this.paused = false,
+    this.busy = false,
+    this.message,
+    this.problem,
+  });
 
   /// The switch ([online]) is on. Receiving orders also needs [paused] to be false: the server holds a current position.
   final bool? online;
@@ -278,26 +288,74 @@ class ShipActivityPanel extends StatelessWidget {
   final Widget? problem;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => N11Card(
     key: const Key('home-activity-panel'),
-    padding: const EdgeInsets.all(16),
-    decoration: const BoxDecoration(color: N11Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-      Text(online == null ? 'Chưa xác định trạng thái hoạt động' : online! ? (paused ? 'Tạm dừng nhận đơn' : 'Bạn đang online') : 'Bạn đang offline',
-        key: const Key('home-activity-status'), style: N11Text.h2),
-      const SizedBox(height: 8),
-      Text(reason, key: const Key('home-online-reason'), style: N11Text.caption),
-      if (message != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(message!, key: const Key('home-online-message'), style: N11Text.captionInk2)),
-      if (problem != null) problem!,
-      const SizedBox(height: 12),
-      FilledButton.icon(
-        key: const Key('online-button'), onPressed: online == null || busy ? null : onToggle,
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-        icon: const Icon(Icons.power_settings_new),
-        label: Text(online == null ? 'Bật online · Chưa khả dụng' : busy ? 'Đang xử lý…' : online! ? 'Tắt online' : 'Bật online'),
-      ),
-      if (online == false) const Padding(padding: EdgeInsets.only(top: 8), child: Text('Bật online sẽ chia sẻ vị trí của bạn khoảng 1 phút một lần, kể cả khi khóa màn hình, để nhận đơn gần bạn và cho quán biết bạn đang tới. Tắt online để ngừng nhận đơn mới.', key: Key('home-online-disclosure'), style: N11Text.caption)),
-      if (footer != null) Padding(padding: const EdgeInsets.only(top: 8), child: footer),
-    ]),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(N11Space.gap2),
+              decoration: BoxDecoration(
+                color: online == true && !paused ? N11Colors.successSoft : N11Colors.yellowSoft,
+                borderRadius: BorderRadius.circular(kRadiusControl),
+              ),
+              child: Icon(
+                online == true && !paused ? Icons.wifi_tethering : Icons.power_settings_new,
+                color: online == true && !paused ? N11Colors.successInk : N11Colors.black,
+              ),
+            ),
+            const SizedBox(width: N11Space.gap3),
+            Expanded(
+              child: Text(
+                online == null
+                    ? 'Chưa xác định trạng thái hoạt động'
+                    : online!
+                    ? (paused ? 'Tạm dừng nhận đơn' : 'Bạn đang online')
+                    : 'Bạn đang offline',
+                key: const Key('home-activity-status'),
+                style: N11Text.h2,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(reason, key: const Key('home-online-reason'), style: N11Text.caption),
+        if (message != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(message!, key: const Key('home-online-message'), style: N11Text.captionInk2),
+          ),
+        if (problem != null) problem!,
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          key: const Key('online-button'),
+          onPressed: online == null || busy ? null : onToggle,
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56), textStyle: N11Text.bodyStrong),
+          icon: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.power_settings_new),
+          label: Text(
+            online == null
+                ? 'Bật online · Chưa khả dụng'
+                : busy
+                ? 'Đang xử lý…'
+                : online!
+                ? 'Tắt online'
+                : 'Bật online',
+          ),
+        ),
+        if (online == false)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Bật online sẽ chia sẻ vị trí của bạn khoảng 1 phút một lần, kể cả khi khóa màn hình, để nhận đơn gần bạn và cho quán biết bạn đang tới. Tắt online để ngừng nhận đơn mới.',
+              key: Key('home-online-disclosure'),
+              style: N11Text.caption,
+            ),
+          ),
+        if (footer != null) Padding(padding: const EdgeInsets.only(top: 8), child: footer),
+      ],
+    ),
   );
 }
