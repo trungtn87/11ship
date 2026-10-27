@@ -12,7 +12,7 @@ Push a coherent implementation/fix package. Use existing applicable CI checks as
 
 Report final code SHA, changed behavior, relevant checks/results (links are sufficient), known limitations and how Owner can run it. Review fixes require affected tests and review of the delta, not a new module acceptance cycle. Documentation-only follow-ups do not invalidate tests for unchanged executable files; record which code SHA the evidence covers.
 
-Use the short task section of [the checklist](docs/templates/module-delivery-checklist.md). Prepare runnable local/device builds at the relevant delivery/acceptance stage; do not rebuild every app for every backend/doc change. Owner local acceptance precedes final device acceptance. Owner decides module closure; small-package merge follows standing authorization.
+Use the short task section of [the checklist](docs/templates/module-delivery-checklist.md). Prepare runnable local/device builds at the relevant delivery/acceptance stage; do not rebuild every app for every backend/doc change. Owner local acceptance precedes final device acceptance. Owner decides module closure; ChatGPT merges each reviewed PR only when Owner explicitly approves that merge.
 
 ## VPS = real operating build (Owner decision 2026-10-14)
 
