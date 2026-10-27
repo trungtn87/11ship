@@ -19,7 +19,11 @@ import 'widgets/diagnostics_view.dart';
 
 /// What the shell needs to keep the notifications alive (M08): the inbox state, how an opened notification reaches its object in THIS app, and the push link.
 class NotificationShell {
-  const NotificationShell({required this.controller, required this.router, this.push});
+  const NotificationShell({
+    required this.controller,
+    required this.router,
+    this.push,
+  });
 
   final NotificationController controller;
   final NotificationRouter router;
@@ -28,20 +32,42 @@ class NotificationShell {
 
 /// What a tab body can ask the shell to do.
 class ShellActions {
-  const ShellActions({required this.goTab, required this.openDiagnostics});
+  const ShellActions({
+    required this.goTab,
+    required this.openDiagnostics,
+    this.push,
+    this.popToRoot,
+  });
 
   /// Switches to the tab with this id.
   final void Function(String id) goTab;
 
   /// Opens "Chẩn đoán kết nối" inside the current tab (the bottom navigation stays).
   final VoidCallback openDiagnostics;
+
+  /// Opens an ordinary child page inside the selected tab, keeping the shell
+  /// and its bottom navigation visible.
+  final Future<T?> Function<T>(Route<T> route)? push;
+
+  /// Returns the selected tab to its root page.
+  final VoidCallback? popToRoot;
 }
 
 typedef TabBody = Widget Function(BuildContext context, ShellActions actions);
 
 /// One bottom-navigation tab: its label and icon, the title of its screen and its body.
 class TabSpec {
-  const TabSpec({required this.id, required this.label, required this.icon, required this.title, required this.body, this.showLogo = false, this.fullBleed = false, this.showAppBar = true, this.ownsConnectionBanner = false});
+  const TabSpec({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.showLogo = false,
+    this.fullBleed = false,
+    this.showAppBar = true,
+    this.ownsConnectionBanner = false,
+  });
 
   final String id;
   final String label;
@@ -50,6 +76,7 @@ class TabSpec {
 
   /// Home screens show the brand logo in the app bar instead of a centred title.
   final bool showLogo;
+
   /// Map-based screens own their layout and scrolling, without shell padding.
   final bool fullBleed;
   final bool showAppBar;
@@ -71,6 +98,7 @@ class N11App extends StatelessWidget {
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
     this.updates,
+    this.keepBottomNavOnChildRoutes = false,
   });
 
   final String? navigationIdentity;
@@ -83,6 +111,7 @@ class N11App extends StatelessWidget {
 
   /// Live notifications, the push tap and the foreground resync (M08). Null = the shell does none of it (a build without notifications).
   final NotificationShell? notifications;
+  final bool keepBottomNavOnChildRoutes;
 
   /// Replaced only by tests; the real app uses [httpHealthTransport].
   final HealthTransport? transport;
@@ -96,14 +125,38 @@ class N11App extends StatelessWidget {
       title: brand.name,
       debugShowCheckedModeBanner: false,
       theme: buildN11Theme(),
-      builder: updates == null ? null : (BuildContext context, Widget? child) => AppUpdateGate(controller: updates!, child: child ?? const SizedBox.shrink()),
-      home: N11Shell(navigationIdentity: navigationIdentity, brand: brand, tabs: tabs, config: config, transport: transport, pollInterval: pollInterval, notifications: notifications),
+      builder: updates == null
+          ? null
+          : (BuildContext context, Widget? child) => AppUpdateGate(
+              controller: updates!,
+              child: child ?? const SizedBox.shrink(),
+            ),
+      home: N11Shell(
+        navigationIdentity: navigationIdentity,
+        brand: brand,
+        tabs: tabs,
+        config: config,
+        transport: transport,
+        pollInterval: pollInterval,
+        notifications: notifications,
+        keepBottomNavOnChildRoutes: keepBottomNavOnChildRoutes,
+      ),
     );
   }
 }
 
 class N11Shell extends StatefulWidget {
-  const N11Shell({super.key, required this.brand, required this.tabs, required this.config, this.navigationIdentity, this.transport, this.pollInterval = const Duration(seconds: 30), this.notifications});
+  const N11Shell({
+    super.key,
+    required this.brand,
+    required this.tabs,
+    required this.config,
+    this.navigationIdentity,
+    this.transport,
+    this.pollInterval = const Duration(seconds: 30),
+    this.notifications,
+    this.keepBottomNavOnChildRoutes = false,
+  });
 
   final String? navigationIdentity;
   final AppBrand brand;
@@ -112,6 +165,7 @@ class N11Shell extends StatefulWidget {
   final HealthTransport? transport;
   final Duration pollInterval;
   final NotificationShell? notifications;
+  final bool keepBottomNavOnChildRoutes;
 
   @override
   State<N11Shell> createState() => _N11ShellState();
@@ -122,6 +176,8 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
   int _index = 0;
   bool _diagnostics = false;
   bool _foreground = true;
+  late List<GlobalKey<NavigatorState>> _navigatorKeys;
+  late List<bool> _tabAtRoot;
 
   @override
   void initState() {
@@ -134,7 +190,15 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
       shouldPoll: () => _foreground,
     );
     _monitor.start();
+    _resetTabNavigators();
     _attachNotifications();
+  }
+
+  void _resetTabNavigators() {
+    _navigatorKeys = <GlobalKey<NavigatorState>>[
+      for (final TabSpec _ in widget.tabs) GlobalKey<NavigatorState>(),
+    ];
+    _tabAtRoot = <bool>[for (final TabSpec _ in widget.tabs) true];
   }
 
   void _attachNotifications() {
@@ -144,9 +208,16 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     }
     shell.controller.addListener(_routePendingOpen);
     shell.controller.onLiveItems = _announce;
-    // Cold start and a returning phone: read the server again, then keep listening while the app is open.
-    unawaited(shell.controller.resync());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _routePendingOpen());
+    // Cold start must not consume a pending push from initState: routing needs
+    // ScaffoldMessenger and the nested navigators to be mounted first.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _routePendingOpen();
+      // Read the server again, then keep listening while the app is open.
+      unawaited(shell.controller.resync());
+    });
   }
 
   /// A short in-app notice for something that arrived while the app is open. A refreshed card or a retried event never repeats it (the controller filters).
@@ -154,29 +225,74 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     if (!mounted || items.isEmpty) {
       return;
     }
-    final String text = items.length == 1 ? items.first.title : '${items.length} thông báo mới';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(key: const Key('live-notice'), content: Text(text), duration: const Duration(seconds: 3)));
+    final String text = items.length == 1
+        ? items.first.title
+        : '${items.length} thông báo mới';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        key: const Key('live-notice'),
+        content: Text(text),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   /// A tap on a push waits in the controller until the person is signed in and the shell is on screen; the server then re-checks the right and the state.
   void _routePendingOpen() {
     final NotificationShell? shell = widget.notifications;
-    if (shell == null || !mounted || !shell.controller.hasPendingOpen || shell.controller.session.status != SessionStatus.signedIn) {
+    if (shell == null ||
+        !mounted ||
+        !shell.controller.hasPendingOpen ||
+        shell.controller.session.status != SessionStatus.signedIn) {
       return;
     }
     final String? id = shell.controller.takePendingOpen();
     if (id == null) {
       return;
     }
-    unawaited(openNotification(context, shell.controller, shell.router, ShellActions(goTab: _goTab, openDiagnostics: _openDiagnostics), id: id));
+    unawaited(
+      openNotification(
+        context,
+        shell.controller,
+        shell.router,
+        ShellActions(
+          goTab: _goTab,
+          openDiagnostics: _openDiagnostics,
+          push: widget.keepBottomNavOnChildRoutes ? _push : null,
+          popToRoot: widget.keepBottomNavOnChildRoutes
+              ? () => _popTabToRoot(_index)
+              : null,
+        ),
+        id: id,
+      ),
+    );
   }
 
   @override
   void didUpdateWidget(N11Shell oldWidget) {
     super.didUpdateWidget(oldWidget);
     final String selected = oldWidget.tabs[_index].id;
-    final int next = widget.tabs.indexWhere((TabSpec tab) => tab.id == selected);
-    _index = next < 0 || (widget.navigationIdentity != null && oldWidget.navigationIdentity != widget.navigationIdentity) ? 0 : next;
+    final int next = widget.tabs.indexWhere(
+      (TabSpec tab) => tab.id == selected,
+    );
+    _index =
+        next < 0 ||
+            (widget.navigationIdentity != null &&
+                oldWidget.navigationIdentity != widget.navigationIdentity)
+        ? 0
+        : next;
+    final bool tabsChanged =
+        oldWidget.tabs.length != widget.tabs.length ||
+        List<bool>.generate(
+          widget.tabs.length,
+          (int i) =>
+              i >= oldWidget.tabs.length ||
+              widget.tabs[i].id != oldWidget.tabs[i].id,
+        ).any((bool changed) => changed);
+    if (tabsChanged ||
+        widget.navigationIdentity != oldWidget.navigationIdentity) {
+      _resetTabNavigators();
+    }
     if (widget.navigationIdentity != oldWidget.navigationIdentity) {
       // Another account signed in on this phone: its inbox is read from the server and its live sync starts; nothing of the previous one is kept.
       unawaited(widget.notifications?.controller.resync());
@@ -214,7 +330,13 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
 
   void _select(int index) {
     if (index == _index && !_diagnostics) {
+      if (widget.keepBottomNavOnChildRoutes) {
+        _popTabToRoot(index);
+      }
       return;
+    }
+    if (widget.keepBottomNavOnChildRoutes) {
+      _popTabToRoot(index);
     }
     setState(() {
       _index = index;
@@ -229,79 +351,201 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     }
   }
 
+  void _popTabToRoot(int index) {
+    _navigatorKeys[index].currentState?.popUntil(
+      (Route<dynamic> route) => route.isFirst,
+    );
+  }
+
+  Future<T?> _push<T>(Route<T> route) async =>
+      _navigatorKeys[_index].currentState?.push<T>(route);
+
+  void _onTabRouteChanged(int index, Route<dynamic>? route) {
+    final bool atRoot = route?.isFirst ?? true;
+    if (_tabAtRoot[index] != atRoot && mounted) {
+      setState(() => _tabAtRoot[index] = atRoot);
+    }
+  }
+
   void _openDiagnostics() => setState(() => _diagnostics = true);
 
   void _closeDiagnostics() => setState(() => _diagnostics = false);
 
   /// Back: leave diagnostics, then return to the first tab, then leave the app.
-  bool get _canLeave => _index == 0 && !_diagnostics;
+  bool get _canLeave =>
+      _index == 0 &&
+      !_diagnostics &&
+      (!widget.keepBottomNavOnChildRoutes || _tabAtRoot[_index]);
 
   @override
   Widget build(BuildContext context) {
     final TabSpec tab = widget.tabs[_index];
-    final ShellActions actions = ShellActions(goTab: _goTab, openDiagnostics: _openDiagnostics);
+    final ShellActions actions = ShellActions(
+      goTab: _goTab,
+      openDiagnostics: _openDiagnostics,
+      push: widget.keepBottomNavOnChildRoutes ? _push : null,
+      popToRoot: widget.keepBottomNavOnChildRoutes
+          ? () => _popTabToRoot(_index)
+          : null,
+    );
     final bool diagnostics = _diagnostics;
+    final bool childRoute =
+        widget.keepBottomNavOnChildRoutes && !_tabAtRoot[_index];
     return HealthScope(
       monitor: _monitor,
       child: PopScope(
-      canPop: _canLeave,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (didPop) {
-          return;
-        }
-        if (_diagnostics) {
-          _closeDiagnostics();
-        } else {
-          _select(0);
-        }
-      },
-      child: Scaffold(
-        backgroundColor: N11Colors.bg,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: <Widget>[
-              if (diagnostics)
-                N11AppBar(title: 'Chẩn đoán kết nối', onBack: _closeDiagnostics)
-              else if (tab.showAppBar && tab.showLogo)
-                N11AppBar(logo: BrandLogo(brand: widget.brand), title: tab.title)
-              else if (tab.showAppBar)
-                N11AppBar(title: tab.title),
-              if (!diagnostics && !tab.ownsConnectionBanner) ConnectionBanner(monitor: _monitor),
-              Expanded(
-                // The tabs stay in the tree (offstage) while diagnostics is open, so what was typed in a tab is not lost.
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    Offstage(
-                      offstage: diagnostics,
-                      child: IndexedStack(
-                        index: _index,
-                        children: <Widget>[
-                          for (final TabSpec spec in widget.tabs)
-                            if (spec.fullBleed)
-                              Builder(key: Key('page-${spec.id}'), builder: (BuildContext context) => spec.body(context, actions))
-                            else SingleChildScrollView(
-                              key: Key('page-${spec.id}'),
-                              padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
-                              child: Builder(builder: (BuildContext context) => spec.body(context, actions)),
-                            ),
-                        ],
+        canPop: _canLeave,
+        onPopInvokedWithResult: (bool didPop, Object? result) {
+          if (didPop) {
+            return;
+          }
+          if (_diagnostics) {
+            _closeDiagnostics();
+          } else if (childRoute) {
+            _navigatorKeys[_index].currentState?.maybePop();
+          } else {
+            _select(0);
+          }
+        },
+        child: Scaffold(
+          backgroundColor: N11Colors.bg,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: <Widget>[
+                if (diagnostics)
+                  N11AppBar(
+                    title: 'Chẩn đoán kết nối',
+                    onBack: _closeDiagnostics,
+                  )
+                else if (!childRoute && tab.showAppBar && tab.showLogo)
+                  N11AppBar(
+                    logo: BrandLogo(brand: widget.brand),
+                    title: tab.title,
+                  )
+                else if (!childRoute && tab.showAppBar)
+                  N11AppBar(title: tab.title),
+                if (!diagnostics && !childRoute && !tab.ownsConnectionBanner)
+                  ConnectionBanner(monitor: _monitor),
+                Expanded(
+                  // The tabs stay in the tree (offstage) while diagnostics is open, so what was typed in a tab is not lost.
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      Offstage(
+                        offstage: diagnostics,
+                        child: IndexedStack(
+                          index: _index,
+                          children: <Widget>[
+                            for (int i = 0; i < widget.tabs.length; i++)
+                              if (widget.keepBottomNavOnChildRoutes)
+                                Navigator(
+                                key: _navigatorKeys[i],
+                                observers: <NavigatorObserver>[
+                                  _TabRouteObserver(
+                                    (Route<dynamic>? route) =>
+                                        _onTabRouteChanged(i, route),
+                                  ),
+                                ],
+                                onGenerateRoute: (RouteSettings settings) =>
+                                    MaterialPageRoute<void>(
+                                      settings: const RouteSettings(name: '/'),
+                                      builder: (BuildContext context) {
+                                        final TabSpec spec = widget.tabs[i];
+                                        return spec.fullBleed
+                                            ? Builder(
+                                                key: Key('page-${spec.id}'),
+                                                builder:
+                                                    (BuildContext context) =>
+                                                        spec.body(
+                                                          context,
+                                                          actions,
+                                                        ),
+                                              )
+                                            : SingleChildScrollView(
+                                                key: Key('page-${spec.id}'),
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      N11Space.pad,
+                                                      N11Space.gap4,
+                                                      N11Space.pad,
+                                                      N11Space.gap8,
+                                                    ),
+                                                child: Builder(
+                                                  builder:
+                                                      (BuildContext context) =>
+                                                          spec.body(
+                                                            context,
+                                                            actions,
+                                                          ),
+                                                ),
+                                              );
+                                      },
+                                    ),
+                                )
+                              else if (widget.tabs[i].fullBleed)
+                                Builder(
+                                  key: Key('page-${widget.tabs[i].id}'),
+                                  builder: (BuildContext context) =>
+                                      widget.tabs[i].body(context, actions),
+                                )
+                              else
+                                SingleChildScrollView(
+                                  key: Key('page-${widget.tabs[i].id}'),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    N11Space.pad,
+                                    N11Space.gap4,
+                                    N11Space.pad,
+                                    N11Space.gap8,
+                                  ),
+                                  child: Builder(
+                                    builder: (BuildContext context) =>
+                                        widget.tabs[i].body(context, actions),
+                                  ),
+                                ),
+                          ],
+                        ),
                       ),
-                    ),
-                    if (diagnostics) DiagnosticsView(monitor: _monitor, brand: widget.brand, config: widget.config),
-                  ],
+                      if (diagnostics)
+                        DiagnosticsView(
+                          monitor: _monitor,
+                          brand: widget.brand,
+                          config: widget.config,
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: N11BottomNav(
+            items: <NavItem>[
+              for (final TabSpec spec in widget.tabs)
+                NavItem(id: spec.id, label: spec.label, icon: spec.icon),
             ],
+            activeIndex: _index,
+            onSelect: _select,
           ),
         ),
-        bottomNavigationBar: N11BottomNav(
-          items: <NavItem>[for (final TabSpec spec in widget.tabs) NavItem(id: spec.id, label: spec.label, icon: spec.icon)],
-          activeIndex: _index,
-          onSelect: _select,
-        ),
       ),
-    ));
+    );
   }
+}
+
+class _TabRouteObserver extends NavigatorObserver {
+  _TabRouteObserver(this.changed);
+  final void Function(Route<dynamic>? route) changed;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      changed(route);
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      changed(previousRoute);
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      changed(previousRoute);
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      changed(newRoute);
 }

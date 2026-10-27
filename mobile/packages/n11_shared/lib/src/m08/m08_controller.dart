@@ -17,7 +17,12 @@ typedef Delay = Future<void> Function(Duration duration);
 const Duration kLiveWait = Duration(seconds: 20);
 
 class NotificationController extends ChangeNotifier {
-  NotificationController({required this.session, required this.source, Delay? delay, this.onLiveItems}) : _delay = delay ?? Future<void>.delayed {
+  NotificationController({
+    required this.session,
+    required this.source,
+    Delay? delay,
+    this.onLiveItems,
+  }) : _delay = delay ?? Future<void>.delayed {
     session.addListener(_onSession);
     _userId = session.identity?.userId;
   }
@@ -42,6 +47,7 @@ class NotificationController extends ChangeNotifier {
   int _epoch = 0;
   String? _userId;
   String? _pendingOpen;
+  String? _pendingOpenUser;
   bool _disposed = false;
 
   List<NotificationItem> get items => _items;
@@ -61,8 +67,9 @@ class NotificationController extends ChangeNotifier {
     return id;
   }
 
-  void requestOpen(String notificationId) {
+  void requestOpen(String notificationId, {String? expectedUserId}) {
     _pendingOpen = notificationId;
+    _pendingOpenUser = expectedUserId ?? session.identity?.userId ?? _userId;
     _tell();
   }
 
@@ -75,11 +82,21 @@ class NotificationController extends ChangeNotifier {
   }
 
   void _onSession() {
-    final String? user = session.status == SessionStatus.signedIn ? session.identity?.userId : null;
+    final String? user = session.status == SessionStatus.signedIn
+        ? session.identity?.userId
+        : null;
     if (user != _userId) {
       // Another account (or none) on this phone: everything of the previous one is dropped at once; nothing is carried over.
       _userId = user;
+      final String? pending = _pendingOpen;
+      final String? pendingUser = _pendingOpenUser;
       _reset();
+      // A push whose open proved the session expired survives the login form,
+      // but only for the same account. A different account never inherits it.
+      if (pending != null && (user == null || pendingUser == user)) {
+        _pendingOpen = pending;
+        _pendingOpenUser = pendingUser;
+      }
     }
   }
 
@@ -92,6 +109,7 @@ class NotificationController extends ChangeNotifier {
     _nextBefore = null;
     _offline = false;
     _pendingOpen = null;
+    _pendingOpenUser = null;
     _live = false;
     _liveGen += 1;
     _tell();
@@ -137,7 +155,10 @@ class NotificationController extends ChangeNotifier {
     _loadingMore = true;
     _tell();
     try {
-      final NotificationPage page = await source.list(unreadOnly: _unreadOnly, before: before);
+      final NotificationPage page = await source.list(
+        unreadOnly: _unreadOnly,
+        before: before,
+      );
       if (epoch == _epoch) {
         _items = _merge(_items, page.items);
         _nextBefore = page.nextBefore;
@@ -182,15 +203,26 @@ class NotificationController extends ChangeNotifier {
   }
 
   /// Newest first, one row per id: a newer copy of an id (the collapsed "new orders" card is refreshed in place) replaces the older one.
-  List<NotificationItem> _merge(List<NotificationItem> current, List<NotificationItem> incoming) {
-    final Map<String, NotificationItem> byId = <String, NotificationItem>{for (final NotificationItem item in current) item.id: item};
+  List<NotificationItem> _merge(
+    List<NotificationItem> current,
+    List<NotificationItem> incoming,
+  ) {
+    final Map<String, NotificationItem> byId = <String, NotificationItem>{
+      for (final NotificationItem item in current) item.id: item,
+    };
     for (final NotificationItem item in incoming) {
       final NotificationItem? old = byId[item.id];
       if (old == null || item.seq >= old.seq) {
         byId[item.id] = item;
       }
     }
-    final List<NotificationItem> merged = byId.values.where((NotificationItem item) => !_unreadOnly || !item.read).toList()..sort((NotificationItem a, NotificationItem b) => b.seq.compareTo(a.seq));
+    final List<NotificationItem> merged =
+        byId.values
+            .where((NotificationItem item) => !_unreadOnly || !item.read)
+            .toList()
+          ..sort(
+            (NotificationItem a, NotificationItem b) => b.seq.compareTo(a.seq),
+          );
     return List<NotificationItem>.unmodifiable(merged);
   }
 
@@ -230,7 +262,9 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> markAllRead() async {
     final int count = await source.markAllRead();
-    _items = List<NotificationItem>.unmodifiable(<NotificationItem>[for (final NotificationItem item in _items) item.copyWith(read: true)]);
+    _items = List<NotificationItem>.unmodifiable(<NotificationItem>[
+      for (final NotificationItem item in _items) item.copyWith(read: true),
+    ]);
     _unread = count;
     if (_unreadOnly) {
       _items = const <NotificationItem>[];
@@ -257,9 +291,16 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> _liveLoop(int epoch, int gen) async {
     var backoff = const Duration(seconds: 2);
-    while (_live && gen == _liveGen && !_disposed && epoch == _epoch && _signedIn) {
+    while (_live &&
+        gen == _liveGen &&
+        !_disposed &&
+        epoch == _epoch &&
+        _signedIn) {
       try {
-        final NotificationPage page = await source.changes(after: _latestSeq, wait: kLiveWait);
+        final NotificationPage page = await source.changes(
+          after: _latestSeq,
+          wait: kLiveWait,
+        );
         if (!_live || gen != _liveGen || epoch != _epoch) {
           return;
         }
@@ -267,11 +308,17 @@ class NotificationController extends ChangeNotifier {
         _offline = false;
         backoff = const Duration(seconds: 2);
         if (page.items.isNotEmpty) {
-          final Set<String> known = <String>{for (final NotificationItem item in _items) if (!item.read) item.id};
+          final Set<String> known = <String>{
+            for (final NotificationItem item in _items)
+              if (!item.read) item.id,
+          };
           _items = _merge(_items, page.items);
           _latestSeq = page.latestSeq;
           // Only rows that were not already known unread are announced: a refreshed card or a retried event never repeats the notice.
-          onLiveItems?.call(<NotificationItem>[for (final NotificationItem item in page.items) if (!item.read && !known.contains(item.id)) item]);
+          onLiveItems?.call(<NotificationItem>[
+            for (final NotificationItem item in page.items)
+              if (!item.read && !known.contains(item.id)) item,
+          ]);
         }
         _unread = page.unreadCount;
         if (wasOffline || page.items.isNotEmpty) {
@@ -290,7 +337,9 @@ class NotificationController extends ChangeNotifier {
           _tell();
         }
         await _delay(backoff);
-        backoff = backoff * 2 > const Duration(seconds: 30) ? const Duration(seconds: 30) : backoff * 2;
+        backoff = backoff * 2 > const Duration(seconds: 30)
+            ? const Duration(seconds: 30)
+            : backoff * 2;
         continue;
       }
     }
