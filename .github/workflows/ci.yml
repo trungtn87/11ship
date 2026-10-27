@@ -628,6 +628,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      - name: Agent governance local sync regression tests (Windows)
+        run: node --test tests/ai-governance/*.test.mjs
+
       # Needed only so the suite can check the generated TEST DATABASE_URL with the real PostgreSQL driver parser.
       - name: Install dependencies (npm ci)
         run: npm ci
