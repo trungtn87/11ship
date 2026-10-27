@@ -43,6 +43,14 @@ final SampleDish pho = kSampleDishes[0];
 final SampleDish tea = kSampleDishes[2];
 
 void main() {
+  test('checkout confirmation sends the complete canonical quote', () {
+    final CheckoutPreview preview = CheckoutPreview.fromJson(<String, Object?>{
+      'ok': true, 'blockers': <Object?>[], 'lines': <Object?>[], 'items_total_vnd': 45000, 'expected_total_vnd': null,
+      'fee': <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff', 'quoted_at': '2026-10-27T00:00:00.000Z'},
+    });
+    expect(preview.expectedQuoteJson, <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff'});
+  });
+
   group('cart', () {
     testWidgets('cart quantity actions remain usable on a small phone with large text', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();

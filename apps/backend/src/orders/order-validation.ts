@@ -150,7 +150,7 @@ export interface PlaceInput extends CheckoutInput {
   readonly clientRef: string;
   /** The total the customer saw: a changed price or dish is refused so they check and send again. */
   readonly expectedItemsTotalVnd: number;
-  readonly expectedQuote: { readonly status: string; readonly distanceM: number | null; readonly feeVnd: number | null; readonly snapshot: string } | null;
+  readonly expectedQuote: { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: string | null; readonly policyVersion: number | null; readonly snapshot: string; readonly complete: boolean } | null;
 }
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
@@ -158,9 +158,21 @@ export function parsePlaceBody(body: unknown): PlaceInput {
   const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'scheduled_for', 'expected_quote']);
   let expectedQuote: PlaceInput['expectedQuote'] = null;
   if (b.expected_quote !== undefined) {
-    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot']);
+    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version']);
     const nullableWhole = (v: unknown): number | null => v === null ? null : whole(v, 0, Number.MAX_SAFE_INTEGER);
-    expectedQuote = { status: text(q.status, 1, 40), distanceM: nullableWhole(q.distance_m), feeVnd: nullableWhole(q.fee_vnd), snapshot: text(q.snapshot, 1, 300) };
+    if (q.status !== 'PRICED' && q.status !== 'UNAVAILABLE') return reject();
+    const distanceM = nullableWhole(q.distance_m);
+    const feeVnd = nullableWhole(q.fee_vnd);
+    if ((q.status === 'PRICED' && (distanceM === null || feeVnd === null)) || (q.status === 'UNAVAILABLE' && feeVnd !== null)) return reject();
+    expectedQuote = {
+      status: q.status,
+      distanceM,
+      feeVnd,
+      reason: q.reason === undefined || q.reason === null ? null : text(q.reason, 1, 40),
+      policyVersion: q.policy_version === undefined ? null : nullableWhole(q.policy_version),
+      snapshot: text(q.snapshot, 1, 300),
+      complete: Object.prototype.hasOwnProperty.call(q, 'reason') && Object.prototype.hasOwnProperty.call(q, 'policy_version'),
+    };
   }
   return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER), expectedQuote };
 }

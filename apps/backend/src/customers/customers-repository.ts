@@ -142,6 +142,19 @@ export class CustomersRepository {
     return row === undefined ? undefined : addressOf(row);
   }
 
+  /** The checkout snapshot, locked against edits/deletion until the Order transaction commits. */
+  async lockActiveAddressOfUserShared(context: TransactionContext, userId: string, addressId: string): Promise<AddressRow | undefined> {
+    const result = await context.query<RawAddress>(
+      `SELECT ${ADDRESS_COLUMNS}
+         FROM app.customer_addresses
+        WHERE id = $2::uuid AND is_active AND customer_id = (SELECT id FROM app.customers WHERE user_id = $1::uuid)
+          FOR SHARE`,
+      [userId, addressId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : addressOf(row);
+  }
+
   /** Active addresses, default first, then the most recently updated. */
   async listActive(context: TransactionContext, customerId: string): Promise<AddressRow[]> {
     const result = await context.query<RawAddress>(

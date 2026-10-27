@@ -321,6 +321,7 @@ describe('AllExceptionsFilter', () => {
         'ORDER_PAYMENT_INVALID',
         'ORDER_PAYMENT_LOCKED',
         'ORDER_QUOTE_CHANGED',
+        'ORDER_QUOTE_REQUIRED',
         'ORDER_SCHEDULE_INVALID',
         'ORDER_SHOP_NOT_OPEN',
         'ORDER_STATE_CONFLICT',

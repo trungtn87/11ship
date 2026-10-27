@@ -190,6 +190,7 @@ export const APP_ERROR_DEFINITIONS = {
   FEE_ANSWER_EXPIRED: { status: 409, message: 'The time to answer the proposed delivery fee has run out; the earlier fee stays' },
   FEE_REQUIRED: { status: 400, message: 'The delivery fee must be chosen or proposed to call a Shipper' },
   ORDER_QUOTE_CHANGED: { status: 409, message: 'The delivery quote changed; review it before placing the order' },
+  ORDER_QUOTE_REQUIRED: { status: 409, message: 'Review and confirm the delivery quote before placing the order; update the app if this continues' },
   PICKUP_PIN_MISSING: { status: 400, message: 'The pickup point is missing a map pin' },
   DROPOFF_PIN_MISSING: { status: 400, message: 'The delivery point is missing a map pin' },
   ROUTE_UNAVAILABLE: { status: 503, message: 'The road route is temporarily unavailable' },

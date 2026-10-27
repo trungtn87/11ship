@@ -60,7 +60,9 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
       fee_vnd: feeAmount ?? o.feeEstimateVnd,
       status: known ? 'FINAL' : o.feeEstimateVnd !== null ? 'PRICED' : 'UNAVAILABLE',
       distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM,
-      reason: known || o.feeEstimateVnd !== null ? null : o.addressLat === null || o.addressLng === null ? 'DROPOFF_PIN_MISSING' : o.feeEstimateDistanceM !== null ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE',
+      // Orders created before quote reasons were persisted have no evidence for a
+      // specific cause. Keep the message neutral instead of guessing from nulls.
+      reason: null,
       snapshot: `order:${o.orderId}:v${o.version}`,
       version: o.version,
       policy_version: null,

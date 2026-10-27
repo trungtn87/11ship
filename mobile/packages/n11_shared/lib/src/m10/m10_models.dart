@@ -651,7 +651,7 @@ class CheckoutPreview {
   final int? policyVersion;
   final DateTime? quotedAt;
 
-  Map<String, Object?> get expectedQuoteJson => <String, Object?>{'status': feeStatus, 'distance_m': feeDistanceM, 'fee_vnd': feeEstimateVnd, 'snapshot': quoteSnapshot};
+  Map<String, Object?> get expectedQuoteJson => <String, Object?>{'status': feeStatus, 'distance_m': feeDistanceM, 'fee_vnd': feeEstimateVnd, 'reason': feeReason, 'policy_version': policyVersion, 'snapshot': quoteSnapshot};
 
   bool lineChanged(DraftLine draft) {
     for (final PreviewLine l in lines) {
