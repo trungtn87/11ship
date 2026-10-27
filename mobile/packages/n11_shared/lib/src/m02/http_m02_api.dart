@@ -74,6 +74,8 @@ class HttpMenuApi implements MenuApi {
           MenuCategory(id: _str(_obj(c)['category_id']), name: _str(_obj(c)['name']), active: _str(_obj(c)['status']) == 'ACTIVE'),
       ],
       items: <MenuItem>[for (final Object? i in _list(data['items'])) _item(i)],
+      visibleLimit: data['visible_quota'] == null ? null : _obj(data['visible_quota'])['limit'] as int?,
+      expanded: data['visible_quota'] != null && _obj(data['visible_quota'])['expanded'] == true,
     );
   }
 

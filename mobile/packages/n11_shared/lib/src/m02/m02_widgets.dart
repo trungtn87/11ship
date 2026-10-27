@@ -227,6 +227,8 @@ String m02FailureText(AuthFailure failure) {
       return 'Chưa có hồ sơ cửa hàng cho tài khoản này.';
     case 'INVALID_BUSINESS_HOURS':
       return 'Lịch chưa hợp lệ. Kiểm tra giờ mở, giờ đóng và các khoảng trùng nhau.';
+    case 'MENU_VISIBLE_LIMIT_REACHED':
+      return 'Đã đạt giới hạn món hiển thị. Ẩn bớt món hoặc liên hệ quản trị để mở rộng thực đơn.';
     case 'MENU_ITEM_NOT_FOUND':
       return 'Món không còn trong thực đơn.';
     case 'MENU_CATEGORY_NOT_AVAILABLE':

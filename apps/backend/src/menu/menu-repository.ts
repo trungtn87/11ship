@@ -67,6 +67,10 @@ export interface PublicMenuItem {
  */
 @Injectable()
 export class MenuRepository {
+  async countVisibleItems(context:TransactionContext,shopId:string):Promise<number> {
+    return Number((await context.query<{n:string}>(`SELECT count(*)::text AS n FROM app.menu_items WHERE shop_id=$1 AND status='VISIBLE'`,[shopId])).rows[0]!.n);
+  }
+
   async listCategories(context: TransactionContext): Promise<MenuCategoryRow[]> {
     const result = await context.query<{ category_id: string; name: string; status: 'ACTIVE' | 'INACTIVE' }>(
       `SELECT category_id, name, status FROM app.menu_categories ORDER BY sort_order, app.fold_vi(name) COLLATE "C", name COLLATE "C", category_id`,

@@ -133,7 +133,10 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
             } else if (menu.writeFailure != null && menu.form == null) {
               body.add(N11Banner(key: const Key('menu-error'), kind: BannerKind.error, title: 'Chưa thực hiện được', text: m02FailureText(menu.writeFailure!)));
             }
-            if (snapshot!.items.isEmpty) {
+            if (snapshot!.visibleLimit != null) {
+              body.add(N11Banner(kind: BannerKind.info, title: snapshot.expanded ? 'Đã mở rộng thực đơn' : '${snapshot.items.where((MenuItem item) => !item.hidden).length}/${snapshot.visibleLimit} món đang hiển thị', text: 'Món ẩn không tính vào giới hạn. Liên hệ quản trị nếu cần mở rộng thực đơn.'));
+            }
+            if (snapshot.items.isEmpty) {
               body.addAll(<Widget>[
                 const N11StateBlock(kind: StateKind.warn, icon: Icons.restaurant_menu, title: 'Chưa có món trong thực đơn', text: 'Thêm món đầu tiên để khách xem được thực đơn của quán.'),
                 if (!readOnly) N11Button(key: const Key('menu-add-empty'), label: 'Thêm món', onPressed: menu.locked ? null : () => _openForm(null)),

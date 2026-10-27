@@ -44,6 +44,7 @@ void main() {
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
             'shop_id': 's',
+            'visible_quota': <String, Object?>{'used': 1, 'limit': 20, 'expanded': false},
             'categories': <Object?>[<String, Object?>{'category_id': 'c1', 'name': 'Ốc', 'status': 'ACTIVE'}, <String, Object?>{'category_id': 'c2', 'name': 'Cũ', 'status': 'INACTIVE'}],
             'items': <Object?>[item(image: 'img-1'), item(id: 'i2', status: 'HIDDEN', version: 3)],
           },
@@ -53,6 +54,8 @@ void main() {
     expect(snapshot.items.first.imageUrl, 'https://api.example.test/v1/menu-images/img-1');
     expect(snapshot.items.first.imageRef, 'img-1');
     expect(snapshot.items.last.hidden, isTrue);
+    expect(snapshot.visibleLimit, 20);
+    expect(snapshot.expanded, isFalse);
     expect(snapshot.items.last.imageUrl, isNull);
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'categories': 'x', 'items': <Object?>[]}});
     await expectLater(t.menu.load(), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.kind, 'kind', AuthFailureKind.badResponse)));

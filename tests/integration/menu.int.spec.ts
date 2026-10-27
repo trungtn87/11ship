@@ -69,6 +69,23 @@ describe('M02 — menu and public shop view', () => {
       expect(data.limits).toEqual({ name_max_length: 120, price_max_vnd: 99999999, items_max: 300, image_max_bytes: 2097152 });
     });
 
+    it('serializes the last free visible slot, frees hidden slots and preserves dishes after entitlement revocation',async()=>{
+      const o=await owner();
+      for(let i=0;i<19;i++)expect((await createItem(app,o.token,dish(active,{name:'Quota '+i}))).status).toBe(201);
+      const [a,b]=await Promise.all([createItem(app,o.token,dish(active,{name:'Slot A'})),createItem(app,o.token,dish(active,{name:'Slot B'}))]);
+      expect([a.status,b.status].sort()).toEqual([201,409]);
+      expect(errorCode(a.status===409?a:b)).toBe('MENU_VISIBLE_LIMIT_REACHED');
+      const item=itemOf(a.status===201?a:b);
+      expect((await itemAction(app,o.token,String(item.item_id),'hide',1)).status).toBe(200);
+      expect((await createItem(app,o.token,dish(active,{name:'Slot C'}))).status).toBe(201);
+      expect(errorCode(await itemAction(app,o.token,String(item.item_id),'show',2))).toBe('MENU_VISIBLE_LIMIT_REACHED');
+      await app.pool.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,created_at) VALUES($1,$2,'MENU_EXPANDED','GRANT','Fixture grant',$3,clock_timestamp())`,[randomUUID(),o.shopId,o.userId]);
+      expect((await itemAction(app,o.token,String(item.item_id),'show',2)).status).toBe(200);
+      await app.pool.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,created_at) VALUES($1,$2,'MENU_EXPANDED','REVOKE','Fixture revoke',$3,clock_timestamp())`,[randomUUID(),o.shopId,o.userId]);
+      const current=await getMenu(app,o.token);expect(itemsOf(current).filter(i=>i.status==='VISIBLE')).toHaveLength(21);
+      expect((await updateItem(app,o.token,String(item.item_id),{...dish(active,{name:'Chỉnh sửa vẫn được'}),expected_version:3})).status).toBe(200);
+      expect(errorCode(await createItem(app,o.token,dish(active)))).toBe('MENU_VISIBLE_LIMIT_REACHED');
+    });
     it('creates a dish that is visible at version 1, and the same key replays the very same dish', async () => {
       const o = await owner();
       const key = randomUUID();

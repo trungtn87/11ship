@@ -3,6 +3,8 @@
 // ever copied into a response: classification looks at the class of the exception, not its content.
 
 export const APP_ERROR_DEFINITIONS = {
+  BUSINESS_CHAT_RATE_LIMITED: { status: 429, message: 'Gửi tin nhắn quá nhanh. Vui lòng chờ một phút.' },
+  MENU_VISIBLE_LIMIT_REACHED: { status: 409, message: 'Đã đạt giới hạn món hiển thị. Ẩn bớt món hoặc liên hệ quản trị để mở rộng thực đơn.' },
   BUSINESS_PUSH_NOT_CONFIGURED: { status: 503, message: 'Thông báo đẩy chưa được cấu hình. Vẫn có thể xem danh sách chờ.' },
   BUSINESS_REQUEST_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu thanh toán.' },
   BUSINESS_REQUEST_CLOSED: { status: 409, message: 'Yêu cầu đã kết thúc. Không thể gửi thêm tin nhắn.' },

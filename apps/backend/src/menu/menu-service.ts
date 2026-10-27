@@ -1,3 +1,4 @@
+import { ShopEntitlements } from '../shop-entitlements/shop-entitlements';
 import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
@@ -67,6 +68,7 @@ export class MenuService {
     private readonly sales: OrderSalesReader,
     private readonly activation: ShopActivation,
     private readonly gate: ShopSetupGate,
+    private readonly entitlements: ShopEntitlements,
   ) {}
 
   // ---- reads ----------------------------------------------------------------------------------------------------
@@ -89,6 +91,7 @@ export class MenuService {
         categories: categories.map(toCategoryWire),
         items: items.map(toItemWire),
         limits: MENU_LIMITS,
+        visible_quota: {used:await this.menu.countVisibleItems(context,shop.shopId),limit:(await this.entitlements.policy(context)).visible_limit,expanded:await this.entitlements.expanded(context,shop.shopId)},
       };
     });
   }
@@ -214,6 +217,7 @@ export class MenuService {
         if ((await this.menu.countLiveItems(context, shop.shopId)) >= MENU_ITEMS_MAX_PER_SHOP) {
           throw new AppError('MENU_LIMIT_REACHED');
         }
+        await this.#requireVisibleRoom(context,shop.shopId);
         const item = await this.menu.insertItem(context, randomUUID(), shop.shopId, input);
         await this.#record(context, requestId, actor.userId, item, MENU_ITEM_CREATE_OPERATION_ID);
         await this.activation.reconcile(context, shop.shopId, requestId, 'menu_change');
@@ -243,8 +247,10 @@ export class MenuService {
   }
 
   async showItem(actor: SessionActor, itemId: string, expectedVersion: number, key: string | readonly string[] | undefined, requestId: string): Promise<MenuOutcome> {
-    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, (context, _shop, current) =>
-      this.menu.setItemStatus(context, current, 'VISIBLE'),
+    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, async (context, shop, current) => {
+      if(current.status!=='VISIBLE')await this.#requireVisibleRoom(context,shop.shopId);
+      return this.menu.setItemStatus(context, current, 'VISIBLE');
+    },
     );
   }
 
@@ -315,6 +321,11 @@ export class MenuService {
     if (fields.imageId !== null && !(await this.menu.lockOwnImageShared(context, fields.imageId, shopId))) {
       throw new AppError('INVALID_MENU_IMAGE');
     }
+  }
+
+  async #requireVisibleRoom(context:TransactionContext,shopId:string):Promise<void> {
+    const policy=await this.entitlements.policy(context,true);
+    if(!await this.entitlements.expanded(context,shopId)&&await this.menu.countVisibleItems(context,shopId)>=policy.visible_limit)throw new AppError('MENU_VISIBLE_LIMIT_REACHED');
   }
 
   async #lockWritableShop(context: TransactionContext, userId: string): Promise<ShopRow> {

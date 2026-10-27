@@ -1,3 +1,4 @@
+import { ShopEntitlements } from '../shop-entitlements/shop-entitlements';
 import { FeedbackReadModule } from '../feedback/feedback-read.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
@@ -25,7 +26,7 @@ export class MenuModule {
       module: MenuModule,
       imports: [auth, FeedbackReadModule, ShopModule, ShopSetupCoreModule, MenuReadinessModule, OrdersCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
-      providers: [MenuService, MenuRepository, DiscoveryService],
+      providers: [ShopEntitlements,MenuService, MenuRepository, DiscoveryService],
       // The dish reads an Order needs (M10) go through the owner of the tables.
       exports: [MenuRepository],
     };

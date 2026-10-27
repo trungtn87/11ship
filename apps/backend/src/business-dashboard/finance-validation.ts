@@ -7,8 +7,8 @@ export function object(value: unknown, keys: readonly string[]): Record<string, 
   return value as Record<string, unknown>;
 }
 export function id(value: unknown): string { return isCanonicalUuid(value) ? value : invalid(); }
-export function text(value: unknown, max = 1000): string {
-  if (typeof value !== 'string' || value.trim().length < 1 || [...value.trim()].length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) return invalid();
+export function text(value: unknown, max = 500): string {
+  if (typeof value !== 'string' || value.trim().length < 1 || [...new Intl.Segmenter('vi', {granularity:'grapheme'}).segment(value.trim())].length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) return invalid();
   return value.trim();
 }
 export function positive(value: unknown, max = 1_000_000_000_000): number {

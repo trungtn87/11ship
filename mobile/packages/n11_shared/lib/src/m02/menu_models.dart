@@ -47,7 +47,10 @@ class MenuItem {
 
 @immutable
 class MenuSnapshot {
-  const MenuSnapshot({required this.categories, required this.items});
+  const MenuSnapshot({required this.categories, required this.items, this.visibleLimit, this.expanded = false});
+
+  final int? visibleLimit;
+  final bool expanded;
 
   final List<MenuCategory> categories;
 
