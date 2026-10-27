@@ -5,6 +5,54 @@ thủ công từ main, chốt main SHA mới nhất lúc checkout, build/verify 
 lưu gói và checksum trong artifacts, upload qua SSH rồi chạy bộ cập nhật VPS hiện có.
 Không cần tải gói về PC hoặc upload bằng tay mỗi lần.
 
+## APK và thông báo cập nhật — Owner bổ sung 27/10/2026
+
+Áp dụng cho mọi lần deploy, theo [issue #193](https://github.com/trungtn87/11ship/issues/193)
+và cơ chế M13 hiện có. Người điều phối chịu trách nhiệm kiểm tra cả backend và APK;
+không để Owner phải nhắc riêng bước đưa APK vào hệ thống cập nhật.
+
+1. **Chốt phạm vi phát hành:** ghi SHA/version backend và APK FOOD/SHIP bị ảnh hưởng.
+   Thay đổi app cần APK mới; thay đổi chỉ backend/tài liệu, còn tương thích với APK
+   đang dùng, được giữ APK đã phát hành và ghi rõ lý do. Không rebuild mọi app vì
+   một commit tài liệu, không coi SHA APK khác server là mất tương thích.
+2. **Chuẩn bị APK của đợt phát hành đã được phép:** dùng Mobile APK và khóa ký bền
+   vững, đúng applicationId, versionCode tăng. Dùng artifact từ SHA đã xác minh;
+   lưu version, SHA nguồn, kích thước, SHA-256 và signer từng app. Artifact GitHub
+   build thành công chưa có nghĩa APK đã được công bố cho điện thoại.
+3. **Đưa bản cập nhật lên VPS:** kiểm tra OPS_ARTIFACT_DIR và quyền; đưa đúng APK vào
+   kho hiện có, đăng ký release và PUBLISHED qua quyền SYSTEM/M13 có audit. Dùng
+   quy trình phát hành hiện có, không sửa DB trực tiếp hoặc tạo updater thứ hai.
+   Chỉ công bố trong phạm vi phát hành được Owner cho phép; việc sửa tài liệu này
+   không tự công bố APK hay cấp quyền mới. Thiếu quyền/công cụ thì báo blocker cụ thể.
+4. **Trước promote backend:** chạy preflight tương thích hiện hữu. Nếu tăng minimum,
+   APK tương thích phải đã PUBLISHED và tải được trước khi promote; thiếu thì dừng,
+   giữ API cũ tương thích trong giai đoạn chuyển tiếp. Cập nhật thường là OPTIONAL;
+   chỉ REQUIRED khi bản cũ thật sự không còn được hỗ trợ theo hợp đồng đã review.
+   Không tăng minimum chỉ để làm xuất hiện banner.
+5. **Sau deploy, kiểm tra từng app phát hành:** gọi
+   GET /v1/app-updates/check?component=FOOD|SHIP&version_code=<mã bản đang dùng>
+   bằng các request riêng cho FOOD và SHIP. Với bản cũ hơn APK đã publish phải trả
+   đúng bản đích và UPDATE_OPTIONAL hoặc UPDATE_REQUIRED theo minimum; bản mới nhất
+   không nhắc sai; không đưa nhầm APK giữa hai app. Kiểm download HTTP 200, kích thước
+   và SHA-256 khớp release. Thiếu APK thì ghi rõ chưa phát hành, không dựng link giả.
+6. **Thử điện thoại:** ghi riêng kết quả mở app cũ → banner/màn cập nhật → tải →
+   trình cài đặt → cài đè giữ dữ liệu. Bản APK cũ chưa có cơ chế M13 phải cập nhật
+   thủ công một lần; server không thể bổ sung UI vào APK đã cài. Required không
+   khóa ngang đơn đang xử lý; áp dụng quy tắc hoãn và chặn công việc mới của #193.
+
+**Điều kiện báo hoàn tất:** phân biệt "backend đã deploy" với "APK đã phát hành và
+API cập nhật đã kiểm" và "đã thử trên điện thoại". Khi đợt phát hành có APK mới,
+backend xanh nhưng chưa PUBLISHED/tải được hoặc chưa kiểm /check thì phần phát hành
+APK vẫn chưa hoàn tất. Nếu không cần APK mới, ghi APK được giữ và bằng chứng tương
+thích; không buộc có bản mới cho mọi deploy.
+
+Báo cáo ngắn mỗi lần: SHA/version VPS thực chạy; FOOD/SHIP versionCode và SHA nguồn;
+trạng thái PUBLISHED, link tải hợp lệ, kết quả /check của bản cũ/mới, mức optional/
+required và kết quả thiết bị hoặc CHƯA KIỂM. Workflow hiện đã có preflight và
+post-deploy compatibility; các bước upload/publish và thử thiết bị phải được thực
+hiện, ghi bằng chứng riêng cho tới khi có tự động hóa được kiểm chứng. Cập nhật
+runbook không có nghĩa pipeline đã tự build/upload/publish APK.
+
 ## Migration đã review — quy trình dùng cho các lần sau
 
 Khi chạy **Run workflow**, giữ bật **Import exact migration hashes reviewed in main**
