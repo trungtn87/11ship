@@ -208,9 +208,16 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     }
     shell.controller.addListener(_routePendingOpen);
     shell.controller.onLiveItems = _announce;
-    // Cold start and a returning phone: read the server again, then keep listening while the app is open.
-    unawaited(shell.controller.resync());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _routePendingOpen());
+    // Cold start must not consume a pending push from initState: routing needs
+    // ScaffoldMessenger and the nested navigators to be mounted first.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _routePendingOpen();
+      // Read the server again, then keep listening while the app is open.
+      unawaited(shell.controller.resync());
+    });
   }
 
   /// A short in-app notice for something that arrived while the app is open. A refreshed card or a retried event never repeats it (the controller filters).
