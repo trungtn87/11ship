@@ -23,6 +23,8 @@ void main() {
     await home(position: <String, dynamic>{'lat': 22.67, 'lon': 106.26});
     map = tester.widget<M14OfflineMap>(find.byType(M14OfflineMap));
     expect(map.pins.single['lat'], 22.67);
+    expect(map.radiusCircle, containsPair('radius_m', 3000.0));
+    expect(map.radiusCircle, containsPair('lat', 22.67));
     expect(map.centerRequest, 0);
     await tester.tap(find.byKey(const Key('home-recenter')));
     await tester.pump();
@@ -30,6 +32,7 @@ void main() {
     await home(position: <String, dynamic>{'lat': 22.68, 'lon': 106.27});
     map = tester.widget<M14OfflineMap>(find.byType(M14OfflineMap));
     expect(map.centerRequest, 1, reason: 'new GPS fixes must not move the camera');
+    expect(map.radiusCircle, containsPair('lat', 22.68), reason: 'the visual radius follows GPS without requesting a recenter');
     map.onError!('Không mở được gói bản đồ Cao Bằng');
     await tester.pump();
     expect(find.byType(M14OfflineMap), findsNothing);
