@@ -81,7 +81,7 @@ Widget _unknownFigure({required String label, required String note}) {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(label, style: N11Text.lead),
+        Row(children: <Widget>[const Icon(Icons.insights_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text(label, style: N11Text.h2))]),
         const SizedBox(height: N11Space.gap2),
         const Text('—', style: N11Text.title),
         const SizedBox(height: N11Space.gap2),
