@@ -284,7 +284,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   Future<void> _confirm(OrderView o) async {
     String? reason;
     if (o.edited) {
-      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được chỉnh. Khách sẽ thấy bản ban đầu, bản chốt và lý do này.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
+      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được sửa. Khách sẽ thấy bản ban đầu, bản chốt và lý do này.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
       if (reason == null) {
         return;
       }
@@ -377,9 +377,12 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     final List<Widget> buttons = <Widget>[
       if (o.allowed('confirm') && widget.runtime.newWorkBlocked())
         const ReasonNote('Cần cập nhật ứng dụng trước khi nhận đơn mới. Các đơn đã nhận vẫn xử lý bình thường; bạn vẫn có thể từ chối đơn này.', key: Key('order-confirm-blocked'))
-      else if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã chỉnh' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
-      if (o.allowed('edit')) N11Button(key: const Key('order-edit'), label: 'Chỉnh đơn', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))),
-      if (o.allowed('reject')) DangerButton(label: 'Từ chối đơn', onPressed: busy ? null : () => unawaited(_reject(o))),
+      else if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã sửa' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
+      if (o.allowed('edit') || o.allowed('reject'))
+        OrderActionsBar(
+          edit: o.allowed('edit') ? N11Button(key: const Key('order-edit'), label: 'Sửa đơn', icon: Icons.edit_outlined, kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))) : null,
+          destructive: o.allowed('reject') ? DangerButton(key: const Key('order-reject'), label: 'Từ chối đơn', outlined: false, onPressed: busy ? null : () => unawaited(_reject(o))) : null,
+        ),
       if (o.allowed('call_shipper')) N11Button(key: const Key('order-call'), label: o.deliveries.isEmpty ? 'Gọi shipper' : 'Gọi lại shipper', loading: busy, onPressed: () => unawaited(_call(o))),
       if (o.allowed('close_not_completed')) N11Button(key: const Key('order-close'), label: 'Đóng đơn "Không hoàn tất"', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_close(o))),
       if (o.allowed('cancel')) DangerButton(label: 'Hủy đơn món', onPressed: busy ? null : () => unawaited(_cancel(o))),
@@ -426,7 +429,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
         ),
       ),
       if (o.scheduleConflict) const N11Banner(key: Key('order-schedule-conflict'), kind: BannerKind.warn, title: 'Giờ hẹn nằm ngoài giờ hoạt động mới', text: 'Quán đã đổi lịch sau khi nhận đơn. Đơn vẫn giữ nguyên, không tự hủy — hãy liên hệ khách để xử lý.'),
-      if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã chỉnh, bạn phải ghi lý do.'),
+      if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã sửa, bạn phải ghi lý do.'),
       if (o.display == DisplayStatus.searchStopped) const N11Banner(key: Key('order-search-stopped'), kind: BannerKind.warn, title: 'Chưa tìm được shipper', text: 'Đơn món vẫn còn. Bạn có thể gọi lại shipper hoặc hủy đơn món.'),
       if (o.display == DisplayStatus.deliveryFailed && !o.allowed('call_shipper')) const N11Banner(key: Key('order-goods-out'), kind: BannerKind.error, title: 'Hàng chưa về quán', text: 'Giao thất bại. Khi hàng còn ở shipper hoặc chưa rõ thì chưa gọi lại được. Xác nhận hàng đã về hoặc đã xử lý ở phần giao hàng.'),
       if (o.display == DisplayStatus.delivering)
@@ -571,7 +574,7 @@ class _EditSheetState extends State<_EditSheet> {
           key: const Key('edit-sheet'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text('Chỉnh đơn', style: N11Text.h2),
+            const Text('Sửa đơn', style: N11Text.h2),
             const SizedBox(height: N11Space.gap2),
             const ReasonNote('Chỉ sửa sau khi đã liên hệ và được khách đồng ý. Sau khi xác nhận, món và tiền món bị khóa.'),
             for (final OrderLine l in widget.order.items.where((OrderLine l) => !l.removed))
@@ -592,7 +595,7 @@ class _EditSheetState extends State<_EditSheet> {
                       ]),
               ),
             const SizedBox(height: N11Space.gap3),
-            N11Button(key: const Key('edit-save'), validate: true, label: 'Lưu chỉnh sửa', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
+            N11Button(key: const Key('edit-save'), validate: true, label: 'Lưu thay đổi', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
             const SizedBox(height: N11Space.gap2),
             N11Button(key: const Key('edit-back'), label: 'Quay lại', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).pop()),
           ],

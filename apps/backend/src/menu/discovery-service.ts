@@ -77,6 +77,9 @@ export class DiscoveryService {
 
   async shops(query: DiscoveryQuery): Promise<Record<string, unknown>> {
     return this.transactions.withTransaction(async (context) => {
+      // Capture the alarm before reading state: crossing a boundary between two queries
+      // must cause an early refresh, never defer stale state until the following boundary.
+      const nextRefreshMs = await this.shopReader.nextRefreshMs(context, query.areaId);
       const eligible = await this.#eligible(context, query);
       // A group filter keeps the shops with a VISIBLE dish in that group; the shop itself must already be set up (a sellable dish somewhere).
       const withDish = await this.menu.shopIdsWithPublicItem(context, eligible.map((s) => s.shopId), query.categoryId);
@@ -89,6 +92,7 @@ export class DiscoveryService {
       const summaries = await this.reviews.shopSummaries(context, page.map((shop) => shop.shopId));
       return {
         shops: page.map((shop) => ({ shop_id: shop.shopId, ...(shop.hasLogo ? { logo_url: '/v1/shops/' + shop.shopId + '/logo?v=' + (shop.logoVersion ?? '1') } : {}), name: shop.name, address_text: shop.addressText, pickup_lat: shop.pickupLat ?? null, pickup_lng: shop.pickupLng ?? null, rating: summaries.get(shop.shopId) ?? { count: 0, average: null }, availability: availabilityOf(shop) })),
+        next_refresh_ms: nextRefreshMs,
         has_more: matching.length > query.offset + query.limit,
       };
     });
@@ -96,6 +100,7 @@ export class DiscoveryService {
 
   async dishes(query: DiscoveryQuery): Promise<Record<string, unknown>> {
     return this.transactions.withTransaction(async (context) => {
+      const nextRefreshMs = await this.shopReader.nextRefreshMs(context, query.areaId);
       const eligible = (await this.#eligible(context, query)).map((shop) => ({ ...shop, folded: foldVietnamese(shop.name) })).sort(byOpenThenName);
       const byId = new Map(eligible.map((shop) => [shop.shopId, shop]));
       // The database pages the whole matching set in the order of the shops as shown: one more row than asked tells `has_more`.
@@ -126,6 +131,7 @@ export class DiscoveryService {
                 },
               ];
         }),
+        next_refresh_ms: nextRefreshMs,
         has_more: found.length > query.limit,
       };
     });

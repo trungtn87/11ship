@@ -107,3 +107,5 @@ export 'src/widgets/diagnostics_view.dart';
 export 'src/flows/shop_logo_data.dart' show ShopLogoPickerPort, ShopLogoException;
 
 export 'src/finance/finance_views.dart';
+
+export 'src/widgets/discovery_controls.dart';

@@ -139,6 +139,9 @@ jobs:
           done
 
       - name: Test
+        env:
+          N11_V4_SCREENSHOTS: ${{ runner.temp }}/v4-foundation-ui
+          N11_SHIP_V4_SCREENSHOTS: ${{ runner.temp }}/ship-v4-ui
         run: |
           dirs="mobile/${{ matrix.app }}"
           if [ "${{ matrix.app }}" = "food" ]; then dirs="mobile/packages/n11_shared $dirs"; fi
@@ -146,6 +149,22 @@ jobs:
             (cd "$d" && flutter test --reporter expanded) 2>&1 | tee "$RUNNER_TEMP/t.log" || {
               echo "::error title=tests failed in $d::$(grep -E -A1 'Which:|\[E\]' "$RUNNER_TEMP/t.log" | head -24 | tr '\n' '|' | head -c 4000)"; exit 1; }
           done
+
+      - name: Upload V4 foundation widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4-foundation-ui-widget-renders
+          path: ${{ runner.temp }}/v4-foundation-ui/*.png
+          if-no-files-found: ignore
+
+      - name: Upload 11Ship V4 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'ship'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Ship-v4-ui-widget-renders
+          path: ${{ runner.temp }}/ship-v4-ui/*.png
+          if-no-files-found: ignore
 
       - name: 11Ship home with offline map enabled
         if: matrix.app == 'ship'
@@ -181,6 +200,21 @@ jobs:
         with:
           name: 11Ship-home-alert-widget-renders
           path: ${{ runner.temp }}/ship-home-alerts/*.png
+          if-no-files-found: ignore
+
+      - name: Render 11Food V4 discovery, menu and forms for review
+        if: matrix.app == 'food'
+        working-directory: mobile/food
+        env:
+          N11_SCREENSHOTS: ${{ runner.temp }}/food-v4-ui
+        run: flutter test test/m02_screenshots_test.dart test/screenshots_test.dart --reporter expanded
+
+      - name: Upload 11Food V4 widget renders (fixture data, not device acceptance)
+        if: always() && matrix.app == 'food'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 11Food-v4-ui-widget-renders
+          path: ${{ runner.temp }}/food-v4-ui/*.png
           if-no-files-found: ignore
 
       - name: Render 11Food M10 order screens for review

@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import '../widgets/discovery_controls.dart';
 import '../flows/location.dart';
 import '../m10/m10_cart.dart';
 import '../m10/m10_customer_views.dart' show DishStepper;
@@ -20,8 +22,9 @@ import 'preview_views.dart';
 // M02-KP01/KP02/KP03: Owner layout 22/10/2026 (M02-home-shop-detail-UI-OWNER-20261022.md).
 // Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; the distance is the ROAD distance from the foreground position (issue #190). Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
 
-void _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings}) {
-  Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
+Future<void> _openShop(BuildContext context, PublicShopApi publicApi, ShopCardData shop, {String? focusItemId, M11Source? ratings, Future<void> Function()? onReturn}) async {
+  await Navigator.of(context).push(n11Route(ShopPublicScreen(api: publicApi, shopId: shop.shopId, focusItemId: focusItemId, ratings: ratings)));
+  if (context.mounted) await onReturn?.call();
 }
 
 ({String label, ChipKind kind}) _stateChip(String reason) {
@@ -54,18 +57,19 @@ String distanceLine(ShopCardData shop, RouteDistance distance, LocationFix? fix,
 }
 
 class ShopCard extends StatelessWidget {
-  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition});
+  const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition, this.stale = false});
 
   /// Only for the labelled straight-line reference when the road is unknown; never for the route number.
   final LocationFix? customerLocation;
   final RouteDistance distance;
   final bool locating;
   final ShopCardData shop;
+  final bool stale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = _stateChip(shop.reason);
+    final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(shop.reason);
     final String rating = shop.ratingCount == 0 || shop.ratingAverage == null ? 'Chưa có đánh giá' : '★ ${shop.ratingAverage!.toStringAsFixed(1)}/5 (${shop.ratingCount} đánh giá)';
     final String distanceText = distanceLine(shop, distance, customerLocation, locating: locating);
     return Semantics(
@@ -83,7 +87,8 @@ class ShopCard extends StatelessWidget {
           child: LayoutBuilder(builder: (context, constraints) => Row(
             children: <Widget>[
               SizedBox(
-                width: constraints.maxWidth * .35,
+                width: constraints.maxWidth >= 400 ? 96 : 88,
+                height: constraints.maxWidth >= 400 ? 96 : 88,
                 child: ShopLogoImage(key: Key('shop-logo-${shop.shopId}'), url: shop.logoUrl),
               ),
               const SizedBox(width: N11Space.gap3),
@@ -91,7 +96,7 @@ class ShopCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w700, color: N11Colors.black)),
+                    Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
                     if (shop.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(shop.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
                     Text(rating, key: Key('shop-rating-${shop.shopId}'), style: N11Text.caption),
                     Text(distanceText, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
@@ -125,10 +130,10 @@ class _FakeField extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(kRadiusControl),
         child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: N11Space.gap3),
           decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusControl)),
-          child: LayoutBuilder(builder: (context, constraints) => Row(children: <Widget>[const Icon(Icons.search, size: 20, color: N11Colors.ink2), const SizedBox(width: 4), Expanded(child: Text(constraints.maxWidth < 155 ? 'Tìm kiếm' : 'Tìm quán hoặc món', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.placeholder)))])),
+          child: LayoutBuilder(builder: (context, constraints) => Row(children: <Widget>[const Icon(Icons.search, size: 20, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text(constraints.maxWidth < 155 ? 'Tìm kiếm' : 'Tìm quán hoặc món', style: N11Text.body.copyWith(color: N11Colors.ink2)))])),
         ),
       ),
     );
@@ -161,6 +166,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    c.freshness.observe();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (c.choicesState != DiscoveryLoad.ready) await c.start();
@@ -191,13 +197,14 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     );
   }
 
-  void _openSearch() {
+  Future<void> _openSearch() async {
     final String? area = c.areaId;
     if (area == null) {
       m02Toast(context, 'Chưa xác định được khu vực từ GPS. Hãy thử định vị lại.');
       return;
     }
-    Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
+    await Navigator.of(context).push(n11Route(SearchScreen(api: c.api, publicApi: widget.publicApi, ratings: widget.ratings, areaId: area, position: _position, discovery: c, retryPosition: () => c.locate(source: _position, force: true))));
+    if (mounted) await c.freshness.reload();
   }
 
   @override
@@ -267,15 +274,27 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
         : _position.failure != null ? '${c.area!.name} · vị trí gần nhất' : c.area!.name;
     out.add(ConstrainedBox(
       key: const Key('home-area'),
-      constraints: const BoxConstraints(minHeight: kTapMin),
+      constraints: const BoxConstraints(minHeight: 32),
       child: Row(children: <Widget>[
-        const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
+        const Icon(Icons.my_location, size: 18, color: N11Colors.yellowStrong),
         const SizedBox(width: 6),
-        Flexible(child: Text(areaLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: N11Colors.black))),
+        Flexible(child: Text(areaLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
       ]),
     ));
     out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
       outsideCoverage: c.outsideCoverage, retry: () => c.locate(source: _position, force: true)));
+    out.add(Row(children: <Widget>[
+      Expanded(child: _FakeField(onTap: _openSearch)),
+      const SizedBox(width: N11Space.gap2),
+      IconButton(
+        key: const Key('home-filter'),
+        tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+        constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+        color: c.filtersActive ? N11Colors.yellowStrong : N11Colors.ink2,
+        onPressed: _openFilters,
+        icon: const Icon(Icons.tune, size: 20),
+      ),
+    ]));
     if (c.categories.isNotEmpty) {
       out.add(SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -288,19 +307,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     if (c.stale) {
       out.add(N11Banner(key: const Key('home-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', trailing: N11Button(key: const Key('home-reload'), label: 'Thử lại', compact: true, onPressed: c.refresh)));
     }
-    out.add(LayoutBuilder(builder: (context, constraints) => Row(children: <Widget>[
-      Flexible(child: Text('Quán gần bạn', style: constraints.maxWidth < 360 ? N11Text.bodyStrong : N11Text.h2)),
-      const SizedBox(width: N11Space.gap2),
-      Expanded(child: _FakeField(onTap: _openSearch)),
-      IconButton(
-        key: const Key('home-filter'),
-        tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-        constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
-        color: c.filtersActive ? N11Colors.yellowStrong : N11Colors.ink2,
-        onPressed: _openFilters,
-        icon: const Icon(Icons.tune, size: 20),
-      ),
-    ])));
+    out.add(const Text('Quán gần bạn', style: N11Text.h2));
     if (c.outsideCoverage) {
       out.add(const N11InfoCard(key: Key('home-outside-coverage'), title: 'Khu vực này chưa được phục vụ', text: 'Hiện chưa thể giao hàng tới vị trí này.'));
     }
@@ -341,7 +348,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
           }
         } else {
           for (final ShopCardData s in c.shops) {
-            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, customerLocation: _position.fix, distance: c.distances.of(s, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings)));
+            out.add(ShopCard(key: Key('shop-${s.shopId}'), shop: s, stale: c.stale, customerLocation: _position.fix, distance: c.distances.of(s, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, s, ratings: widget.ratings, onReturn: c.freshness.reload)));
           }
           if (c.hasMore) {
             out.add(N11Button(key: const Key('home-more'), label: c.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: c.loadingMore, onPressed: c.loadingMore ? null : c.loadMore));
@@ -351,30 +358,11 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     return out;
   }
 
-  Widget _chip(String key, String label, bool on, VoidCallback? onTap) {
-    return Padding(
-      padding: const EdgeInsets.only(right: N11Space.gap2),
-      child: Semantics(
-        button: true,
-        selected: on,
-        label: label,
-        excludeSemantics: true,
-        onTap: onTap,
-        child: InkWell(
-          key: Key(key),
-          borderRadius: BorderRadius.circular(kRadiusPill),
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: kTapMin),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(color: on ? N11Colors.yellow : N11Colors.white, border: Border.all(color: on ? N11Colors.yellow : N11Colors.line), borderRadius: BorderRadius.circular(kRadiusPill)),
-            child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.black)),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _chip(String key, String label, bool on, VoidCallback? onTap) => Padding(
+    padding: const EdgeInsets.only(right: N11Space.gap2),
+    child: CategoryChip(key: Key(key), label: label, selected: on, onSelected: onTap == null ? null : (_) => onTap()),
+  );
+
 }
 
 /// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
@@ -499,6 +487,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     widget.discovery?.addListener(_areaChanged);
+    _search.freshness.observe();
   }
 
   void _areaChanged() => _search.setArea(widget.discovery?.areaId);
@@ -534,25 +523,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 decoration: const BoxDecoration(color: N11Colors.white, border: Border(bottom: BorderSide(color: N11Colors.line))),
                 child: Row(children: <Widget>[
                   Expanded(
-                    child: TextField(
-                      key: const Key('search-field'),
+                    child: N11SearchField(
+                      fieldKey: const Key('search-field'),
+                      clearKey: const Key('search-clear'),
                       controller: _text,
                       autofocus: true,
-                      maxLength: 100,
-                      textInputAction: TextInputAction.search,
                       onChanged: _search.setTerm,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
-                      decoration: InputDecoration(
-                        hintText: 'Tìm quán hoặc món',
-                        hintStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: N11Colors.placeholder),
-                        counterText: '',
-                        filled: true,
-                        fillColor: N11Colors.bg,
-                        prefixIcon: const Icon(Icons.search, color: N11Colors.ink2),
-                        suffixIcon: _text.text.isEmpty ? null : IconButton(key: const Key('search-clear'), tooltip: 'Xóa nội dung tìm kiếm', icon: const Icon(Icons.close, size: 20), onPressed: () { _text.clear(); _search.setTerm(''); setState(() {}); }),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: N11Space.gap3, vertical: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: BorderSide.none),
-                      ),
                     ),
                   ),
                   TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
@@ -603,12 +579,12 @@ class _SearchScreenState extends State<SearchScreen> {
     return <Widget>[
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
       for (final ShopCardData shop in s.groupedShops) ...<Widget>[
-        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
-          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings))),
+        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, stale: s.stale, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
+          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload))),
         for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
-          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish,
-            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings))),
-        gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings), child: const Text('Xem tất cả'))),
+          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, stale: s.stale,
+            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings, onReturn: s.freshness.reload))),
+        gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload), child: const Text('Xem tất cả'))),
       ],
       if (s.hasMore) gap(N11Button(key: const Key('search-more'), label: s.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: s.loadingMore, onPressed: s.loadingMore ? null : s.loadMore)),
     ];
@@ -616,43 +592,43 @@ class _SearchScreenState extends State<SearchScreen> {
 }
 
 class _DishResult extends StatelessWidget {
-  const _DishResult({super.key, required this.dish, required this.onTap});
+  const _DishResult({super.key, required this.dish, required this.onTap, this.stale = false});
 
   final DishHit dish;
+  final bool stale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ({String label, ChipKind kind}) chip = _stateChip(dish.shop.reason);
+    final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(dish.shop.reason);
+    final Widget? quantity = !stale && dish.shop.open && OrderRuntime.current != null
+        ? DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
+            itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
+        : null;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(N11Space.gap3),
-            child: Row(children: <Widget>[
-              DishThumb(url: dish.imageUrl),
-              const SizedBox(width: N11Space.gap3),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-                  Text(dish.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
-                  Text(formatVnd(dish.priceVnd), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.yellowStrong)),
-                  if (dish.soldCount != null) Text('Đã bán ${dish.soldCount}', style: N11Text.caption),
-                  Text(dish.shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
-                  Padding(padding: const EdgeInsets.only(top: 4), child: N11Chip(chip.label, kind: chip.kind)),
-                ]),
-              ),
-              if (dish.shop.open && OrderRuntime.current != null)
-                DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
-                  itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
-              else const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
-            ]),
-          ),
-        ),
-      ),
+      child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Padding(
+        padding: const EdgeInsets.all(N11Space.gap3),
+        child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+          final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            DishThumb(url: dish.imageUrl, size: 72),
+            const SizedBox(width: N11Space.gap3),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              Text(dish.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong),
+              const SizedBox(height: N11Space.gap1),
+              Text(formatVnd(dish.priceVnd), style: N11Text.bodyStrong),
+              if (dish.soldCount != null) Text('Đã bán ${dish.soldCount}', style: N11Text.caption),
+              Text(dish.shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+              Padding(padding: const EdgeInsets.only(top: N11Space.gap1), child: N11Chip(chip.label, kind: chip.kind)),
+              if (quantity != null && stacked) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: quantity),
+            ])),
+            if (quantity != null && !stacked) quantity,
+            if (quantity == null) const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
+          ]);
+        }),
+      ))),
     );
   }
 }

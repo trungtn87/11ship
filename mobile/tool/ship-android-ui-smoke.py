@@ -45,11 +45,18 @@ def find(label):
     return min(matches)[1] if matches else None
 
 
-def wait(label):
-    for _ in range(12):
+def wait(label, scroll=False):
+    for attempt in range(12):
         position = find(label)
         if position is not None:
             return position
+        # At 360x640, V4 activity/income can lie below the first viewport.
+        # Start in the Flutter content just ABOVE the tab bar (y=528), below
+        # the native home map (ends at y=497 in the offline failure capture).
+        # A swipe starting on the native map pans it instead of scrolling home.
+        # The expected label must still become visible; never waive the check.
+        if scroll and attempt in (2, 5, 8):
+            adb('shell', 'input', 'swipe', '180', '520', '180', '240', '350')
         time.sleep(1)
     raise AssertionError(f'Android UI did not expose: {label}')
 
@@ -77,15 +84,18 @@ try:
     time.sleep(1)
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
-    wait('Chưa xác định trạng thái hoạt động')
     wait('Bản đồ offline Cao Bằng đã hiển thị')
+    capture('01-home-offline-no-gps')
+    wait('Chưa xác định trạng thái hoạt động', scroll=True)
+    wait('Bật online · Chưa khả dụng', scroll=True)
     hierarchy = nodes()
     online = [n for n in hierarchy if 'Bật online' in (n.get('text', '') + n.get('content-desc', '')) and n.get('clickable') == 'true']
+    assert any('Bật online' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy), 'the disabled online control must actually be visible'
     assert not online, 'unknown activity must not expose an online action'
     # One online button only: no separate sharing control, and no status line while there is nothing to say.
     assert not any('chia sẻ vị trí' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy), 'no separate location-sharing control or standing status'
     assert not any('trong M01' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy)
-    capture('01-home-offline-no-gps')
+    capture('01b-home-activity')
     adb('shell', 'svc', 'wifi', 'enable')
     for tab, title, name in [
         ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
@@ -94,7 +104,7 @@ try:
         ('Tài khoản', 'Tạo tài khoản', '05-account'),
     ]:
         tap(tab)
-        wait(title)
+        wait(title, scroll=tab == 'Thu nhập')
         capture(name)
     tap('Tạo tài khoản')
     wait('Đăng ký shipper')

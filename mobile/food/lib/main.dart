@@ -22,5 +22,5 @@ void main() {
   }
   ops?.installCrashHooks();
   ops?.start();
-  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: foodNotificationRouter(flows), push: flows.push))));
+  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: foodNotificationRouter(flows), push: flows.push), keepBottomNavOnChildRoutes: true)));
 }

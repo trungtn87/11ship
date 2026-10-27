@@ -13,11 +13,17 @@ import io.flutter.plugin.common.*
 import io.flutter.plugin.platform.*
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.PolylineOptions
+import org.maplibre.android.annotations.PolygonOptions
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.*
 import vn.eleven.m14.map.*
 import java.util.concurrent.Executors
+import kotlin.math.cos
+import kotlin.math.asin
+import kotlin.math.atan2
+import kotlin.math.sin
 
 class M14MapFactory(private val messenger: BinaryMessenger): PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView = M14MapView(context,viewId,messenger,args as? Map<*,*>)
@@ -35,6 +41,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private var ready=false
     private var loadError: String?=null
     private var centerRequest=0
+    private var initialCameraApplied=false
     private var disposed=false
     private var resumed=false
     private var started=false
@@ -72,6 +79,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                             current.uiSettings.isAttributionEnabled=false
                             current.uiSettings.isLogoEnabled=false
                             current.setStyle(style) { if(!disposed) { ready=true; draw(); channel.invokeMethod("ready",null) } }
+                            // Regional fallback only. The first valid point/route later replaces it with a viewport-based fit.
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
                             current.addOnCameraMoveListener { pins.invalidate() }
                             current.addOnCameraIdleListener {
@@ -79,6 +87,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                                 coverage.visibility=if(center!=null && !offline.contains(center.latitude,center.longitude)) View.VISIBLE else View.GONE
                             }
                             fun selected(point: LatLng): Boolean {
+                                if(data?.get("select_points")!=true) return false
                                 channel.invokeMethod("point",mapOf("lat" to point.latitude,"lon" to point.longitude,"inside" to offline.contains(point.latitude,point.longitude))); return true
                             }
                             current.addOnMapClickListener { selected(it) }
@@ -104,12 +113,25 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             if(!lat.isFinite() || !lon.isFinite()) return@mapNotNull null
             MapPin(lat,lon,p["label"] as? String?:"",(p["color"] as? Number)?.toInt()?:Color.BLUE)
         }?:emptyList()
+        val coords=(data?.get("route") as? List<*>)?.mapNotNull { item ->
+            val p=item as? List<*>?:return@mapNotNull null
+            val lat=(p.getOrNull(0) as? Number)?.toDouble()?:return@mapNotNull null
+            val lon=(p.getOrNull(1) as? Number)?.toDouble()?:return@mapNotNull null
+            if(lat.isFinite() && lon.isFinite()) LatLng(lat,lon) else null
+        }?:emptyList()
+        if(!initialCameraApplied) {
+            val important=pins.pins.map { LatLng(it.latitude,it.longitude) } + coords
+            if(important.isNotEmpty()) {
+                fitImportant(current, important)
+                initialCameraApplied=true
+            }
+        }
         if(data?.get("focus_pin")==true) pins.pins.firstOrNull()?.let { pin ->
             val point=Pair(pin.latitude,pin.longitude)
             if(focusedPoint!=point) {
                 val first=focusedPoint==null
                 focusedPoint=point
-                if(first) current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(pin.latitude,pin.longitude),15.0))
+                if(first && !initialCameraApplied) fitRadius(current, LatLng(pin.latitude,pin.longitude))
                 else current.moveCamera(CameraUpdateFactory.newLatLng(LatLng(pin.latitude,pin.longitude)))
             }
         }
@@ -117,17 +139,49 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
         if(requested!=centerRequest) {
             centerRequest=requested
             pins.pins.firstOrNull()?.let { pin ->
-                current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(pin.latitude,pin.longitude),15.0))
+                fitRadius(current, LatLng(pin.latitude,pin.longitude))
             }
         }
         current.clear()
-        val coords=(data?.get("route") as? List<*>)?.mapNotNull { item ->
-            val p=item as? List<*>?:return@mapNotNull null
-            val lat=(p.getOrNull(0) as? Number)?.toDouble()?:return@mapNotNull null
-            val lon=(p.getOrNull(1) as? Number)?.toDouble()?:return@mapNotNull null
-            if(lat.isFinite() && lon.isFinite()) LatLng(lat,lon) else null
-        }?:emptyList()
         if(coords.size>1) current.addPolyline(PolylineOptions().addAll(coords).color(Color.rgb(25,110,230)).width(5f))
+        (data?.get("radius_circle") as? Map<*,*>)?.let { circle ->
+            val lat=(circle["lat"] as? Number)?.toDouble()
+            val lon=(circle["lon"] as? Number)?.toDouble()
+            val radius=(circle["radius_m"] as? Number)?.toDouble()
+            if(lat!=null && lon!=null && radius!=null && lat.isFinite() && lon.isFinite() && radius>0) {
+                current.addPolygon(PolygonOptions().addAll(circlePoints(LatLng(lat,lon),radius))
+                    .fillColor((circle["fill_color"] as? Number)?.toInt()?:0x220000FF)
+                    .strokeColor((circle["color"] as? Number)?.toInt()?:Color.BLUE))
+            }
+        }
+    }
+    private fun fitImportant(current: MapLibreMap, points: List<LatLng>) {
+        val first=points.first()
+        if(points.size==1 || points.all { it.latitude==first.latitude && it.longitude==first.longitude }) {
+            fitRadius(current,first); return
+        }
+        val bounds=LatLngBounds.Builder().includes(points).build()
+        current.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds,64))
+    }
+    /** Fit an approximately 5 km radius using geographic bounds, independent of screen density/aspect ratio. */
+    private fun fitRadius(current: MapLibreMap, center: LatLng) {
+        val latDelta=5.0/111.32
+        val lonDelta=5.0/(111.32*cos(Math.toRadians(center.latitude)).coerceAtLeast(0.2))
+        val bounds=LatLngBounds.Builder()
+            .include(LatLng(center.latitude-latDelta,center.longitude-lonDelta))
+            .include(LatLng(center.latitude+latDelta,center.longitude+lonDelta)).build()
+        current.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds,64))
+    }
+    private fun circlePoints(center: LatLng, radiusMetres: Double): List<LatLng> {
+        val angular=radiusMetres/6371000.0
+        val lat1=Math.toRadians(center.latitude)
+        val lon1=Math.toRadians(center.longitude)
+        return (0..64).map { step ->
+            val bearing=2.0*Math.PI*step/64.0
+            val lat2=asin(sin(lat1)*cos(angular)+cos(lat1)*sin(angular)*cos(bearing))
+            val lon2=lon1+atan2(sin(bearing)*sin(angular)*cos(lat1),cos(angular)-sin(lat1)*sin(lat2))
+            LatLng(Math.toDegrees(lat2),Math.toDegrees(lon2))
+        }
     }
     override fun getView(): View=frame
     private fun start() { if(!started && !disposed) { view.onStart(); started=true } }

@@ -5,7 +5,7 @@ import { AvailabilityReason, ShopAvailability } from '../shop/shop-types';
 //   1 ACCOUNT    the owner account exists (registration with the OTP succeeded: a shop only exists behind it)
 //   2 SHOP_INFO  name, typed address, contact phone, an ACTIVE service area, and a weekly schedule
 //   3 LOCATION   a stored pickup point (GPS); a typed address is never a point
-//   4 FIRST_ITEM one dish on sale with a price > 0 and a picture
+//   4 FIRST_ITEM one dish on sale with a price > 0 (picture optional; Owner change 2026-10-25)
 // All four met, the shop ACTIVE and its owner not locked => the shop is publicly visible and takes orders (when open). Readiness is derived on every
 // read, never stored, so losing a condition later (no dish on sale, no point) blocks NEW orders at once and touches no order already created.
 

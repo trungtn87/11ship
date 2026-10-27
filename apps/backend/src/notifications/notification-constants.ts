@@ -6,7 +6,7 @@ export type NotificationApp = (typeof NOTIFICATION_APPS)[number];
 export const NOTIFICATION_CATEGORIES = ['ORDERS', 'REMINDERS', 'WALLET_PROFILE', 'AVAILABLE'] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
-export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE', 'COMPLAINT'] as const;
+export const TARGET_TYPES = ['ORDER', 'DELIVERY', 'WALLET_TXN', 'PROFILE', 'DELIVERY_LIST', 'NONE', 'COMPLAINT', 'FINANCE_REQUEST'] as const;
 export type TargetType = (typeof TARGET_TYPES)[number];
 
 /** The catalog of notification kinds. A kind fixes the category, the target and the lock-screen-safe wording; none of them carries a phone, an address, an OTP or bank data. */
@@ -50,6 +50,7 @@ export const KINDS = [
   'ORDER_DELIVERY_FAILED',
   // #191: someone wrote in the chat of an order / direct delivery (one collapsed card per room; the text itself is never in the notification).
   'ORDER_CHAT_MESSAGE',
+  'FINANCE_UPDATED',
 ] as const;
 export type NotificationKind = (typeof KINDS)[number];
 
@@ -147,6 +148,7 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   ORDER_DELIVERING: 'ORDERS',
   ORDER_DELIVERY_FAILED: 'ORDERS',
   ORDER_CHAT_MESSAGE: 'ORDERS',
+  FINANCE_UPDATED: 'WALLET_PROFILE',
 };
 
 export function isNotificationApp(value: unknown): value is NotificationApp {

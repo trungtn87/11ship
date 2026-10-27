@@ -6,7 +6,7 @@ import { createCategory, createItem, createItemWithPicture, discoveryShops, item
 import { createShopOwner, getShop, hoursBody, interval, putHours } from './support/shop-management-fixtures';
 
 // Issue #190 — the shop setup checklist (x/4) and the automatic activation, through the REAL Nest pipeline on a REAL PostgreSQL.
-// The server decides from the real rows: account, shop info + schedule, a pickup point, a first sellable dish (on sale, price > 0, a picture).
+// The server decides from real rows: account, shop info + schedule, a pickup point, a first sellable dish (VISIBLE, price > 0). Pictures are optional.
 describe('issue #190 — shop setup checklist and automatic activation', () => {
   let app: AuthApp;
   let group: string;
@@ -75,24 +75,17 @@ describe('issue #190 — shop setup checklist and automatic activation', () => {
     expect((await setupOf(other.token) as Json).shop_id).toBe(other.shopId);
   });
 
-  it('completes the checklist step by step: schedule, then a dish WITHOUT a picture (still not), then a dish with a picture => the system activates the shop, once, with no approval step', async () => {
+  it('completes setup with a dish WITHOUT a picture; a photo added later does not trigger a second activation', async () => {
     const owner = await createShopOwner(app);
     const version = await versionOf(owner.shopId);
     // Step "schedule": the owner can set the schedule although the setup is not complete (the conditions never block editing).
     expect((await putHours(app, owner.token, hoursBody(everyDay(), version))).status).toBe(200);
     expect(await setupOf(owner.token)).toMatchObject({ completed_steps: 3, missing: ['SELLABLE_ITEM'], public: false });
-    // A dish without a picture is on the menu but is not a "first sellable dish".
+    // The first VISIBLE dish with a positive price is sufficient, even when image_id is NULL.
     const bare = await createItem(app, owner.token, dish({ image_id: null }));
     expect(bare.status).toBe(201);
-    expect(await setupOf(owner.token)).toMatchObject({ completed_steps: 3, state: 'INCOMPLETE', missing: ['SELLABLE_ITEM'], public: false });
-    expect(await isPublic(owner.shopId)).toBe(false);
-    expect(await activations(owner.shopId)).toBe(0);
-    // The picture arrives: the dish is updated to carry it (still the owner's own routes) and the shop is activated in that very transaction.
-    const upload = await uploadImage(app, owner.token, { content_type: 'image/jpeg', data_base64: jpegBase64() });
-    const imageId = String(dataOf(upload).image_id);
-    const item = (dataOf(bare).item as Json);
-    const updated = await app.call('PUT', `/shop/me/menu/items/${String(item.item_id)}`, { bearer: owner.token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: item.version, ...dish({ image_id: imageId }) } });
-    expect(updated.status).toBe(200);
+    expect(await activations(owner.shopId)).toBe(1);
+    expect(await activationEvents(owner.shopId)).toBe(1);
     const done = (await setupOf(owner.token)) as Json;
     expect(done).toMatchObject({ state: 'ACTIVATED', completed_steps: 4, missing: [], public: true, activated: true, request: null });
     expect(String(done.activated_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -112,6 +105,27 @@ describe('issue #190 — shop setup checklist and automatic activation', () => {
     }
     expect(dataOf(await getShop(app, owner.token)).availability).toMatchObject({ reason: 'ONLINE', online: true });
     expect(await activations(owner.shopId)).toBe(1);
+    // Adding an optional picture afterwards changes only the dish, not the activation record.
+    const upload = await uploadImage(app, owner.token, { content_type: 'image/jpeg', data_base64: jpegBase64() });
+    const imageId = String(dataOf(upload).image_id);
+    const item = dataOf(bare).item as Json;
+    const updated = await app.call('PUT', `/shop/me/menu/items/${String(item.item_id)}`, {
+      bearer: owner.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: { expected_version: item.version, ...dish({ image_id: imageId }) },
+    });
+    expect(updated.status).toBe(200);
+    // Removing it through the owner API also leaves readiness and activation unchanged.
+    const removed = await app.call('PUT', `/shop/me/menu/items/${String(item.item_id)}`, {
+      bearer: owner.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: { expected_version: (dataOf(updated).item as Json).version, ...dish({ image_id: null }) },
+    });
+    expect(removed.status).toBe(200);
+    expect(await isPublic(owner.shopId)).toBe(true);
+    expect(await setupOf(owner.token)).toMatchObject({ state: 'ACTIVATED', completed_steps: 4 });
+    expect(await activations(owner.shopId)).toBe(1);
+    expect(await activationEvents(owner.shopId)).toBe(1);
   });
 
   it('two changes that complete the setup at the same moment activate it exactly once', async () => {
@@ -151,14 +165,12 @@ describe('issue #190 — shop setup checklist and automatic activation', () => {
     expect(await activations(owner.shopId)).toBe(1);
   });
 
-  it('legacy data that already satisfies every step (no activation ever recorded) is activated by the first read, once; the migration backfill is not needed for it to be public', async () => {
+  it('legacy data with an image-less sellable dish (no activation ever recorded) is activated by the first read, once; the migration backfill is not needed for it to be public', async () => {
     const owner = await createShopOwner(app);
     await app.pool.query(`INSERT INTO app.shop_business_hours (shop_id, weekday, start_minute, end_minute, end_day_offset) SELECT $1::uuid, d, 0, 1440, 0 FROM generate_series(1, 7) d`, [owner.shopId]);
-    const imageId = randomUUID();
-    await app.pool.query(`INSERT INTO app.menu_images (image_id, shop_id, content_type, byte_size, data, created_at) VALUES ($1::uuid, $2::uuid, 'image/jpeg', 4, '\\xffd8ffe0'::bytea, clock_timestamp())`, [imageId, owner.shopId]);
     await app.pool.query(
-      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, image_id, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Món cũ', 25000, 'VISIBLE', $4::uuid, 1, clock_timestamp(), clock_timestamp())`,
-      [randomUUID(), owner.shopId, group, imageId],
+      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, image_id, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Món cũ', 25000, 'VISIBLE', NULL, 1, clock_timestamp(), clock_timestamp())`,
+      [randomUUID(), owner.shopId, group],
     );
     expect(await isPublic(owner.shopId)).toBe(true); // public by the real data, whatever the record says
     expect(await activations(owner.shopId)).toBe(0);
