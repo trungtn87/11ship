@@ -1,3 +1,5 @@
+> **2026-10-27 Owner override — agent roles, merge authority and local/GitHub synchronization:** [AI Governance v1.1](../ai-governance/README.md) controls these topics. Earlier permission for ChatGPT to merge small PRs without explicit new Owner approval is revoked. Claude is primary local executor; Codex currently works via GitHub/Cloud when explicitly assigned. Both must read rules on every task, check safe sync before and after, and report to GitHub; an unsynced worktree is not a blanket execution stop. Preserve this document's proportionate testing, operational controls and domain requirements where not in conflict.
+
 # Quy trình triển khai và quyền hạn 11Ship
 
 Cập nhật: 12/10/2026, Asia/Saigon.
