@@ -62,7 +62,7 @@ test('Claude local preflight fetches and fast-forwards safely after Codex remote
   assert.equal(result.action, 'FAST_FORWARD');
   assert.equal(result.actionResult, 'SUCCESS');
   assert.equal(result.localSha, git(peer, 'rev-parse', 'HEAD'));
-  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8'), 'codex change\n');
+  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8').replace(/\r\n/g, '\n'), 'codex change\n');
 });
 test('Claude postflight pushes committed work to Github branch and verifies remote SHA', t => {
   const { local, peer } = setup(t);
