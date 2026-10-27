@@ -98,6 +98,7 @@ class N11App extends StatelessWidget {
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
     this.updates,
+    this.keepBottomNavOnChildRoutes = false,
   });
 
   final String? navigationIdentity;
@@ -110,6 +111,7 @@ class N11App extends StatelessWidget {
 
   /// Live notifications, the push tap and the foreground resync (M08). Null = the shell does none of it (a build without notifications).
   final NotificationShell? notifications;
+  final bool keepBottomNavOnChildRoutes;
 
   /// Replaced only by tests; the real app uses [httpHealthTransport].
   final HealthTransport? transport;
@@ -137,6 +139,7 @@ class N11App extends StatelessWidget {
         transport: transport,
         pollInterval: pollInterval,
         notifications: notifications,
+        keepBottomNavOnChildRoutes: keepBottomNavOnChildRoutes,
       ),
     );
   }
@@ -152,6 +155,7 @@ class N11Shell extends StatefulWidget {
     this.transport,
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
+    this.keepBottomNavOnChildRoutes = false,
   });
 
   final String? navigationIdentity;
@@ -161,6 +165,7 @@ class N11Shell extends StatefulWidget {
   final HealthTransport? transport;
   final Duration pollInterval;
   final NotificationShell? notifications;
+  final bool keepBottomNavOnChildRoutes;
 
   @override
   State<N11Shell> createState() => _N11ShellState();
@@ -246,8 +251,10 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
         ShellActions(
           goTab: _goTab,
           openDiagnostics: _openDiagnostics,
-          push: _push,
-          popToRoot: () => _popTabToRoot(_index),
+          push: widget.keepBottomNavOnChildRoutes ? _push : null,
+          popToRoot: widget.keepBottomNavOnChildRoutes
+              ? () => _popTabToRoot(_index)
+              : null,
         ),
         id: id,
       ),
@@ -316,10 +323,14 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
 
   void _select(int index) {
     if (index == _index && !_diagnostics) {
-      _popTabToRoot(index);
+      if (widget.keepBottomNavOnChildRoutes) {
+        _popTabToRoot(index);
+      }
       return;
     }
-    _popTabToRoot(index);
+    if (widget.keepBottomNavOnChildRoutes) {
+      _popTabToRoot(index);
+    }
     setState(() {
       _index = index;
       _diagnostics = false;
@@ -354,7 +365,10 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
   void _closeDiagnostics() => setState(() => _diagnostics = false);
 
   /// Back: leave diagnostics, then return to the first tab, then leave the app.
-  bool get _canLeave => _index == 0 && !_diagnostics && _tabAtRoot[_index];
+  bool get _canLeave =>
+      _index == 0 &&
+      !_diagnostics &&
+      (!widget.keepBottomNavOnChildRoutes || _tabAtRoot[_index]);
 
   @override
   Widget build(BuildContext context) {
@@ -362,11 +376,14 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
     final ShellActions actions = ShellActions(
       goTab: _goTab,
       openDiagnostics: _openDiagnostics,
-      push: _push,
-      popToRoot: () => _popTabToRoot(_index),
+      push: widget.keepBottomNavOnChildRoutes ? _push : null,
+      popToRoot: widget.keepBottomNavOnChildRoutes
+          ? () => _popTabToRoot(_index)
+          : null,
     );
     final bool diagnostics = _diagnostics;
-    final bool childRoute = !_tabAtRoot[_index];
+    final bool childRoute =
+        widget.keepBottomNavOnChildRoutes && !_tabAtRoot[_index];
     return HealthScope(
       monitor: _monitor,
       child: PopScope(
@@ -414,7 +431,8 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
                           index: _index,
                           children: <Widget>[
                             for (int i = 0; i < widget.tabs.length; i++)
-                              Navigator(
+                              if (widget.keepBottomNavOnChildRoutes)
+                                Navigator(
                                 key: _navigatorKeys[i],
                                 observers: <NavigatorObserver>[
                                   _TabRouteObserver(
@@ -457,7 +475,27 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
                                               );
                                       },
                                     ),
-                              ),
+                                )
+                              else if (widget.tabs[i].fullBleed)
+                                Builder(
+                                  key: Key('page-${widget.tabs[i].id}'),
+                                  builder: (BuildContext context) =>
+                                      widget.tabs[i].body(context, actions),
+                                )
+                              else
+                                SingleChildScrollView(
+                                  key: Key('page-${widget.tabs[i].id}'),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    N11Space.pad,
+                                    N11Space.gap4,
+                                    N11Space.pad,
+                                    N11Space.gap8,
+                                  ),
+                                  child: Builder(
+                                    builder: (BuildContext context) =>
+                                        widget.tabs[i].body(context, actions),
+                                  ),
+                                ),
                           ],
                         ),
                       ),

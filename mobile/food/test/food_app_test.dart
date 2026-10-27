@@ -84,6 +84,7 @@ void main() {
       config: config,
       transport: healthy(),
       pollInterval: Duration.zero,
+      keepBottomNavOnChildRoutes: true,
       tabs: <TabSpec>[
         TabSpec(
           id: 'home',
