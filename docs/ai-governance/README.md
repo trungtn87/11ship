@@ -17,7 +17,7 @@ Only **one active implementation owner for a given task/branch/PR**. Transfers r
 ## 2. Mandatory reading before EVERY task or resumed session
 
 Both Claude and Codex, irrespective of Cloud/local:
-1. Read root `AGENTS.md`, this document and their specific instructions (`CLAUDE.md` for Claude). Read `docs/process/11ship-delivery-workflow.md` for proportional tests and applicable domain/runbook docs.
+1. Read root `AGENTS.md`, this document and their specific instructions (`CLAUDE.md` for Claude; `docs/ai-governance/CODEX-EXECUTION.md` for Codex). Read `docs/process/11ship-delivery-workflow.md` for proportional tests and applicable domain/runbook docs.
 2. Read assigned Issue(s), exact PR/branch, current approved acceptance criteria, latest agent report and unresolved decisions. Check current main and PR HEAD before changing code.
 3. State acknowledgement in the task's PR (or Issue if no PR exists) **before first code change**: executor, execution environment, scope, worktree/branch, baseline SHA, synchronization status, planned checks, blockers/assumptions. Do not create redundant status messages for every small edit.
 4. If instruction files or scope changed while paused, reread before resuming.
