@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { classifySync, permittedAction } from '../../scripts/ai-governance/sync-guard.mjs';
+import { snapshot } from '../../scripts/ai-governance/monitor-local.mjs';
 
 const executable = resolve(fileURLToPath(new URL('../../scripts/ai-governance/sync-guard.mjs', import.meta.url)));
 function run(program, args, cwd) {
@@ -122,4 +123,17 @@ test('deleted remote branch cannot be silently recreated by automated postflight
   assert.equal(report.action, 'REPORT_ONLY');
   assert.equal(git(local, 'rev-parse', 'HEAD').length, 40);
   assert.equal(git(local, 'show', 'HEAD:data.txt'), 'do not resurrect branch');
+});
+
+test('periodic observer only fetches/reads and never changes an active worktree', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'remote change for observer\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  const before = git(local, 'rev-parse', 'HEAD');
+  const result = snapshot(local);
+  assert.equal(result.reports.length, 1);
+  assert.equal(result.reports[0].state, 'REMOTE_AHEAD');
+  assert.equal(result.reports[0].action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), before);
+  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8'), 'initial\n');
 });
