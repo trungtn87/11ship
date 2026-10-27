@@ -229,6 +229,9 @@ Future<void> openNotification(
   } else if (outcome.kind == OpenKind.ended) {
     messenger.showSnackBar(const SnackBar(content: Text(kEndedText)));
   }
+  if (!context.mounted) {
+    return;
+  }
   await router(context, item, outcome, actions);
 }
 
