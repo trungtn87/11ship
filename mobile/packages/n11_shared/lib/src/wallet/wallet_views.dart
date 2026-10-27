@@ -406,17 +406,16 @@ class _BalanceCard extends StatelessWidget {
 }
 
 class _Mini extends StatelessWidget {
-  const _Mini({required this.label, required this.value, required this.valueKey, this.end = false});
+  const _Mini({required this.label, required this.value, required this.valueKey});
 
   final String label;
   final String value;
   final Key valueKey;
-  final bool end;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(label, style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w600, color: N11Colors.black)),
         Text(value, key: valueKey, style: const TextStyle(fontSize: 16, height: 1.4, fontWeight: FontWeight.w800, color: N11Colors.black)),
