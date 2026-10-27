@@ -306,6 +306,13 @@ export class DeliveryShopService {
         distanceM = spec.estimatedDistanceM ?? null;
       }
     }
+    // A direct delivery without a map point can still be created from an
+    // explicitly selected fee band. Without a route, band, or agreed fee the
+    // actionable M07 contract remains FEE_REQUIRED; ROUTE_UNAVAILABLE is
+    // reserved for a route request that actually failed.
+    if (distanceM === null && spec.agreedFee === null) {
+      throw new AppError('FEE_REQUIRED');
+    }
     if (spec.agreedFee === null) {
       const quote = await this.agreements.estimate(context, distanceM);
       if (quote.status !== 'PRICED') {

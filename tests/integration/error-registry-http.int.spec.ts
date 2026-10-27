@@ -129,8 +129,10 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 4 order chat codes (#191: ORDER_CHAT_CLOSED, ORDER_CHAT_EXPIRED, ORDER_CHAT_NOT_PARTICIPANT, ORDER_CHAT_RATE_LIMITED)
     // + 3 Business Dashboard codes (BUSINESS_PUSH_NOT_CONFIGURED, BUSINESS_REQUEST_NOT_FOUND, BUSINESS_REQUEST_CLOSED)
     // + 2 shop finance codes (#198/#199: BUSINESS_CHAT_RATE_LIMITED, MENU_VISIBLE_LIMIT_REACHED)
+    // + 7 canonical delivery quote codes (#211/#239: quote changed, missing pins,
+    //   route unavailable/timeout, fee range and policy availability)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(215);
+    expect(codes).toHaveLength(222);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
