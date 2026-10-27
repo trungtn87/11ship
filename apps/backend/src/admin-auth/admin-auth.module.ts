@@ -1,3 +1,4 @@
+import { ShopEntitlements } from '../shop-entitlements/shop-entitlements';
 import { BusinessAdminController, BusinessClientController } from '../business-dashboard/business.controller';
 import { BusinessFinanceService } from '../business-dashboard/finance-service';
 import { BusinessFinanceRepository } from '../business-dashboard/finance-repository';
@@ -178,7 +179,7 @@ export class AdminAuthModule implements NestModule {
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
       controllers: [BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
-      providers: [BusinessFinanceService, BusinessFinanceRepository, BusinessReportService, BusinessPushService,
+      providers: [ShopEntitlements,BusinessFinanceService, BusinessFinanceRepository, BusinessReportService, BusinessPushService,
         adminAuthConfigProvider,
         {
           provide: ADMIN_LIMITER_KEY,

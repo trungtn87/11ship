@@ -21,7 +21,7 @@ const Map<String, String> _stepHelp = <String, String>{
   'ACCOUNT': 'Đăng ký số điện thoại và xác thực OTP.',
   'SHOP_INFO': 'Tên quán, địa chỉ, số điện thoại liên hệ và giờ hoạt động.',
   'LOCATION': 'Lấy vị trí GPS khi đang ở quán. Địa chỉ nhập tay không thay cho GPS.',
-  'FIRST_ITEM': 'Có ít nhất 1 món đang bán, giá lớn hơn 0 và có ảnh.',
+  'FIRST_ITEM': 'Có ít nhất 1 món đang bán, giá lớn hơn 0. Ảnh không bắt buộc.',
 };
 
 const Map<String, String> _missingText = <String, String>{
@@ -31,7 +31,7 @@ const Map<String, String> _missingText = <String, String>{
   'SERVICE_AREA': 'khu vực phục vụ',
   'BUSINESS_HOURS': 'giờ hoạt động',
   'PICKUP_POINT': 'vị trí GPS tại quán',
-  'SELLABLE_ITEM': 'món đang bán có giá và ảnh',
+  'SELLABLE_ITEM': 'món đang bán có giá hợp lệ',
 };
 
 String setupMissingText(List<String> codes) => <String>[for (final String c in codes) _missingText[c] ?? c].join(', ');

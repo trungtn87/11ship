@@ -2,6 +2,9 @@
 // only those SYSTEM granted, one by one, and none by default. Nothing here is derived from the app permissions (can_view, can_review_profile,
 // the sidebar) or from the Shipper review rights: those never imply money.
 
+export const SHOP_PAYMENT_READ = 'shop.payment.read';
+export const SHOP_PAYMENT_RECORD = 'shop.payment.record';
+export const SHOP_ENTITLEMENT_MANAGE = 'shop.entitlement.manage';
 export const FINANCE_PERMISSION_READ = 'wallet.read';
 export const FINANCE_PERMISSION_TOPUP_RECORD = 'wallet.topup.record';
 // M04-C: the withdrawal is split in three rights so that nobody gets the whole chain by default. process = claim a PENDING withdrawal and make the manual transfer
@@ -19,6 +22,7 @@ export const PERMISSION_AUDIT_READ = 'audit.read';
 
 /** The rights that can be granted TODAY. */
 export const GRANTABLE_FINANCE_PERMISSIONS = [
+  SHOP_PAYMENT_READ, SHOP_PAYMENT_RECORD, SHOP_ENTITLEMENT_MANAGE,
   FINANCE_PERMISSION_READ,
   FINANCE_PERMISSION_TOPUP_RECORD,
   FINANCE_PERMISSION_WITHDRAWAL_PROCESS,

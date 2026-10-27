@@ -45,6 +45,27 @@ String m10When(DateTime t) {
       DisplayStatus.cancelledByCustomer || DisplayStatus.cancelledByShop || DisplayStatus.cancelledBySystem || DisplayStatus.rejected || DisplayStatus.notCompleted => (label: s.label, kind: ChipKind.neutral),
     };
 
+/// Full-width order footer. Edit is on the left and destructive action on the
+/// right. Callers supply only actions actually allowed by the current order.
+class OrderActionsBar extends StatelessWidget {
+  const OrderActionsBar({super.key, this.edit, this.destructive}) : assert(edit != null || destructive != null);
+
+  final Widget? edit;
+  final Widget? destructive;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: edit != null && destructive != null
+        ? Row(children: <Widget>[
+            Expanded(child: edit!),
+            const SizedBox(width: N11Space.gap3),
+            Expanded(child: destructive!),
+          ])
+        : Align(alignment: edit != null ? Alignment.centerLeft : Alignment.centerRight, child: edit ?? destructive),
+  );
+}
+
 class OrderStatusChip extends StatelessWidget {
   const OrderStatusChip(this.status, {super.key});
 

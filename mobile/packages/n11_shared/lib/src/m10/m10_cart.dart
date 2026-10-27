@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../m02/availability_refresh.dart';
 
 import '../account/session_controller.dart';
 import '../flows/location.dart';
@@ -19,6 +20,16 @@ String _key(String itemId, String? note) => '$itemId|${(note ?? '').replaceAll(R
 class CartController extends ChangeNotifier {
   CartController({required this.source});
 
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: load, invalidate: () {
+    _availabilityStale = true;
+    _notify();
+  });
+  bool _online = false;
+  bool _availabilityStale = true;
+  bool get online => _online && !_availabilityStale;
+  bool get availabilityStale => _availabilityStale;
+  bool _reading = false;
+  int _mutationEpoch = 0;
   final CustomerOrderSource source;
 
   String? _shopId;
@@ -53,19 +64,44 @@ class CartController extends ChangeNotifier {
 
   /// Reads the saved cart (prices and availability as the server has them NOW).
   Future<void> load() async {
+    if (_reading) return;
+    if (_syncing) {
+      freshness.failed();
+      return;
+    }
+    if (_dirty) {
+      // Retry the same cart contents before reading, so reconnect never discards edits
+      // and the explicit Retry button can recover a previously failed save.
+      await _save();
+      if (_dirty || _disposed) return;
+    }
+    _reading = true;
+    final int epoch = _mutationEpoch;
     try {
       final CartView? view = await source.cart();
+      if (_disposed || epoch != _mutationEpoch) return;
       _apply(view);
       _loaded = true;
       _failure = null;
       _dirty = false;
     } on M07Failure catch (failure) {
       _failure = failure;
+      _availabilityStale = true;
+      freshness.failed();
+    } finally {
+      _reading = false;
     }
     _notify();
   }
 
+  void _availability(CartView? view) {
+    _online = view?.online ?? false;
+    _availabilityStale = false;
+    freshness.arm(view?.nextRefreshMs);
+  }
+
   void _apply(CartView? view) {
+    _availability(view);
     if (view == null) {
       _shopId = null;
       _shopName = '';
@@ -152,6 +188,7 @@ class CartController extends ChangeNotifier {
 
   /// Replaces the cart with what the server answered (after "đặt lại" or a refresh).
   void adopt(CartView? view) {
+    _mutationEpoch++;
     _apply(view);
     _loaded = true;
     _dirty = false;
@@ -161,12 +198,14 @@ class CartController extends ChangeNotifier {
 
   /// The Order was sent: the cart of that shop has become the Order (the server emptied it too).
   void sent() {
+    _mutationEpoch++;
     _apply(null);
     _dirty = false;
     _notify();
   }
 
   Future<void> _save() async {
+    _mutationEpoch++;
     _dirty = true;
     _notify();
     if (_syncing) {
@@ -182,12 +221,17 @@ class CartController extends ChangeNotifier {
             await source.clearCart();
           } else {
             final CartView? saved = await source.saveCart(shopId: shop, lines: _lines, note: _note);
-            if (_shopId == shop) _feeEstimateVnd = saved?.feeEstimateVnd;
+            if (_shopId == shop) {
+              _feeEstimateVnd = saved?.feeEstimateVnd;
+              _availability(saved);
+            }
           }
           _failure = null;
         } on M07Failure catch (failure) {
           // Offline or refused: what is on screen stays; it is saved again with the next change or the next read.
           _failure = failure;
+          _availabilityStale = true;
+          freshness.failed();
           _dirty = true;
           break;
         }
@@ -207,6 +251,7 @@ class CartController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    freshness.dispose();
     super.dispose();
   }
 }

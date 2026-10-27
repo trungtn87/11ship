@@ -72,6 +72,19 @@ export class ShopDiscoveryReader {
    * How many shops are taking orders RIGHT NOW (M12 overview): ACTIVE shop, ACTIVE area, owner account not locked, and inside its weekly hours at the one
    * PostgreSQL instant of the read. It is the very predicate of `availability` (shop-availability-sql.ts), counted instead of listed.
    */
+  /** Include closed and off-page shops: open-only lists must wake when a currently absent shop opens. */
+  async nextRefreshMs(context: TransactionContext, areaId: string): Promise<number | null> {
+    const result = await context.query<{ delay: string | null }>(`
+      WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS t),
+      local_clock AS (SELECT EXTRACT(EPOCH FROM ((t AT TIME ZONE '${AVAILABILITY_TIME_ZONE}') - date_trunc('week', t AT TIME ZONE '${AVAILABILITY_TIME_ZONE}'))) * 1000 AS ms FROM clock)
+      SELECT min(CASE WHEN delta = 0 THEN 604800000 ELSE delta END)::text AS delay
+      FROM app.shop_business_hours h JOIN app.shops s ON s.shop_id = h.shop_id CROSS JOIN local_clock
+      CROSS JOIN LATERAL (VALUES (((h.weekday - 1) * 1440 + h.start_minute) * 60000::numeric), (((h.weekday - 1 + h.end_day_offset) * 1440 + h.end_minute) * 60000::numeric)) b(ms)
+      CROSS JOIN LATERAL (SELECT mod(mod(b.ms - local_clock.ms, 604800000) + 604800000, 604800000) AS delta) d
+      WHERE s.service_area_id = $1::uuid AND s.status = 'ACTIVE'`, [areaId]);
+    return result.rows[0]?.delay == null ? null : Math.ceil(Number(result.rows[0].delay));
+  }
+
   async countOnline(context: TransactionContext): Promise<number> {
     const result = await context.query<{ n: string }>(
       `WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS instant),

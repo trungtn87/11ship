@@ -98,10 +98,11 @@ class DishHit {
 
 @immutable
 class DiscoveryPage<T> {
-  const DiscoveryPage({required this.items, required this.hasMore});
+  const DiscoveryPage({required this.items, required this.hasMore, this.nextRefreshMs});
 
   final List<T> items;
   final bool hasMore;
+  final int? nextRefreshMs;
 }
 
 /// What is asked of the server: always inside ONE area; [term] is what the person typed (the server folds case and marks).

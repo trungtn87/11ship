@@ -1,3 +1,4 @@
+import { BusinessFinanceRepository } from '../business-dashboard/finance-repository';
 import { Injectable } from '@nestjs/common';
 import { DeliveryRepository } from '../delivery/delivery-repository';
 import { ShipperLocationRepository } from '../delivery/shipper-location';
@@ -45,8 +46,25 @@ export class NotificationRecipients {
     private readonly complaints: ComplaintRepository,
     private readonly orders: OrderRepository,
     private readonly chatParticipants: OrderChatParticipants,
+    private readonly finance: BusinessFinanceRepository,
   ) {}
 
+  async financeFacts(context:TransactionContext,id:string){
+    const room=await this.finance.find(context,id);
+    if(!room)return undefined;
+    if(room.shop_id&&(await this.shops.ownerUserIdOfShop(context,room.shop_id))!==room.owner_user_id)return undefined;
+    if(room.kind==='TOPUP'){
+      const driver=await this.drivers.findByUserId(context,room.owner_user_id);
+      if(!driver||driver.status==='CLOSED')return undefined;
+    }
+    return room;
+  }
+  async financeNotice(context:TransactionContext,id:string,sequence:string){
+    const fact=await this.finance.notificationFact(context,id,sequence);
+    if(!fact||fact.sender_user_id===fact.request.owner_user_id)return undefined;
+    if(fact.event_kind==='MESSAGE'&&fact.request.state!=='PENDING')return undefined;
+    return this.financeFacts(context,id);
+  }
   shopOwner(context: TransactionContext, shopId: string): Promise<string | undefined> {
     return this.shops.ownerUserIdOfShop(context, shopId);
   }
