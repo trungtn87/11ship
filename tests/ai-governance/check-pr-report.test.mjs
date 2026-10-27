@@ -6,7 +6,7 @@ const createdAt = '2026-10-28T01:00:00Z';
 const full = [
   '<!-- 11ship-agent-report:v1 -->',
   '- Executor: CLAUDE_LOCAL',
-  '- Rules-read: AGENTS.md docs/ai-governance/README.md 2026-10-28',
+  '- Rules-read: AGENTS.md docs/ai-governance/README.md CLAUDE.md 2026-10-28',
   '- Scope: #239 exact accepted behavior',
   '- Baseline-SHA: ' + 'a'.repeat(40),
   '- Sync-preflight: 2026-10-28 ahead 0 behind 0 clean local/remote verified',
@@ -50,4 +50,13 @@ test('pre-existing PR opting into governance still needs complete report', () =>
 test('unresolved material blocker fails readiness', () => {
   const result = validate(full.replace('Open-blockers: NONE', 'Open-blockers: BLOCKED by missing product decision'), { createdAt });
   assert.equal(result.passed, false);
+});
+
+test('Codex role requires specific Codex contract acknowledgment', () => {
+  const changed = full.replace('CLAUDE_LOCAL', 'CODEX_CLOUD').replace(' CLAUDE.md ', ' ');
+  const result = validate(changed, { createdAt });
+  assert.equal(result.passed, false);
+  assert.match(result.errors.join('|'), /Codex must confirm/);
+  const restored = changed.replace('docs\/ai-governance\/README.md ', 'docs/ai-governance/README.md docs/ai-governance/CODEX-EXECUTION.md ');
+  assert.equal(validate(restored, { createdAt }).passed, true);
 });
