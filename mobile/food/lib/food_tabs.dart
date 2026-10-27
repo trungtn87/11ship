@@ -17,7 +17,29 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
       final NavigatorState navigator = Navigator.of(context);
       switch (target.type) {
         case TargetType.financeRequest:
-          if (target.id != null) await navigator.push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: true, requestId: target.id)));
+          // A notification can be tapped while a shop owner is using the Customer context.
+          // Switch context on that explicit action; never open shop finance under a customer session.
+          if (target.id == null) break;
+          if (flows.session.identity?.activeRole != 'SHOP_OWNER') {
+            if (flows.session.identity?.availableRoles.contains('SHOP_OWNER') != true) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tài khoản không có quyền quản lý quán.')));
+              }
+              break;
+            }
+            try {
+              await flows.session.selectContext('SHOP_OWNER');
+            } on Object {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể chuyển sang vai trò Quán. Vui lòng thử lại.')));
+              }
+              break;
+            }
+            if (!context.mounted || flows.session.identity?.activeRole != 'SHOP_OWNER') break;
+          }
+          if (context.mounted) {
+            await Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: true, requestId: target.id)));
+          }
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
           if (source != null && target.id != null) {
