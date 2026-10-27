@@ -112,3 +112,14 @@ test('offline/read-only observe cannot claim successful synchronization', t => {
   assert.equal(observe.action, 'REPORT_ONLY');
   assert.equal(observe.state, 'LOCAL_AHEAD');
 });
+
+test('deleted remote branch cannot be silently recreated by automated postflight', t => {
+  const { local, peer } = setup(t);
+  commit(local, 'do not resurrect branch\n');
+  git(peer, 'push', 'origin', '--delete', 'feature/task');
+  const report = guard(local, 'postflight');
+  assert.equal(report.state, 'LOCAL_UNVERIFIED');
+  assert.equal(report.action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD').length, 40);
+  assert.equal(git(local, 'show', 'HEAD:data.txt'), 'do not resurrect branch');
+});
