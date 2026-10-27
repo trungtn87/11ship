@@ -246,6 +246,9 @@ class _HomeMapState extends State<_HomeMap> {
         key: ValueKey<int>(_generation),
         centerRequest: _centerRequest,
         pins: <Map<String, dynamic>>[if (position != null) <String, dynamic>{'lat': position['lat'], 'lon': position['lon'], 'label': 'Vị trí của bạn', 'color': 0xFF1976D2}],
+        radiusCircle: position == null ? null : <String, dynamic>{
+          'lat': position['lat'], 'lon': position['lon'], 'radius_m': 3000.0, 'color': 0xFF1976D2, 'fill_color': 0x241976D2,
+        },
         onReady: () { _timeout?.cancel(); if (mounted) setState(() => _ready = true); },
         onError: _failed,
       )),
