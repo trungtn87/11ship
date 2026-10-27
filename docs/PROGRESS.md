@@ -310,7 +310,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#234](https://github.com/trungtn87/11ship/pull/234) (Nhóm 12) Hoàn thiện Việc cần xử lý trên Admin (#216) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `f83ebd8` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#240](https://github.com/trungtn87/11ship/pull/240) (V4 · PR 1/3) Shared Flutter design-system foundation for 1… | Đã merge (`MERGED`) | — | — | — | `a287a91` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#243](https://github.com/trungtn87/11ship/pull/243) (V4 · PR 2/3) Refresh 11Food discovery, menu and responsive… | Đã merge (`MERGED`) | — | — | — | `7b6d6e9` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#244](https://github.com/trungtn87/11ship/pull/244) (V4 · PR 3/3) Refresh 11Ship activity, delivery and wallet… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `1f99602` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#244](https://github.com/trungtn87/11ship/pull/244) (V4 · PR 3/3) Refresh 11Ship activity, delivery and wallet… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `1f99602` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
