@@ -32,6 +32,10 @@ export function validate(body, { draft = false, createdAt = '1970-01-01T00:00:00
   const read = values.get('Rules-read') || '';
   if (!read.includes('AGENTS.md') || !read.includes('docs/ai-governance/README.md'))
     errors.push('Rules-read must mention both mandatory entrypoints');
+  if (/^CODEX_/i.test(exec) && !read.includes('docs/ai-governance/CODEX-EXECUTION.md'))
+    errors.push('Codex must confirm reading its role contract');
+  if (/^CLAUDE_/i.test(exec) && !read.includes('CLAUDE.md'))
+    errors.push('Claude must confirm reading CLAUDE.md');
   for (const shaKey of ['Baseline-SHA', 'Remote-head-SHA']) {
     const sha = values.get(shaKey) || '';
     if (!/^[0-9a-f]{40}$/i.test(sha)) errors.push(shaKey + ' must be full 40-character SHA');
