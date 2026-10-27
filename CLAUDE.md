@@ -1,3 +1,5 @@
+> **MANDATORY EACH TASK/RESUME:** First read [AI Governance v1.1](docs/ai-governance/README.md), root [AGENTS.md](AGENTS.md), and [PR start/end checklist](docs/ai-governance/AGENT-EXECUTION-CHECKLIST.md). Primary executor is Claude Code local on Windows when assigned. Before implementation check local worktree/branch and remote GitHub safely; after implementation commit/push when safe, verify remote SHA and report local-only pending work. Do not blanket-block independent tasks on sync differences. Do not decide business/UX gaps; escalate to ChatGPT. Never merge/deploy/close issues. Owner must explicitly approve merge/deploy; older standing merge permission does not apply.
+
 # 11Ship — Claude implementation contract
 
 Read [AGENTS.md](AGENTS.md) and [the delivery workflow](docs/process/11ship-delivery-workflow.md). The 2026-10-12 proportional process supersedes conflicting process demands in older handoffs.
