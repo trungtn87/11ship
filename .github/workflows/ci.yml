@@ -67,6 +67,9 @@ jobs:
       - name: Lockfile must be unchanged by npm ci
         run: git diff --exit-code -- package-lock.json
 
+      - name: Agent governance and local sync regression tests
+        run: node --test tests/ai-governance/*.test.mjs
+
       # Lint, typecheck and build also write their output to a file. When one of them fails, the tail
       # of that output becomes an annotation (the job log itself cannot always be downloaded).
       - name: Lint
