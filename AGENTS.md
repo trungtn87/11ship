@@ -42,3 +42,7 @@ Use [the M01 workstream plan](docs/current/M01-workstreams-20261012.md) as the c
 ## Shared release versions — Owner decision 2026-10-19
 
 Read and apply [the release versioning convention](docs/process/release-versioning-20261019.md) for merges, builds, APK naming, VPS deployment reports and M13.07/M13.08. Apply it immediately: one immutable release version per merged main SHA; artifacts with that version come from that SHA. Preserve actual running/device versions, Android signing/applicationIds and increasing versionCode. Do not wait for M13 or claim automation/deployment from this documentation change.
+
+## Deploy includes APK update readiness — Owner decision 2026-10-27
+
+For every VPS deployment, follow [the APK publication and update-check procedure](ops/runbooks/github-vps-deploy.md#apk-và-thông-báo-cập-nhật--owner-bổ-sung-27102026). Check which apps need a release, publish authorized FOOD/SHIP APKs through existing SYSTEM/M13 controls, verify old/new version responses and downloadable APK checksums, and report backend deployment, APK publication and device acceptance separately. GitHub artifacts alone are not published updates. Keep compatible existing APKs for backend/documentation-only changes; never raise minimums merely to trigger a banner. Reuse #193 and existing workflows; this documentation does not claim upload/publish automation is implemented or authorize unrelated releases.
