@@ -32,7 +32,7 @@ Run before starting/resuming **every assigned PR**, on executor transfer and on 
 
 **Non-blocking by default**: if clean and fast-forwardable, synchronize automatically; if out of sync but task is independent, continue on a safe named branch/worktree with pinned base SHA and report pending synchronization. LOCAL_AHEAD, REMOTE_AHEAD, DIVERGED or LOCAL_UNVERIFIED are NOT universal blockers. When work depends on uncommitted/unpushed work, first hand it off safely or stop only the dependent part. No automatic destructive `reset --hard`, `clean`, `push --force`, blind `pull` or overwrite. Never commit secrets.
 
-**Postflight**: commit/push owned changes where safe, verify remote branch SHA (not just local commit success); record remaining uncommitted work and unsynced commits, test/CI linkage, synchronization state and next actor. After Codex Cloud pushes, local PC must fetch and safely fast-forward or preserve changes in a separate worktree; Codex must not falsely certify local synchronization. A local background watcher/Sync Guard is a **future implementation** until installed and verified; written policy does not mean Windows automation is running.
+**Postflight**: commit/push owned changes where safe, verify remote branch SHA (not just local commit success); record remaining uncommitted work and unsynced commits, test/CI linkage, synchronization state and next actor. After Codex Cloud pushes, local PC must fetch and safely fast-forward or preserve changes in a separate worktree; Codex must not falsely certify local synchronization. The repo now contains `scripts/ai-governance/sync-guard.mjs` for task pre/postflight and `monitor-local.mjs` for read-only background observation. These do not install themselves on the owner's PC. One-time Windows observer installation is required; each active developer must invoke the pre/postflight guard.
 
 **Conflict policy**: protect state; isolate unrelated work into separate worktrees if safe; block only the conflicting or dependent operation and escalate with evidence. A PR requiring a specific local-only change is not ready for integration until that change is captured and reviewed. All synchronization checks are automatic where actual runner/hook integration exists; without it agents execute and report the checks without Owner prompting.
 
@@ -46,7 +46,7 @@ Finish: provide PR URL/branch and remote HEAD SHA, requirements checklist, code 
 
 ## 5. Standard GitHub record
 
-Each Issue holds requirements and approvals; each PR has a durable, versioned execution summary in PR description or pinned/updateable comment:
+Each Issue holds requirements and approvals. Each new ready PR must place the machine-readable `<!-- 11ship-agent-report:v1 -->` block in the **PR description**; interim updates and blockers may also be comments. Draft PRs can retain placeholders while coding. Existing PRs receive transitional treatment:
 - Owner approval and approved Issue IDs, executor and environment, branch, worktree (if local), start SHA
 - Preflight (time, local/remote SHA, ahead/behind, dirty/untracked status, sync state)
 - Milestones/checklist, blockers/questions and decisions with links
@@ -64,6 +64,38 @@ Transfer Claude → Codex or back: previous executor stops; checkpoint code safe
 
 ## 7. Enforcement vs aspiration
 
-`AGENTS.md` and `CLAUDE.md` are required read-entrypoints; `docs/ai-governance/AGENT-EXECUTION-CHECKLIST.md` is the shared report template. PR review must reject absent reading acknowledgment, report, or materially unsupported acceptance. A GitHub Action/local Sync Guard that independently verifies Windows state is **not present merely because these documents exist**; implement and test such automation separately, without turning all unsynced statuses into blanket blockers.
+`AGENTS.md` and `CLAUDE.md` are required read-entrypoints; `docs/ai-governance/AGENT-EXECUTION-CHECKLIST.md` is the shared report template. PR review must reject absent reading acknowledgment, report, or materially unsupported acceptance. GitHub's `AI Governance readiness` workflow checks PR-body evidence for new ready PRs and opted-in existing PRs, leaving Draft PRs free to code. The readiness check uses trusted main-branch scripts and read-only permissions; it is not an independently verified proof that a model actually read every file. Configure branch protection to require that check before calling it a hard merge gate. A GitHub workflow cannot inspect Windows local changes. The local observer is only active after explicit one-time installation on the Owner PC.
 
 Changes to this governance require Owner approval, reviewed PR and historical record.
+
+## 8. Local implementation and installation
+
+Claude local must run, without an Owner reminder, before and after every assigned/resumed task in the **actual worktree**:
+
+~~~powershell
+node scripts/ai-governance/sync-guard.mjs --phase preflight --repo D:\11Ship --report .11ship-local\preflight.json
+# After approved code, focused tests and commit:
+node scripts/ai-governance/sync-guard.mjs --phase postflight --repo D:\11Ship --report .11ship-local\postflight.json
+~~~
+
+Replace D:\11Ship with the assigned worktree path. Preflight auto-fetches and fast-forwards only a clean behind branch. Postflight pushes only clean ahead non-main branches with a verified remote tracking branch. Nothing is force-pushed, reset, cleaned or committed automatically. A report may say DIVERGED or LOCAL_UNVERIFIED and still allow independent work.
+
+To register an observer every five minutes, run ONCE on the real Windows PC:
+
+~~~powershell
+cd D:\11Ship
+powershell -ExecutionPolicy Bypass -File scripts\ai-governance\install-local-monitor.ps1 -Action Install
+powershell -ExecutionPolicy Bypass -File scripts\ai-governance\install-local-monitor.ps1 -Action RunOnce
+~~~
+
+The observer saves `.11ship-local/ai-sync-observer.json` and only fetches/inspects worktrees. It does NOT alter checked-out files, perform merges or push during another agent's work. It needs an interactive Windows login; Windows sleep, sign-out or connectivity failure limits monitoring. This PR cannot install it remotely.
+
+Codex Cloud cannot independently inspect local files. Without a fresh report published through a trusted PC-to-GitHub bridge, it marks LOCAL_UNVERIFIED and may implement only remote-independent scope. The observer detects remote changes; a local preflight safely integrates them when a relevant worktree is free and clean. A full bidirectional automatic bridge remains uninstalled until separately deployed and verified.
+
+## 9. Focused acceptance scenarios
+
+- Claude local committed changes -> postflight pushes and verifies remote SHA.
+- Codex Cloud changes after Claude stops -> preflight detects REMOTE_AHEAD and safely fast-forwards a clean worktree.
+- Divergence or dirty worktree -> preserve all data and report, do not force/reset/clean.
+- GitHub unreachable -> report remote verification unavailable and preserve independent progress.
+- New ready PR missing acknowledgment/checkpoint report -> readiness check fails; Draft and legacy PRs remain workable.
