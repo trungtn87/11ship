@@ -35,10 +35,11 @@ NotificationRouter foodNotificationRouter(AppFlows flows) => (BuildContext conte
               }
               break;
             }
-            if (!context.mounted || flows.session.identity?.activeRole != 'SHOP_OWNER') break;
+            if (!navigator.mounted || flows.session.identity?.activeRole != 'SHOP_OWNER') break;
           }
-          if (context.mounted) {
-            await Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: true, requestId: target.id)));
+          // Switching roles can rebuild the tab context; keep the root Navigator.
+          if (navigator.mounted) {
+            await navigator.push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: true, requestId: target.id)));
           }
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
