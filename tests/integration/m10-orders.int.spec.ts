@@ -157,14 +157,23 @@ describe('M10 — food orders', () => {
   it('the check before sending shows the dishes at today\'s price and an estimated fee from M06; the fee is separate and unknown is never 0', async () => {
     const body = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 2 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };
     const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', body));
-    expect(preview).toMatchObject({ ok: true, blockers: [], items_total_vnd: 90_000, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: 2500 }, expected_total_vnd: 100_000 });
-    // No pin: quote the system M06 entry tier, but NEVER invent a route distance or treat it as an agreed fee.
+    expect(preview).toMatchObject({ ok: true, blockers: [], items_total_vnd: 90_000, fee: { status: 'PRICED', fee_vnd: 10_000, distance_m: 2500, reason: null }, expected_total_vnd: 100_000 });
+    // No pin: no route and no fee. The entry tier must not masquerade as a quote.
     const unpinned = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, address: { address_text: '5 Phố Cổ' } }));
-    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: null }, expected_total_vnd: 100_000 });
+    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'UNAVAILABLE', fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' }, expected_total_vnd: null });
     // A dish nobody sells is a blocker, not a silent drop.
     const bad = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, lines: [{ item_id: randomUUID(), quantity: 1 }] }));
     expect(bad.ok).toBe(false);
     expect(bad.lines[0]).toMatchObject({ issue: 'ITEM_UNAVAILABLE' });
+  });
+
+  it('rechecks the accepted quote when placing and refuses a stale distance/fee snapshot', async () => {
+    const lines = [line(pho, 1)];
+    const draft = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };
+    const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', draft));
+    const fee = preview.fee as Json;
+    const stale = { status: fee.status, distance_m: Number(fee.distance_m) + 1, fee_vnd: fee.fee_vnd, snapshot: fee.snapshot };
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', checkout(lines, { expected_quote: stale })))).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
   });
 
   it('sending creates "Chờ quán xác nhận" with a snapshot: the menu and the address book changing afterwards do not change the Order', async () => {
@@ -173,7 +182,7 @@ describe('M10 — food orders', () => {
     const order = await place(alice, [line(dish, 2, 'không hành')], { address: { address_id: book.id } });
     expect(order).toMatchObject({ status: 'PENDING_CONFIRMATION', display_status: 'AWAITING_SHOP', version: 1 });
     expect(order.code).toMatch(/^DH-/u);
-    expect(order.money).toMatchObject({ items_total_vnd: 60_000, paid_vnd: 0, fee: { payer: 'CUSTOMER', amount_vnd: null, estimate_vnd: 10_000, status: 'ESTIMATE' } });
+    expect(order.money).toMatchObject({ items_total_vnd: 60_000, paid_vnd: 0, fee: { payer: 'CUSTOMER', amount_vnd: null, estimate_vnd: 10_000, status: 'PRICED' } });
     expect(order.recipient).toMatchObject({ name: 'Người nhận', address_text: '77 Phố Mới, Cầu Giấy' });
     await app.pool.query(`UPDATE app.menu_items SET name = 'Tên mới', price_vnd = 99000, version = version + 1, updated_at = clock_timestamp() WHERE item_id = $1::uuid`, [dish.itemId]);
     ok(await asCustomer(alice, 'PATCH', `/customers/me/addresses/${String(book.id)}`, { expected_version: 1, address_description: 'Địa chỉ đã đổi' }));
@@ -750,7 +759,7 @@ describe('M10 — food orders', () => {
     await app.pool.query('UPDATE app.orders SET fee_estimate_distance_m = NULL, address_lat = NULL, address_lng = NULL WHERE order_id = $1::uuid', [order.order_id]);
     await app.pool.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
     const fresh = await shopView(String(order.order_id));
-    expect(refused(await callShipper(fresh))).toEqual({ status: 400, code: 'FEE_REQUIRED' });
+    expect(refused(await callShipper(fresh))).toEqual({ status: 400, code: 'DROPOFF_PIN_MISSING' });
     expect(await deliveryOf(String(order.order_id))).toHaveLength(0);
     const proposed = ok(await callShipper(fresh, { fee_payer: 'SHOP', agreed_fee: { reason_code: 'OUT_OF_PRICE_RANGE', amount_vnd: 25_000 } }), 201);
     expect(proposed.delivery).toMatchObject({ state: 'waiting_driver', recipient: { lat: null, lng: null }, fee: { mode: 'AGREED', status: 'PENDING_AGREEMENT' } });

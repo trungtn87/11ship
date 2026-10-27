@@ -7,7 +7,7 @@ import { UserRepository } from '../auth/user-repository';
 import { ClientActor, ClientSessionAuthority } from '../client-auth/client-session-authority';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { CustomersService } from '../customers/customers-service';
-import { M14RouteClient, RouteLeg } from '../delivery/m14-route-client';
+import { M14RouteClient, RouteResult } from '../delivery/m14-route-client';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -39,6 +39,9 @@ interface PreparedCheckout {
   readonly pickup: { readonly lat: number; readonly lng: number } | null;
   readonly point: { readonly lat: number; readonly lng: number } | null;
 }
+
+type QuoteReason = 'PICKUP_PIN_MISSING' | 'DROPOFF_PIN_MISSING' | 'ROUTE_UNAVAILABLE' | 'ROUTE_TIMEOUT' | 'POLICY_NOT_CONFIGURED' | 'OUT_OF_PRICE_RANGE';
+interface CheckoutQuote { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: QuoteReason | null; readonly policyVersion: number | null; readonly snapshot: string; readonly quotedAtMs: number }
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
@@ -198,8 +201,8 @@ export class OrderCustomerService {
     });
   }
 
-  async #route(prepared: PreparedCheckout): Promise<RouteLeg | undefined> {
-    return prepared.pickup === null || prepared.point === null ? undefined : this.routes.route(prepared.pickup, prepared.point);
+  async #route(prepared: PreparedCheckout): Promise<RouteResult | null> {
+    return prepared.pickup === null || prepared.point === null ? null : this.routes.routeResult(prepared.pickup, prepared.point);
   }
 
   /**
@@ -222,22 +225,27 @@ export class OrderCustomerService {
         shop: { shop_id: input.shopId, name: checked.shop?.name ?? null, online: checked.shop?.status === 'ACTIVE' && checked.shop.availability.online },
         lines,
         items_total_vnd: total,
-        fee: { status: estimate.feeVnd === null ? 'UNKNOWN' : 'ESTIMATE', estimate_vnd: estimate.feeVnd, distance_m: estimate.distanceM },
+        fee: this.#quoteView(estimate),
         expected_total_vnd: estimate.feeVnd === null ? null : total + estimate.feeVnd,
         server_now: iso(await freshClockMs(context)),
       };
     });
   }
 
-  async #estimate(context: TransactionContext, shop: ShopSnapshot | undefined, prepared: PreparedCheckout, leg: RouteLeg | undefined): Promise<{ feeVnd: number | null; distanceM: number | null }> {
-    // A missing or stale route uses the M06 entry tier only as a provisional reference.
-    // Preserve null distance: this is neither a measured distance nor the fee agreed with a shipper.
-    if (leg === undefined || shop?.pickupLat == null || shop.pickupLng == null || prepared.pickup === null || prepared.pickup.lat !== shop.pickupLat || prepared.pickup.lng !== shop.pickupLng) {
-      const base = await this.agreements.estimate(context, 0);
-      return { feeVnd: base.status === 'PRICED' ? base.feeVnd : null, distanceM: null };
-    }
-    const quote = await this.agreements.estimate(context, leg.distanceM);
-    return quote.status === 'PRICED' ? { feeVnd: quote.feeVnd, distanceM: leg.distanceM } : { feeVnd: null, distanceM: leg.distanceM };
+  async #estimate(context: TransactionContext, shop: ShopSnapshot | undefined, prepared: PreparedCheckout, route: RouteResult | null): Promise<CheckoutQuote> {
+    const quotedAtMs = await freshClockMs(context);
+    const snapshot = `${prepared.pickup?.lat ?? 'x'},${prepared.pickup?.lng ?? 'x'}>${prepared.point?.lat ?? 'x'},${prepared.point?.lng ?? 'x'}`;
+    const unavailable = (reason: QuoteReason, distanceM: number | null = null, policyVersion: number | null = null): CheckoutQuote => ({ status: 'UNAVAILABLE', distanceM, feeVnd: null, reason, policyVersion, snapshot, quotedAtMs });
+    if (shop?.pickupLat == null || shop.pickupLng == null || prepared.pickup === null || prepared.pickup.lat !== shop.pickupLat || prepared.pickup.lng !== shop.pickupLng) return unavailable('PICKUP_PIN_MISSING');
+    if (prepared.point === null) return unavailable('DROPOFF_PIN_MISSING');
+    if (route === null || route.status === 'UNAVAILABLE') return unavailable(route?.reason === 'ROUTE_TIMEOUT' ? 'ROUTE_TIMEOUT' : 'ROUTE_UNAVAILABLE');
+    const quote = await this.agreements.estimate(context, route.leg.distanceM);
+    if (quote.status === 'PRICED') return { status: 'PRICED', feeVnd: quote.feeVnd, distanceM: route.leg.distanceM, reason: null, policyVersion: quote.policyVersionNo, snapshot, quotedAtMs };
+    return unavailable(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE', route.leg.distanceM);
+  }
+
+  #quoteView(q: CheckoutQuote): JsonObject {
+    return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, quoted_at: iso(q.quotedAtMs) };
   }
 
   /**
@@ -316,6 +324,7 @@ export class OrderCustomerService {
           shop_id: input.shopId,
           lines: input.lines.map((l) => ({ item_id: l.itemId, quantity: l.quantity, note: l.note, price: l.expectedPriceVnd })),
           items_total_vnd: input.expectedItemsTotalVnd,
+          expected_quote: input.expectedQuote,
           note: input.note,
           recipient_name: input.recipientName,
           recipient_phone: input.recipientPhone,
@@ -363,6 +372,9 @@ export class OrderCustomerService {
           throw new AppError('ORDER_CART_CHANGED');
         }
         const estimate = await this.#estimate(context, shop, prepared, leg);
+        if (input.expectedQuote !== null && (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.snapshot !== estimate.snapshot)) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
         const items: NewItem[] = priced.map((l, index) => ({ lineId: randomUUID(), lineNo: index + 1, menuItemId: l.itemId, name: l.name as string, note: l.note, unitPriceVnd: l.priceVnd, quantity: l.quantity }));
         const orderId = randomUUID();
         let inserted = false;

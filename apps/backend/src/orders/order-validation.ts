@@ -150,12 +150,19 @@ export interface PlaceInput extends CheckoutInput {
   readonly clientRef: string;
   /** The total the customer saw: a changed price or dish is refused so they check and send again. */
   readonly expectedItemsTotalVnd: number;
+  readonly expectedQuote: { readonly status: string; readonly distanceM: number | null; readonly feeVnd: number | null; readonly snapshot: string } | null;
 }
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
 export function parsePlaceBody(body: unknown): PlaceInput {
-  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'scheduled_for']);
-  return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER) };
+  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'scheduled_for', 'expected_quote']);
+  let expectedQuote: PlaceInput['expectedQuote'] = null;
+  if (b.expected_quote !== undefined) {
+    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot']);
+    const nullableWhole = (v: unknown): number | null => v === null ? null : whole(v, 0, Number.MAX_SAFE_INTEGER);
+    expectedQuote = { status: text(q.status, 1, 40), distanceM: nullableWhole(q.distance_m), feeVnd: nullableWhole(q.fee_vnd), snapshot: text(q.snapshot, 1, 300) };
+  }
+  return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER), expectedQuote };
 }
 
 export function parseClientRefQuery(query: unknown): string {

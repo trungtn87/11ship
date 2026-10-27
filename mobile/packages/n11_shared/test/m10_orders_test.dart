@@ -48,10 +48,13 @@ void main() {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: 'Phở bò tái phần đặc biệt', priceVnd: 45000);
-      await mount(tester, Builder(builder: (BuildContext context) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
-        child: CartScreen(runtime: runtime),
-      )));
+      await mount(
+          tester,
+          Builder(
+              builder: (BuildContext context) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+                    child: CartScreen(runtime: runtime),
+                  )));
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(320, 800);
       await settle(tester);
@@ -169,14 +172,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('no pin: show provisional system M06 fee and expected total without inventing GPS coordinates', (WidgetTester tester) async {
+    testWidgets('no pin: fee and total stay unknown and the checkout says they are not included', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
       expect(containing('Phí giao (dự tính)'), findsWidgets);
-      expect(find.text(m10Money(10000)), findsWidgets);
+      expect(find.text(m10Money(10000)), findsNothing);
       expect(find.text(m10Money(0)), findsNothing);
-      expect(key('checkout-total'), findsOneWidget);
+      expect(key('checkout-total'), findsNothing);
+      expect(containing('Chưa gồm phí giao'), findsOneWidget);
+      expect(containing('chọn điểm giao trên bản đồ'), findsOneWidget);
       expect(containing('Thanh toán trực tiếp'), findsWidgets);
       await tap(tester, key('checkout-send'));
       expect(store.orderCount, 1);
@@ -721,7 +726,6 @@ class _Offline extends SampleCustomerOrders {
     return super.saveCart(shopId: shopId, lines: lines, note: note);
   }
 }
-
 
 class _CountedPreviews extends SampleCustomerOrders {
   _CountedPreviews(super.store);
