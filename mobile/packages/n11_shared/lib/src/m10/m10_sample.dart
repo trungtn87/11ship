@@ -30,7 +30,9 @@ const List<SampleDish> kSampleDishes = <SampleDish>[
 ];
 
 class _Line {
-  _Line(this.id, this.dish, this.note, this.quantity, this.priceVnd) : originalQuantity = quantity, originalPriceVnd = priceVnd;
+  _Line(this.id, this.dish, this.note, this.quantity, this.priceVnd)
+      : originalQuantity = quantity,
+        originalPriceVnd = priceVnd;
 
   final String id;
   final SampleDish dish;
@@ -171,7 +173,13 @@ class SampleOrderStore {
       'status': o.status,
       'display_status': _display(o),
       'version': o.version,
-      'shop': <String, Object?>{'shop_id': kSampleShopId, 'name': 'Quán Phở Minh họa', 'phone': '+84900000001', 'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội', if (!shop) 'contact': <String, Object?>{'phone': '+84900000001', 'zalo_url': 'https://zalo.me/0900000001', 'messenger_url': 'https://m.me/quanphominh'}},
+      'shop': <String, Object?>{
+        'shop_id': kSampleShopId,
+        'name': 'Quán Phở Minh họa',
+        'phone': '+84900000001',
+        'address_text': '5 Phố Cổ, Hoàn Kiếm, Hà Nội',
+        if (!shop) 'contact': <String, Object?>{'phone': '+84900000001', 'zalo_url': 'https://zalo.me/0900000001', 'messenger_url': 'https://m.me/quanphominh'}
+      },
       'recipient': <String, Object?>{'name': o.recipientName, 'phone': o.recipientPhone, 'address_text': o.addressText, 'lat': o.lat, 'lng': o.lng},
       'note': o.note,
       'scheduled_for': o.scheduledFor?.toUtc().toIso8601String(),
@@ -220,7 +228,9 @@ class SampleOrderStore {
         }
       else
         'can': <String, Object?>{'cancel': o.status == 'PENDING_CONFIRMATION', 'cancel_after_pickup': running && o.deliveryState == 'delivering', 'reorder': true},
-      'timeline': <Object?>[for (final (String, String, String?) e in o.events) <String, Object?>{'at': now.toIso8601String(), 'type': e.$1, 'actor': e.$2, 'note': e.$3}],
+      'timeline': <Object?>[
+        for (final (String, String, String?) e in o.events) <String, Object?>{'at': now.toIso8601String(), 'type': e.$1, 'actor': e.$2, 'note': e.$3}
+      ],
       'story': <Object?>[
         for (final (String, String, String?) e in o.events)
           if (_storyText(e) != null) <String, Object?>{'at': now.toIso8601String(), 'text': _storyText(e)},
@@ -370,16 +380,16 @@ class SampleCustomerOrders extends CustomerOrderSource {
   @override
   Future<CheckoutPreview> preview(CheckoutDraft draft) async {
     final List<PreviewLine> lines = <PreviewLine>[
-      for (final DraftLine l in draft.lines)
-        PreviewLine(itemId: l.itemId, name: l.name, note: l.note, quantity: l.quantity, priceVnd: store._gone.contains(l.itemId) ? null : store.priceOf(kSampleDishes.firstWhere((SampleDish d) => d.id == l.itemId)), issue: store._gone.contains(l.itemId) ? 'ITEM_UNAVAILABLE' : null),
+      for (final DraftLine l in draft.lines) PreviewLine(itemId: l.itemId, name: l.name, note: l.note, quantity: l.quantity, priceVnd: store._gone.contains(l.itemId) ? null : store.priceOf(kSampleDishes.firstWhere((SampleDish d) => d.id == l.itemId)), issue: store._gone.contains(l.itemId) ? 'ITEM_UNAVAILABLE' : null),
     ];
     final int items = lines.fold(0, (int s, PreviewLine l) => s + (l.priceVnd ?? 0) * l.quantity);
-    const int fee = 10000; // Sample M06 entry-tier reference; no route or pin is invented.
-    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: fee, feeDistanceM: draft.address.hasPin ? 2500 : null, expectedTotalVnd: items + fee);
+    const int fee = 10000;
+    final bool priced = draft.address.hasPin;
+    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: priced ? fee : null, feeDistanceM: priced ? 2500 : null, expectedTotalVnd: priced ? items + fee : null, feeStatus: priced ? 'PRICED' : 'UNAVAILABLE', feeReason: priced ? null : 'DROPOFF_PIN_MISSING', quoteSnapshot: priced ? 'sample-pinned' : 'sample-no-pin');
   }
 
   @override
-  Future<OrderView> place(CheckoutDraft draft, {required String clientRef, required String key}) async {
+  Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) async {
     store.placeAttempts += 1;
     for (final _Order existing in store._orders) {
       if (existing.clientRef == clientRef) {
@@ -423,11 +433,13 @@ class SampleCustomerOrders extends CustomerOrderSource {
   @override
   Future<List<OrderSummary>> list(CustomerScope scope) async {
     bool ended(_Order o) => !(o.status == 'PENDING_CONFIRMATION' || o.status == 'PREPARING');
-    final List<_Order> rows = store._orders.where((_Order o) => switch (scope) {
-          CustomerScope.processing => !ended(o) && o.scheduledFor == null,
-          CustomerScope.scheduled => !ended(o) && o.scheduledFor != null,
-          CustomerScope.history => ended(o),
-        }).toList();
+    final List<_Order> rows = store._orders
+        .where((_Order o) => switch (scope) {
+              CustomerScope.processing => !ended(o) && o.scheduledFor == null,
+              CustomerScope.scheduled => !ended(o) && o.scheduledFor != null,
+              CustomerScope.history => ended(o),
+            })
+        .toList();
     return <OrderSummary>[for (final _Order o in rows) _summary(store, o, shop: false)];
   }
 

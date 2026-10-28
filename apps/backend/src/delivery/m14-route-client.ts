@@ -18,6 +18,9 @@ export interface RouteLeg {
   readonly seconds: number;
 }
 
+export type RouteFailureReason = 'ROUTING_NOT_CONFIGURED' | 'POINT_INVALID' | 'ROUTE_TIMEOUT' | 'ROUTE_UNAVAILABLE';
+export type RouteResult = { readonly status: 'ROUTE'; readonly leg: RouteLeg } | { readonly status: 'UNAVAILABLE'; readonly reason: RouteFailureReason };
+
 export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 /** Largest number of legs one matrix may ask for (the routing service allows few requests per minute; beyond this the answer is "unavailable"). */
@@ -54,17 +57,22 @@ export class M14RouteClient implements RouteMatrixPort {
 
   /** One leg, or undefined when there is no service, no route, an invalid point or any failure. */
   async route(from: LatLng, to: LatLng, nowMs: number = Date.now()): Promise<RouteLeg | undefined> {
+    const result = await this.routeResult(from, to, nowMs);
+    return result.status === 'ROUTE' ? result.leg : undefined;
+  }
+
+  /** A diagnostic result for quote/call-shipping flows. It remains PII-free and never invents a distance. */
+  async routeResult(from: LatLng, to: LatLng, nowMs: number = Date.now()): Promise<RouteResult> {
     const config = this.config;
-    if (config === undefined || !isValidPoint(from) || !isValidPoint(to)) {
-      return undefined;
-    }
+    if (config === undefined) return { status: 'UNAVAILABLE', reason: 'ROUTING_NOT_CONFIGURED' };
+    if (!isValidPoint(from) || !isValidPoint(to)) return { status: 'UNAVAILABLE', reason: 'POINT_INVALID' };
     if (from.lat === to.lat && from.lng === to.lng) {
-      return { distanceM: 0, seconds: 0 };
+      return { status: 'ROUTE', leg: { distanceM: 0, seconds: 0 } };
     }
     const key = `${from.lat.toFixed(5)},${from.lng.toFixed(5)}>${to.lat.toFixed(5)},${to.lng.toFixed(5)}`;
     const cached = this.#cache.get(key);
     if (cached !== undefined && nowMs - cached.atMs < CACHE_TTL_MS) {
-      return cached.leg;
+      return { status: 'ROUTE', leg: cached.leg };
     }
     try {
       const fetcher: Fetcher = this.fetcher ?? ((url, init) => fetch(url, init));
@@ -75,11 +83,11 @@ export class M14RouteClient implements RouteMatrixPort {
         signal: AbortSignal.timeout(config.timeoutMs),
       });
       if (!response.ok) {
-        return undefined;
+        return { status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' };
       }
       const leg = parseLeg(await response.json());
       if (leg === undefined) {
-        return undefined;
+        return { status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' };
       }
       if (this.#cache.size >= CACHE_MAX) {
         const oldest = this.#cache.keys().next();
@@ -88,9 +96,10 @@ export class M14RouteClient implements RouteMatrixPort {
         }
       }
       this.#cache.set(key, { leg, atMs: nowMs });
-      return leg;
-    } catch {
-      return undefined;
+      return { status: 'ROUTE', leg };
+    } catch (error) {
+      const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
+      return { status: 'UNAVAILABLE', reason: name === 'TimeoutError' || name === 'AbortError' ? 'ROUTE_TIMEOUT' : 'ROUTE_UNAVAILABLE' };
     }
   }
 

@@ -43,15 +43,26 @@ final SampleDish pho = kSampleDishes[0];
 final SampleDish tea = kSampleDishes[2];
 
 void main() {
+  test('checkout confirmation sends the complete canonical quote', () {
+    final CheckoutPreview preview = CheckoutPreview.fromJson(<String, Object?>{
+      'ok': true, 'blockers': <Object?>[], 'lines': <Object?>[], 'items_total_vnd': 45000, 'expected_total_vnd': null,
+      'fee': <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff', 'quoted_at': '2026-10-27T00:00:00.000Z'},
+    });
+    expect(preview.expectedQuoteJson, <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff'});
+  });
+
   group('cart', () {
     testWidgets('cart quantity actions remain usable on a small phone with large text', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: 'Phở bò tái phần đặc biệt', priceVnd: 45000);
-      await mount(tester, Builder(builder: (BuildContext context) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
-        child: CartScreen(runtime: runtime),
-      )));
+      await mount(
+          tester,
+          Builder(
+              builder: (BuildContext context) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+                    child: CartScreen(runtime: runtime),
+                  )));
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(320, 800);
       await settle(tester);
@@ -169,14 +180,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('no pin: show provisional system M06 fee and expected total without inventing GPS coordinates', (WidgetTester tester) async {
+    testWidgets('no pin: fee and total stay unknown and the checkout says they are not included', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
       expect(containing('Phí giao (dự tính)'), findsWidgets);
-      expect(find.text(m10Money(10000)), findsWidgets);
+      expect(find.text(m10Money(10000)), findsNothing);
       expect(find.text(m10Money(0)), findsNothing);
-      expect(key('checkout-total'), findsOneWidget);
+      expect(key('checkout-total'), findsNothing);
+      expect(containing('Chưa gồm phí giao'), findsOneWidget);
+      expect(containing('chọn điểm giao trên bản đồ'), findsOneWidget);
       expect(containing('Thanh toán trực tiếp'), findsWidgets);
       await tap(tester, key('checkout-send'));
       expect(store.orderCount, 1);
@@ -721,7 +734,6 @@ class _Offline extends SampleCustomerOrders {
     return super.saveCart(shopId: shopId, lines: lines, note: note);
   }
 }
-
 
 class _CountedPreviews extends SampleCustomerOrders {
   _CountedPreviews(super.store);
