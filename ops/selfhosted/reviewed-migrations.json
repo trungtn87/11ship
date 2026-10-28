@@ -52,6 +52,10 @@
     "1796860800000_shop-finance-entitlements": {
       "sha256": "169dc4d642ab8d5c65319db608b481da1158b8bfb31ada1490c2b89ed606869a",
       "review": "PR #225 / #198 #199: additive reported_at, configurable menu/chat limits and immutable manual entitlement history. Reuses existing business_finance requests/messages and global receipt identities; no wallet, ledger, activation, fees or retention writes. Widens chat body preserving legacy evidence. Push recipients now require the room-kind read right. Old backend remains schema-compatible but cannot enforce new quota/rights; roll back code only with finance writes paused pending compatible code. Down refuses report/grant/long-message evidence. New runtime table/sequence grants required before restart. No remote migration or deployment authorized."
+    },
+    "1796947200000_order-fee-estimate-reason": {
+      "sha256": "ff9fb14eefc8574471c74e5b50b9eac798e278a6d6870f97f4c917edc40607ba",
+      "review": "PR #228 / #206 #211 #239; compatibility review 2026-10-28: Up adds one nullable varchar column and a bounded CHECK to app.orders, with no backfill or rewrite. Existing Orders remain NULL so historical unavailable reasons stay neutral; old backend ignores the column and remains schema-compatible after code rollback. New explicit-column inserts persist a reason only for customer-confirmed unavailable quotes. No price, distance, payer, tip, ledger, commission, lifecycle or historical row changes; existing table grants cover the column. New backend requires this additive migration before restart. No remote migration or deployment authorized."
     }
   }
 }
