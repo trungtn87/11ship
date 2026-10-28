@@ -47,10 +47,14 @@ void main() {
       matchesGoldenFile(food ? 'goldens/11food_home.png' : 'goldens/11ship_home.png'),
     );
   }
+  // These are screenshot generators, not regression tests until checked-in
+  // baselines exist. Normal flutter test must not compare missing PNG files.
+  // The dedicated workflow runs flutter test --update-goldens, which enables
+  // autoUpdateGoldenFiles and writes 390x844 PNG screenshots as artifacts.
   testWidgets('capture actual Flutter 11Food home', (tester) async {
     await capture(tester, food: true);
-  });
+  }, skip: !autoUpdateGoldenFiles);
   testWidgets('capture actual Flutter 11Ship home', (tester) async {
     await capture(tester, food: false);
-  });
+  }, skip: !autoUpdateGoldenFiles);
 }
