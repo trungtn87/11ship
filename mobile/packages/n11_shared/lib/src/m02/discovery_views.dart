@@ -838,7 +838,7 @@ class _DiscoveryBanner extends StatelessWidget {
               ),
               const SizedBox(height: N11Space.gap1),
               Text(
-                areaName,
+                'Giao nhanh tại $areaName',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: N11Text.caption.copyWith(color: N11Colors.black),
