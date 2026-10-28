@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-// Design System v4 (Owner approved 2026-10-26). Keep the existing public token
-// names so both apps and in-flight feature PRs share one theme. Original logos
-// retain their approved artwork. No network font or new font payload is needed.
+// Design System V5 — production UI (2026-10-28).
+// Retain existing public token names for both apps and all in-flight PRs.
+// Brand art stays in BrandLogo assets; no backend or business logic is changed.
 
 abstract final class N11Colors {
   // Brand
@@ -12,6 +12,10 @@ abstract final class N11Colors {
   static const Color yellowStrong = Color(0xFF805600);
   static const Color yellowSoft = Color(0xFFFFF5C2);
   static const Color yellowFaint = Color(0xFFFFF9E0);
+  // V5 visual accents. These are semantic tokens, never delivery fee/status data.
+  static const Color accentOrange = Color(0xFFED6A00);
+  static const Color homeBannerStart = Color(0xFFFFF3B0);
+  static const Color homeBannerEnd = Color(0xFFFFD84D);
   static const Color black = Color(0xFF191919);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);
@@ -58,11 +62,30 @@ abstract final class N11Space {
 
 const double kControlHeight = 48;
 const double kTapMin = 48;
-const double kRadiusControl = 12;
-const double kRadiusCard = 16;
+// V5 reference: rounded inputs, 17dp home cards and pill navigation.
+const double kRadiusControl = 16;
+const double kRadiusCard = 17;
 const double kRadiusPill = 999;
 
 const String kFontFamily = 'PlusJakartaSans';
+
+/// Shared, centrally editable V5 presentation values for *live* Flutter apps.
+/// These do not enable mock data or replace screen-specific layout widgets.
+abstract final class N11V5 {
+  static const double logoHeight = 54;
+  static const double searchPanelRadius = 25;
+  static const double categoryGap = 12;
+  static const double navIndicatorHeight = 35;
+  static const double navIndicatorWidth = 54;
+  static const double shipMapRadius = 18;
+  static const double shipMapMinHeight = 180;
+  static const double shipMapMaxHeight = 440;
+  static const double homeTitleSize = 22;
+  static const List<BoxShadow> cardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x13000000), blurRadius: 12, offset: Offset(0, 3)),
+  ];
+}
+
 
 abstract final class N11Text {
   static const TextStyle body = TextStyle(
