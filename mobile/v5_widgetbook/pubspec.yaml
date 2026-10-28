@@ -10,7 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  widgetbook: 3.25.0
+  # Full upstream source pinned by the repo's Git submodule (v3.25.0).
+  widgetbook:
+    path: ../../third_party/widgetbook/packages/widgetbook
   n11_shared:
     path: ../packages/n11_shared
 
