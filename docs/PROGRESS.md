@@ -313,7 +313,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#244](https://github.com/trungtn87/11ship/pull/244) (V4 · PR 3/3) Refresh 11Ship activity, delivery and wallet… | Đã merge (`MERGED`) | — | — | — | `1f99602` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#246](https://github.com/trungtn87/11ship/pull/246) feat(governance): agent permissions, PR readiness checks an… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `e693fec` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#249](https://github.com/trungtn87/11ship/pull/249) feat(v5): Flutter UI-only preview for 11Food &amp; 11Ship w… | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `ceb99ee` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#250](https://github.com/trungtn87/11ship/pull/250) feat(ui): áp dụng Design V5 trực tiếp lên 11Food &amp; 11Sh… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `29802e4` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#250](https://github.com/trungtn87/11ship/pull/250) feat(ui): áp dụng Design V5 trực tiếp lên 11Food &amp; 11Sh… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `c46653e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
