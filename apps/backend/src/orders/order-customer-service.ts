@@ -430,7 +430,6 @@ export class OrderCustomerService {
               itemsTotalVnd: total,
               feeEstimateVnd: estimate.feeVnd,
               feeEstimateDistanceM: estimate.distanceM,
-              feeEstimateReason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
             },
             items,
           );
@@ -438,7 +437,7 @@ export class OrderCustomerService {
         if (!inserted) {
           throw new TechnicalError('internal', 'Could not allocate an order code');
         }
-        const order = await this.#reread(context, orderId);
+        let order = await this.#reread(context, orderId);
         // The cart of this shop has become this Order.
         const cart = await this.orders.findCart(context, actor.userId);
         if (cart?.shopId === input.shopId) {
@@ -451,9 +450,16 @@ export class OrderCustomerService {
           actorId: actor.userId,
           operation: ORDER_OPERATIONS.place,
           requestId,
-          details: { items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })), items_total_vnd: total },
+          details: {
+            items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })),
+            items_total_vnd: total,
+            quote_reason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
+          },
           metadata: { scheduled: input.scheduledForMs !== null },
         });
+        // The canonical unavailable reason is part of the immutable placed event.
+        // Re-project it for the create response; old events without the key stay neutral.
+        order = await this.#reread(context, orderId);
         return { status: 201, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, order, true) };
       },
     );
