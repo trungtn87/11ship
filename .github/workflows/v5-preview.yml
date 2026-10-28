@@ -1,0 +1,54 @@
+name: V5 UI Preview Screenshots
+on:
+  push:
+    branches:
+      - feature/v5-ui-preview-*
+    paths:
+      - 'mobile/packages/n11_shared/lib/v5_preview.dart'
+      - 'mobile/packages/n11_shared/test/v5_*'
+      - 'mobile/food/lib/v5_main.dart'
+      - 'mobile/ship/lib/v5_main.dart'
+      - '.github/workflows/v5-preview.yml'
+  workflow_dispatch:
+jobs:
+  flutter-v5-preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.7'
+          cache: true
+      - name: Get shared Flutter dependencies
+        working-directory: mobile/packages/n11_shared
+        run: flutter pub get
+      - name: Flutter analyze V5 UI
+        working-directory: mobile/packages/n11_shared
+        run: flutter analyze lib/v5_preview.dart test/v5_preview_test.dart test/v5_golden_test.dart
+      - name: Test tab navigation
+        working-directory: mobile/packages/n11_shared
+        run: flutter test test/v5_preview_test.dart
+      - name: Capture Flutter-rendered home screenshots
+        working-directory: mobile/packages/n11_shared
+        run: flutter test --update-goldens test/v5_golden_test.dart
+      - name: Upload home screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-home-flutter-390x844
+          path: |
+            mobile/packages/n11_shared/test/goldens/11food_home.png
+            mobile/packages/n11_shared/test/goldens/11ship_home.png
+          if-no-files-found: error
+      - name: Analyze 11Food preview entrypoint
+        working-directory: mobile/food
+        run: |
+          flutter pub get
+          flutter analyze lib/v5_main.dart
+      - name: Analyze 11Ship preview entrypoint
+        working-directory: mobile/ship
+        run: |
+          flutter pub get
+          flutter analyze lib/v5_main.dart
