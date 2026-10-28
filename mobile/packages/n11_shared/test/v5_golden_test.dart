@@ -14,11 +14,21 @@ void main() {
     final loaders = <FontLoader>[];
     for (final entry in manifest) {
       final data = entry as Map<String, dynamic>;
-      final loader = FontLoader(data['family'] as String);
-      for (final asset in data['fonts'] as List<dynamic>) {
-        loader.addFont(rootBundle.load((asset as Map<String, dynamic>)['asset'] as String));
+      final family = data['family'] as String;
+      // Package widgets specify package: 'n11_shared'. When golden tests run
+      // from the n11_shared root, FontManifest may list the unprefixed family.
+      // Register both forms, otherwise Ahem renders unreadable black squares.
+      final aliases = <String>{family};
+      if (!family.startsWith('packages/')) {
+        aliases.add('packages/n11_shared/$family');
       }
-      loaders.add(loader);
+      for (final alias in aliases) {
+        final loader = FontLoader(alias);
+        for (final asset in data['fonts'] as List<dynamic>) {
+          loader.addFont(rootBundle.load((asset as Map<String, dynamic>)['asset'] as String));
+        }
+        loaders.add(loader);
+      }
     }
     await Future.wait(loaders.map((loader) => loader.load()));
   });
