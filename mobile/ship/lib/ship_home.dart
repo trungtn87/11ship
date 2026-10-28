@@ -171,6 +171,8 @@ class ShipHomeLayout extends StatelessWidget {
         ),
         if (alert != null) alert! else if (connection != null) connection!,
         if (gpsStatus != null && locationView == null) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus!, key: const Key('home-gps-status'), style: N11Text.caption)),
+        Padding(padding: const EdgeInsets.all(N11Space.pad), child: ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem)),
+
         Container(
           key: const Key('home-v5-map-panel'),
           margin: const EdgeInsets.symmetric(horizontal: N11Space.pad),
@@ -181,17 +183,23 @@ class ShipHomeLayout extends StatelessWidget {
             borderRadius: BorderRadius.circular(N11V5.shipMapRadius),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-            Row(children: <Widget>[
-              const Expanded(child: Text('Khu vực nhận đơn', style: N11Text.h2)),
-              Container(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: N11Space.gap2,
+              runSpacing: N11Space.gap2,
+              children: <Widget>[
+                const Text('Khu vực nhận đơn', style: N11Text.h2),
+                Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: N11Colors.yellowSoft,
                   borderRadius: BorderRadius.circular(kRadiusPill),
                 ),
                 child: const Text('Bán kính 3 km', style: N11Text.caption),
-              ),
-            ]),
+                ),
+              ],
+            ),
             const SizedBox(height: N11Space.gap3),
             ClipRRect(
               borderRadius: BorderRadius.circular(kRadiusControl),
@@ -201,7 +209,7 @@ class ShipHomeLayout extends StatelessWidget {
             ),
           ]),
         ),
-        Padding(padding: const EdgeInsets.all(N11Space.pad), child: ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem)),
+
       ]),
     );
   });
