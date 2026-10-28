@@ -226,7 +226,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
       ])),
       _bottom(),
     ]))),
-  ));
+  );
 }
 class _PreviewMapPainter extends CustomPainter {
   @override
