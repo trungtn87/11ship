@@ -1,0 +1,45 @@
+name: V5 Widgetbook Catalog
+
+on:
+  push:
+    branches:
+      - feature/v5-ui-preview-*
+    paths:
+      - 'mobile/v5_widgetbook/**'
+      - 'mobile/packages/n11_shared/lib/v5_preview.dart'
+      - 'mobile/packages/n11_shared/lib/src/brand.dart'
+      - 'mobile/packages/n11_shared/lib/src/tokens.dart'
+      - '.github/workflows/v5-widgetbook.yml'
+  workflow_dispatch:
+
+jobs:
+  widgetbook:
+    name: Validate and build V5 Widgetbook
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.8'
+          cache: true
+      - name: Flutter dependencies
+        working-directory: mobile/v5_widgetbook
+        run: flutter pub get
+      - name: Analyze Widgetbook catalog
+        working-directory: mobile/v5_widgetbook
+        run: flutter analyze
+      - name: Test catalog and tab navigation
+        working-directory: mobile/v5_widgetbook
+        run: flutter test
+      - name: Build standalone Widgetbook web app
+        working-directory: mobile/v5_widgetbook
+        run: flutter build web --release
+      - name: Upload static web preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-widgetbook-web
+          path: mobile/v5_widgetbook/build/web/
+          if-no-files-found: error
