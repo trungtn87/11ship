@@ -21,6 +21,8 @@ import { hideDish } from './support/m10-menu';
 describe('M10 — food orders', () => {
   let app: AuthApp;
   let router: http.Server;
+  let routeKm = 2.5;
+  let holdNextRoute: (() => Promise<void>) | null = null;
   let shop: ShopOwner;
   let otherShop: ShopOwner;
   let alice: Customer;
@@ -28,6 +30,7 @@ describe('M10 — food orders', () => {
   let pho: Dish;
   let tea: Dish;
   let bun: Dish;
+  let policyVersion = 1;
   const drivers: string[] = [];
   let addedPolicy = false;
   // Accounts and shops made inside single tests: they are cleaned up with the rest.
@@ -36,10 +39,13 @@ describe('M10 — food orders', () => {
   const extraCustomers: string[] = [];
 
   beforeAll(async () => {
-    router = http.createServer((request, response) => {
+    router = http.createServer(async (request, response) => {
       request.resume();
+      const hold = holdNextRoute;
+      holdNextRoute = null;
+      if (hold !== null) await hold();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify({ trip: { summary: { length: routeKm, time: 420 } } }));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
@@ -61,6 +67,8 @@ describe('M10 — food orders', () => {
       );
       addedPolicy = true;
     }
+    const activePolicy = await app.pool.query<{ version_no: string }>('SELECT version_no::text AS version_no FROM app.shipping_fee_policy_versions ORDER BY version_no DESC LIMIT 1');
+    policyVersion = Number(activePolicy.rows[0]?.version_no ?? 1);
   });
 
   afterAll(async () => {
@@ -90,6 +98,7 @@ describe('M10 — food orders', () => {
   const ADDRESS = { address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', lat: 21.0, lng: 105.82 };
   const line = (d: Dish, quantity: number, note?: string, price = d.price): Json => ({ item_id: d.itemId, quantity, unit_price_vnd: price, ...(note === undefined ? {} : { note }) });
   const totalOf = (lines: Json[]): number => lines.reduce((sum, l) => sum + Number(l.quantity) * Number(l.unit_price_vnd), 0);
+  const quoteConfirmation = (fee: Json): Json => ({ status: fee.status, distance_m: fee.distance_m, fee_vnd: fee.fee_vnd, reason: fee.reason, policy_version: fee.policy_version, snapshot: fee.snapshot });
   const checkout = (lines: Json[], over: Json = {}): Json => ({
     client_ref: randomUUID(),
     shop_id: shop.shopId,
@@ -98,6 +107,14 @@ describe('M10 — food orders', () => {
     recipient_name: 'Người nhận',
     recipient_phone: '0912345678',
     address: ADDRESS,
+    expected_quote: {
+      status: 'PRICED',
+      distance_m: 2500,
+      fee_vnd: 10_000,
+      reason: null,
+      policy_version: policyVersion,
+      snapshot: '21,105.8>21,105.82',
+    },
     ...over,
   });
   async function place(c: Customer, lines: Json[] = [line(pho, 2), line(tea, 1)], over: Json = {}): Promise<Json> {
@@ -157,14 +174,95 @@ describe('M10 — food orders', () => {
   it('the check before sending shows the dishes at today\'s price and an estimated fee from M06; the fee is separate and unknown is never 0', async () => {
     const body = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 2 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };
     const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', body));
-    expect(preview).toMatchObject({ ok: true, blockers: [], items_total_vnd: 90_000, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: 2500 }, expected_total_vnd: 100_000 });
-    // No pin: quote the system M06 entry tier, but NEVER invent a route distance or treat it as an agreed fee.
+    expect(preview).toMatchObject({ ok: true, blockers: [], items_total_vnd: 90_000, fee: { status: 'PRICED', fee_vnd: 10_000, distance_m: 2500, reason: null }, expected_total_vnd: 100_000 });
+    expect(preview.fee).toMatchObject({ snapshot: '21,105.8>21,105.82', policy_version: policyVersion });
+    // No pin: no route and no fee. The entry tier must not masquerade as a quote.
     const unpinned = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, address: { address_text: '5 Phố Cổ' } }));
-    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'ESTIMATE', estimate_vnd: 10_000, distance_m: null }, expected_total_vnd: 100_000 });
+    expect(unpinned).toMatchObject({ ok: true, fee: { status: 'UNAVAILABLE', fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' }, expected_total_vnd: null });
     // A dish nobody sells is a blocker, not a silent drop.
     const bad = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...body, lines: [{ item_id: randomUUID(), quantity: 1 }] }));
     expect(bad.ok).toBe(false);
     expect(bad.lines[0]).toMatchObject({ issue: 'ITEM_UNAVAILABLE' });
+  });
+
+  it('rechecks the accepted quote when placing and refuses a stale distance/fee snapshot', async () => {
+    const lines = [line(pho, 1)];
+    const draft = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };
+    const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', draft));
+    const fee = preview.fee as Json;
+    const stale = { ...quoteConfirmation(fee), distance_m: Number(fee.distance_m) + 1 };
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', checkout(lines, { expected_quote: stale })))).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
+  });
+
+  it('requires a complete customer-confirmed quote and accepts an explicitly unavailable quote', async () => {
+    const lines = [line(pho, 1)];
+    const missing = checkout(lines, { expected_quote: undefined });
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', missing))).toEqual({ status: 409, code: 'ORDER_QUOTE_REQUIRED' });
+
+    const legacy = checkout(lines, { expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, snapshot: '21,105.8>21,105.82' } });
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', legacy))).toEqual({ status: 409, code: 'ORDER_QUOTE_REQUIRED' });
+
+    const fake = checkout(lines, { expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 1, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21,105.82' } });
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', fake))).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
+
+    const address = { address_text: 'Không có ghim' };
+    const draft = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address };
+    const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', draft));
+    expect(preview.fee).toMatchObject({ status: 'UNAVAILABLE', distance_m: null, fee_vnd: null, reason: 'DROPOFF_PIN_MISSING' });
+    const accepted = checkout(lines, { address, expected_quote: quoteConfirmation(preview.fee as Json) });
+    const created = ok(await asCustomer(alice, 'POST', '/customers/me/orders', accepted), 201);
+    expect(created.money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' });
+    expect((await shopView(String(created.order_id))).money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' });
+    // A legacy retry of an Order that already committed remains idempotent; only
+    // a NEW Order from a client that cannot confirm quotes is refused.
+    const legacyRetry = await asCustomer(alice, 'POST', '/customers/me/orders', { ...accepted, expected_quote: undefined });
+    expect([200, 201]).toContain(legacyRetry.status);
+    expect((dataOf(legacyRetry) as Json).order_id).toBe(created.order_id);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE client_ref = $1::uuid', [accepted.client_ref])).toBe(1);
+  });
+
+  it('keeps route timeout and out-of-policy-range distinct while historical unknown reasons stay neutral', async () => {
+    const draft = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: { ...ADDRESS, lat: 21.003, lng: 105.823 } };
+    holdNextRoute = () => new Promise<void>((resolve) => setTimeout(resolve, 3100));
+    const timedOut = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', draft));
+    expect(timedOut.fee).toMatchObject({ status: 'UNAVAILABLE', distance_m: null, fee_vnd: null, reason: 'ROUTE_TIMEOUT' });
+
+    routeKm = 20;
+    const outside = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { ...draft, address: { ...ADDRESS, lat: 21.004, lng: 105.824 } }));
+    routeKm = 2.5;
+    expect(outside.fee).toMatchObject({ status: 'UNAVAILABLE', distance_m: 20_000, fee_vnd: null, reason: 'OUT_OF_PRICE_RANGE' });
+
+  });
+
+  it('rejects a route if the address-book or pickup coordinates change before the Order snapshot is locked', async () => {
+    const book = ok(await asCustomer(alice, 'POST', '/customers/me/addresses', { label: 'HOME', contact_phone: '0912345678', address_description: 'Điểm cũ', latitude: 21.001, longitude: 105.821 }), 201);
+    const lines = [line(pho, 1)];
+    const body = checkout(lines, { address: { address_id: book.id }, expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21.001,105.821' } });
+    let routeStarted!: () => void;
+    let releaseRoute!: () => void;
+    const started = new Promise<void>((resolve) => { routeStarted = resolve; });
+    const released = new Promise<void>((resolve) => { releaseRoute = resolve; });
+    holdNextRoute = async () => { routeStarted(); await released; };
+    const placing = asCustomer(alice, 'POST', '/customers/me/orders', body);
+    await started;
+    ok(await asCustomer(alice, 'PATCH', `/customers/me/addresses/${String(book.id)}`, { expected_version: 1, address_description: 'Điểm mới', latitude: 21.01, longitude: 105.83 }));
+    releaseRoute();
+    expect(refused(await placing)).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE client_ref = $1::uuid', [body.client_ref])).toBe(0);
+
+    const shopBody = checkout(lines, { address: { ...ADDRESS, lat: 21.002, lng: 105.822 }, expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21.002,105.822' } });
+    routeStarted = () => undefined;
+    releaseRoute = () => undefined;
+    const pickupStarted = new Promise<void>((resolve) => { routeStarted = resolve; });
+    const pickupReleased = new Promise<void>((resolve) => { releaseRoute = resolve; });
+    holdNextRoute = async () => { routeStarted(); await pickupReleased; };
+    const pickupPlacing = asCustomer(alice, 'POST', '/customers/me/orders', shopBody);
+    await pickupStarted;
+    await app.pool.query('UPDATE app.shops SET pickup_lat = 21.0124, updated_at = clock_timestamp() WHERE shop_id = $1::uuid', [shop.shopId]);
+    releaseRoute();
+    expect(refused(await pickupPlacing)).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE client_ref = $1::uuid', [shopBody.client_ref])).toBe(0);
+    await app.pool.query('UPDATE app.shops SET pickup_lat = 21, updated_at = clock_timestamp() WHERE shop_id = $1::uuid', [shop.shopId]);
   });
 
   it('sending creates "Chờ quán xác nhận" with a snapshot: the menu and the address book changing afterwards do not change the Order', async () => {
@@ -173,7 +271,7 @@ describe('M10 — food orders', () => {
     const order = await place(alice, [line(dish, 2, 'không hành')], { address: { address_id: book.id } });
     expect(order).toMatchObject({ status: 'PENDING_CONFIRMATION', display_status: 'AWAITING_SHOP', version: 1 });
     expect(order.code).toMatch(/^DH-/u);
-    expect(order.money).toMatchObject({ items_total_vnd: 60_000, paid_vnd: 0, fee: { payer: 'CUSTOMER', amount_vnd: null, estimate_vnd: 10_000, status: 'ESTIMATE' } });
+    expect(order.money).toMatchObject({ items_total_vnd: 60_000, paid_vnd: 0, fee: { payer: 'CUSTOMER', amount_vnd: null, estimate_vnd: 10_000, status: 'PRICED' } });
     expect(order.recipient).toMatchObject({ name: 'Người nhận', address_text: '77 Phố Mới, Cầu Giấy' });
     await app.pool.query(`UPDATE app.menu_items SET name = 'Tên mới', price_vnd = 99000, version = version + 1, updated_at = clock_timestamp() WHERE item_id = $1::uuid`, [dish.itemId]);
     ok(await asCustomer(alice, 'PATCH', `/customers/me/addresses/${String(book.id)}`, { expected_version: 1, address_description: 'Địa chỉ đã đổi' }));
@@ -223,7 +321,7 @@ describe('M10 — food orders', () => {
     await cleanupOrders(app, { shopIds: [closed.shopId], customerIds: [], drivers: [], userIds: [] });
   });
 
-  it('issue #190: a shop that loses a setup condition (its only dish loses the picture, or the pickup point is a placeholder) takes no NEW order, and the Order already placed is untouched', async () => {
+  it('issue #209: removing a picture keeps orders eligible; losing the last VISIBLE dish or GPS still blocks new orders and preserves existing orders', async () => {
     const lost = await createShopOwner(app);
     extraShops.push(lost.shopId);
     extraUsers.push(lost.userId);
@@ -231,17 +329,21 @@ describe('M10 — food orders', () => {
     const dish = await newDish(app, lost.token, 'Món còn ảnh', 10_000);
     const first = ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
     const before = await orderRow(String(first.order_id));
-    // The only dish loses its picture: the shop has no first sellable dish any more. The dish is still on sale, but the shop is not set up.
+    // Removing the optional picture keeps cart, preview and checkout eligible.
     await app.pool.query('UPDATE app.menu_items SET image_id = NULL, version = version + 1 WHERE item_id = $1::uuid', [dish.itemId]);
-    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
+    ok(await asCustomer(alice, 'PUT', '/customers/me/cart', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }] }));
+    expect(ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS }))).toMatchObject({ ok: true });
+    ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
+    // Hiding the last VISIBLE dish still removes readiness, irrespective of its picture.
+    await app.pool.query("UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE item_id = $1::uuid", [dish.itemId]);
+    expect(refused(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }))).toEqual({ status: 409, code: 'ORDER_CART_CHANGED' });
     expect(ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS }))).toMatchObject({ ok: false, blockers: expect.arrayContaining(['SHOP_NOT_OPEN']) });
     expect(refused(await asCustomer(alice, 'PUT', '/customers/me/cart', { shop_id: lost.shopId, lines: [{ item_id: dish.itemId, quantity: 1 }] }))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
     // The Order placed earlier is exactly as it was and the shop still sees and handles it.
     expect(await orderRow(String(first.order_id))).toEqual(before);
     expect(ok(await asShop('GET', `/shop/me/orders/${String(first.order_id)}`, undefined, undefined, lost))).toMatchObject({ status: 'PENDING_CONFIRMATION' });
-    // Back to a picture: orders are accepted again, nothing else was needed.
-    const image = await app.pool.query<{ image_id: string }>('SELECT image_id FROM app.menu_images WHERE shop_id = $1::uuid LIMIT 1', [lost.shopId]);
-    await app.pool.query('UPDATE app.menu_items SET image_id = $2::uuid, version = version + 1 WHERE item_id = $1::uuid', [dish.itemId, image.rows[0]?.image_id]);
+    // Showing the dish restores orders without adding a picture.
+    await app.pool.query("UPDATE app.menu_items SET status = 'VISIBLE', version = version + 1 WHERE item_id = $1::uuid", [dish.itemId]);
     ok(await asCustomer(alice, 'POST', '/customers/me/orders', { ...checkout([line(dish, 1)]), shop_id: lost.shopId }), 201);
     // A (0, 0) pickup placeholder is not a GPS point either.
     await app.pool.query('UPDATE app.shops SET pickup_lat = 0, pickup_lng = 0 WHERE shop_id = $1::uuid', [lost.shopId]);
@@ -746,7 +848,7 @@ describe('M10 — food orders', () => {
     await app.pool.query('UPDATE app.orders SET fee_estimate_distance_m = NULL, address_lat = NULL, address_lng = NULL WHERE order_id = $1::uuid', [order.order_id]);
     await app.pool.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
     const fresh = await shopView(String(order.order_id));
-    expect(refused(await callShipper(fresh))).toEqual({ status: 400, code: 'FEE_REQUIRED' });
+    expect(refused(await callShipper(fresh))).toEqual({ status: 400, code: 'DROPOFF_PIN_MISSING' });
     expect(await deliveryOf(String(order.order_id))).toHaveLength(0);
     const proposed = ok(await callShipper(fresh, { fee_payer: 'SHOP', agreed_fee: { reason_code: 'OUT_OF_PRICE_RANGE', amount_vnd: 25_000 } }), 201);
     expect(proposed.delivery).toMatchObject({ state: 'waiting_driver', recipient: { lat: null, lng: null }, fee: { mode: 'AGREED', status: 'PENDING_AGREEMENT' } });

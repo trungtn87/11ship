@@ -60,4 +60,66 @@ void main() {
       session.dispose();
     });
   }
+
+  for (final (String, String) roles in <(String, String)>[('CUSTOMER', 'SHOP_OWNER'), ('SHOP_OWNER', 'CUSTOMER')]) {
+    testWidgets('${roles.$1} notification retries safely as ${roles.$2}', (WidgetTester tester) async {
+      final FakeApiTransport api = FakeApiTransport();
+      installAccountRoutes(api);
+      Map<String, Object?> identity(String active) => <String, Object?>{
+            ...identityJson(active: active),
+            'available_roles': <String>['CUSTOMER', 'SHOP_OWNER'],
+          };
+      api.routes['GET /v1/client-auth/me'] = (_, __, ___, ____) async => json(200, <String, Object?>{'data': identity(roles.$1)});
+      api.routes['POST /v1/client-auth/context'] = (_, __, ___, String body) async {
+        final String wanted = body.contains('SHOP_OWNER') ? 'SHOP_OWNER' : 'CUSTOMER';
+        return json(200, <String, Object?>{'data': identity(wanted)});
+      };
+      final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
+      await tester.runAsync(() async {
+        await session.start();
+        await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+        await session.refreshIdentity();
+      });
+      final SampleOrderStore store = SampleOrderStore();
+      final String orderId = store.seed(status: 'COMPLETED');
+      final OrderRuntime orders = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: CartController(source: SampleCustomerOrders(store)));
+      final AppFlows flows = AppFlows(session: session, reset: ResetController(transport: api, session: session), orders: orders);
+      var opens = 0;
+      api.routes['POST /v1/notifications/n-role/open'] = (_, __, ___, ____) async {
+        opens++;
+        return json(200, <String, Object?>{
+          'data': <String, Object?>{
+            'notification_id': 'n-role',
+            'outcome': opens == 1 ? 'NO_ACCESS' : 'OK',
+            'target': opens == 1 ? null : <String, Object?>{'type': 'ORDER', 'id': orderId},
+            'delivery_state': null,
+            'expired': false,
+            'server_now': DateTime.utc(2026, 10, 27).toIso8601String(),
+          },
+        });
+      };
+      final NotificationController controller = NotificationController(session: session, source: HttpNotificationSource(session: session));
+      await tester.pumpWidget(MaterialApp(
+        theme: buildN11Theme(),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () => unawaited(openNotification(context, controller, foodNotificationRouter(flows), ShellActions(goTab: (_) {}, openDiagnostics: () {}), id: 'n-role')),
+              child: const Text('Má»Ÿ theo vai trÃ²'),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Má»Ÿ theo vai trÃ²'));
+      await tester.pumpAndSettle();
+      expect(session.identity?.activeRole, roles.$2);
+      expect(opens, 2);
+      expect(api.to('POST', '/v1/client-auth/context'), hasLength(1));
+      expect(roles.$2 == 'SHOP_OWNER' ? find.byType(ShopOrderDetailScreen) : find.byType(CustomerOrderDetailScreen), findsOneWidget);
+      controller.dispose();
+      flows.reset.dispose();
+      orders.cart.dispose();
+      session.dispose();
+    });
+  }
 }

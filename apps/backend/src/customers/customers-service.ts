@@ -137,6 +137,11 @@ export class CustomersService {
     return this.customers.findActiveAddressOfUser(context, userId, addressId);
   }
 
+  /** The address copied into a new Order; prevents a concurrent edit after checkout validation. */
+  lockAddressForOrder(context: TransactionContext, userId: string, addressId: string): Promise<AddressRow | undefined> {
+    return this.customers.lockActiveAddressOfUserShared(context, userId, addressId);
+  }
+
   // ------------------------------------------------------------------------------------------------------------ writes
 
   /** POST /v1/customers/me/addresses. The first address is the default; later ones only when asked. */

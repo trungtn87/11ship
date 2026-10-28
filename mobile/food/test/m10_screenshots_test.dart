@@ -26,6 +26,9 @@ void main() {
       loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
     }
     await loader.load();
+    final FontLoader icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
 
   final GlobalKey boundary = GlobalKey();

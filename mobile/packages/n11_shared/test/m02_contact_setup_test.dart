@@ -168,7 +168,7 @@ void main() {
       expect(find.text('Hoàn tất thiết lập cửa hàng'), findsOneWidget);
       expect(find.text('2/4'), findsOneWidget);
       expect(find.text('Còn thiếu: giờ hoạt động.'), findsOneWidget);
-      expect(find.text('Còn thiếu: món đang bán có giá và ảnh.'), findsOneWidget);
+      expect(find.text('Còn thiếu: món đang bán có giá hợp lệ.'), findsOneWidget);
       expect(find.text('Kích hoạt cửa hàng'), findsOneWidget);
       expect(find.text('Tự động khi đủ 4 bước, không cần chờ duyệt.'), findsOneWidget);
       expect(find.textContaining('Gửi duyệt'), findsNothing);

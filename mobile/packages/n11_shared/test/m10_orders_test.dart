@@ -43,7 +43,40 @@ final SampleDish pho = kSampleDishes[0];
 final SampleDish tea = kSampleDishes[2];
 
 void main() {
+  test('checkout confirmation sends the complete canonical quote', () {
+    final CheckoutPreview preview = CheckoutPreview.fromJson(<String, Object?>{
+      'ok': true, 'blockers': <Object?>[], 'lines': <Object?>[], 'items_total_vnd': 45000, 'expected_total_vnd': null,
+      'fee': <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff', 'quoted_at': '2026-10-27T00:00:00.000Z'},
+    });
+    expect(preview.expectedQuoteJson, <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff'});
+  });
+
   group('cart', () {
+    testWidgets('cart quantity actions remain usable on a small phone with large text', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: 'Phở bò tái phần đặc biệt', priceVnd: 45000);
+      await mount(
+          tester,
+          Builder(
+              builder: (BuildContext context) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+                    child: CartScreen(runtime: runtime),
+                  )));
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      await tap(tester, key('cart-plus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 2);
+      await tap(tester, key('cart-minus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 1);
+      await tap(tester, key('cart-remove-${pho.id}'));
+      expect(key('cart-empty'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
     test('one shop; the same dish with the same note joins one line, another note is another line; the server keeps it', () async {
       final SampleOrderStore store = SampleOrderStore();
       final CartController cart = CartController(source: SampleCustomerOrders(store));
@@ -147,14 +180,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('no pin: show provisional system M06 fee and expected total without inventing GPS coordinates', (WidgetTester tester) async {
+    testWidgets('no pin: fee and total stay unknown and the checkout says they are not included', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
       expect(containing('Phí giao (dự tính)'), findsWidgets);
-      expect(find.text(m10Money(10000)), findsWidgets);
+      expect(find.text(m10Money(10000)), findsNothing);
       expect(find.text(m10Money(0)), findsNothing);
-      expect(key('checkout-total'), findsOneWidget);
+      expect(key('checkout-total'), findsNothing);
+      expect(containing('Chưa gồm phí giao'), findsOneWidget);
+      expect(containing('chọn điểm giao trên bản đồ'), findsOneWidget);
       expect(containing('Thanh toán trực tiếp'), findsWidgets);
       await tap(tester, key('checkout-send'));
       expect(store.orderCount, 1);
@@ -293,16 +328,16 @@ void main() {
       final String pending = store.seed();
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: pending));
       expect(containing('Hủy đơn'), findsWidgets);
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Hủy đơn'));
+      await tap(tester, key('order-cancel'));
       await tap(tester, key('m07-confirm-yes'));
       expect(containing('Đã hủy'), findsWidgets);
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(key('order-reorder'), findsOneWidget);
       await unmount(tester);
 
       final String running = store.seed(status: 'PREPARING');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: running));
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(containing('Quán đang chuẩn bị'), findsWidgets);
       await unmount(tester);
     });
@@ -433,6 +468,11 @@ void main() {
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
       expect(key('order-edit-note'), findsOneWidget);
+      expect(find.text('Sửa đơn'), findsOneWidget);
+      final Rect editButton = tester.getRect(key('order-edit'));
+      final Rect rejectButton = tester.getRect(key('order-reject'));
+      expect(editButton.center.dy, closeTo(rejectButton.center.dy, 0.1));
+      expect(editButton.right, lessThan(rejectButton.left));
       await tap(tester, key('order-edit'));
       await tap(tester, key('edit-minus-line-1-0'));
       await tap(tester, key('edit-save'));
@@ -440,7 +480,7 @@ void main() {
       await tap(tester, key('order-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       await tap(tester, key('m07-reason-back'));
-      expect(containing('Xác nhận đơn đã chỉnh'), findsOneWidget);
+      expect(containing('Xác nhận đơn đã sửa'), findsOneWidget);
       await tap(tester, key('order-confirm'));
       await tester.enterText(key('m07-reason-field'), 'Hết bún, khách đồng ý bớt');
       await settle(tester);
@@ -460,7 +500,7 @@ void main() {
       expect(key('order-confirm'), findsNothing, reason: 'starting new work is blocked');
       expect(key('order-confirm-blocked'), findsOneWidget);
       expect(containing('Cần cập nhật ứng dụng trước khi nhận đơn mới'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Từ chối đơn'), findsOneWidget, reason: 'the shop can still turn the order down');
+      expect(key('order-reject'), findsOneWidget, reason: 'the shop can still turn the order down');
       await unmount(tester);
       // Once the app is updated (or when no update is required) the same order confirms normally, and then its next steps are never blocked.
       runtime.newWorkBlocked = () => false;
@@ -482,7 +522,7 @@ void main() {
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Từ chối đơn'));
+      await tap(tester, key('order-reject'));
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
@@ -694,7 +734,6 @@ class _Offline extends SampleCustomerOrders {
     return super.saveCart(shopId: shopId, lines: lines, note: note);
   }
 }
-
 
 class _CountedPreviews extends SampleCustomerOrders {
   _CountedPreviews(super.store);

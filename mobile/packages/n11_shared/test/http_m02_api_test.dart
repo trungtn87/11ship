@@ -44,6 +44,7 @@ void main() {
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
           'data': <String, Object?>{
             'shop_id': 's',
+            'visible_quota': <String, Object?>{'used': 1, 'limit': 20, 'expanded': false},
             'categories': <Object?>[<String, Object?>{'category_id': 'c1', 'name': 'Ốc', 'status': 'ACTIVE'}, <String, Object?>{'category_id': 'c2', 'name': 'Cũ', 'status': 'INACTIVE'}],
             'items': <Object?>[item(image: 'img-1'), item(id: 'i2', status: 'HIDDEN', version: 3)],
           },
@@ -53,6 +54,8 @@ void main() {
     expect(snapshot.items.first.imageUrl, 'https://api.example.test/v1/menu-images/img-1');
     expect(snapshot.items.first.imageRef, 'img-1');
     expect(snapshot.items.last.hidden, isTrue);
+    expect(snapshot.visibleLimit, 20);
+    expect(snapshot.expanded, isFalse);
     expect(snapshot.items.last.imageUrl, isNull);
     t.api.routes['GET /v1/shop/me/menu'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'categories': 'x', 'items': <Object?>[]}});
     await expectLater(t.menu.load(), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.kind, 'kind', AuthFailureKind.badResponse)));
@@ -69,11 +72,11 @@ void main() {
 
     const MenuItemInput input = MenuItemInput(name: 'Ốc hương hấp', priceVnd: 120000, categoryId: 'c1', imageRef: null);
     await t.menu.create(input, key: 'key-create');
-    expect(jsonDecode(t.api.to('POST', '/v1/shop/me/menu/items').single.body), <String, Object?>{'name': 'Ốc hương hấp', 'price_vnd': 120000, 'category_id': 'c1', 'image_id': null});
+    expect(jsonDecode(t.api.to('POST', '/v1/shop/me/menu/items').single.body), <String, Object?>{'name': 'Ốc hương hấp', 'price_vnd': 120000, 'category_id': 'c1', 'image_id': null, 'description': null});
     expect(t.api.to('POST', '/v1/shop/me/menu/items').single.headers['idempotency-key'], 'key-create');
 
     await t.menu.update('i1', const MenuItemInput(name: 'A', priceVnd: 5, categoryId: 'c1', imageRef: 'img-1'), expectedVersion: 1, key: 'key-update');
-    expect(jsonDecode(t.api.to('PUT', '/v1/shop/me/menu/items/i1').single.body), <String, Object?>{'expected_version': 1, 'name': 'A', 'price_vnd': 5, 'category_id': 'c1', 'image_id': 'img-1'});
+    expect(jsonDecode(t.api.to('PUT', '/v1/shop/me/menu/items/i1').single.body), <String, Object?>{'expected_version': 1, 'name': 'A', 'price_vnd': 5, 'category_id': 'c1', 'image_id': 'img-1', 'description': null});
 
     expect((await t.menu.setHidden('i1', true, expectedVersion: 2, key: 'k3')).hidden, isTrue);
     expect((await t.menu.setHidden('i1', false, expectedVersion: 3, key: 'k4')).hidden, isFalse);

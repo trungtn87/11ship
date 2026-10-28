@@ -65,7 +65,7 @@ describe('M12-C — administrator access', () => {
     expect(row.phone_masked).toEqual(expect.stringMatching(/•/));
     expect(JSON.stringify(row)).not.toContain(target.phone.local);
     expect(row.permissions.map((p: Json) => p.app)).toEqual(['DRIVER', 'SHOP']);
-    expect(row.rights.map((r: Json) => r.permission_key)).toEqual(['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read']);
+    expect(row.rights.map((r: Json) => r.permission_key)).toEqual(['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage', 'wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read']);
     expect(row.live_sessions).toBeGreaterThanOrEqual(1);
   });
 

@@ -78,6 +78,40 @@ Future<void> registrationDetails(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('nested tab navigation keeps one bottom bar and a tab tap returns to its root', (WidgetTester tester) async {
+    await tester.pumpWidget(N11App(
+      brand: foodBrand,
+      config: config,
+      transport: healthy(),
+      pollInterval: Duration.zero,
+      keepBottomNavOnChildRoutes: true,
+      tabs: <TabSpec>[
+        TabSpec(
+          id: 'home',
+          label: 'Trang chá»§',
+          icon: Icons.home_outlined,
+          title: 'Trang chá»§',
+          body: (BuildContext context, ShellActions actions) => TextButton(
+            key: const Key('open-child'),
+            onPressed: () => Navigator.of(context).push(n11Route(const Scaffold(body: Text('Trang con')))),
+            child: const Text('Má»Ÿ trang con'),
+          ),
+        ),
+        TabSpec(id: 'orders', label: 'ÄÆ¡n hÃ ng', icon: Icons.receipt_outlined, title: 'ÄÆ¡n hÃ ng', body: (_, __) => const Text('Gá»‘c Ä‘Æ¡n hÃ ng')),
+      ],
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('open-child')));
+    await tester.pumpAndSettle();
+    expect(find.text('Trang con'), findsOneWidget);
+    expect(find.byType(N11BottomNav), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tab-home')));
+    await tester.pumpAndSettle();
+    expect(find.text('Trang con'), findsNothing);
+    expect(find.byKey(const Key('open-child')), findsOneWidget);
+    expect(find.byType(N11BottomNav), findsOneWidget);
+  });
+
   testWidgets('three customer tabs in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
     for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Tài khoản']) {
