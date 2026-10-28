@@ -3,15 +3,45 @@ import 'package:n11_shared/n11_shared.dart';
 
 /// UI-only V5 demo. Deliberately disconnected from auth, GPS, orders and money.
 class V5PreviewApp extends StatefulWidget {
-  const V5PreviewApp({super.key, required this.isFood, this.shopOwner = true});
+  const V5PreviewApp({
+    super.key,
+    required this.isFood,
+    this.shopOwner = true,
+    this.showFoodBanner = true,
+    this.initiallyOnline = true,
+    this.showThirdOrder = true,
+    this.cardRadius = 17,
+    this.mapHeight = 168,
+    this.accentColor = N11Colors.yellow,
+  });
   final bool isFood;
   final bool shopOwner;
+  /// Design-only parameters exposed through upstream Widgetbook Knobs.
+  final bool showFoodBanner;
+  final bool initiallyOnline;
+  final bool showThirdOrder;
+  final double cardRadius;
+  final double mapHeight;
+  final Color accentColor;
   @override
   State<V5PreviewApp> createState() => _V5PreviewAppState();
 }
 class _V5PreviewAppState extends State<V5PreviewApp> {
   int selected = 0;
-  bool online = true;
+  late bool online;
+  @override
+  void initState() {
+    super.initState();
+    online = widget.initiallyOnline;
+  }
+
+  @override
+  void didUpdateWidget(covariant V5PreviewApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initiallyOnline != widget.initiallyOnline) {
+      online = widget.initiallyOnline;
+    }
+  }
   static const orange = Color(0xFFED6A00);
   static const shadow = [BoxShadow(color: Color(0x13000000), blurRadius: 12, offset: Offset(0, 3))];
   List<(String, IconData)> get tabs => widget.isFood ? [
@@ -80,7 +110,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
   Widget _foodCard(String name,String category,String rating,String distance,IconData symbol,Color bg) => Container(
     margin:const EdgeInsets.fromLTRB(15,0,15,9),height:122,
     padding:const EdgeInsets.all(9),
-    decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(17),boxShadow:shadow),
+    decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(widget.cardRadius),boxShadow:shadow),
     child:Row(children:[
       Container(width:75,height:94,decoration:BoxDecoration(color:bg,borderRadius:BorderRadius.circular(13)),
         child:Icon(symbol,size:44,color:N11Colors.black)),
@@ -107,7 +137,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
   Widget _foodHome() => ListView(key:const Key('v5-food-home'),children:[
     _header(true),
     Container(margin:const EdgeInsets.symmetric(horizontal:13),padding:const EdgeInsets.all(10),
-      decoration:BoxDecoration(color:N11Colors.yellow,borderRadius:BorderRadius.circular(25)),
+      decoration:BoxDecoration(color:widget.accentColor,borderRadius:BorderRadius.circular(25)),
       child:Column(children:[
         Row(children:[
           Expanded(child:Container(height:47,padding:const EdgeInsets.symmetric(horizontal:15),
@@ -127,6 +157,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
           _category('Đồ uống',Icons.coffee_outlined,false),
         ]),
       ])),
+    if (widget.showFoodBanner) ...[
     const SizedBox(height:14),
     Container(height:111,margin:const EdgeInsets.symmetric(horizontal:15),
       decoration:BoxDecoration(
@@ -142,6 +173,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
         const Spacer(),const Padding(padding:EdgeInsets.only(right:15),
           child:Icon(Icons.ramen_dining_rounded,size:77,color:Color(0xFFC15C13))),
       ])),
+    ],
     const SizedBox(height:18),
     Padding(padding:const EdgeInsets.fromLTRB(17,0,17,11),child:Row(children:[
       Expanded(child:_tx('Quán gần bạn',22,weight:FontWeight.w800)),
@@ -188,7 +220,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
           child:Row(children:[
             Icon(Icons.power_settings_new,size:21,color:online?Colors.white:N11Colors.black),
             const SizedBox(width:6),
-            _tx(online?'Đang online':'Đang offline',12.5,
+            _tx(online?'Tắt nhận đơn':'Bật nhận đơn',12.5,
               weight:FontWeight.w800,color:online?Colors.white:N11Colors.black),
           ]))),
     ])),
@@ -201,7 +233,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
             decoration:BoxDecoration(color:N11Colors.yellowSoft,borderRadius:BorderRadius.circular(20)),
             child:_tx('Bán kính 3 km',11.5))]),
         const SizedBox(height:11),
-        Container(height:168,width:double.infinity,clipBehavior:Clip.antiAlias,
+        Container(height:widget.mapHeight,width:double.infinity,clipBehavior:Clip.antiAlias,
           decoration:BoxDecoration(color:const Color(0xFFEAF1E9),borderRadius:BorderRadius.circular(14)),
           child:CustomPaint(painter:_PreviewMapPainter())),
       ])),
@@ -212,7 +244,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
     ])),
     _shipCard('Quán 11','0,8 km · Đường Kim Đồng','25.000đ',Icons.ramen_dining,const Color(0xFFFFE8AE)),
     _shipCard('Bún chả Hương Việt','1,5 km · Phố Pác Bó','32.000đ',Icons.restaurant_menu,const Color(0xFFFFF1CF)),
-    _shipCard('Cà phê 1986','2,3 km · Tổ 7, Sông Hiến','18.000đ',Icons.local_cafe,const Color(0xFFF5DEB1)),
+    if (widget.showThirdOrder) _shipCard('Cà phê 1986','2,3 km · Tổ 7, Sông Hiến','18.000đ',Icons.local_cafe,const Color(0xFFF5DEB1)),
   ]);
   Widget _other(String name,IconData icon) => Column(children:[
     _header(widget.isFood),const SizedBox(height:50),
