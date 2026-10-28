@@ -72,7 +72,7 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
     ),
   );
   Widget _foodCard(String name,String category,String rating,String distance,IconData symbol,Color bg) => Container(
-    margin:const EdgeInsets.fromLTRB(15,0,15,9),height:114,
+    margin:const EdgeInsets.fromLTRB(15,0,15,9),height:122,
     padding:const EdgeInsets.all(9),
     decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(17),boxShadow:shadow),
     child:Row(children:[
