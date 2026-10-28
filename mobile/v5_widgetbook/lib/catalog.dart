@@ -16,12 +16,26 @@ List<WidgetbookNode> buildV5Catalog() => [
       WidgetbookUseCase(
         name: 'Chủ quán · 4 tab',
         designLink: _foodFigma,
-        builder: (_) => const V5PhonePreview(isFood: true, shopOwner: true),
+        builder: (context) => V5PhonePreview(
+          isFood: true,
+          shopOwner: true,
+          showFoodBanner: context.knobs.boolean(label: 'Hiện banner', initialValue: true),
+          cardRadius: context.knobs.double.slider(
+            label: 'Bo góc thẻ quán (dp)', min: 8, max: 30, divisions: 22, initialValue: 17,
+          ),
+          accentColor: context.knobs.color(
+            label: 'Màu nền tìm kiếm', initialValue: N11Colors.yellow,
+          ),
+        ),
       ),
       WidgetbookUseCase(
         name: 'Khách hàng · 3 tab',
         designLink: _foodFigma,
-        builder: (_) => const V5PhonePreview(isFood: true, shopOwner: false),
+        builder: (context) => V5PhonePreview(
+          isFood: true,
+          shopOwner: false,
+          showFoodBanner: context.knobs.boolean(label: 'Hiện banner', initialValue: true),
+        ),
       ),
     ]),
   ]),
@@ -30,7 +44,19 @@ List<WidgetbookNode> buildV5Catalog() => [
       WidgetbookUseCase(
         name: 'Online · 5 tab',
         designLink: _shipFigma,
-        builder: (_) => const V5PhonePreview(isFood: false),
+        builder: (context) => V5PhonePreview(
+          isFood: false,
+          initiallyOnline: context.knobs.boolean(label: 'Online lúc mở', initialValue: true),
+          showThirdOrder: context.knobs.boolean(label: 'Hiện đơn thứ 3', initialValue: true),
+          mapHeight: context.knobs.double.slider(
+            label: 'Chiều cao bản đồ (dp)', min: 130, max: 260,
+            divisions: 26, initialValue: 168,
+          ),
+          cardRadius: context.knobs.double.slider(
+            label: 'Bo góc thẻ đơn (dp)', min: 8, max: 30,
+            divisions: 22, initialValue: 17,
+          ),
+        ),
       ),
     ]),
   ]),
@@ -52,10 +78,12 @@ List<WidgetbookNode> buildV5Catalog() => [
     WidgetbookComponent(name: 'N11Button', useCases: [
       WidgetbookUseCase(
         name: 'Primary',
-        builder: (_) => V5PreviewSurface(child: N11Button(
-          label: 'Xem đơn',
-          icon: Icons.arrow_forward_rounded,
-          onPressed: () {},
+        builder: (context) => V5PreviewSurface(child: N11Button(
+          label: context.knobs.string(label: 'Nhãn nút', initialValue: 'Xem đơn'),
+          icon: context.knobs.boolean(label: 'Hiện icon', initialValue: true)
+              ? Icons.arrow_forward_rounded : null,
+          onPressed: context.knobs.boolean(label: 'Cho phép nhấn', initialValue: true)
+              ? () {} : null,
         )),
       ),
       WidgetbookUseCase(
@@ -83,14 +111,22 @@ List<WidgetbookNode> buildV5Catalog() => [
     WidgetbookComponent(name: 'N11Card', useCases: [
       WidgetbookUseCase(
         name: 'Basic',
-        builder: (_) => const V5PreviewSurface(
+        builder: (context) => V5PreviewSurface(
           child: N11Card(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Quán gần bạn', style: N11Text.bodyStrong),
-              SizedBox(height: 8),
-              Text('Nội dung mẫu để xem kiểu thẻ', style: N11Text.caption),
+              Text(
+                context.knobs.string(label: 'Tiêu đề', initialValue: 'Quán gần bạn'),
+                style: N11Text.bodyStrong.copyWith(
+                  fontSize: context.knobs.double.slider(
+                    label: 'Cỡ chữ tiêu đề (dp)',
+                    min: 14, max: 24, divisions: 10, initialValue: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('Nội dung mẫu để xem kiểu thẻ', style: N11Text.caption),
             ],
           )),
         ),
@@ -109,7 +145,9 @@ List<WidgetbookNode> buildV5Catalog() => [
     WidgetbookComponent(name: 'Tokens', useCases: [
       WidgetbookUseCase(
         name: 'Màu và Typography',
-        builder: (_) => const V5TokenPalette(),
+        builder: (context) => V5TokenPalette(
+          previewColor: context.knobs.color(label: 'Màu thử nghiệm', initialValue: N11Colors.yellow),
+        ),
       ),
     ]),
   ]),
@@ -118,10 +156,26 @@ List<WidgetbookNode> buildV5Catalog() => [
 /// A real Flutter viewport, fixed to the approved 390x844 dp reference.
 /// Scrolling exists only in the catalog host; the preview's own tab taps work.
 class V5PhonePreview extends StatelessWidget {
-  const V5PhonePreview({super.key, required this.isFood, this.shopOwner = true});
+  const V5PhonePreview({
+    super.key,
+    required this.isFood,
+    this.shopOwner = true,
+    this.showFoodBanner = true,
+    this.initiallyOnline = true,
+    this.showThirdOrder = true,
+    this.cardRadius = 17,
+    this.mapHeight = 168,
+    this.accentColor = N11Colors.yellow,
+  });
 
   final bool isFood;
   final bool shopOwner;
+  final bool showFoodBanner;
+  final bool initiallyOnline;
+  final bool showThirdOrder;
+  final double cardRadius;
+  final double mapHeight;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +186,16 @@ class V5PhonePreview extends StatelessWidget {
           child: SizedBox(
             width: 390,
             height: 844,
-            child: V5PreviewApp(isFood: isFood, shopOwner: shopOwner),
+            child: V5PreviewApp(
+              isFood: isFood,
+              shopOwner: shopOwner,
+              showFoodBanner: showFoodBanner,
+              initiallyOnline: initiallyOnline,
+              showThirdOrder: showThirdOrder,
+              cardRadius: cardRadius,
+              mapHeight: mapHeight,
+              accentColor: accentColor,
+            ),
           ),
         ),
       ),
@@ -157,11 +220,13 @@ class V5PreviewSurface extends StatelessWidget {
 }
 
 class V5TokenPalette extends StatelessWidget {
-  const V5TokenPalette({super.key});
+  const V5TokenPalette({super.key, this.previewColor = N11Colors.yellow});
+  final Color previewColor;
 
   @override
   Widget build(BuildContext context) {
-    const tokens = <(String, Color)>[
+    final tokens = <(String, Color)>[
+      ('Màu thử (Knob, chưa ghi tokens.dart)', previewColor),
       ('Primary #FFC400', N11Colors.yellow),
       ('Yellow soft #FFF5C2', N11Colors.yellowSoft),
       ('Background #F7F8FA', N11Colors.bg),
