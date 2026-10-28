@@ -154,18 +154,53 @@ class ShipHomeLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-    final double mapHeight = (constraints.maxHeight * .48).clamp(180.0, 440.0).toDouble();
+    final double mapHeight = (constraints.maxHeight * .40)
+        .clamp(N11V5.shipMapMinHeight, N11V5.shipMapMaxHeight)
+        .toDouble();
     return SingleChildScrollView(
       key: const Key('ship-home-scroll'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Row(children: <Widget>[
-          const Expanded(child: Align(alignment: Alignment.centerLeft, child: BrandLogo(brand: shipBrand, height: 32))),
+          const Expanded(child: Align(alignment: Alignment.centerLeft, child: BrandLogo(brand: shipBrand, height: N11V5.logoHeight))),
           bell ?? IconButton(key: const Key('home-notifications'), tooltip: 'Thông báo', onPressed: onNotifications,
             icon: const Icon(Icons.notifications_outlined, color: N11Colors.black)),
         ])),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text('Nhận đơn giao hàng', style: N11Text.h2),
+        ),
         if (alert != null) alert! else if (connection != null) connection!,
         if (gpsStatus != null && locationView == null) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: Text(gpsStatus!, key: const Key('home-gps-status'), style: N11Text.caption)),
-        if (locationView == null) _HomeMap(height: mapHeight, position: position) else _MapWithLocation(height: mapHeight, position: position, view: locationView!),
+        Container(
+          key: const Key('home-v5-map-panel'),
+          margin: const EdgeInsets.symmetric(horizontal: N11Space.pad),
+          padding: const EdgeInsets.all(N11Space.gap3),
+          decoration: BoxDecoration(
+            color: N11Colors.white,
+            boxShadow: N11V5.cardShadow,
+            borderRadius: BorderRadius.circular(N11V5.shipMapRadius),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+            Row(children: <Widget>[
+              const Expanded(child: Text('Khu vực nhận đơn', style: N11Text.h2)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: N11Colors.yellowSoft,
+                  borderRadius: BorderRadius.circular(kRadiusPill),
+                ),
+                child: const Text('Bán kính 3 km', style: N11Text.caption),
+              ),
+            ]),
+            const SizedBox(height: N11Space.gap3),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(kRadiusControl),
+              child: locationView == null
+                  ? _HomeMap(height: mapHeight, position: position)
+                  : _MapWithLocation(height: mapHeight, position: position, view: locationView!),
+            ),
+          ]),
+        ),
         Padding(padding: const EdgeInsets.all(N11Space.pad), child: ShipActivityPanel(online: online, reason: reason, footer: footer, onToggle: onToggle, paused: paused, busy: busy, message: message, problem: problem)),
       ]),
     );
