@@ -1160,16 +1160,16 @@ class _NavTab extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               Container(
-                width: 56,
-                height: 28,
+                width: N11V5.navIndicatorWidth,
+                height: N11V5.navIndicatorHeight,
                 decoration: BoxDecoration(color: active ? N11Colors.yellowSoft : Colors.transparent, borderRadius: BorderRadius.circular(kRadiusPill)),
-                child: Icon(item.icon, size: 20, color: active ? N11Colors.black : N11Colors.ink2),
+                child: Icon(item.icon, size: 24, color: active ? N11Colors.accentOrange : N11Colors.ink2),
               ),
               const SizedBox(height: 2),
               Text(
                 item.label,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: active ? N11Colors.black : N11Colors.ink2),
+                style: TextStyle(fontSize: 12, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: active ? N11Colors.accentOrange : N11Colors.ink2),
               ),
             ],
           ),

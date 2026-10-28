@@ -29,7 +29,10 @@ class M14MapFactory(private val messenger: BinaryMessenger): PlatformViewFactory
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView = M14MapView(context,viewId,messenger,args as? Map<*,*>)
 }
 private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, initial: Map<*,*>?): PlatformView, Application.ActivityLifecycleCallbacks {
-    private val frame=FrameLayout(context)
+    private val frame=FrameLayout(context).apply {
+        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        contentDescription="Đang mở bản đồ offline Cao Bằng"
+    }
     private val channel=MethodChannel(messenger,"vn.eleven/m14/map/$id")
     private val offline=OfflineMap(context)
     private val coverage=TextView(context).apply { text="Ngoài vùng bản đồ Cao Bằng"; setTextColor(Color.BLACK); setBackgroundColor(0xFFFFE0B2.toInt()); setPadding(12,8,12,8); visibility=View.GONE }
@@ -78,7 +81,16 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                             map=current; pins.labels=labels
                             current.uiSettings.isAttributionEnabled=false
                             current.uiSettings.isLogoEnabled=false
-                            current.setStyle(style) { if(!disposed) { ready=true; draw(); channel.invokeMethod("ready",null) } }
+                            current.setStyle(style) { if(!disposed) {
+                                ready=true
+                                // Style readiness is the product's real ready signal (the same
+                                // event sent to Flutter). A headless emulator may never emit a
+                                // separate fully-rendered frame callback, so accessibility must
+                                // not stay stuck at "Đang mở" after a usable offline map exists.
+                                frame.contentDescription="Bản đồ offline Cao Bằng đã hiển thị"
+                                draw()
+                                channel.invokeMethod("ready",null)
+                            } }
                             // Regional fallback only. The first valid point/route later replaces it with a viewport-based fit.
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
                             current.addOnCameraMoveListener { pins.invalidate() }
