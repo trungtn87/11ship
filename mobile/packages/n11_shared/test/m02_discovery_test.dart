@@ -133,10 +133,10 @@ void main() {
     expect(find.textContaining('chim bay'), findsNothing);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, distance: RouteDistance.loading, onTap: () {}))));
     expect(find.text('Đang tính quãng đường…'), findsOneWidget);
-    // Road unknown: it says so; the straight line may follow only as an explicitly labelled reference.
+    // Road unknown: it says so and does not expose a straight-line substitute.
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ShopCard(shop: shop, customerLocation: fix, distance: RouteDistance.unavailable, onTap: () {}))));
     expect(find.textContaining('Chưa xác định quãng đường'), findsOneWidget);
-    expect(find.textContaining('đường chim bay'), findsOneWidget);
+    expect(find.textContaining('đường chim bay'), findsNothing);
     expect(find.textContaining('đường đi'), findsNothing);
     final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
     final DiscoveryPosition position = DiscoveryPosition(provider: gps);

@@ -19,6 +19,8 @@ String _m10FailureText(M07Failure failure) {
       return 'Đơn vừa thay đổi. Đã tải lại, hãy kiểm tra rồi thử lại.';
     case 'ORDER_CART_CHANGED':
       return 'Giá hoặc món đã thay đổi. Hãy kiểm tra lại giỏ rồi gửi lại.';
+    case 'ORDER_QUOTE_CHANGED':
+      return 'Quãng đường hoặc phí giao vừa thay đổi. Hãy xem báo giá mới rồi xác nhận lại.';
     case 'ORDER_SHOP_NOT_OPEN':
       return 'Quán chưa nhận đơn lúc này. Hãy chọn giờ hẹn hoặc quay lại sau.';
     case 'ORDER_SCHEDULE_INVALID':
@@ -91,7 +93,7 @@ abstract class CustomerOrderSource {
   Future<CheckoutPreview> preview(CheckoutDraft draft);
 
   /// [clientRef] is the id of THIS attempt: the same one is used for every retry, so a lost answer never makes two Orders.
-  Future<OrderView> place(CheckoutDraft draft, {required String clientRef, required String key});
+  Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key});
 
   /// Did an attempt whose answer was lost reach the server? Null when it did not.
   Future<OrderView?> lookup(String clientRef);
@@ -119,8 +121,7 @@ abstract class ShopOrderSource {
   Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to});
 
   /// HTTP sources paginate on the server; sample sources keep the in-memory preview.
-  Future<OrderList> listPage({required String filter, String query = '', DateTime? from, DateTime? to, int offset = 0}) =>
-      list(filter: filter, query: query, from: from, to: to);
+  Future<OrderList> listPage({required String filter, String query = '', DateTime? from, DateTime? to, int offset = 0}) => list(filter: filter, query: query, from: from, to: to);
   Future<OrderView> get(String id);
   Future<OrderView> edit(String id, {required List<LineEdit> changes, required int expectedVersion, required String key});
   Future<OrderView> confirm(String id, {String? changeReason, required int expectedVersion, required String key});

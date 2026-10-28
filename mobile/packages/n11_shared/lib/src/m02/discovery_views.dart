@@ -40,7 +40,7 @@ Future<void> _openShop(BuildContext context, PublicShopApi publicApi, ShopCardDa
 }
 
 /// The one line a card (Home and Search alike) shows for the distance. Issue #190: a number appears ONLY as a road distance; a missing position or
-/// an unknown road says so, and the straight line, when shown at all, is labelled as such.
+/// an unknown road says so. A straight-line estimate is never shown as a substitute.
 String distanceLine(ShopCardData shop, RouteDistance distance, LocationFix? fix, {bool locating = false}) {
   if (locating) return 'Đang định vị…';
   switch (distance.kind) {
@@ -51,15 +51,14 @@ String distanceLine(ShopCardData shop, RouteDistance distance, LocationFix? fix,
     case RouteDistanceKind.noPosition:
       return 'Chưa xác định quãng đường';
     case RouteDistanceKind.unavailable:
-      final double? straight = shop.straightLineKm(fix);
-      return straight == null ? 'Chưa xác định quãng đường' : 'Chưa xác định quãng đường · ≈ ${straight.toStringAsFixed(1).replaceAll('.', ',')} km đường chim bay';
+      return 'Chưa xác định quãng đường';
   }
 }
 
 class ShopCard extends StatelessWidget {
   const ShopCard({super.key, required this.shop, required this.onTap, this.customerLocation, this.locating = false, this.distance = RouteDistance.noPosition, this.stale = false});
 
-  /// Only for the labelled straight-line reference when the road is unknown; never for the route number.
+  /// Kept for the shared card API; route distance never falls back to this location locally.
   final LocationFix? customerLocation;
   final RouteDistance distance;
   final bool locating;
@@ -84,29 +83,30 @@ class ShopCard extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 76),
           padding: const EdgeInsets.all(N11Space.gap3),
           decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
-          child: LayoutBuilder(builder: (context, constraints) => Row(
-            children: <Widget>[
-              SizedBox(
-                width: constraints.maxWidth >= 400 ? 96 : 88,
-                height: constraints.maxWidth >= 400 ? 96 : 88,
-                child: ShopLogoImage(key: Key('shop-logo-${shop.shopId}'), url: shop.logoUrl),
-              ),
-              const SizedBox(width: N11Space.gap3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
-                    if (shop.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(shop.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
-                    Text(rating, key: Key('shop-rating-${shop.shopId}'), style: N11Text.caption),
-                    Text(distanceText, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
-                    Padding(padding: const EdgeInsets.only(top: 6), child: N11Chip(chip.label, kind: chip.kind)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, size: 16, color: N11Colors.ink2),
-            ],
-          )),
+          child: LayoutBuilder(
+              builder: (context, constraints) => Row(
+                    children: <Widget>[
+                      SizedBox(
+                        width: constraints.maxWidth >= 400 ? 96 : 88,
+                        height: constraints.maxWidth >= 400 ? 96 : 88,
+                        child: ShopLogoImage(key: Key('shop-logo-${shop.shopId}'), url: shop.logoUrl),
+                      ),
+                      const SizedBox(width: N11Space.gap3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(shop.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, height: 1.35, fontWeight: FontWeight.w700, color: N11Colors.black)),
+                            if (shop.address.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(shop.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption)),
+                            Text(rating, key: Key('shop-rating-${shop.shopId}'), style: N11Text.caption),
+                            Text(distanceText, key: Key('shop-distance-${shop.shopId}'), style: N11Text.caption),
+                            Padding(padding: const EdgeInsets.only(top: 6), child: N11Chip(chip.label, kind: chip.kind)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, size: 16, color: N11Colors.ink2),
+                    ],
+                  )),
         ),
       ),
     );
@@ -269,9 +269,16 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     final List<Widget> out = <Widget>[];
     // GPS controls this label; it is not an interactive area selector.
     final String areaLabel = c.area == null
-        ? (c.resolvingArea || _position.loading ? 'Đang xác định khu vực…' : c.outsideCoverage ? 'Ngoài khu vực phục vụ' : 'Chưa xác định khu vực')
-        : c.manualArea ? '${c.area!.name} · tham khảo'
-        : _position.failure != null ? '${c.area!.name} · vị trí gần nhất' : c.area!.name;
+        ? (c.resolvingArea || _position.loading
+            ? 'Đang xác định khu vực…'
+            : c.outsideCoverage
+                ? 'Ngoài khu vực phục vụ'
+                : 'Chưa xác định khu vực')
+        : c.manualArea
+            ? '${c.area!.name} · tham khảo'
+            : _position.failure != null
+                ? '${c.area!.name} · vị trí gần nhất'
+                : c.area!.name;
     out.add(ConstrainedBox(
       key: const Key('home-area'),
       constraints: const BoxConstraints(minHeight: 32),
@@ -334,10 +341,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     }
     if (c.areaId == null) {
       if (!c.outsideCoverage) {
-        out.add(Text(c.resolvingArea || _position.loading
-            ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…'
-            : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
-          key: const Key('home-location-needed'), style: N11Text.lead));
+        out.add(Text(c.resolvingArea || _position.loading ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…' : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.', key: const Key('home-location-needed'), style: N11Text.lead));
       }
       // Optional recovery ONLY on real GPS/resolve failure. Never require a manual area
       // during ordinary startup, and never misrepresent a manually browsed area as GPS.
@@ -376,10 +380,9 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
   }
 
   Widget _chip(String key, String label, bool on, VoidCallback? onTap) => Padding(
-    padding: const EdgeInsets.only(right: N11Space.gap2),
-    child: CategoryChip(key: Key(key), label: label, selected: on, onSelected: onTap == null ? null : (_) => onTap()),
-  );
-
+        padding: const EdgeInsets.only(right: N11Space.gap2),
+        child: CategoryChip(key: Key(key), label: label, selected: on, onSelected: onTap == null ? null : (_) => onTap()),
+      );
 }
 
 /// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
@@ -413,8 +416,7 @@ class _FilterSheetState extends State<FilterSheet> {
                 IconButton(key: const Key('filter-close'), tooltip: 'Đóng', constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin), icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
               ]),
               const SizedBox(height: N11Space.gap2),
-              if (c.area != null)
-                Text('Khu vực: ${c.area!.name}${c.manualArea ? ' (tham khảo)' : ' (theo GPS)'}', style: N11Text.caption),
+              if (c.area != null) Text('Khu vực: ${c.area!.name}${c.manualArea ? ' (tham khảo)' : ' (theo GPS)'}', style: N11Text.caption),
               const SizedBox(height: N11Space.gap3),
               const Text('Nhóm món', style: N11Text.label),
               const SizedBox(height: N11Space.gap2),
@@ -430,7 +432,15 @@ class _FilterSheetState extends State<FilterSheet> {
               ),
               const SizedBox(height: N11Space.gap3),
               Row(children: <Widget>[
-                Expanded(child: N11Button(key: const Key('filter-reset'), label: 'Đặt lại', kind: ButtonKind.secondary, onPressed: () => setState(() { _category = null; _open = false; }))),
+                Expanded(
+                    child: N11Button(
+                        key: const Key('filter-reset'),
+                        label: 'Đặt lại',
+                        kind: ButtonKind.secondary,
+                        onPressed: () => setState(() {
+                              _category = null;
+                              _open = false;
+                            }))),
                 const SizedBox(width: N11Space.gap3),
                 Expanded(
                   flex: 2,
@@ -534,27 +544,27 @@ class _SearchScreenState extends State<SearchScreen> {
               if (mounted) unawaited(_distances.want(_search.groupedShops, _position.fix));
             });
             return Column(
-            children: <Widget>[
-              Container(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, 4, N11Space.gap2),
-                decoration: const BoxDecoration(color: N11Colors.white, border: Border(bottom: BorderSide(color: N11Colors.line))),
-                child: Row(children: <Widget>[
-                  Expanded(
-                    child: N11SearchField(
-                      fieldKey: const Key('search-field'),
-                      clearKey: const Key('search-clear'),
-                      controller: _text,
-                      autofocus: true,
-                      onChanged: _search.setTerm,
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, 4, N11Space.gap2),
+                  decoration: const BoxDecoration(color: N11Colors.white, border: Border(bottom: BorderSide(color: N11Colors.line))),
+                  child: Row(children: <Widget>[
+                    Expanded(
+                      child: N11SearchField(
+                        fieldKey: const Key('search-field'),
+                        clearKey: const Key('search-clear'),
+                        controller: _text,
+                        autofocus: true,
+                        onChanged: _search.setTerm,
+                      ),
                     ),
-                  ),
-                  TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
-                ]),
-              ),
-              _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false, outsideCoverage: widget.discovery?.outsideCoverage ?? false),
-              Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
-            ],
-          );
+                    TextButton(key: const Key('search-cancel'), style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin)), onPressed: () => Navigator.of(context).maybePop(), child: const Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black))),
+                  ]),
+                ),
+                _PositionButton(position: _position, retry: widget.retryPosition, resolving: widget.discovery?.resolvingArea ?? false, failed: widget.discovery?.areaResolutionFailed ?? false, outsideCoverage: widget.discovery?.outsideCoverage ?? false),
+                Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap8), children: _results())),
+              ],
+            );
           },
         ),
       ),
@@ -590,17 +600,22 @@ class _SearchScreenState extends State<SearchScreen> {
       return <Widget>[
         const N11StateBlock(kind: StateKind.warn, icon: Icons.search_off, title: 'Không có kết quả', text: 'Thử tên quán hoặc tên món khác.'),
         const SizedBox(height: N11Space.gap4),
-        N11Button(key: const Key('search-clear-term'), label: 'Xóa từ khóa', kind: ButtonKind.secondary, onPressed: () { _text.clear(); _search.setTerm(''); setState(() {}); }),
+        N11Button(
+            key: const Key('search-clear-term'),
+            label: 'Xóa từ khóa',
+            kind: ButtonKind.secondary,
+            onPressed: () {
+              _text.clear();
+              _search.setTerm('');
+              setState(() {});
+            }),
       ];
     }
     return <Widget>[
       if (s.stale) gap(const N11Banner(key: Key('search-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị kết quả đã tải.')),
       for (final ShopCardData shop in s.groupedShops) ...<Widget>[
-        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, stale: s.stale, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading,
-          onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload))),
-        for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId))
-          gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, stale: s.stale,
-            onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings, onReturn: s.freshness.reload))),
+        gap(ShopCard(key: Key('result-shop-${shop.shopId}'), shop: shop, stale: s.stale, customerLocation: _position.fix, distance: _distances.of(shop, _position.fix), locating: _position.loading, onTap: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload))),
+        for (final DishHit dish in s.dishes.where((DishHit d) => d.shop.shopId == shop.shopId)) gap(_DishResult(key: Key('result-dish-${dish.itemId}'), dish: dish, stale: s.stale, onTap: () => _openShop(context, widget.publicApi, shop, focusItemId: dish.itemId, ratings: widget.ratings, onReturn: s.freshness.reload))),
         gap(TextButton(key: Key('search-all-${shop.shopId}'), onPressed: () => _openShop(context, widget.publicApi, shop, ratings: widget.ratings, onReturn: s.freshness.reload), child: const Text('Xem tất cả'))),
       ],
       if (s.hasMore) gap(N11Button(key: const Key('search-more'), label: s.loadingMore ? 'Đang tải…' : 'Xem thêm', kind: ButtonKind.secondary, loading: s.loadingMore, onPressed: s.loadingMore ? null : s.loadMore)),
@@ -618,34 +633,36 @@ class _DishResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ({String label, ChipKind kind}) chip = stale ? (label: 'Chưa cập nhật', kind: ChipKind.warn) : _stateChip(dish.shop.reason);
-    final Widget? quantity = !stale && dish.shop.open && OrderRuntime.current != null
-        ? DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name,
-            itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder)
-        : null;
+    final Widget? quantity = !stale && dish.shop.open && OrderRuntime.current != null ? DishStepper(cart: OrderRuntime.current!.cart, shopId: dish.shop.shopId, shopName: dish.shop.name, itemId: dish.itemId, name: dish.name, priceVnd: dish.priceVnd, canOrder: OrderRuntime.current!.canOrder) : null;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
-      child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Padding(
-        padding: const EdgeInsets.all(N11Space.gap3),
-        child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-          final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
-          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            DishThumb(url: dish.imageUrl, size: 72),
-            const SizedBox(width: N11Space.gap3),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              Text(dish.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong),
-              const SizedBox(height: N11Space.gap1),
-              Text(formatVnd(dish.priceVnd), style: N11Text.bodyStrong),
-              if (dish.soldCount != null) Text('Đã bán ${dish.soldCount}', style: N11Text.caption),
-              Text(dish.shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
-              Padding(padding: const EdgeInsets.only(top: N11Space.gap1), child: N11Chip(chip.label, kind: chip.kind)),
-              if (quantity != null && stacked) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: quantity),
-            ])),
-            if (quantity != null && !stacked) quantity,
-            if (quantity == null) const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
-          ]);
-        }),
-      ))),
+      child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(N11Space.gap3),
+                child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+                  final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
+                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                    DishThumb(url: dish.imageUrl, size: 72),
+                    const SizedBox(width: N11Space.gap3),
+                    Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                      Text(dish.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong),
+                      const SizedBox(height: N11Space.gap1),
+                      Text(formatVnd(dish.priceVnd), style: N11Text.bodyStrong),
+                      if (dish.soldCount != null) Text('Đã bán ${dish.soldCount}', style: N11Text.caption),
+                      Text(dish.shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+                      Padding(padding: const EdgeInsets.only(top: N11Space.gap1), child: N11Chip(chip.label, kind: chip.kind)),
+                      if (quantity != null && stacked) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: quantity),
+                    ])),
+                    if (quantity != null && !stacked) quantity,
+                    if (quantity == null) const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2),
+                  ]);
+                }),
+              ))),
     );
   }
 }
@@ -661,13 +678,24 @@ class _PositionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     if (position.fix != null && !resolving && !failed && !outsideCoverage) return const SizedBox.shrink();
     final bool busy = position.loading || resolving;
-    final String label = busy ? 'Đang định vị…' : outsideCoverage ? 'Thử xác định lại khu vực' : failed ? 'Chưa xác định được khu vực. Thử lại'
-      : position.failure == LocationFailure.denied ? 'Chưa được cấp quyền vị trí. Thử lại'
-      : position.failure == LocationFailure.disabled ? 'Vị trí đang tắt. Thử lại'
-      : position.attemptedAt != null ? 'Chưa lấy được vị trí. Thử lại' : 'Đang chờ GPS. Thử lại';
+    final String label = busy
+        ? 'Đang định vị…'
+        : outsideCoverage
+            ? 'Thử xác định lại khu vực'
+            : failed
+                ? 'Chưa xác định được khu vực. Thử lại'
+                : position.failure == LocationFailure.denied
+                    ? 'Chưa được cấp quyền vị trí. Thử lại'
+                    : position.failure == LocationFailure.disabled
+                        ? 'Vị trí đang tắt. Thử lại'
+                        : position.attemptedAt != null
+                            ? 'Chưa lấy được vị trí. Thử lại'
+                            : 'Đang chờ GPS. Thử lại';
     return TextButton.icon(
-      key: const Key('discovery-locate'), onPressed: busy ? null : retry ?? position.locate,
-      icon: const Icon(Icons.my_location, size: 18), label: Text(label),
+      key: const Key('discovery-locate'),
+      onPressed: busy ? null : retry ?? position.locate,
+      icon: const Icon(Icons.my_location, size: 18),
+      label: Text(label),
     );
   }
 }

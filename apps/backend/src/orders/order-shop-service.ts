@@ -212,10 +212,11 @@ export class OrderShopService {
    * Shipper or unknown, a new call is refused. The road distance is asked of M14 outside any transaction.
    */
   async callShipper(principal: AuthPrincipal, orderId: string, input: CallInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    const route = await this.#routeOf(principal, orderId);
+    const routeResult = await this.#routeOf(principal, orderId);
     return this.#command(principal, orderId, ORDER_OPERATIONS.callShipper, key, { expected_version: input.expectedVersion, fee_payer: input.feePayer, agreed: input.agreedFee }, async (context, caller, order) => {
       this.#expect(order, input.expectedVersion, 'PREPARING');
       requireActiveShop(caller.shop);
+      if (input.agreedFee === null && routeResult.reason !== undefined) throw new AppError(routeResult.reason);
       const all = await this.deliveries.listOfOrder(context, orderId);
       if (all.some((d) => ACTIVE_STATES.includes(d.state))) {
         throw new AppError('ORDER_STATE_CONFLICT');
@@ -243,8 +244,8 @@ export class OrderShopService {
         note: order.note,
         agreedFee: input.agreedFee,
         estimatedDistanceM: order.feeEstimateDistanceM,
-        route: route?.leg,
-        routeFrom: route?.from,
+        route: routeResult.route?.leg,
+        routeFrom: routeResult.route?.from,
         requestId,
       });
       // The Order row itself did not change; its version moves so that a screen showing it reloads the new call.
@@ -263,16 +264,16 @@ export class OrderShopService {
     });
   }
 
-  async #routeOf(principal: AuthPrincipal, orderId: string): Promise<Awaited<ReturnType<DeliveryShopService['routeFor']>>> {
+  async #routeOf(principal: AuthPrincipal, orderId: string): Promise<Awaited<ReturnType<DeliveryShopService['routeForQuote']>>> {
     if (!isCanonicalUuid(orderId)) {
-      return undefined;
+      return { reason: 'ROUTE_UNAVAILABLE' };
     }
     const point = await this.transactions.withTransaction(async (context) => {
       const { shop } = await this.actors.shopReader(context, principal);
       const order = await this.orders.findOfShop(context, orderId, shop.shopId);
       return order === undefined ? undefined : { lat: order.addressLat, lng: order.addressLng };
     });
-    return point === undefined ? undefined : this.deliveryShop.routeFor(principal, point.lat, point.lng);
+    return point === undefined ? { reason: 'ROUTE_UNAVAILABLE' } : this.deliveryShop.routeForQuote(principal, point.lat, point.lng);
   }
 
   // ---- ending ----------------------------------------------------------------------------------------------------------------
