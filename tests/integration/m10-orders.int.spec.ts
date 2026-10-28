@@ -211,8 +211,8 @@ describe('M10 — food orders', () => {
     expect(preview.fee).toMatchObject({ status: 'UNAVAILABLE', distance_m: null, fee_vnd: null, reason: 'DROPOFF_PIN_MISSING' });
     const accepted = checkout(lines, { address, expected_quote: quoteConfirmation(preview.fee as Json) });
     const created = ok(await asCustomer(alice, 'POST', '/customers/me/orders', accepted), 201);
-    expect(created.money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: null });
-    expect((await shopView(String(created.order_id))).money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: null });
+    expect(created.money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' });
+    expect((await shopView(String(created.order_id))).money.fee).toMatchObject({ fee_vnd: null, distance_m: null, reason: 'DROPOFF_PIN_MISSING' });
     // A legacy retry of an Order that already committed remains idempotent; only
     // a NEW Order from a client that cannot confirm quotes is refused.
     const legacyRetry = await asCustomer(alice, 'POST', '/customers/me/orders', { ...accepted, expected_quote: undefined });

@@ -27,4 +27,9 @@ describe('M10 historical quote reason projection', () => {
       expect(moneyView(order, undefined).fee).toMatchObject({ status: 'UNAVAILABLE', fee_vnd: null, reason: null });
     }
   });
+
+  it('shows the exact unavailable reason persisted for a newly placed Order', () => {
+    expect(moneyView(historical({ feeEstimateReason: 'POLICY_NOT_CONFIGURED', addressLat: 21, addressLng: 105.82 }), undefined).fee)
+      .toMatchObject({ status: 'UNAVAILABLE', fee_vnd: null, reason: 'POLICY_NOT_CONFIGURED' });
+  });
 });

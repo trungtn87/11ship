@@ -60,9 +60,9 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
       fee_vnd: feeAmount ?? o.feeEstimateVnd,
       status: known ? 'FINAL' : o.feeEstimateVnd !== null ? 'PRICED' : 'UNAVAILABLE',
       distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM,
-      // Orders created before quote reasons were persisted have no evidence for a
-      // specific cause. Keep the message neutral instead of guessing from nulls.
-      reason: null,
+      // New Orders preserve the reason the customer confirmed. Historical Orders
+      // have NULL here, which deliberately remains neutral rather than inferred.
+      reason: known || o.feeEstimateVnd !== null ? null : o.feeEstimateReason ?? null,
       snapshot: `order:${o.orderId}:v${o.version}`,
       version: o.version,
       policy_version: null,

@@ -87,7 +87,10 @@ describe('M11 — ratings and complaints on real M10 orders', () => {
 
   async function placeAndConfirm(c: Customer): Promise<Json> {
     const lines = [{ item_id: pho.itemId, quantity: 2, unit_price_vnd: pho.price }];
-    const placed = ok(await call(c.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), shop_id: shop.shopId, lines, items_total_vnd: 2 * pho.price, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: ADDRESS }), 201);
+    const draft = { shop_id: shop.shopId, lines, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: ADDRESS };
+    const preview = ok(await call(c.token, 'POST', '/customers/me/orders/preview', { ...draft, lines: lines.map(({ item_id, quantity }) => ({ item_id, quantity })) }));
+    const fee = preview.fee as Json;
+    const placed = ok(await call(c.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), ...draft, items_total_vnd: 2 * pho.price, expected_quote: { status: fee.status, distance_m: fee.distance_m, fee_vnd: fee.fee_vnd, reason: fee.reason, policy_version: fee.policy_version, snapshot: fee.snapshot } }), 201);
     return ok(await call(shop.token, 'POST', `/shop/me/orders/${placed.order_id}/confirm`, { expected_version: placed.version }));
   }
 

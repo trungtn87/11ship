@@ -430,6 +430,7 @@ export class OrderCustomerService {
               itemsTotalVnd: total,
               feeEstimateVnd: estimate.feeVnd,
               feeEstimateDistanceM: estimate.distanceM,
+              feeEstimateReason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
             },
             items,
           );
