@@ -759,6 +759,14 @@ void main() {
         await tester.pump();
         await tapKey(tester, 'filter-apply');
         expect(find.text('Chưa có quán phù hợp'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('home-clear')),
+          180,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('home-list')),
+            matching: find.byType(Scrollable),
+          ).first,
+        );
         await tapKey(tester, 'home-clear');
         expect(find.text('Quán Đóng'), findsOneWidget);
         final DiscoveryController empty = DiscoveryController(
