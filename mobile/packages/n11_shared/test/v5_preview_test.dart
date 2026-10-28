@@ -45,7 +45,7 @@ void main() {
     expect(find.byKey(const Key('v5-tab-4')), findsOneWidget);
     await tester.tap(find.byKey(const Key('v5-online-toggle')));
     await tester.pumpAndSettle();
-    expect(find.text('Đang offline'), findsOneWidget);
+    expect(find.text('Bật nhận đơn'), findsOneWidget);
     await tester.tap(find.byKey(const Key('v5-tab-2')));
     await tester.pumpAndSettle();
     expect(find.text('Thu nhập'), findsWidgets);
