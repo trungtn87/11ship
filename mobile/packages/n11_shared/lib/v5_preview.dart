@@ -27,10 +27,14 @@ class _V5PreviewAppState extends State<V5PreviewApp> {
       Text(s, maxLines:max, overflow:TextOverflow.ellipsis,
         style: TextStyle(fontFamily:kFontFamily, package:'n11_shared', fontSize:size,
           fontWeight:weight, color:color, height:1.2));
-  Widget _logo(bool food) => Image.asset(
-    food ? 'packages/n11_shared/assets/brand/logo-11food-ui.png'
-         : 'packages/n11_shared/assets/brand/logo-11ship-ui.png',
-    width:food?150:154, height:62, fit:BoxFit.contain);
+  Widget _logo(bool food) => SizedBox(width:154,height:62,child:Stack(children:[
+    Positioned(left:0,top:12,child:Text(food?'11Food':'11Ship',
+      style:const TextStyle(fontFamily:kFontFamily,package:'n11_shared',
+        fontWeight:FontWeight.w800,fontSize:29,fontStyle:FontStyle.italic,
+        color:N11Colors.black,letterSpacing:-1.6))),
+    Positioned(left:3,top:49,child:Container(width:62,height:4,
+      decoration:BoxDecoration(color:N11Colors.yellow,borderRadius:BorderRadius.circular(8)))),
+  ]));
   Widget _header(bool food) => SizedBox(height:82,child:Padding(
     padding:const EdgeInsets.symmetric(horizontal:15),
     child:Row(children:[
