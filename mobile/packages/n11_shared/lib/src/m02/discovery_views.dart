@@ -243,7 +243,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
 
   /// The brand and the notification bell.
   Widget _header() => Row(children: <Widget>[
-        BrandLogo(brand: foodBrand),
+        const BrandLogo(brand: foodBrand, height: N11V5.logoHeight),
         const Spacer(),
         Material(
           color: N11Colors.white,
@@ -283,31 +283,48 @@ class _DiscoveryHomeState extends State<DiscoveryHome> with WidgetsBindingObserv
     ));
     out.add(_PositionButton(position: _position, resolving: c.resolvingArea, failed: c.areaResolutionFailed,
       outsideCoverage: c.outsideCoverage, retry: () => c.locate(source: _position, force: true)));
-    out.add(Row(children: <Widget>[
-      Expanded(child: _FakeField(onTap: _openSearch)),
-      const SizedBox(width: N11Space.gap2),
-      IconButton(
-        key: const Key('home-filter'),
-        tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-        constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
-        color: c.filtersActive ? N11Colors.yellowStrong : N11Colors.ink2,
-        onPressed: _openFilters,
-        icon: const Icon(Icons.tune, size: 20),
+    // V5 visual shell: preserve the real search, filters, category controllers,
+    // GPS and API data. No preview shops, mocked fees or hardcoded categories.
+    out.add(Container(
+      key: const Key('home-v5-search-panel'),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: N11Colors.yellow,
+        borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
       ),
-    ]));
-    if (c.categories.isNotEmpty) {
-      out.add(SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: <Widget>[
-          _chip('home-cat-all', 'Tất cả', c.categoryId == null, () => c.categoryId == null ? null : c.toggleCategory(c.categoryId!)),
-          for (final CategoryChoice cat in c.categories) _chip('home-cat-${cat.id}', cat.name, c.categoryId == cat.id, () => c.toggleCategory(cat.id)),
+      child: Column(children: <Widget>[
+        Row(children: <Widget>[
+          Expanded(child: _FakeField(onTap: _openSearch)),
+          const SizedBox(width: N11Space.gap2),
+          Material(
+            color: N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl),
+            child: IconButton(
+              key: const Key('home-filter'),
+              tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+              constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+              color: c.filtersActive ? N11Colors.accentOrange : N11Colors.black,
+              onPressed: _openFilters,
+              icon: const Icon(Icons.tune, size: 22),
+            ),
+          ),
         ]),
-      ));
-    }
+        if (c.categories.isNotEmpty) ...<Widget>[
+          const SizedBox(height: N11V5.categoryGap),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: <Widget>[
+              _chip('home-cat-all', 'Tất cả', c.categoryId == null, () => c.categoryId == null ? null : c.toggleCategory(c.categoryId!)),
+              for (final CategoryChoice cat in c.categories) _chip('home-cat-${cat.id}', cat.name, c.categoryId == cat.id, () => c.toggleCategory(cat.id)),
+            ]),
+          ),
+        ],
+      ]),
+    ));
     if (c.stale) {
       out.add(N11Banner(key: const Key('home-stale'), kind: BannerKind.warn, title: 'Chưa cập nhật', text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.', trailing: N11Button(key: const Key('home-reload'), label: 'Thử lại', compact: true, onPressed: c.refresh)));
     }
-    out.add(const Text('Quán gần bạn', style: N11Text.h2));
+    out.add(Text('Quán gần bạn', style: N11Text.title.copyWith(fontSize: N11V5.homeTitleSize)));
     if (c.outsideCoverage) {
       out.add(const N11InfoCard(key: Key('home-outside-coverage'), title: 'Khu vực này chưa được phục vụ', text: 'Hiện chưa thể giao hàng tới vị trí này.'));
     }
