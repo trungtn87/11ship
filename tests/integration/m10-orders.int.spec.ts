@@ -682,6 +682,7 @@ describe('M10 — food orders', () => {
     const s = await shipper();
     const prepared = await confirmed(alice);
     const order = ok(await asShop('POST', `/shop/me/orders/${String(prepared.order_id)}/payment`, { expected_version: prepared.version, paid_vnd: 20_000 }));
+    const itemMoneyBeforeCompletion = { paid_vnd: order.money.paid_vnd, items_remaining_vnd: order.money.items_remaining_vnd };
     const { did, version } = await toDelivering(s, order);
     const oid = String(order.order_id);
     expect((await customerView(alice, oid))).toMatchObject({ display_status: 'DELIVERING' });
@@ -692,7 +693,7 @@ describe('M10 — food orders', () => {
     ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
     const row = await orderRow(oid);
     expect(row).toMatchObject({ status: 'COMPLETED', end_actor: 'SYSTEM', paid_vnd: '20000' });
-    expect((await customerView(alice, oid)).money).toMatchObject({ paid_vnd: 20_000, items_remaining_vnd: 25_000 });
+    expect((await customerView(alice, oid)).money).toMatchObject(itemMoneyBeforeCompletion);
     expect(await countRows(app.pool, `SELECT 1 FROM app.order_events WHERE order_id = $1::uuid AND type = 'order.completed'`, [oid])).toBe(1);
     expect(await walletOf(app, s)).toEqual({ balance: 49_000, held: 0 });
     expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries l JOIN app.delivery_assignments a ON a.assignment_id = l.commission_assignment_id WHERE a.delivery_id = $1::uuid`, [did])).toBe(1);
