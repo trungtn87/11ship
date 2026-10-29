@@ -503,6 +503,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double? _pinLng;
   int _tipVnd = 0;
   bool _tipValid = true;
+  int? _baseFee;
+  Timer? _tipDebounce;
 
   CartController get cart => widget.runtime.cart;
   CustomerOrderSource get source => widget.runtime.customer;
@@ -526,6 +528,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    _tipDebounce?.cancel();
     _name.dispose();
     _phone.dispose();
     _note.dispose();
@@ -550,11 +553,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _pinLng = selected.longitude;
     _typedMode = true;
     if (fresh) _deliveryNote.clear();
+    _baseFee = null;
     _touch();
   }
 
   /// An address edit makes a new order attempt; an unchanged retry retains its key.
   void _touch() {
+    _tipDebounce?.cancel();
     _previewEpoch++;
     setState(() {
       _previewFresh = false;
@@ -590,7 +595,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_previewing || _attempt != _Attempt.none) return;
     final CheckoutDraft? draft = _draft();
     if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null || textError(draft.deliveryNote ?? '', 'hướng dẫn tìm đường', 200, optional: true) != null) {
-      setState(() => _preview = null);
+      setState(() {
+        _preview = null;
+        _baseFee = null;
+      });
       return;
     }
     final int epoch = _previewEpoch;
@@ -602,6 +610,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _preview = p;
         _previewFresh = true;
+        _baseFee = p.feeEstimateVnd;
         _freshness.arm(p.nextRefreshMs);
         _previewing = false;
       });
@@ -623,7 +632,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _restartStalePreview(int epoch) {
     if (!mounted || epoch == _previewEpoch) return false;
     setState(() => _previewing = false);
-    unawaited(_check());
+    if (_tipDebounce == null || !_tipDebounce!.isActive) {
+      unawaited(_check());
+    }
     return true;
   }
 
@@ -639,6 +650,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _name.text = picked.recipientName ?? '';
       _phone.text = formatVnPhone(picked.contactPhone);
       _deliveryNote.text = picked.deliveryNote ?? '';
+      _baseFee = null;
       _touch();
     }
   }
@@ -725,6 +737,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  void _onCustomTipChanged() {
+    final String value = _customTip.text.trim();
+    final int? amount = value.isEmpty ? 0 : int.tryParse(value);
+    final bool valid = amount != null &&
+        amount >= 0 &&
+        amount <= 10000000 &&
+        (_baseFee == null || amount + _baseFee! <= 10000000);
+
+    _tipDebounce?.cancel();
+    _previewEpoch++;
+    setState(() {
+      _tipValid = valid;
+      if (valid) {
+        _tipVnd = amount;
+      }
+      _previewFresh = false;
+      _clientRef = newIdempotencyKey();
+      _key = newIdempotencyKey();
+      _attempt = _Attempt.none;
+      _failure = null;
+      _changed = false;
+    });
+
+    if (valid) {
+      _tipDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        unawaited(_check());
+      });
+    }
+  }
+
   void _done(OrderView order) {
     cart.sent();
     if (!mounted) {
@@ -744,6 +787,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final int items = confirmed?.itemsVnd ?? cart.itemsVnd;
     final int? estimateFee = confirmed?.feeEstimateVnd;
     final int? expectedTotal = confirmed?.expectedTotalVnd;
+    final bool canTip = _baseFee != null;
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -818,12 +862,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: N11Space.gap2),
             Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
               for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
-                if (estimateFee != null || value == 0)
+                if (canTip || value == 0)
                 ChoiceChip(
                   key: Key('checkout-tip-$value'),
                   label: Text(label),
                   selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
-                  onSelected: estimateFee == null && value > 0 ? null : (_) {
+                  onSelected: !canTip && value > 0 ? null : (_) {
+                    _tipDebounce?.cancel();
                     _customTip.clear();
                     _tipVnd = value;
                     _tipValid = true;
@@ -837,21 +882,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               label: 'Nhập số khác',
               controller: _customTip,
               keyboard: TextInputType.number,
-              enabled: estimateFee != null,
+              enabled: canTip,
               validator: (String value) {
                 if (value.isEmpty) return null;
                 final int? amount = int.tryParse(value);
-                if (amount == null || amount < 0 || amount > 10000000 || estimateFee == null || amount + estimateFee > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
+                if (amount == null || amount < 0 || amount > 10000000 || _baseFee == null || amount + _baseFee! > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
                 return null;
               },
-              onChanged: () {
-                final String value = _customTip.text;
-                final int? amount = value.isEmpty ? 0 : int.tryParse(value);
-                _tipValid = amount != null && estimateFee != null && amount >= 0 && amount <= 10000000 && amount + estimateFee <= 10000000;
-                if (_tipValid) _tipVnd = amount!;
-                _touch();
-              },
-              hint: estimateFee == null ? 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.' : 'Số VND nguyên, tối đa theo giới hạn phí giao',
+              onChanged: _onCustomTipChanged,
+              hint: canTip ? 'Số VND nguyên, tối đa theo giới hạn phí giao' : 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.',
             ),
           ]),
         ),
