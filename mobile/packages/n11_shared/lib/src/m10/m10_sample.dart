@@ -57,6 +57,7 @@ class _Order {
   String? changeReason;
   int paid = 0;
   int? feeEstimate;
+  bool customerProposedFee = false;
   int? feeFixed;
   String feePayer = 'CUSTOMER';
   DateTime? scheduledFor;
@@ -160,7 +161,7 @@ class SampleOrderStore {
         'items_total_vnd': _items(o),
         'paid_vnd': o.paid,
         'items_remaining_vnd': _items(o) - o.paid,
-        'fee': <String, Object?>{'payer': o.feePayer, 'amount_vnd': o.feeFixed, 'estimate_vnd': o.feeEstimate, 'status': o.feeFixed != null ? 'FINAL' : (o.feeEstimate != null ? 'ESTIMATE' : 'UNKNOWN'), 'distance_m': o.feeEstimate == null ? null : 2500},
+        'fee': <String, Object?>{'payer': o.feePayer, 'amount_vnd': o.feeFixed, 'estimate_vnd': o.feeEstimate, 'status': o.feeFixed != null ? 'FINAL' : (o.feeEstimate != null ? 'ESTIMATE' : 'UNKNOWN'), 'distance_m': o.feeEstimate == null ? null : 2500, 'customer_proposed': o.customerProposedFee},
         'expected_total_vnd': o.feeFixed != null ? _items(o) + (o.feePayer == 'SHOP' ? 0 : o.feeFixed!) : (o.feeEstimate != null && o.deliveryState == null ? _items(o) + o.feeEstimate! : null),
       };
 
@@ -288,7 +289,7 @@ class SampleOrderStore {
   }
 
   /// Seeds one Order in a given state (for the screenshots and the list tests).
-  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true}) {
+  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true, int tipVnd = 0, int paidVnd = 0}) {
     final _Order o = _create(<DraftLine>[DraftLine(itemId: kSampleDishes[0].id, name: kSampleDishes[0].name, quantity: 2, priceVnd: 45000), DraftLine(itemId: kSampleDishes[2].id, name: kSampleDishes[2].name, quantity: 1, priceVnd: 5000, note: 'Ít đá')], 'seed-$_next');
     o.status = status;
     o.deliveryState = deliveryState;
@@ -297,6 +298,9 @@ class SampleOrderStore {
     o.recipientName = name;
     o.lat = pin ? 21.0 : null;
     o.lng = pin ? 105.82 : null;
+    o.feeEstimate = 10000 + tipVnd;
+    o.customerProposedFee = tipVnd > 0;
+    o.paid = paidVnd;
     if (deliveryState != null) {
       o.deliveries = 1;
       o.feeFixed = 10000;
@@ -410,7 +414,8 @@ class SampleCustomerOrders extends CustomerOrderSource {
       ..lng = draft.address.lng
       ..scheduledFor = draft.scheduledFor
       ..note = draft.note
-      ..feeEstimate = 10000 + draft.tipVnd;
+      ..feeEstimate = 10000 + draft.tipVnd
+      ..customerProposedFee = draft.tipVnd > 0;
     store._cart = <DraftLine>[];
     store._cartShop = null;
     if (store.dropNextPlaceAnswer) {

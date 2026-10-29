@@ -736,11 +736,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final CheckoutPreview? p = _preview;
-    final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
-    final bool ready = _tipValid && _previewFresh && !_previewing && p != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
-    final int items = p?.itemsVnd ?? cart.itemsVnd;
-    final int? estimateFee = p == null ? cart.feeEstimateVnd : p.feeEstimateVnd;
-    final int? expectedTotal = p == null ? (estimateFee == null ? null : items + estimateFee) : p.expectedTotalVnd;
+    // A changed address/tip invalidates every amount from the previous preview immediately.
+    final CheckoutPreview? confirmed = _previewFresh && !_previewing ? p : null;
+    final bool blocked = confirmed != null && (!confirmed.ok || confirmed.blockers.isNotEmpty);
+    final bool tipConfirmed = _tipVnd == 0 || (confirmed?.feeEstimateVnd != null && confirmed?.tipVnd == _tipVnd);
+    final bool ready = _tipValid && tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
+    final int items = confirmed?.itemsVnd ?? cart.itemsVnd;
+    final int? estimateFee = confirmed?.feeEstimateVnd;
+    final int? expectedTotal = confirmed?.expectedTotalVnd;
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -755,7 +758,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         if (_changed) N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
-        if (p != null && p.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: p.blockers.map(_blockerText).join('\n')),
+        if (confirmed != null && confirmed.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: confirmed.blockers.map(_blockerText).join('\n')),
         const Text('Người nhận', style: N11Text.h2),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
         N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
@@ -806,7 +809,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
         N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, onChanged: _touch),
         N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
-        if (estimateFee != null) N11Card(
+        N11Card(
           key: const Key('checkout-tip'),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
             const Text('Thêm tiền cảm ơn shipper · Không bắt buộc', style: N11Text.label),
@@ -815,11 +818,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: N11Space.gap2),
             Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
               for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
+                if (estimateFee != null || value == 0)
                 ChoiceChip(
                   key: Key('checkout-tip-$value'),
                   label: Text(label),
                   selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
-                  onSelected: (_) {
+                  onSelected: estimateFee == null && value > 0 ? null : (_) {
                     _customTip.clear();
                     _tipVnd = value;
                     _tipValid = true;
@@ -833,20 +837,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               label: 'Nhập số khác',
               controller: _customTip,
               keyboard: TextInputType.number,
+              enabled: estimateFee != null,
               validator: (String value) {
                 if (value.isEmpty) return null;
                 final int? amount = int.tryParse(value);
-                if (amount == null || amount < 0 || amount > 10000000 || amount + estimateFee > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
+                if (amount == null || amount < 0 || amount > 10000000 || estimateFee == null || amount + estimateFee > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
                 return null;
               },
               onChanged: () {
                 final String value = _customTip.text;
                 final int? amount = value.isEmpty ? 0 : int.tryParse(value);
-                _tipValid = amount != null && amount >= 0 && amount <= 10000000 && amount + estimateFee <= 10000000;
+                _tipValid = amount != null && estimateFee != null && amount >= 0 && amount <= 10000000 && amount + estimateFee <= 10000000;
                 if (_tipValid) _tipVnd = amount!;
                 _touch();
               },
-              hint: 'Số VND nguyên, tối đa theo giới hạn phí giao',
+              hint: estimateFee == null ? 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.' : 'Số VND nguyên, tối đa theo giới hạn phí giao',
             ),
           ]),
         ),
@@ -859,14 +864,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               KeyValueRows(<(String, String)>[
                 ('Tiền món', m10Money(items)),
                 ('Điểm giao', _draft()?.address.text ?? 'Chưa chọn'),
-                ('Quãng đường', p?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(p!.feeDistanceM!)} · đường đi'),
+                ('Quãng đường', confirmed?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(confirmed!.feeDistanceM!)} · đường đi'),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa xác định được phí giao' : m10Money(estimateFee)),
                 if (_tipVnd > 0) ('Tiền cảm ơn', m10Money(_tipVnd)),
-                if (_tipVnd > 0) ('Tổng phí giao đề xuất', m10Money(estimateFee! + _tipVnd)),
+                if (_tipVnd > 0 && estimateFee != null) ('Tổng phí giao đề xuất', m10Money(estimateFee + _tipVnd)),
                 ('Người trả phí', 'Khách trả phí'),
               ]),
-              if (expectedTotal != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)]) else ReasonNote('Chưa gồm phí giao. ${_quoteReason(p?.feeReason)}', icon: Icons.warning_amber_rounded),
-              if (p?.feeReason == 'ROUTE_UNAVAILABLE' || p?.feeReason == 'ROUTE_TIMEOUT') TextButton(key: const Key('checkout-quote-retry'), onPressed: _check, child: const Text('Thử tính lại')),
+              if (_previewing || (!_previewFresh && p != null))
+                const ReasonNote('Đang tính lại phí và tổng tiền. Báo giá trước không còn hiệu lực.', key: Key('checkout-repricing'), icon: Icons.sync)
+              else if (expectedTotal != null)
+                Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)])
+              else
+                ReasonNote('Chưa gồm phí giao. ${_quoteReason(confirmed?.feeReason)}', icon: Icons.warning_amber_rounded),
+              if (confirmed?.feeReason == 'ROUTE_UNAVAILABLE' || confirmed?.feeReason == 'ROUTE_TIMEOUT') TextButton(key: const Key('checkout-quote-retry'), onPressed: _check, child: const Text('Thử tính lại')),
               if (!_previewFresh && !_previewing) TextButton(onPressed: _check, child: const Text('Cập nhật trạng thái quán')),
               if (_previewing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: LinearProgressIndicator()),
               const SizedBox(height: N11Space.gap2),

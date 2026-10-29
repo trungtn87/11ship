@@ -192,7 +192,7 @@ describe('M10 — food orders', () => {
     expect(preview).toMatchObject({ items_total_vnd: 455_000, tip_vnd: 20_000, fee: { fee_vnd: 10_000 }, expected_total_vnd: 485_000 });
 
     const placed = await place(alice, lines, { tip_vnd: 20_000 });
-    expect(placed.money).toMatchObject({ items_total_vnd: 455_000, fee: { estimate_vnd: 30_000 }, expected_total_vnd: 485_000 });
+    expect(placed.money).toMatchObject({ items_total_vnd: 455_000, fee: { estimate_vnd: 30_000, customer_proposed: true }, expected_total_vnd: 485_000 });
     const confirmedOrder = await confirm(placed);
     expect(refused(await callShipper(confirmedOrder, { fee_payer: 'SHOP' }))).toEqual({ status: 400, code: 'ORDER_INPUT_INVALID' });
 
@@ -203,6 +203,11 @@ describe('M10 — food orders', () => {
     expect((replay.delivery as Json).delivery_id).toBe(deliveryId);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.deliveries WHERE order_id = $1::uuid', [confirmedOrder.order_id])).toBe(1);
     expect((await app.pool.query('SELECT fee_mode, proposed_fee_vnd::text FROM app.shipping_fee_agreements WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ fee_mode: 'AGREED', proposed_fee_vnd: '30000' });
+
+    const withoutTip = await place(alice, [line(bun, 1)]);
+    expect(withoutTip.money.fee).toMatchObject({ estimate_vnd: 10_000, customer_proposed: false });
+    const shopPaid = ok(await callShipper(await confirm(withoutTip), { fee_payer: 'SHOP' }), 201);
+    expect(shopPaid.money.fee).toMatchObject({ payer: 'SHOP', amount_vnd: 10_000, customer_proposed: false });
   });
 
   it('rechecks the accepted quote when placing and refuses a stale distance/fee snapshot', async () => {
@@ -515,6 +520,9 @@ describe('M10 — food orders', () => {
     expect(order).toMatchObject({ note: 'Giao giờ trưa', delivery_note: 'Cổng xanh, gọi bảo vệ' });
     const paid = ok(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: order.version, paid_vnd: 50_000 }));
     expect(paid.money).toMatchObject({ paid_vnd: 50_000, items_remaining_vnd: 45_000 });
+    expect(refused(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: paid.version, paid_vnd: 40_000 }, undefined, otherShop))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
+    expect((await asCustomer(alice, 'POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: paid.version, paid_vnd: 40_000 })).status).toBeGreaterThanOrEqual(400);
+    expect((await app.pool.query(`SELECT actor_type, details->>'paid_vnd' AS paid_vnd, details->>'previous_paid_vnd' AS previous_paid_vnd FROM app.order_events WHERE order_id = $1::uuid AND type = 'order.payment_recorded'`, [order.order_id])).rows).toEqual([{ actor_type: 'SHOP', paid_vnd: '50000', previous_paid_vnd: '0' }]);
     expect(refused(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: paid.version, paid_vnd: 999_999 }))).toEqual({ status: 400, code: 'ORDER_PAYMENT_INVALID' });
     const called = ok(await callShipper(paid, { fee_payer: 'SHOP' }), 201);
     const [delivery] = await deliveryOf(String(order.order_id));
@@ -672,7 +680,8 @@ describe('M10 — food orders', () => {
 
   it('Case "completed chỉ một lần": the Shipper completes, the Order completes once, the commission is taken once, and a repeat or a late event changes nothing', async () => {
     const s = await shipper();
-    const order = await confirmed(alice);
+    const prepared = await confirmed(alice);
+    const order = ok(await asShop('POST', `/shop/me/orders/${String(prepared.order_id)}/payment`, { expected_version: prepared.version, paid_vnd: 20_000 }));
     const { did, version } = await toDelivering(s, order);
     const oid = String(order.order_id);
     expect((await customerView(alice, oid))).toMatchObject({ display_status: 'DELIVERING' });
@@ -682,7 +691,8 @@ describe('M10 — food orders', () => {
     expect(refused(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, randomUUID())).status).toBe(404);
     ok(await asShipper(s, 'POST', `/driver/deliveries/${did}/complete`, { expected_version: version }, key));
     const row = await orderRow(oid);
-    expect(row).toMatchObject({ status: 'COMPLETED', end_actor: 'SYSTEM' });
+    expect(row).toMatchObject({ status: 'COMPLETED', end_actor: 'SYSTEM', paid_vnd: '20000' });
+    expect((await customerView(alice, oid)).money).toMatchObject({ paid_vnd: 20_000, items_remaining_vnd: 25_000 });
     expect(await countRows(app.pool, `SELECT 1 FROM app.order_events WHERE order_id = $1::uuid AND type = 'order.completed'`, [oid])).toBe(1);
     expect(await walletOf(app, s)).toEqual({ balance: 49_000, held: 0 });
     expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries l JOIN app.delivery_assignments a ON a.assignment_id = l.commission_assignment_id WHERE a.delivery_id = $1::uuid`, [did])).toBe(1);

@@ -220,6 +220,7 @@ class OrderMoneyBody extends StatelessWidget {
           const Expanded(child: Text('Còn phải thanh toán tiền món', style: N11Text.bodyStrong)),
           Text(m10Money(money.remainingVnd), key: const Key('m10-items-remaining'), style: N11Text.title.copyWith(fontSize: 18)),
         ]),
+        const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Số đã thanh toán là tiền món do quán ghi nhận thủ công; không phải xác nhận thanh toán ngân hàng và không tự thay đổi khi giao xong.', icon: Icons.receipt_long_outlined)),
         if (money.expectedTotalVnd != null) ...<Widget>[
           const Divider(height: N11Space.gap4, color: N11Colors.line),
           Row(children: <Widget>[Expanded(child: Text(fee.isEstimate ? 'Tổng dự kiến' : 'Tổng cộng', style: N11Text.bodyStrong)), Text(m10Money(money.expectedTotalVnd!), key: const Key('m10-expected-total'), style: N11Text.title.copyWith(fontSize: 18))]),

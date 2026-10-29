@@ -40,3 +40,11 @@ describe('M10 item payment projection', () => {
     expect(moneyView(historical({ itemsTotalVnd: 45_000, paidVnd: 50_000 }), undefined)).toMatchObject({ paid_vnd: 50_000, items_remaining_vnd: 0 });
   });
 });
+
+describe('M10 customer fee proposal projection', () => {
+  it('marks only a fee that the customer raised above the canonical quote', () => {
+    expect(moneyView(historical({ feeQuoteVnd: 10_000, feeEstimateVnd: 30_000 }), undefined).fee).toMatchObject({ customer_proposed: true, estimate_vnd: 30_000 });
+    expect(moneyView(historical({ feeQuoteVnd: 10_000, feeEstimateVnd: 10_000 }), undefined).fee).toMatchObject({ customer_proposed: false, estimate_vnd: 10_000 });
+    expect(moneyView(historical({ feeEstimateVnd: 10_000 }), undefined).fee).toMatchObject({ customer_proposed: false });
+  });
+});

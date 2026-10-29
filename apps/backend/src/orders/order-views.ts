@@ -46,6 +46,7 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
   const payer = fee?.feePayer ?? 'CUSTOMER';
   const status = fee !== undefined ? (known ? 'FINAL' : 'UNKNOWN') : o.feeEstimateVnd !== null ? 'ESTIMATE' : 'UNKNOWN';
   const dishesRemaining = Math.max(0, o.itemsTotalVnd - o.paidVnd);
+  const customerProposed = o.feeQuoteVnd !== null && o.feeQuoteVnd !== undefined && o.feeEstimateVnd !== null && o.feeEstimateVnd > o.feeQuoteVnd;
   // The expected total is given only when nobody has to guess the fee: a final fee paid by the customer adds to it, a fee paid by the shop does not.
   const expectedTotal = o.status === 'PENDING_CONFIRMATION' ? (o.feeEstimateVnd !== null ? o.itemsTotalVnd + o.feeEstimateVnd : null) : payer === 'SHOP' ? o.itemsTotalVnd : known ? o.itemsTotalVnd + (feeAmount as number) : null;
   return {
@@ -67,6 +68,7 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
       version: o.version,
       policy_version: null,
       quoted_at: iso(o.createdAtMs),
+      customer_proposed: customerProposed,
       legacy_status: status,
     },
     expected_total_vnd: expectedTotal,

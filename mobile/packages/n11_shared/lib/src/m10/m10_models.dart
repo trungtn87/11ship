@@ -134,11 +134,11 @@ class OrderLine {
 }
 
 class OrderFee {
-  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
+  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.customerProposed = false, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
 
   factory OrderFee.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']), reason: _strOrNull(m['reason']), snapshot: _strOrNull(m['snapshot']), policyVersion: _intOrNull(m['policy_version']), quotedAt: _timeOrNull(m['quoted_at']));
+    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']), customerProposed: m['customer_proposed'] == true, reason: _strOrNull(m['reason']), snapshot: _strOrNull(m['snapshot']), policyVersion: _intOrNull(m['policy_version']), quotedAt: _timeOrNull(m['quoted_at']));
   }
 
   final String payer;
@@ -152,6 +152,8 @@ class OrderFee {
   /// FINAL / ESTIMATE / UNKNOWN.
   final String status;
   final int? distanceM;
+  /// The customer deliberately raised the checkout fee (currently the voluntary tip flow).
+  final bool customerProposed;
   final String? reason;
   final String? snapshot;
   final int? policyVersion;

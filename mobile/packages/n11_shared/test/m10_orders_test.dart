@@ -179,6 +179,55 @@ void main() {
       await unmount(tester);
     });
 
+    testWidgets('tip invalidates stale totals, survives an unavailable address safely, and can be removed before a fresh quote', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _DeferredPreviews customer = _DeferredPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final List<DeliveryAddress> addresses = <DeliveryAddress>[
+        const DeliveryAddress(id: 'pinned', label: AddressLabel.home, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Có ghim', deliveryNote: null, latitude: 21, longitude: 105.82, isDeliveryDefault: true, version: 1),
+        const DeliveryAddress(id: 'no-gps', label: AddressLabel.other, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Không có GPS', deliveryNote: null, version: 1),
+      ];
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(addresses));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+
+      customer.pending.single.complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'initial'));
+      await settle(tester);
+      expect(find.text('55.000đ'), findsWidgets);
+      await tap(tester, key('checkout-tip-20000'));
+      expect(key('checkout-repricing'), findsOneWidget);
+      expect(find.text('55.000đ'), findsNothing, reason: 'the no-tip total becomes stale immediately');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-no-gps'));
+      await tap(tester, key('picker-confirm'));
+      customer.pending[1].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'stale-tip', tip: 20000));
+      await settle(tester);
+      customer.pending[2].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, tipVnd: 20000, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps'));
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Chưa xác định được phí giao'), findsOneWidget);
+      expect(find.text('Tổng phí giao đề xuất'), findsNothing);
+      expect(key('checkout-tip'), findsOneWidget);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tap(tester, key('checkout-tip-0'));
+      customer.pending[3].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps-no-tip'));
+      await settle(tester);
+      expect(find.text('Tiền cảm ơn'), findsNothing);
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-pinned'));
+      await tap(tester, key('picker-confirm'));
+      customer.pending[4].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'recovered'));
+      await settle(tester);
+      expect(find.text('55.000đ'), findsWidgets);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+      await unmount(tester);
+    });
+
     testWidgets('choosing A then B replaces all recipient data; one-order edits do not change the address book', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final _CapturedOrders customer = _CapturedOrders(store);
@@ -694,6 +743,22 @@ void main() {
       await unmount(tester);
     });
 
+    testWidgets('a customer-raised fee is shown to the shop and can only be called with the customer as payer', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String id = store.seed(status: 'PREPARING', tipVnd: 20000);
+      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
+      await tap(tester, key('order-call'));
+      expect(find.textContaining('tổng phí giao 30.000đ'), findsOneWidget);
+      expect(key('call-payer-customer-proposed'), findsOneWidget);
+      expect(key('call-payer-shop'), findsNothing);
+      await tap(tester, key('call-payer-customer-proposed'));
+      final OrderView called = await runtime.shop.get(id);
+      expect(called.money.fee.payer, 'CUSTOMER');
+      expect(called.money.fee.amountVnd, 30000);
+      await unmount(tester);
+    });
+
     testWidgets('when the table cannot price the order the shop is asked for a fee instead of getting a call no Shipper can take', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore()..feeNeedsProposal = true;
       final OrderRuntime runtime = runtimeOf(store);
@@ -914,7 +979,7 @@ class _CapturedOrders extends SampleCustomerOrders {
   }
 }
 
-CheckoutPreview pricedPreview({required int fee, required int distance, required String snapshot}) => CheckoutPreview(ok: true, blockers: const <String>[], lines: const <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: fee, feeDistanceM: distance, expectedTotalVnd: 45000 + fee, feeStatus: 'PRICED', quoteSnapshot: snapshot, policyVersion: 1);
+CheckoutPreview pricedPreview({required int fee, required int distance, required String snapshot, int tip = 0}) => CheckoutPreview(ok: true, blockers: const <String>[], lines: const <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: fee, feeDistanceM: distance, expectedTotalVnd: 45000 + fee + tip, tipVnd: tip, feeStatus: 'PRICED', quoteSnapshot: snapshot, policyVersion: 1);
 
 class _DeferredPreviews extends _CapturedOrders {
   _DeferredPreviews(super.store);
