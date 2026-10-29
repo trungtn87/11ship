@@ -50,13 +50,11 @@ def wait(label, scroll=False):
         position = find(label)
         if position is not None:
             return position
-        # At 360x640, V4 activity/income can lie below the first viewport.
-        # Start in the Flutter content just ABOVE the tab bar (y=528), below
-        # the native home map (ends at y=497 in the offline failure capture).
-        # A swipe starting on the native map pans it instead of scrolling home.
+        # Start in the Flutter activity/header area, not on the native map: a
+        # swipe that begins on MapLibre pans it instead of scrolling home.
         # The expected label must still become visible; never waive the check.
         if scroll and attempt in (2, 5, 8):
-            adb('shell', 'input', 'swipe', '180', '520', '180', '240', '350')
+            adb('shell', 'input', 'swipe', '195', '300', '195', '120', '350')
         time.sleep(1)
     raise AssertionError(f'Android UI did not expose: {label}')
 
@@ -80,7 +78,8 @@ try:
     adb('shell', 'settings', 'put', 'secure', 'location_mode', '0')
     # Set density first so Launcher never sees 360px at the Pixel's old high DPI.
     adb('shell', 'wm', 'density', '160')
-    adb('shell', 'wm', 'size', '360x640')
+    # Owner V5 evidence viewport.
+    adb('shell', 'wm', 'size', '390x844')
     time.sleep(1)
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')

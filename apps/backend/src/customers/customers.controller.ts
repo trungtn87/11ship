@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { CustomersService } from './customers-service';
-import { parseAddressCreateBody, parseAddressId, parseAddressUpdateBody, rejectBodyAndQuery, rejectQuery } from './customers-validation';
+import { parseAddressCreateBody, parseAddressDefaultKind, parseAddressId, parseAddressUpdateBody, rejectBodyAndQuery, rejectQuery } from './customers-validation';
+import { parsePlaceQuery, PlaceSearchService } from './place-search';
 
 type Key = string | string[] | undefined;
 type StatusSetter = { status(code: number): unknown };
@@ -19,7 +20,7 @@ type StatusSetter = { status(code: number): unknown };
 @Controller('customers/me')
 @UseGuards(SessionAuthGuard)
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(private readonly customers: CustomersService, private readonly places: PlaceSearchService) {}
 
   @Get()
   async me(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
@@ -87,6 +88,43 @@ export class CustomersController {
     rejectBodyAndQuery(request, query);
     const id = parseAddressId(addressId);
     const outcome = await this.customers.setDefaultAddress(this.#principal(request), id, key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  @Get('places')
+  async searchPlaces(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'query')) throw new BadRequestException();
+    // The guard has authenticated the user; no GPS permission or device location is read here.
+    return { data: { places: await this.places.search(parsePlaceQuery(query.query)) } };
+  }
+
+  @Put('addresses/:addressId/defaults/:kind')
+  async setDefaultKind(
+    @Param('addressId') addressId: string,
+    @Param('kind') kindValue: string,
+    @Query() query: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    rejectBodyAndQuery(request, query);
+    const outcome = await this.customers.setAddressDefault(
+      this.#principal(request), parseAddressId(addressId), parseAddressDefaultKind(kindValue), true, key, requestIdOf(request),
+    );
+    return { data: outcome.payload };
+  }
+
+  @Delete('addresses/:addressId/defaults/:kind')
+  async clearDefaultKind(
+    @Param('addressId') addressId: string,
+    @Param('kind') kindValue: string,
+    @Query() query: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    rejectBodyAndQuery(request, query);
+    const outcome = await this.customers.setAddressDefault(
+      this.#principal(request), parseAddressId(addressId), parseAddressDefaultKind(kindValue), false, key, requestIdOf(request),
+    );
     return { data: outcome.payload };
   }
 

@@ -71,9 +71,16 @@ class AddressBookController extends ChangeNotifier {
 
   DeliveryAddress? get defaultAddress {
     for (final DeliveryAddress a in _addresses) {
-      if (a.isDefault) {
+      if (a.isDeliveryDefault) {
         return a;
       }
+    }
+    return null;
+  }
+
+  DeliveryAddress? defaultFor(AddressDefaultKind kind) {
+    for (final DeliveryAddress a in _addresses) {
+      if (kind == AddressDefaultKind.pickup ? a.isPickupDefault : a.isDeliveryDefault) return a;
     }
     return null;
   }
@@ -145,7 +152,7 @@ class AddressBookController extends ChangeNotifier {
 
   List<DeliveryAddress> _ordered(List<DeliveryAddress> list) {
     final List<DeliveryAddress> sorted = <DeliveryAddress>[...list];
-    final int d = sorted.indexWhere((DeliveryAddress a) => a.isDefault);
+    final int d = sorted.indexWhere((DeliveryAddress a) => a.isDeliveryDefault || a.isPickupDefault);
     if (d > 0) {
       sorted.insert(0, sorted.removeAt(d));
     }
@@ -173,8 +180,8 @@ class AddressBookController extends ChangeNotifier {
         await api.delete(id, key: k);
       });
 
-  Future<bool> setDefault(String id) => _start(AddressOpKind.setDefault, newIdempotencyKey(), (String k) async {
-        await api.setDefault(id, key: k);
+  Future<bool> setDefault(String id, [AddressDefaultKind kind = AddressDefaultKind.delivery, bool enabled = true]) => _start(AddressOpKind.setDefault, newIdempotencyKey(), (String k) async {
+        await api.setDefaultKind(id, kind, enabled, key: k);
       });
 
   /// Sends the unknown-outcome operation again with the SAME key: the server replays or finishes it, never doubles it.

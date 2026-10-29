@@ -42,12 +42,15 @@ export interface OrderRow {
   readonly addressLng: number | null;
   readonly sourceAddressId: string | null;
   readonly note: string | null;
+  readonly deliveryNote: string | null;
   readonly scheduledForMs: number | null;
   readonly itemsOriginalTotalVnd: number;
   readonly itemsTotalVnd: number;
   readonly paidVnd: number;
   readonly feeEstimateVnd: number | null;
   readonly feeEstimateDistanceM: number | null;
+  /** Null for priced quotes and historical Orders that predate persisted quote reasons. */
+  readonly feeEstimateReason?: string | null;
   readonly editedAtMs: number | null;
   readonly changeReason: string | null;
   readonly confirmedAtMs: number | null;
@@ -79,12 +82,14 @@ interface RawOrder {
   address_lng: number | null;
   source_address_id: string | null;
   note: string | null;
+  delivery_note: string | null;
   scheduled_ms: string | null;
   items_original_total_vnd: string;
   items_total_vnd: string;
   paid_vnd: string;
   fee_estimate_vnd: string | null;
   fee_estimate_distance_m: number | null;
+  fee_estimate_reason: string | null;
   edited_ms: string | null;
   change_reason: string | null;
   confirmed_ms: string | null;
@@ -99,9 +104,11 @@ interface RawOrder {
 
 export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, app.shop_display_order(o.order_id) AS display_code, o.client_ref::text AS client_ref, o.customer_user_id::text AS customer_user_id, o.shop_id::text AS shop_id,
   o.status, o.version::text AS version, o.shop_name, o.shop_phone, o.shop_address_text, o.recipient_name, o.recipient_phone, o.address_text, o.address_lat, o.address_lng,
-  o.source_address_id::text AS source_address_id, o.note, ${ms('o.scheduled_for', 'scheduled_ms')},
+  o.source_address_id::text AS source_address_id, o.note, o.delivery_note, ${ms('o.scheduled_for', 'scheduled_ms')},
   o.items_original_total_vnd::text AS items_original_total_vnd, o.items_total_vnd::text AS items_total_vnd, o.paid_vnd::text AS paid_vnd,
-  o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m, ${ms('o.edited_at', 'edited_ms')}, o.change_reason,
+  o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m,
+  (SELECT e.details->>'quote_reason' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type = 'order.placed' ORDER BY e.at, e.event_id LIMIT 1) AS fee_estimate_reason,
+  ${ms('o.edited_at', 'edited_ms')}, o.change_reason,
   ${ms('o.confirmed_at', 'confirmed_ms')}, ${ms('o.ready_at', 'ready_ms')}, ${ms('o.schedule_reminded_at', 'reminded_ms')}, ${ms('o.ended_at', 'ended_ms')}, o.end_actor, o.end_reason,
   ${ms('o.created_at', 'created_ms')}, ${ms('o.updated_at', 'updated_ms')}`;
 
@@ -125,12 +132,14 @@ function toOrder(row: RawOrder): OrderRow {
     addressLng: row.address_lng,
     sourceAddressId: row.source_address_id,
     note: row.note,
+    deliveryNote: row.delivery_note,
     scheduledForMs: safeOrNull(row.scheduled_ms),
     itemsOriginalTotalVnd: safe(row.items_original_total_vnd),
     itemsTotalVnd: safe(row.items_total_vnd),
     paidVnd: safe(row.paid_vnd),
     feeEstimateVnd: safeOrNull(row.fee_estimate_vnd),
     feeEstimateDistanceM: row.fee_estimate_distance_m,
+    feeEstimateReason: row.fee_estimate_reason,
     editedAtMs: safeOrNull(row.edited_ms),
     changeReason: row.change_reason,
     confirmedAtMs: safeOrNull(row.confirmed_ms),
@@ -167,6 +176,7 @@ export interface NewOrder {
   readonly addressLng: number | null;
   readonly sourceAddressId: string | null;
   readonly note: string | null;
+  readonly deliveryNote: string | null;
   readonly scheduledForMs: number | null;
   readonly itemsTotalVnd: number;
   readonly feeEstimateVnd: number | null;
@@ -344,16 +354,16 @@ export class OrderRepository {
     const inserted = await context.query(
       `INSERT INTO app.orders (
          order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
-         address_lat, address_lng, source_address_id, note, scheduled_for, items_original_total_vnd, items_total_vnd, paid_vnd, fee_estimate_vnd, fee_estimate_distance_m,
+          address_lat, address_lng, source_address_id, note, delivery_note, scheduled_for, items_original_total_vnd, items_total_vnd, paid_vnd, fee_estimate_vnd, fee_estimate_distance_m,
          version, created_at, updated_at)
        SELECT $1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, 'PENDING_CONFIRMATION', $6, $7, $8, $9, $10, $11,
-              $12::float8, $13::float8, $14::uuid, $15, $16::timestamptz, $17::bigint, $17::bigint, 0, $18::bigint, $19::int,
+               $12::float8, $13::float8, $14::uuid, $15, $16, $17::timestamptz, $18::bigint, $18::bigint, 0, $19::bigint, $20::int,
               1, clock.t, clock.t
          FROM (SELECT ${CLOCK} AS t) AS clock
        ON CONFLICT DO NOTHING`,
       [
         o.orderId, o.code, o.clientRef, o.customerUserId, o.shopId, o.shopName, o.shopPhone, o.shopAddressText, o.recipientName, o.recipientPhone, o.addressText,
-        o.addressLat, o.addressLng, o.sourceAddressId, o.note, msToTs(o.scheduledForMs), o.itemsTotalVnd, o.feeEstimateVnd, o.feeEstimateDistanceM,
+        o.addressLat, o.addressLng, o.sourceAddressId, o.note, o.deliveryNote, msToTs(o.scheduledForMs), o.itemsTotalVnd, o.feeEstimateVnd, o.feeEstimateDistanceM,
       ],
     );
     if (inserted.rowCount !== 1) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:n11_m14_map/n11_m14_map.dart';
 
@@ -5,6 +7,8 @@ import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../tokens.dart';
 import '../widgets/form_feedback.dart';
+import '../account/models.dart';
+import 'place_search.dart';
 
 /// Address text and its explicitly selected point are returned together, only on Save.
 class AddressLocation {
@@ -75,6 +79,7 @@ class AddressLocationPicker extends StatefulWidget {
     this.maxLength = 300,
     this.requirePoint = true,
     this.mapBuilder,
+    this.searchApi,
   });
   final AddressLocation initial;
   final LocationProvider? location;
@@ -84,6 +89,7 @@ class AddressLocationPicker extends StatefulWidget {
   /// Shop drafts may still be saved before a point has been chosen.
   final bool requirePoint;
   final AddressMapBuilder? mapBuilder;
+  final PlaceSearchApi? searchApi;
 
   @override
   State<AddressLocationPicker> createState() => _AddressLocationPickerState();
@@ -98,6 +104,15 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   bool _currentPosition = false;
   int _pointRevision = 0;
   String? _error;
+  Timer? _debounce;
+  List<PlaceSearchResult> _results = const <PlaceSearchResult>[];
+  bool _searching = false;
+  bool _searchFailed = false;
+  bool _searched = false;
+  int _searchRevision = 0;
+  bool _programmaticText = false;
+  bool _pinTextUnconfirmed = false;
+  late String _pinText;
   bool _submitted = false;
   final FocusNode _addressFocus = FocusNode();
   String? get _addressError => _submitted
@@ -111,6 +126,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     _text = TextEditingController(text: widget.initial.text);
     _lat = widget.initial.latitude;
     _lng = widget.initial.longitude;
+    _pinText = widget.initial.text.trim();
     _sessionEpoch = widget.session?.sessionEpoch;
     widget.session?.addListener(_sessionChanged);
   }
@@ -134,10 +150,49 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   @override
   void dispose() {
     widget.session?.removeListener(_sessionChanged);
+    _debounce?.cancel();
     _addressFocus.dispose();
     _text.dispose();
     super.dispose();
   }
+
+  PlaceSearchApi? get _searchApi => widget.searchApi ?? (widget.session == null ? null : HttpPlaceSearchApi(widget.session!));
+
+  void _textChanged(String value) {
+    if (_programmaticText) return;
+    if (_lat != null && _lng != null && value.trim() != _pinText) _pinTextUnconfirmed = true;
+    _debounce?.cancel();
+    final String query = value.trim();
+    final int revision = ++_searchRevision;
+    if (query.runes.length < 2 || _searchApi == null) {
+      setState(() { _results = const <PlaceSearchResult>[]; _searching = false; _searchFailed = false; _searched = false; });
+      return;
+    }
+    setState(() { _searching = true; _searchFailed = false; _searched = false; });
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final List<PlaceSearchResult> results = await _searchApi!.search(query);
+        if (!mounted || revision != _searchRevision || _text.text.trim() != query) return;
+        setState(() { _results = results; _searching = false; _searched = true; });
+      } on AuthFailure {
+        if (!mounted || revision != _searchRevision) return;
+        setState(() { _results = const <PlaceSearchResult>[]; _searching = false; _searchFailed = true; _searched = true; });
+      }
+    });
+  }
+
+  void _selectResult(PlaceSearchResult result) {
+    _programmaticText = true;
+    _text.text = result.address;
+    _programmaticText = false;
+    _pinText = result.address;
+    _pinTextUnconfirmed = false;
+    _searchRevision++;
+    _results = const <PlaceSearchResult>[];
+    _pick(result.latitude, result.longitude);
+  }
+
+  void _clearPin() => setState(() { _lat = null; _lng = null; _accuracyMeters = null; _currentPosition = false; _pinTextUnconfirmed = false; _pointRevision++; });
 
   void _pick(double lat, double lng) {
     if (!mounted ||
@@ -154,6 +209,8 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       _accuracyMeters = null;
       _lat = lat;
       _lng = lng;
+      _pinText = _text.text.trim();
+      _pinTextUnconfirmed = false;
       _error = null;
     });
   }
@@ -214,6 +271,10 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       setState(() => _error = 'Chọn vị trí trên bản đồ trước khi lưu.');
       return;
     }
+    if (_pinTextUnconfirmed && _lat != null && _lng != null) {
+      setState(() => _error = 'Địa chỉ chữ đã đổi. Hãy xác nhận giữ ghim cũ hoặc bỏ/chọn lại ghim.');
+      return;
+    }
     Navigator.of(
       context,
     ).pop(AddressLocation(_text.text.trim(), latitude: _lat, longitude: _lng));
@@ -230,7 +291,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             key: const Key('location-address-text'),
             controller: _text,
             focusNode: _addressFocus,
-            onChanged: (_) => setState(() {}),
+            onChanged: (String value) { setState(() {}); _textChanged(value); },
             maxLength: widget.maxLength,
             minLines: 1,
             maxLines: 3,
@@ -258,6 +319,62 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
               ),
             ),
           ),
+          if (_searching) const LinearProgressIndicator(key: Key('place-search-loading')),
+          if (_searchFailed)
+            ListTile(
+              key: const Key('place-search-error'),
+              title: const Text('Không tìm được lúc này. Bạn vẫn có thể nhập địa chỉ hoặc chọn ghim thủ công.'),
+              trailing: TextButton(onPressed: () => _textChanged(_text.text), child: const Text('Thử lại')),
+            ),
+          if (_searched && !_searching && !_searchFailed && _text.text.trim().runes.length >= 2 && _results.isEmpty)
+            const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Không có kết quả phù hợp. Có thể tiếp tục nhập địa chỉ chữ.')),
+          for (final PlaceSearchResult result in _results)
+            ListTile(
+              key: Key('place-result-${result.id}'),
+              leading: const Icon(Icons.place_outlined),
+              title: Text(result.name),
+              subtitle: Text(result.address),
+              trailing: result.inCaoBang ? const Text('Cao Bằng') : null,
+              onTap: () => _selectResult(result),
+            ),
+          if (_pinTextUnconfirmed && _lat != null && _lng != null)
+            Card(
+              key: const Key('pin-text-confirmation'),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                  const Text('Bạn đã đổi địa chỉ chữ. Ghim cũ có còn đúng không?'),
+                  Wrap(spacing: 8, children: <Widget>[
+                    TextButton(onPressed: () => setState(() { _pinText = _text.text.trim(); _pinTextUnconfirmed = false; }), child: const Text('Giữ ghim – chỉ bổ sung mô tả')),
+                    TextButton(onPressed: _clearPin, child: const Text('Bỏ ghim – đổi địa điểm')),
+                  ]),
+                ]),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Text(
+            _lat == null
+                ? 'Chạm bản đồ để ghim đúng vị trí.'
+                : _currentPosition
+                ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Kiểm tra và chỉnh ghim nếu cần.'
+                : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.',
+          ),
+          if (_lat != null && _lng != null)
+            Align(alignment: Alignment.centerLeft, child: TextButton(key: const Key('location-clear-pin'), onPressed: _clearPin, child: const Text('Bỏ ghim'))),
+          if (_locating)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Đang lấy vị trí qua GPS và mạng…'),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                _error!,
+                key: const Key('location-picker-error'),
+                style: const TextStyle(color: N11Colors.error),
+              ),
+            ),
           const SizedBox(height: 12),
           SizedBox(
             height: 320,
@@ -313,28 +430,6 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            _lat == null
-                ? 'Chạm bản đồ để ghim đúng vị trí.'
-                : _currentPosition
-                ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Kiểm tra và chỉnh ghim nếu cần.'
-                : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.',
-          ),
-          if (_locating)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('Đang lấy vị trí qua GPS và mạng…'),
-            ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                _error!,
-                key: const Key('location-picker-error'),
-                style: const TextStyle(color: N11Colors.error),
-              ),
-            ),
           // #194: a pinned point is fixed; moving around never changes it, and nothing here shares the person's position.
           const Padding(
             padding: EdgeInsets.only(top: 6),

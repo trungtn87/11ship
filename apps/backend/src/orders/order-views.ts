@@ -53,7 +53,22 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
     items_total_vnd: o.itemsTotalVnd,
     paid_vnd: o.paidVnd,
     items_remaining_vnd: dishesRemaining,
-    fee: { payer, amount_vnd: feeAmount, estimate_vnd: o.feeEstimateVnd, status, distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM },
+    fee: {
+      payer,
+      amount_vnd: feeAmount,
+      estimate_vnd: o.feeEstimateVnd,
+      fee_vnd: feeAmount ?? o.feeEstimateVnd,
+      status: known ? 'FINAL' : o.feeEstimateVnd !== null ? 'PRICED' : 'UNAVAILABLE',
+      distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM,
+      // New Orders preserve the reason the customer confirmed. Historical Orders
+      // have NULL here, which deliberately remains neutral rather than inferred.
+      reason: known || o.feeEstimateVnd !== null ? null : o.feeEstimateReason ?? null,
+      snapshot: `order:${o.orderId}:v${o.version}`,
+      version: o.version,
+      policy_version: null,
+      quoted_at: iso(o.createdAtMs),
+      legacy_status: status,
+    },
     expected_total_vnd: expectedTotal,
   };
 }
@@ -79,6 +94,7 @@ export class OrderViews {
       shop: { shop_id: o.shopId, name: o.shopName, phone: o.shopPhone, address_text: o.shopAddressText },
       recipient: { name: o.recipientName, phone: o.recipientPhone, address_text: o.addressText, lat: o.addressLat, lng: o.addressLng },
       note: o.note,
+      delivery_note: o.deliveryNote,
       scheduled_for: iso(o.scheduledForMs),
       items: items.map(itemView),
       money: moneyView(o, latest),

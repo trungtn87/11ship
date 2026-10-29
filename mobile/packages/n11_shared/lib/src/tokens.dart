@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-// Design System v4 (Owner approved 2026-10-26). Keep the existing public token
-// names so both apps and in-flight feature PRs share one theme. Original logos
-// retain their approved artwork. No network font or new font payload is needed.
+// Design System V5 — production UI (2026-10-28).
+// Retain existing public token names for both apps and all in-flight PRs.
+// Brand art stays in BrandLogo assets; no backend or business logic is changed.
 
 abstract final class N11Colors {
   // Brand
@@ -12,6 +12,10 @@ abstract final class N11Colors {
   static const Color yellowStrong = Color(0xFF805600);
   static const Color yellowSoft = Color(0xFFFFF5C2);
   static const Color yellowFaint = Color(0xFFFFF9E0);
+  // V5 visual accents. These are semantic tokens, never delivery fee/status data.
+  static const Color accentOrange = Color(0xFFED6A00);
+  static const Color homeBannerStart = Color(0xFFFFF3B0);
+  static const Color homeBannerEnd = Color(0xFFFFD84D);
   static const Color black = Color(0xFF191919);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);
@@ -58,11 +62,36 @@ abstract final class N11Space {
 
 const double kControlHeight = 48;
 const double kTapMin = 48;
+// Existing application-wide geometry stays stable. V5 home geometry is scoped
+// below so applying the new discovery/home treatment cannot silently reshape
+// every form, dialog and operational screen in both apps.
 const double kRadiusControl = 12;
 const double kRadiusCard = 16;
 const double kRadiusPill = 999;
 
 const String kFontFamily = 'PlusJakartaSans';
+
+/// Shared, centrally editable V5 presentation values for *live* Flutter apps.
+/// These do not enable mock data or replace screen-specific layout widgets.
+abstract final class N11V5 {
+  static const double logoHeight = 54;
+  static const double inputRadius = 16;
+  static const double cardRadius = 17;
+  static const double searchPanelRadius = 25;
+  static const double categoryGap = 12;
+  static const double categoryTileWidth = 92;
+  static const double categoryTileMinHeight = 72;
+  static const double shopImageSize = 88;
+  static const double navIndicatorHeight = 35;
+  static const double navIndicatorWidth = 54;
+  static const double shipMapRadius = 18;
+  static const double shipMapMinHeight = 180;
+  static const double shipMapMaxHeight = 440;
+  static const double homeTitleSize = 22;
+  static const List<BoxShadow> cardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x13000000), blurRadius: 12, offset: Offset(0, 3)),
+  ];
+}
 
 abstract final class N11Text {
   static const TextStyle body = TextStyle(
@@ -159,7 +188,10 @@ abstract final class N11Text {
 }
 
 ThemeData buildN11Theme() {
-  final ColorScheme base = ColorScheme.fromSeed(seedColor: N11Colors.yellow, brightness: Brightness.light);
+  final ColorScheme base = ColorScheme.fromSeed(
+    seedColor: N11Colors.yellow,
+    brightness: Brightness.light,
+  );
   final ColorScheme scheme = base.copyWith(
     primary: N11Colors.yellow,
     onPrimary: N11Colors.black,
@@ -209,7 +241,9 @@ ThemeData buildN11Theme() {
         foregroundColor: N11Colors.black,
         minimumSize: const Size(kTapMin, kControlHeight),
         side: const BorderSide(color: N11Colors.lineStrong),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadiusControl),
+        ),
         textStyle: N11Text.label,
       ),
     ),
@@ -217,7 +251,9 @@ ThemeData buildN11Theme() {
       style: TextButton.styleFrom(
         foregroundColor: N11Colors.black,
         minimumSize: const Size(kTapMin, kControlHeight),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadiusControl),
+        ),
         textStyle: N11Text.label,
       ),
     ),
@@ -253,7 +289,9 @@ ThemeData buildN11Theme() {
       surfaceTintColor: Colors.transparent,
       elevation: 1,
       shadowColor: const Color(0x14191919),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusCard)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadiusCard),
+      ),
       margin: EdgeInsets.zero,
     ),
     dialogTheme: DialogThemeData(
@@ -261,12 +299,16 @@ ThemeData buildN11Theme() {
       surfaceTintColor: Colors.transparent,
       titleTextStyle: N11Text.barTitle,
       contentTextStyle: N11Text.body,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusCard)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadiusCard),
+      ),
     ),
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: N11Colors.white,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusCard))),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusCard)),
+      ),
     ),
     scaffoldBackgroundColor: N11Colors.bg,
     dividerColor: N11Colors.line,
@@ -286,13 +328,23 @@ ButtonStyle _buttonStyle() =>
       disabledForegroundColor: N11Colors.disabledInk,
       minimumSize: const Size(kTapMin, kControlHeight),
       elevation: 0,
-      padding: const EdgeInsets.symmetric(horizontal: N11Space.gap4, vertical: N11Space.gap3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
+      padding: const EdgeInsets.symmetric(
+        horizontal: N11Space.gap4,
+        vertical: N11Space.gap3,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadiusControl),
+      ),
       textStyle: N11Text.label,
     ).copyWith(
-      overlayColor: WidgetStateProperty.resolveWith<Color?>((Set<WidgetState> states) {
+      overlayColor: WidgetStateProperty.resolveWith<Color?>((
+        Set<WidgetState> states,
+      ) {
         if (states.contains(WidgetState.pressed)) return N11Colors.yellowHover;
-        if (states.contains(WidgetState.focused) || states.contains(WidgetState.hovered)) return N11Colors.yellowSoft;
+        if (states.contains(WidgetState.focused) ||
+            states.contains(WidgetState.hovered)) {
+          return N11Colors.yellowSoft;
+        }
         return null;
       }),
     );

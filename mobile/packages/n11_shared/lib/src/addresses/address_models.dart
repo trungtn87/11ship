@@ -27,25 +27,31 @@ class DeliveryAddress {
   const DeliveryAddress({
     required this.id,
     required this.label,
+    this.displayName,
     required this.recipientName,
     required this.contactPhone,
     required this.addressText,
     required this.deliveryNote,
-    required this.isDefault,
+    this.isPickupDefault = false,
+    bool? isDeliveryDefault,
+    bool? isDefault,
     required this.version,
     this.latitude,
     this.longitude,
-  });
+  }) : isDeliveryDefault = isDeliveryDefault ?? isDefault ?? false;
 
   final String id;
   final AddressLabel label;
+  final String? displayName;
   final String? recipientName;
 
   /// E.164 as stored (+84…).
   final String contactPhone;
   final String addressText;
   final String? deliveryNote;
-  final bool isDefault;
+  final bool isPickupDefault;
+  final bool isDeliveryDefault;
+  bool get isDefault => isDeliveryDefault;
   final int version;
   final double? latitude;
   final double? longitude;
@@ -58,14 +64,16 @@ String formatVnPhone(String e164) => e164.startsWith('+84') ? '0${e164.substring
 
 /// Address text and the point chosen by the person. Legacy text-only addresses remain readable.
 class AddressInput {
-  const AddressInput({required this.label, required this.recipientName, required this.phone, required this.addressText, required this.note, required this.makeDefault, this.latitude, this.longitude});
+  const AddressInput({required this.label, this.displayName = '', required this.recipientName, required this.phone, required this.addressText, required this.note, this.pickupDefault = false, bool? deliveryDefault, bool? makeDefault, this.latitude, this.longitude}) : deliveryDefault = deliveryDefault ?? makeDefault ?? false;
 
   final AddressLabel label;
+  final String displayName;
   final String recipientName;
   final String phone;
   final String addressText;
   final String note;
-  final bool makeDefault;
+  final bool pickupDefault;
+  final bool deliveryDefault;
   final double? latitude;
   final double? longitude;
 }
@@ -82,6 +90,13 @@ abstract class AddressApi {
   Future<String?> delete(String id, {required String key});
 
   Future<void> setDefault(String id, {required String key});
+
+  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled, {required String key}) {
+    if (kind == AddressDefaultKind.delivery && enabled) return setDefault(id, key: key);
+    throw UnsupportedError('This address API does not support independent defaults');
+  }
 }
+
+enum AddressDefaultKind { pickup, delivery }
 
 typedef AddressFailure = AuthFailure;

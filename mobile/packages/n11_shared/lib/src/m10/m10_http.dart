@@ -70,6 +70,7 @@ Map<String, Object?> _draftBody(CheckoutDraft d, {required bool withPrice}) => <
         for (final DraftLine l in d.lines) <String, Object?>{'item_id': l.itemId, 'quantity': l.quantity, if (withPrice) 'unit_price_vnd': l.priceVnd, if (l.note != null) 'note': l.note},
       ],
       if (d.note != null) 'note': d.note,
+      if (d.deliveryNote != null) 'delivery_note': d.deliveryNote,
       'recipient_name': d.recipientName,
       'recipient_phone': d.recipientPhone,
       'address': d.address.toJson(),
@@ -98,7 +99,9 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   @override
   Future<CartView?> saveCart({required String shopId, required List<DraftLine> lines, String? note}) async => _cart(await _call(session, 'PUT', '/v1/customers/me/cart', body: <String, Object?>{
         'shop_id': shopId,
-        'lines': <Map<String, Object?>>[for (final DraftLine l in lines) <String, Object?>{'item_id': l.itemId, 'quantity': l.quantity, if (l.note != null) 'note': l.note}],
+        'lines': <Map<String, Object?>>[
+          for (final DraftLine l in lines) <String, Object?>{'item_id': l.itemId, 'quantity': l.quantity, if (l.note != null) 'note': l.note}
+        ],
         if (note != null) 'note': note,
       }));
 
@@ -111,8 +114,7 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   Future<CheckoutPreview> preview(CheckoutDraft draft) async => _parse<CheckoutPreview>(await _call(session, 'POST', '/v1/customers/me/orders/preview', body: _draftBody(draft, withPrice: false)), CheckoutPreview.fromJson);
 
   @override
-  Future<OrderView> place(CheckoutDraft draft, {required String clientRef, required String key}) async =>
-      _order(await _call(session, 'POST', '/v1/customers/me/orders', body: <String, Object?>{..._draftBody(draft, withPrice: true), 'client_ref': clientRef, 'items_total_vnd': draft.itemsVnd}, key: key, ok: const <int>{200, 201}));
+  Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders', body: <String, Object?>{..._draftBody(draft, withPrice: true), 'client_ref': clientRef, 'items_total_vnd': draft.itemsVnd, 'expected_quote': preview.expectedQuoteJson}, key: key, ok: const <int>{200, 201}));
 
   @override
   Future<OrderView?> lookup(String clientRef) async {
@@ -136,16 +138,13 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   Future<OrderView> get(String id) async => _order(await _call(session, 'GET', '/v1/customers/me/orders/$id'));
 
   @override
-  Future<OrderView> cancel(String id, {String? reason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel', body: <String, Object?>{'expected_version': expectedVersion, if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim()}, key: key));
+  Future<OrderView> cancel(String id, {String? reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel', body: <String, Object?>{'expected_version': expectedVersion, if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim()}, key: key));
 
   @override
-  Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel-after-pickup', body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason.trim()}, key: key));
+  Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/cancel-after-pickup', body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason.trim()}, key: key));
 
   @override
-  Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async =>
-      _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/delivery/fee', body: <String, Object?>{'decision': accept ? 'ACCEPT' : 'REJECT', 'expected_version': deliveryVersion}, key: key));
+  Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/delivery/fee', body: <String, Object?>{'decision': accept ? 'ACCEPT' : 'REJECT', 'expected_version': deliveryVersion}, key: key));
 
   @override
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key}) async {
@@ -174,8 +173,7 @@ class HttpShopOrderSource extends ShopOrderSource {
   String _path(String id, [String tail = '']) => '/v1/shop/me/orders/$id$tail';
 
   @override
-  Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to}) =>
-      listPage(filter: filter, query: query, from: from, to: to);
+  Future<OrderList> list({required String filter, String query = '', DateTime? from, DateTime? to}) => listPage(filter: filter, query: query, from: from, to: to);
 
   @override
   Future<OrderList> listPage({required String filter, String query = '', DateTime? from, DateTime? to, int offset = 0}) async {
@@ -191,28 +189,27 @@ class HttpShopOrderSource extends ShopOrderSource {
   Future<OrderView> get(String id) async => _order(await _call(session, 'GET', _path(id)));
 
   @override
-  Future<OrderView> edit(String id, {required List<LineEdit> changes, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/edit'), body: <String, Object?>{'expected_version': expectedVersion, 'changes': <Object?>[for (final LineEdit c in changes) c.toJson()]}, key: key));
+  Future<OrderView> edit(String id, {required List<LineEdit> changes, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/edit'),
+      body: <String, Object?>{
+        'expected_version': expectedVersion,
+        'changes': <Object?>[for (final LineEdit c in changes) c.toJson()]
+      },
+      key: key));
 
   @override
-  Future<OrderView> confirm(String id, {String? changeReason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/confirm'), body: <String, Object?>{'expected_version': expectedVersion, if (changeReason != null && changeReason.trim().isNotEmpty) 'change_reason': changeReason.trim()}, key: key));
+  Future<OrderView> confirm(String id, {String? changeReason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/confirm'), body: <String, Object?>{'expected_version': expectedVersion, if (changeReason != null && changeReason.trim().isNotEmpty) 'change_reason': changeReason.trim()}, key: key));
 
   @override
-  Future<OrderView> reject(String id, {required String reason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/reject'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
+  Future<OrderView> reject(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/reject'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
 
   @override
-  Future<OrderView> callShipper(String id, {required String feePayer, AgreedFeeProposal? agreedFee, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/call-shipper'), body: <String, Object?>{'expected_version': expectedVersion, 'fee_payer': feePayer, if (agreedFee != null) 'agreed_fee': agreedFee.toJson()}, key: key, ok: const <int>{200, 201}));
+  Future<OrderView> callShipper(String id, {required String feePayer, AgreedFeeProposal? agreedFee, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/call-shipper'), body: <String, Object?>{'expected_version': expectedVersion, 'fee_payer': feePayer, if (agreedFee != null) 'agreed_fee': agreedFee.toJson()}, key: key, ok: const <int>{200, 201}));
 
   @override
-  Future<OrderView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/cancel'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
+  Future<OrderView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/cancel'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
 
   @override
-  Future<OrderView> closeNotCompleted(String id, {required String reason, required int expectedVersion, required String key}) async =>
-      _order(await _call(session, 'POST', _path(id, '/close-not-completed'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
+  Future<OrderView> closeNotCompleted(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/close-not-completed'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
 
   @override
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key}) async {
@@ -244,6 +241,5 @@ class HttpOrderChatApi extends OrderChatApi {
   }
 
   @override
-  Future<ChatSent> send(ChatRoomRef room, {required String body, required String key}) async =>
-      _parse<ChatSent>(await _call(session, 'POST', pathOf(room), body: <String, Object?>{'body': body}, key: key, ok: const <int>{200, 201}), ChatSent.fromJson);
+  Future<ChatSent> send(ChatRoomRef room, {required String body, required String key}) async => _parse<ChatSent>(await _call(session, 'POST', pathOf(room), body: <String, Object?>{'body': body}, key: key, ok: const <int>{200, 201}), ChatSent.fromJson);
 }
