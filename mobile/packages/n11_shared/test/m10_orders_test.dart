@@ -148,6 +148,28 @@ void main() {
       return (runtime, store);
     }
 
+    Future<(OrderRuntime, SampleOrderStore, AddressBookController)> readyPinnedCheckout(WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
+      const DeliveryAddress pinned = DeliveryAddress(
+        id: 'tip-address',
+        label: AddressLabel.home,
+        recipientName: 'Nguyễn An',
+        contactPhone: '+84912345678',
+        addressText: '12 Phố Huế',
+        deliveryNote: null,
+        latitude: 21,
+        longitude: 105.82,
+        isDeliveryDefault: true,
+        version: 1,
+      );
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(const <DeliveryAddress>[pinned]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      await settle(tester);
+      return (runtime, store, book);
+    }
+
     Future<void> fill(WidgetTester tester) async {
       await tester.enterText(key('checkout-name'), 'Nguyễn An');
       await tester.enterText(key('checkout-phone'), '0912345678');
@@ -639,6 +661,132 @@ void main() {
       await tap(tester, key('checkout-lookup'));
       expect(store.orderCount, 1);
       expect(key('order-sent'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 1: lost answer enters UNKNOWN, locks draft edits (name, note, custom tip, chips, address), preserves clientRef/key, prevents second order, and lookup finds original order', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      store.dropNextPlaceAnswer = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(key('order-sent'), findsNothing);
+      expect(store.orderCount, 1);
+      final String? originalClientRef = store.lastOrderClientRef;
+      final String? originalId = store.lastOrderId;
+
+      // Verify fields are locked
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-phone')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-delivery-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isFalse);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-0')).onSelected, isNull);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-10000')).onSelected, isNull);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Attempt edits: enterText or taps must not change clientRef or reset UNKNOWN
+      await tester.enterText(key('checkout-name'), 'Attacker Name');
+      await tester.enterText(key('checkout-note'), 'Attacker Note');
+      await tester.enterText(key('checkout-tip-custom'), '50000');
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(key('checkout-unknown'), findsOneWidget, reason: 'edits must not clear UNKNOWN state');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull, reason: 'cannot send second order');
+      expect(store.orderCount, 1);
+
+      // Lookup returns the exact original Order
+      await tap(tester, key('checkout-lookup'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1);
+      expect(store.lastOrderClientRef, originalClientRef);
+      expect(store.lastOrderId, originalId);
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 2: in-flight POST locks draft fields, prevents concurrent orders and payload changes', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      final Completer<void> gate = Completer<void>();
+      store.pendingPlaceCompleter = gate;
+
+      await tap(tester, key('checkout-send'));
+      await tester.pump();
+
+      // Request is pending
+      expect(tester.widget<N11Button>(key('checkout-send')).loading, isTrue);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isFalse);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-0')).onSelected, isNull);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-5000')).onSelected, isNull);
+
+      // Try tapping send again or editing text
+      await tester.enterText(key('checkout-name'), 'Concurrent Edit');
+      await tester.enterText(key('checkout-tip-custom'), '25000');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(store.placeAttempts, 1);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.placeAttempts, 1);
+      expect(store.orderCount, 1);
+      expect(store.lastOrderRecipientName, 'Nguyễn An', reason: 'concurrent edit ignored by snapshot');
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 3: retry from UNKNOWN reuses original identifiers and payload without inflating fee or tip', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      // Select 10k tip before sending
+      await tap(tester, key('checkout-tip-10000'));
+      await settle(tester);
+      expect(find.text('10.000đ'), findsWidgets);
+
+      store.dropNextPlaceAnswer = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(store.orderCount, 1);
+      final String? firstId = store.lastOrderId;
+      final String? firstClientRef = store.lastOrderClientRef;
+
+      // Resend
+      await tap(tester, key('checkout-resend'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1, reason: 'retry must not create duplicate order');
+      expect(store.lastOrderId, firstId);
+      expect(store.lastOrderClientRef, firstClientRef);
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 4: lookup confirms not found -> safe reset to edit/resend; lookup offline glitch -> preserves UNKNOWN', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      // Case 4a: Order never reached server
+      store.failNextPlaceOffline = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(store.orderCount, 0);
+
+      // Case 4b: Lookup fails with network glitch -> preserves UNKNOWN
+      store.failNextLookupOffline = true;
+      await tap(tester, key('checkout-lookup'));
+      expect(key('checkout-unknown'), findsOneWidget, reason: 'network failure during lookup keeps UNKNOWN');
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+
+      // Case 4c: Network ok, lookup confirms not found on server -> safe reset
+      await tap(tester, key('checkout-lookup'));
+      await settle(tester);
+      expect(key('checkout-unknown'), findsNothing, reason: 'confirmed not found clears unknown');
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isTrue, reason: 'fields unlocked for editing');
+
+      // Now place order normally
+      await tap(tester, key('checkout-send'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1);
       await unmount(tester);
     });
 

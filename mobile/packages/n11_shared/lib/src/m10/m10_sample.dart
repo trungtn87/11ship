@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../m07/m07_source.dart';
@@ -95,7 +96,19 @@ class SampleOrderStore {
 
   /// The drop-off point the newest Order was sent with (null = no pin), for assertions in tests.
   (double?, double?) get lastPin => _orders.isEmpty ? (null, null) : (_orders.last.lat, _orders.last.lng);
+  String? get lastOrderId => _orders.isEmpty ? null : _orders.last.id;
+  String? get lastOrderClientRef => _orders.isEmpty ? null : _orders.last.clientRef;
+  String? get lastOrderRecipientName => _orders.isEmpty ? null : _orders.last.recipientName;
   int placeAttempts = 0;
+
+  /// A test can pause `place` before completing to verify behavior while POST is pending.
+  Completer<void>? pendingPlaceCompleter;
+
+  /// A test can make the next `place` fail offline BEFORE creating the Order on the server.
+  bool failNextPlaceOffline = false;
+
+  /// A test can make the next `lookup` fail offline to verify behavior when lookup cannot reach server.
+  bool failNextLookupOffline = false;
 
   /// A test can make the NEXT `place` lose its answer after the server stored the Order.
   bool dropNextPlaceAnswer = false;
@@ -395,6 +408,13 @@ class SampleCustomerOrders extends CustomerOrderSource {
   @override
   Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) async {
     store.placeAttempts += 1;
+    if (store.pendingPlaceCompleter != null) {
+      await store.pendingPlaceCompleter!.future;
+    }
+    if (store.failNextPlaceOffline) {
+      store.failNextPlaceOffline = false;
+      throw const M07Failure(M07FailureKind.offline);
+    }
     for (final _Order existing in store._orders) {
       if (existing.clientRef == clientRef) {
         return OrderView.fromJson(store._viewJson(existing, shop: false));
@@ -427,6 +447,10 @@ class SampleCustomerOrders extends CustomerOrderSource {
 
   @override
   Future<OrderView?> lookup(String clientRef) async {
+    if (store.failNextLookupOffline) {
+      store.failNextLookupOffline = false;
+      throw const M07Failure(M07FailureKind.offline);
+    }
     for (final _Order o in store._orders) {
       if (o.clientRef == clientRef) {
         return OrderView.fromJson(store._viewJson(o, shop: false));
