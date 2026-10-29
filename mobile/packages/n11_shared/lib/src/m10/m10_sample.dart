@@ -385,7 +385,7 @@ class SampleCustomerOrders extends CustomerOrderSource {
     final int items = lines.fold(0, (int s, PreviewLine l) => s + (l.priceVnd ?? 0) * l.quantity);
     const int fee = 10000;
     final bool priced = draft.address.hasPin;
-    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: priced ? fee : null, feeDistanceM: priced ? 2500 : null, expectedTotalVnd: priced ? items + fee : null, feeStatus: priced ? 'PRICED' : 'UNAVAILABLE', feeReason: priced ? null : 'DROPOFF_PIN_MISSING', quoteSnapshot: priced ? 'sample-pinned' : 'sample-no-pin');
+    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: priced ? fee : null, feeDistanceM: priced ? 2500 : null, expectedTotalVnd: priced ? items + fee + draft.tipVnd : null, tipVnd: draft.tipVnd, feeStatus: priced ? 'PRICED' : 'UNAVAILABLE', feeReason: priced ? null : 'DROPOFF_PIN_MISSING', quoteSnapshot: priced ? 'sample-pinned' : 'sample-no-pin');
   }
 
   @override
@@ -410,7 +410,7 @@ class SampleCustomerOrders extends CustomerOrderSource {
       ..lng = draft.address.lng
       ..scheduledFor = draft.scheduledFor
       ..note = draft.note
-      ..feeEstimate = 10000;
+      ..feeEstimate = 10000 + draft.tipVnd;
     store._cart = <DraftLine>[];
     store._cartShop = null;
     if (store.dropNextPlaceAnswer) {

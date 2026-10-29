@@ -481,6 +481,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _note = TextEditingController();
   final TextEditingController _deliveryNote = TextEditingController();
   final TextEditingController _typed = TextEditingController();
+  final TextEditingController _customTip = TextEditingController();
   DraftAddress? _address;
   bool _typedMode = false;
   DateTime? _scheduled;
@@ -500,6 +501,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
+  int _tipVnd = 0;
+  bool _tipValid = true;
 
   CartController get cart => widget.runtime.cart;
   CustomerOrderSource get source => widget.runtime.customer;
@@ -528,6 +531,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _note.dispose();
     _deliveryNote.dispose();
     _typed.dispose();
+    _customTip.dispose();
     _freshness.dispose();
     super.dispose();
   }
@@ -578,6 +582,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       recipientPhone: _phone.text.trim(),
       address: address,
       scheduledFor: _scheduled,
+      tipVnd: _tipVnd,
     );
   }
 
@@ -732,7 +737,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final CheckoutPreview? p = _preview;
     final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
-    final bool ready = _previewFresh && !_previewing && p != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
+    final bool ready = _tipValid && _previewFresh && !_previewing && p != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
     final int items = p?.itemsVnd ?? cart.itemsVnd;
     final int? estimateFee = p == null ? cart.feeEstimateVnd : p.feeEstimateVnd;
     final int? expectedTotal = p == null ? (estimateFee == null ? null : items + estimateFee) : p.expectedTotalVnd;
@@ -801,6 +806,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
         N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, onChanged: _touch),
         N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
+        if (estimateFee != null) N11Card(
+          key: const Key('checkout-tip'),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text('Thêm tiền cảm ơn shipper · Không bắt buộc', style: N11Text.label),
+            const SizedBox(height: 4),
+            const Text('Hoàn toàn tự nguyện, ví dụ khi thời tiết xấu. Khoản này không cam kết giao nhanh hay ưu tiên.', style: N11Text.caption),
+            const SizedBox(height: N11Space.gap2),
+            Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
+              for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
+                ChoiceChip(
+                  key: Key('checkout-tip-$value'),
+                  label: Text(label),
+                  selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
+                  onSelected: (_) {
+                    _customTip.clear();
+                    _tipVnd = value;
+                    _tipValid = true;
+                    _touch();
+                  },
+                ),
+            ]),
+            const SizedBox(height: N11Space.gap2),
+            N11Field(
+              fieldKey: const Key('checkout-tip-custom'),
+              label: 'Nhập số khác',
+              controller: _customTip,
+              keyboard: TextInputType.number,
+              validator: (String value) {
+                if (value.isEmpty) return null;
+                final int? amount = int.tryParse(value);
+                if (amount == null || amount < 0 || amount > 10000000 || amount + estimateFee > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
+                return null;
+              },
+              onChanged: () {
+                final String value = _customTip.text;
+                final int? amount = value.isEmpty ? 0 : int.tryParse(value);
+                _tipValid = amount != null && amount >= 0 && amount <= 10000000 && amount + estimateFee <= 10000000;
+                if (_tipValid) _tipVnd = amount!;
+                _touch();
+              },
+              hint: 'Số VND nguyên, tối đa theo giới hạn phí giao',
+            ),
+          ]),
+        ),
         N11Card(
           key: const Key('checkout-summary'),
           child: Column(
@@ -812,6 +861,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ('Điểm giao', _draft()?.address.text ?? 'Chưa chọn'),
                 ('Quãng đường', p?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(p!.feeDistanceM!)} · đường đi'),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa xác định được phí giao' : m10Money(estimateFee)),
+                if (_tipVnd > 0) ('Tiền cảm ơn', m10Money(_tipVnd)),
+                if (_tipVnd > 0) ('Tổng phí giao đề xuất', m10Money(estimateFee! + _tipVnd)),
                 ('Người trả phí', 'Khách trả phí'),
               ]),
               if (expectedTotal != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)]) else ReasonNote('Chưa gồm phí giao. ${_quoteReason(p?.feeReason)}', icon: Icons.warning_amber_rounded),

@@ -174,7 +174,8 @@ export class DeliveryViews {
 
   /** The shop's full view of one of its deliveries. `detail` adds the timeline. */
   async forShop(context: TransactionContext, d: DeliveryRow, nowMs: number, detail: boolean): Promise<JsonObject> {
-    const assignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const assignment = activeAssignment ?? ((d.state === 'completed' || d.state === 'failed') ? await this.deliveries.findExecutingAssignment(context, d.deliveryId) : undefined);
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     let assignmentView: JsonObject | null = null;
@@ -183,14 +184,15 @@ export class DeliveryViews {
       const shipper = await this.shipperOf(context, assignment.driverId);
       assignmentView = {
         assignment_id: assignment.assignmentId,
-        shipper: { name: shipper?.driver.fullName ?? '—', phone: shipper?.phone ?? null, plate_number: shipper?.driver.plateNumber ?? null },
+        // An ended assignment identifies the rated Shipper but does not restore contact/tracking privacy.
+        shipper: { name: shipper?.driver.fullName ?? '—', phone: activeAssignment === undefined ? null : shipper?.phone ?? null, plate_number: activeAssignment === undefined ? null : shipper?.driver.plateNumber ?? null },
         accepted_at: iso(assignment.acceptedAtMs),
         picked_up_at: iso(assignment.pickedUpAtMs),
         destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
       };
       // Tracking is readable only while this shipper HOLDS the delivery (an active assignment of a running delivery).
       // A DIRECT call has no map point to deliver to and is followed by its STATUS only, never by the Shipper's route (Owner decision 2026-10-23).
-      if (RUNNING_STATES.includes(d.state) && d.source === 'ORDER') {
+      if (activeAssignment !== undefined && RUNNING_STATES.includes(d.state) && d.source === 'ORDER') {
         location = await this.#location(context, assignment.driverId);
       }
     }

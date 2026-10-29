@@ -185,6 +185,26 @@ describe('M10 — food orders', () => {
     expect(bad.lines[0]).toMatchObject({ issue: 'ITEM_UNAVAILABLE' });
   });
 
+  it('#205: voluntary tip becomes one server-validated agreed delivery fee and retries never add it twice', async () => {
+    const lines = [line(pho, 10), line(tea, 1)]; // 455,000đ
+    const previewBody = { shop_id: shop.shopId, lines: lines.map((l) => ({ item_id: l.item_id, quantity: l.quantity, ...(l.note === undefined ? {} : { note: l.note }) })), recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS, tip_vnd: 20_000 };
+    const preview = ok(await asCustomer(alice, 'POST', '/customers/me/orders/preview', previewBody));
+    expect(preview).toMatchObject({ items_total_vnd: 455_000, tip_vnd: 20_000, fee: { fee_vnd: 10_000 }, expected_total_vnd: 485_000 });
+
+    const placed = await place(alice, lines, { tip_vnd: 20_000 });
+    expect(placed.money).toMatchObject({ items_total_vnd: 455_000, fee: { estimate_vnd: 30_000 }, expected_total_vnd: 485_000 });
+    const confirmedOrder = await confirm(placed);
+    expect(refused(await callShipper(confirmedOrder, { fee_payer: 'SHOP' }))).toEqual({ status: 400, code: 'ORDER_INPUT_INVALID' });
+
+    const key = randomUUID();
+    const called = ok(await callShipper(confirmedOrder, { fee_payer: 'CUSTOMER' }, key), 201);
+    const replay = ok(await callShipper(confirmedOrder, { fee_payer: 'CUSTOMER' }, key), 201);
+    const deliveryId = String((called.delivery as Json).delivery_id);
+    expect((replay.delivery as Json).delivery_id).toBe(deliveryId);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.deliveries WHERE order_id = $1::uuid', [confirmedOrder.order_id])).toBe(1);
+    expect((await app.pool.query('SELECT fee_mode, proposed_fee_vnd::text FROM app.shipping_fee_agreements WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ fee_mode: 'AGREED', proposed_fee_vnd: '30000' });
+  });
+
   it('rechecks the accepted quote when placing and refuses a stale distance/fee snapshot', async () => {
     const lines = [line(pho, 1)];
     const draft = { shop_id: shop.shopId, lines: [{ item_id: pho.itemId, quantity: 1 }], recipient_name: 'An', recipient_phone: '0912345678', address: ADDRESS };

@@ -157,6 +157,28 @@ void main() {
       await settle(tester);
     }
 
+    testWidgets('voluntary tip updates the proposed delivery fee and total without changing item money', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000, by: 10);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: tea.id, name: tea.name, priceVnd: 5000);
+      const DeliveryAddress pinned = DeliveryAddress(id: 'tip-address', label: AddressLabel.home, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: '12 Phố Huế', deliveryNote: null, latitude: 21, longitude: 105.82, isDeliveryDefault: true, version: 1);
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(const <DeliveryAddress>[pinned]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      expect(key('checkout-tip'), findsOneWidget);
+      await tap(tester, key('checkout-tip-20000'));
+      expect(find.text('Tiền món'), findsOneWidget);
+      expect(find.text('455.000đ'), findsOneWidget);
+      expect(find.text('Tiền cảm ơn'), findsOneWidget);
+      expect(find.text('20.000đ'), findsWidgets);
+      expect(find.text('Tổng phí giao đề xuất'), findsOneWidget);
+      expect(find.text('30.000đ'), findsOneWidget);
+      expect(find.text('485.000đ'), findsWidgets);
+      await unmount(tester);
+    });
+
     testWidgets('choosing A then B replaces all recipient data; one-order edits do not change the address book', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final _CapturedOrders customer = _CapturedOrders(store);
@@ -653,7 +675,7 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('there is no "Món đã sẵn sàng" step: "Gọi shipper" is the one action after confirming, and no payment is recorded in the app', (WidgetTester tester) async {
+    testWidgets('there is no "Món đã sẵn sàng" step: "Gọi shipper" is the action after confirming and recorded item payment is shown read-only', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed(status: 'PREPARING');
@@ -662,8 +684,8 @@ void main() {
       expect(containing('Món đã sẵn sàng'), findsNothing);
       expect(key('order-payment'), findsNothing);
       expect(containing('Ghi nhận đã thanh toán'), findsNothing);
-      expect(containing('Đã thanh toán'), findsNothing);
-      expect(containing('Còn phải thu'), findsNothing);
+      expect(containing('Đã thanh toán tiền món'), findsOneWidget);
+      expect(containing('Còn phải thanh toán tiền món'), findsOneWidget);
       expect(key('order-call'), findsOneWidget);
       await tap(tester, key('order-call'));
       expect(containing('sẵn sàng để shipper đến lấy'), findsOneWidget);
@@ -833,6 +855,24 @@ void main() {
       expect(DisplayStatus.cancelledByShop.label, 'Đã hủy');
       expect(DisplayStatus.rejected.label, 'Quán từ chối');
     });
+  });
+
+  testWidgets('order money distinguishes paid and remaining item money from the delivery fee', (WidgetTester tester) async {
+    const OrderMoney money = OrderMoney(
+      originalItemsVnd: 455000,
+      itemsVnd: 455000,
+      paidVnd: 200000,
+      remainingVnd: 255000,
+      fee: OrderFee(payer: 'CUSTOMER', amountVnd: 30000, estimateVnd: 30000, status: 'FINAL', distanceM: 2500),
+      expectedTotalVnd: 485000,
+    );
+    await mount(tester, const Scaffold(body: OrderMoneyBody(money: money, edited: false)));
+    expect(find.text('Đã thanh toán tiền món'), findsOneWidget);
+    expect(find.text('200.000đ'), findsOneWidget);
+    expect(find.text('Còn phải thanh toán tiền món'), findsOneWidget);
+    expect(find.text('255.000đ'), findsOneWidget);
+    expect(find.text('Tổng cộng'), findsOneWidget);
+    await unmount(tester);
   });
 }
 

@@ -584,6 +584,18 @@ export class DeliveryRepository {
     return row === undefined ? undefined : toAssignment(row);
   }
 
+  /** The run that actually ended the delivery. Cancelled/released holders are never returned. */
+  async findExecutingAssignment(context: TransactionContext, deliveryId: string): Promise<AssignmentRow | undefined> {
+    const result = await context.query<RawAssignment>(
+      `SELECT ${A_COLUMNS} FROM app.delivery_assignments a
+        WHERE a.delivery_id = $1::uuid AND a.status IN ('COMPLETED', 'FAILED')
+        ORDER BY a.ended_at DESC, a.assignment_id DESC LIMIT 1`,
+      [deliveryId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toAssignment(row);
+  }
+
   async findAssignment(context: TransactionContext, assignmentId: string): Promise<AssignmentRow | undefined> {
     const result = await context.query<RawAssignment>(`SELECT ${A_COLUMNS} FROM app.delivery_assignments a WHERE a.assignment_id = $1::uuid`, [assignmentId]);
     const row = result.rows[0];

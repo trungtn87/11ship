@@ -75,6 +75,7 @@ Map<String, Object?> _draftBody(CheckoutDraft d, {required bool withPrice}) => <
       'recipient_phone': d.recipientPhone,
       'address': d.address.toJson(),
       if (d.scheduledFor != null) 'scheduled_for': d.scheduledFor!.toUtc().toIso8601String(),
+      'tip_vnd': d.tipVnd,
     };
 
 class HttpCustomerOrderSource extends CustomerOrderSource {
