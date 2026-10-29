@@ -592,29 +592,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _previewing = true);
     try {
       final CheckoutPreview p = await source.preview(draft);
-      if (mounted && epoch != _previewEpoch) {
+      if (_restartStalePreview(epoch)) return;
+      if (!mounted) return;
+      setState(() {
+        _preview = p;
+        _previewFresh = true;
+        _freshness.arm(p.nextRefreshMs);
         _previewing = false;
-        unawaited(_check());
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _preview = p;
-          _previewFresh = true;
-          _freshness.arm(p.nextRefreshMs);
-          _previewing = false;
-        });
-      }
+      });
     } on M07Failure catch (failure) {
-      if (mounted) {
-        setState(() {
-          _failure = failure;
-          _previewFresh = false;
-          _freshness.failed();
-          _previewing = false;
-        });
-      }
+      if (_restartStalePreview(epoch)) return;
+      if (!mounted) return;
+      setState(() {
+        _failure = failure;
+        _previewFresh = false;
+        _freshness.failed();
+        _previewing = false;
+      });
     }
+  }
+
+  /// A changed draft cannot start while the previous preview owns [_previewing].
+  /// Release that request without publishing any of its data, then preview only
+  /// the latest draft (multiple edits while it was pending are coalesced).
+  bool _restartStalePreview(int epoch) {
+    if (!mounted || epoch == _previewEpoch) return false;
+    setState(() => _previewing = false);
+    unawaited(_check());
+    return true;
   }
 
   Future<void> _pickAddress() async {

@@ -9,14 +9,14 @@ import {
   rejectQuery,
 } from './customers-validation';
 
-const VALID = { label: 'HOME', recipient_name: 'Nguyễn Văn A', contact_phone: '0901234567', address_description: 'Tổ 5, phường Thục Phán, Cao Bằng' };
+const VALID = { label: 'HOME', contact_phone: '0901234567', address_description: 'Tổ 5, phường Thục Phán, Cao Bằng' };
 
 describe('parseAddressCreateBody', () => {
-  it('returns the normalized fields; recipient, label, phone and address are required', () => {
+  it('keeps the legacy APK contract: only label, phone and address are required', () => {
     expect(parseAddressCreateBody(VALID)).toEqual({
       label: 'HOME',
       displayName: null,
-      recipientName: 'Nguyễn Văn A',
+      recipientName: null,
       contactPhone: '+84901234567',
       addressDescription: 'Tổ 5, phường Thục Phán, Cao Bằng',
       latitude: null,
@@ -54,16 +54,17 @@ describe('parseAddressCreateBody', () => {
     });
   });
 
-  it('absent and null mean the same for optional values and position', () => {
+  it('absent, null and blank recipient names mean the same for legacy APKs', () => {
     const absent = parseAddressCreateBody(VALID);
-    const nulls = parseAddressCreateBody({ ...VALID, display_name: null, delivery_note: null, latitude: null, longitude: null });
+    const nulls = parseAddressCreateBody({ ...VALID, display_name: null, recipient_name: null, delivery_note: null, latitude: null, longitude: null });
+    const blank = parseAddressCreateBody({ ...VALID, recipient_name: '   ' });
     expect(nulls).toEqual(absent);
+    expect(blank).toEqual(absent);
   });
 
   it('refuses a missing required key (M05-08), an extra key and an identity selector', () => {
     for (const body of [
       {},
-      { label: 'HOME', contact_phone: '0901234567', address_description: 'x' },
       { label: 'HOME', contact_phone: '0901234567' },
       { label: 'HOME', address_description: 'x' },
       { contact_phone: '0901234567', address_description: 'x' },
@@ -146,9 +147,9 @@ describe('parseAddressUpdateBody', () => {
   });
 
   it('only the keys sent are changed; null clears an optional field and a position together', () => {
-    expect(parseAddressUpdateBody({ expected_version: 1, display_name: null, delivery_note: '', latitude: null, longitude: null })).toEqual({
+    expect(parseAddressUpdateBody({ expected_version: 1, display_name: null, recipient_name: '', delivery_note: '', latitude: null, longitude: null })).toEqual({
       expectedVersion: 1,
-      patch: { displayName: null, deliveryNote: null, position: null },
+      patch: { displayName: null, recipientName: null, deliveryNote: null, position: null },
     });
     expect(
       parseAddressUpdateBody({ expected_version: 3, label: 'OTHER', contact_phone: '84901234567', address_description: ' Xóm Nà Cạn ', latitude: 22.5, longitude: 106.1 }),

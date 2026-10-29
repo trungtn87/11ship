@@ -297,6 +297,17 @@ describe('M05 — customer record and address book', () => {
       expect(await defaults(user.userId)).toBe(0);
     });
 
+    it('keeps legacy APK create payloads compatible when recipient_name is absent, null or blank', async () => {
+      const user = await newCustomer();
+      const token = await clientLogin(user);
+      const withoutRecipient = Object.fromEntries(Object.entries(body()).filter(([name]) => name !== 'recipient_name'));
+      const absent = dataOf(await create(token, withoutRecipient));
+      const nullRecipient = dataOf(await create(token, body({ address_description: 'Legacy null', recipient_name: null })));
+      const blankRecipient = dataOf(await create(token, body({ address_description: 'Legacy blank', recipient_name: '   ' })));
+      expect([absent.recipient_name, nullRecipient.recipient_name, blankRecipient.recipient_name]).toEqual([null, null, null]);
+      expect((await list(token)).map((address) => address.recipient_name)).toEqual([null, null, null]);
+    });
+
     it('M05-08: a missing or invalid phone or address, a half position or an identity field is refused and nothing is written', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
@@ -305,11 +316,9 @@ describe('M05 — customer record and address book', () => {
       const without = (key: string) => Object.fromEntries(Object.entries(body()).filter(([name]) => name !== key));
       const withoutPhone = without('contact_phone');
       const withoutAddress = without('address_description');
-      const withoutRecipient = without('recipient_name');
       const cases: Array<[string, unknown, number, string]> = [
         ['no phone', withoutPhone, 400, 'BAD_REQUEST'],
         ['no address', withoutAddress, 400, 'BAD_REQUEST'],
-        ['no recipient', withoutRecipient, 400, 'BAD_REQUEST'],
         ['blank address', body({ address_description: '   ' }), 400, 'BAD_REQUEST'],
         ['bad phone', body({ contact_phone: '12345' }), 400, 'INVALID_PHONE'],
         ['bad label', body({ label: 'WORK' }), 400, 'BAD_REQUEST'],
@@ -360,13 +369,14 @@ describe('M05 — customer record and address book', () => {
       expect(JSON.stringify(audit.rows[0])).not.toContain(token);
     });
 
-    it('null clears optional display name, note and position; recipient, phone and address stay required', async () => {
+    it('legacy APK updates may clear recipient; phone and address stay required', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
       const created = await add(token, { latitude: 22.5, longitude: 106.1 });
-      const cleared = await patch(token, String(created.id), { expected_version: 1, display_name: null, delivery_note: null, latitude: null, longitude: null });
-      expect(dataOf(cleared)).toMatchObject({ display_name: null, delivery_note: null, latitude: null, longitude: null, version: 2 });
-      for (const payload of [{ recipient_name: null }, { address_description: null }, { address_description: '  ' }, { contact_phone: null }]) {
+      const cleared = await patch(token, String(created.id), { expected_version: 1, display_name: null, recipient_name: '', delivery_note: null, latitude: null, longitude: null });
+      expect(dataOf(cleared)).toMatchObject({ display_name: null, recipient_name: null, delivery_note: null, latitude: null, longitude: null, version: 2 });
+      expect((await list(token))[0]).toMatchObject({ id: created.id, recipient_name: null });
+      for (const payload of [{ address_description: null }, { address_description: '  ' }, { contact_phone: null }]) {
         const response = await patch(token, String(created.id), { expected_version: 2, ...payload });
         expect(response.status).toBe(400);
       }

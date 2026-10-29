@@ -39,7 +39,7 @@ export interface AddressCreateInput extends AddressFields {
 export interface AddressPatch {
   readonly label?: AddressLabel;
   readonly displayName?: string | null;
-  readonly recipientName?: string;
+  readonly recipientName?: string | null;
   readonly contactPhone?: string;
   readonly addressDescription?: string;
   readonly position?: { readonly latitude: number; readonly longitude: number } | null;
@@ -125,8 +125,9 @@ const FIELD_KEYS = ['label', 'display_name', 'recipient_name', 'contact_phone', 
 
 /** POST /v1/customers/me/addresses. label, contact_phone and address_description are required. */
 export function parseAddressCreateBody(body: unknown): AddressCreateInput {
-  const parsed = objectWithKeys(body, ['label', 'recipient_name', 'contact_phone', 'address_description'], [
+  const parsed = objectWithKeys(body, ['label', 'contact_phone', 'address_description'], [
     'display_name',
+    'recipient_name',
     'latitude',
     'longitude',
     'delivery_note',
@@ -144,7 +145,7 @@ export function parseAddressCreateBody(body: unknown): AddressCreateInput {
   return {
     label: label(parsed.label),
     displayName: optionalText(parsed.display_name, ADDRESS_DISPLAY_NAME_MAX_LENGTH),
-    recipientName: requiredText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH),
+    recipientName: optionalText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH),
     contactPhone: phone(parsed.contact_phone),
     addressDescription: requiredText(parsed.address_description, ADDRESS_DESCRIPTION_MAX_LENGTH),
     latitude: where === null ? null : where.latitude,
@@ -165,7 +166,7 @@ export function parseAddressUpdateBody(body: unknown): AddressUpdateInput {
   const patch: {
     label?: AddressLabel;
     displayName?: string | null;
-    recipientName?: string;
+    recipientName?: string | null;
     contactPhone?: string;
     addressDescription?: string;
     position?: { latitude: number; longitude: number } | null;
@@ -180,7 +181,7 @@ export function parseAddressUpdateBody(body: unknown): AddressUpdateInput {
     patch.displayName = optionalText(parsed.display_name, ADDRESS_DISPLAY_NAME_MAX_LENGTH);
   }
   if (Object.hasOwn(parsed, 'recipient_name')) {
-    patch.recipientName = requiredText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH);
+    patch.recipientName = optionalText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH);
   }
   if (Object.hasOwn(parsed, 'contact_phone')) {
     patch.contactPhone = phone(parsed.contact_phone);
