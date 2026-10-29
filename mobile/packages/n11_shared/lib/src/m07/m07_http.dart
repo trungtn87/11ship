@@ -208,3 +208,90 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key}) async =>
       _delivery(await _call(session, 'POST', _path(id, '/complete'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
 }
+
+class HttpCustomerDeliverySource extends CustomerDeliverySource {
+  const HttpCustomerDeliverySource({required this.session});
+
+  final SessionController session;
+
+  @override
+  bool get isSample => false;
+
+  String _path(String id, [String tail = '']) => '/v1/customers/me/deliveries/$id$tail';
+
+  @override
+  Future<List<DeliveryView>> list({required bool history}) async {
+    final Object? data = await _call(session, 'GET', '/v1/customers/me/deliveries?scope=${history ? 'history' : 'active'}');
+    return _items<DeliveryView>(data, 'deliveries', DeliveryView.fromJson);
+  }
+
+  @override
+  Future<DeliveryView> get(String id) async => _delivery(await _call(session, 'GET', _path(id)));
+
+  @override
+  Future<DeliveryView> create(NewCustomerDeliveryInput input, {required String key}) async {
+    final Map<String, Object?> body = <String, Object?>{
+      'sender_name': input.senderName,
+      'sender_phone': input.senderPhone,
+      'pickup_address_text': input.pickupAddressText,
+      if (input.pickupLat != null) 'pickup_lat': input.pickupLat,
+      if (input.pickupLng != null) 'pickup_lng': input.pickupLng,
+      'recipient_name': input.recipientName,
+      'recipient_phone': input.recipientPhone,
+      'dropoff_address_text': input.dropoffAddressText,
+      if (input.dropoffLat != null) 'dropoff_lat': input.dropoffLat,
+      if (input.dropoffLng != null) 'dropoff_lng': input.dropoffLng,
+      'goods_description': input.goodsDescription,
+      'goods_value_vnd': input.goodsValueVnd,
+      'cod_vnd': input.codVnd,
+      'fee_payer': input.feePayer,
+      if (input.note != null && input.note!.isNotEmpty) 'note': input.note,
+      if (input.agreedFee != null)
+        'agreed_fee': <String, Object?>{
+          'amount_vnd': input.agreedFee!.amountVnd,
+          'reason_code': input.agreedFee!.reasonCode,
+          if (input.agreedFee!.reasonNote != null) 'reason_note': input.agreedFee!.reasonNote,
+        },
+    };
+    return _delivery(await _call(session, 'POST', '/v1/customers/me/deliveries', body: body, key: key, ok: const <int>{201}));
+  }
+
+  @override
+  Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async =>
+      _delivery(await _call(session, 'POST', _path(id, '/cancel'), body: <String, Object?>{'reason': reason, 'expected_version': expectedVersion}, key: key));
+
+  @override
+  Future<DeliveryView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async =>
+      _delivery(await _call(session, 'POST', _path(id, '/cancel-after-pickup'), body: <String, Object?>{'reason': reason, 'expected_version': expectedVersion}, key: key));
+
+  @override
+  Future<DeliveryView> counterAccept(String id, {required int expectedVersion, required String key}) async =>
+      _delivery(await _call(session, 'POST', _path(id, '/fee/counter-accept'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
+
+  @override
+  Future<DeliveryView> counterReject(String id, {required int expectedVersion, required String key}) async =>
+      _delivery(await _call(session, 'POST', _path(id, '/fee/counter-reject'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
+
+  @override
+  Future<TrackingLinkResult> createTrackingLink(String id) async {
+    final Object? data = await _call(session, 'POST', _path(id, '/tracking-link'), ok: const <int>{201});
+    return TrackingLinkResult.fromJson(data);
+  }
+
+  @override
+  Future<TrackingLinkStatus> getTrackingLinkStatus(String id) async {
+    final Object? data = await _call(session, 'GET', _path(id, '/tracking-link'));
+    return TrackingLinkStatus.fromJson(data);
+  }
+
+  @override
+  Future<TrackingLinkStatus> toggleTrackingLocation(String id, {required bool shareLocation}) async {
+    final Object? data = await _call(session, 'POST', _path(id, '/tracking-link/toggle-location'), body: <String, Object?>{'share_location': shareLocation});
+    return TrackingLinkStatus.fromJson(data);
+  }
+
+  @override
+  Future<void> revokeTrackingLink(String id) async {
+    await _call(session, 'POST', _path(id, '/tracking-link/revoke'));
+  }
+}

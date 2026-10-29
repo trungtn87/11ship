@@ -62,7 +62,9 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
                   requestId: target.id));
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
-          if (source != null && target.id != null) {
+          final CustomerDeliverySource? customerSource = flows.customerDeliveries;
+          final bool shopHat = flows.session.identity?.activeRole == 'SHOP_OWNER';
+          if (shopHat && source != null && target.id != null) {
             // One page per food order: a delivery that belongs to an order opens that order (the server already answers with the order for such a notice; this
             // keeps any other way in from showing a second page). The delivery's own link decides, never a code. A direct delivery opens as itself.
             final String? orderId = await _orderOfDelivery(source, target.id!);
@@ -76,6 +78,13 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
                       deliveryId: target.id!,
                       feedbackSlot: _feedbackSlot(flows)));
             }
+          } else if (!shopHat && customerSource != null && target.id != null) {
+            await openInTab(
+                'orders',
+                CustomerDeliveryDetailScreen(
+                    source: customerSource,
+                    deliveryId: target.id!,
+                    mapBuilder: foodMapBuilder()));
           } else {
             actions.goTab('orders');
           }
@@ -264,8 +273,12 @@ Widget _orders(SessionController session, AppFlows? flows) {
         feedbackSlot: _feedbackSlot(flows));
   }
   if (signedIn && orders != null && session.identity?.customerAccess == true) {
-    // M10: the customer's orders — Đang xử lý / Đơn hẹn / Lịch sử.
-    return CustomerOrdersView(runtime: orders);
+    // M10 + PR #231: customer orders ("Đơn món") and direct delivery calls ("Giao hàng").
+    return CustomerOrdersTab(
+        runtime: orders,
+        deliveries: flows?.customerDeliveries,
+        mapBuilder: foodMapBuilder(),
+        pinPicker: foodPinPicker());
   }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),

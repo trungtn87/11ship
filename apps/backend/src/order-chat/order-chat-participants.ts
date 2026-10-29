@@ -45,7 +45,7 @@ export const orderIsOpen = (status: string): boolean => !ENDED_STATUSES.includes
 export const deliveryIsOpen = (state: string): boolean => !(TERMINAL_STATES as readonly string[]).includes(state);
 
 const orderRoom = (o: OrderRow): ChatRoom => ({ type: 'ORDER', id: o.orderId, shopId: o.shopId, customerUserId: o.customerUserId, customerName: o.recipientName, shopName: o.shopName, open: orderIsOpen(o.status) });
-const directRoom = (d: DeliveryRow): ChatRoom => ({ type: 'DIRECT', id: d.deliveryId, shopId: d.shopId, customerUserId: null, customerName: null, shopName: d.shopName, open: deliveryIsOpen(d.state) });
+const directRoom = (d: DeliveryRow): ChatRoom => ({ type: 'DIRECT', id: d.deliveryId, shopId: d.shopId ?? '', customerUserId: null, customerName: null, shopName: d.shopName, open: deliveryIsOpen(d.state) });
 
 @Injectable()
 export class OrderChatParticipants {

@@ -305,3 +305,277 @@ class SampleShipperSource extends ShipperDeliverySource {
     return _replace(d.copyWith(state: DeliveryState.completed, version: d.version + 1, clearLocation: true, can: const <String>{}, result: ResultView(outcome: 'completed', at: _now)));
   }
 }
+
+DeliveryView _customerDelivery(
+  String id,
+  String code,
+  DeliveryState state, {
+  int minutesAgo = 3,
+  FeeView? fee,
+  bool pinned = true,
+  int codVnd = 0,
+  int? recipientPaysVnd,
+  AssignmentView? assignment,
+  LocationView? location,
+  IncidentView? incident,
+  ResultView? result,
+  Set<String> can = const <String>{},
+}) =>
+    DeliveryView(
+      deliveryId: id,
+      code: code,
+      source: 'CUSTOMER',
+      state: state,
+      version: 1,
+      pickup: PickupView(
+        shopName: 'Điểm lấy hàng mẫu',
+        phone: '0912345678',
+        addressText: 'Số 10 Đường Hoa, TP. Mẫu',
+        lat: pinned ? 22.665 : null,
+        lng: pinned ? 106.257 : null,
+      ),
+      recipient: RecipientView(
+        name: 'Người nhận mẫu',
+        phone: '0987654321',
+        addressText: 'Số 99 Đường Nhánh, TP. Mẫu',
+        lat: pinned ? 22.670 : null,
+        lng: pinned ? 106.260 : null,
+      ),
+      goods: GoodsView(
+        description: 'Tài liệu và quà mẫu',
+        valueVnd: 0,
+        paidVnd: 0,
+        codVnd: codVnd,
+        recipientPaysVnd: recipientPaysVnd,
+      ),
+      fee: fee ??
+          const FeeView(
+            mode: 'STANDARD',
+            payer: 'RECIPIENT',
+            status: 'FINAL',
+            amountVnd: 15000,
+            distanceM: 3200,
+            decider: 'CUSTOMER',
+          ),
+      search: SearchView(
+        startedAt: _now.subtract(Duration(minutes: minutesAgo)),
+        expiresAt: _now.subtract(Duration(minutes: minutesAgo)).add(const Duration(minutes: 30)),
+        serverNow: _now,
+      ),
+      assignment: assignment,
+      location: location,
+      incident: incident,
+      result: result,
+      can: can,
+    );
+
+class SampleCustomerDeliverySource extends CustomerDeliverySource {
+  SampleCustomerDeliverySource() {
+    _items.addAll(<DeliveryView>[
+      _customerDelivery('cd-wait', 'GC-100001', DeliveryState.waitingDriver, minutesAgo: 5, codVnd: 200000, recipientPaysVnd: 215000, can: const <String>{'cancel'}),
+      _customerDelivery('cd-run', 'GC-100002', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 3))), location: _location(Freshness.live), codVnd: 150000, recipientPaysVnd: 165000, can: const <String>{'cancel', 'cancel_after_pickup'}),
+      _customerDelivery('cd-done', 'GC-100003', DeliveryState.completed, codVnd: 0, recipientPaysVnd: 0, result: ResultView(outcome: 'completed', at: _now)),
+    ]);
+  }
+
+  final List<DeliveryView> _items = <DeliveryView>[];
+  final Map<String, TrackingLinkStatus> _trackingLinks = <String, TrackingLinkStatus>{};
+
+  @override
+  bool get isSample => true;
+
+  DeliveryView _find(String id) => _items.firstWhere((DeliveryView d) => d.deliveryId == id, orElse: () => throw const M07Failure(M07FailureKind.refused, code: 'DELIVERY_NOT_FOUND'));
+
+  DeliveryView _replace(DeliveryView next) {
+    _items[_items.indexWhere((DeliveryView d) => d.deliveryId == next.deliveryId)] = next;
+    return next;
+  }
+
+  @override
+  Future<List<DeliveryView>> list({required bool history, String query = ''}) async {
+    final String q = query.trim().toLowerCase();
+    return <DeliveryView>[
+      for (final DeliveryView d in _items)
+        if ((history ? !_inActiveList(d) : _inActiveList(d)) && (q.isEmpty || d.code.toLowerCase().contains(q) || d.recipient.name.toLowerCase().contains(q) || (d.pickup.addressText?.toLowerCase().contains(q) ?? false))) d,
+    ];
+  }
+
+  @override
+  Future<DeliveryView> get(String id) async => _find(id);
+
+  @override
+  Future<DeliveryView> create(NewCustomerDeliveryInput input, {required String key}) async {
+    final bool pinned = input.pickupLat != null && input.pickupLng != null && input.dropoffLat != null && input.dropoffLng != null;
+    final int? proposedFee = input.agreedFee?.amountVnd;
+    final int cod = input.codVnd;
+    final int? recipientPays = input.feePayer == 'RECIPIENT' ? (proposedFee != null ? cod + proposedFee : null) : cod;
+
+    final DeliveryView made = DeliveryView(
+      deliveryId: _nextId(),
+      code: 'GC-${100000 + _seq}',
+      source: 'CUSTOMER',
+      state: DeliveryState.waitingDriver,
+      version: 1,
+      pickup: PickupView(
+        shopName: input.senderName,
+        phone: input.senderPhone,
+        addressText: input.pickupAddressText,
+        lat: input.pickupLat,
+        lng: input.pickupLng,
+      ),
+      recipient: RecipientView(
+        name: input.recipientName,
+        phone: input.recipientPhone,
+        addressText: input.dropoffAddressText,
+        lat: input.dropoffLat,
+        lng: input.dropoffLng,
+      ),
+      goods: GoodsView(
+        description: input.goodsDescription,
+        valueVnd: input.goodsValueVnd,
+        paidVnd: 0,
+        codVnd: cod,
+        recipientPaysVnd: recipientPays,
+      ),
+      fee: proposedFee != null
+          ? FeeView(
+              mode: 'AGREED',
+              payer: input.feePayer,
+              status: 'PENDING_AGREEMENT',
+              amountVnd: null,
+              agreement: AgreementSummary(
+                state: 'PROPOSED',
+                proposedVnd: proposedFee,
+                reasonCode: input.agreedFee?.reasonCode ?? 'CUSTOMER_INITIATED',
+                expiresAt: _now.add(const Duration(minutes: 30)),
+              ),
+              decider: 'CUSTOMER',
+            )
+          : FeeView(
+              mode: 'STANDARD',
+              payer: input.feePayer,
+              status: pinned ? 'FINAL' : 'UNKNOWN',
+              amountVnd: pinned ? 15000 : null,
+              distanceM: pinned ? 3200 : null,
+              basis: pinned ? 'ROUTE' : 'NOT_CALCULATED_NO_GPS',
+              decider: 'CUSTOMER',
+            ),
+      search: SearchView(startedAt: _now, expiresAt: _now.add(const Duration(minutes: 30)), serverNow: _now),
+      can: const <String>{'cancel'},
+    );
+    _items.insert(0, made);
+    return made;
+  }
+
+  @override
+  Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async {
+    final DeliveryView d = _find(id);
+    if (!d.allows('cancel')) {
+      throw const M07Failure(M07FailureKind.conflict, code: 'AFTER_PICKUP_NO_CANCEL');
+    }
+    return _replace(d.copyWith(
+      state: DeliveryState.cancelledByMerchant,
+      version: d.version + 1,
+      clearAssignment: true,
+      clearLocation: true,
+      can: const <String>{},
+      result: ResultView(outcome: 'cancelled', at: _now, reason: reason),
+    ));
+  }
+
+  @override
+  Future<DeliveryView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async {
+    final DeliveryView d = _find(id);
+    if (!d.allows('cancel_after_pickup')) {
+      throw const M07Failure(M07FailureKind.conflict, code: 'DELIVERY_STATE_CONFLICT');
+    }
+    return _replace(d.copyWith(
+      state: DeliveryState.cancelledByMerchant,
+      version: d.version + 1,
+      clearAssignment: true,
+      clearLocation: true,
+      can: const <String>{'resolve_custody'},
+      result: ResultView(outcome: 'cancelled', at: _now, reason: reason),
+      incident: IncidentView(incidentId: 'inc-custody', status: 'OPEN', custody: 'SHIPPER', reason: reason, openedAt: _now),
+    ));
+  }
+
+  @override
+  Future<DeliveryView> counterAccept(String id, {required int expectedVersion, required String key}) async {
+    final DeliveryView d = _find(id);
+    return _replace(d.copyWith(
+      version: d.version + 1,
+      fee: FeeView(
+        mode: d.fee.mode,
+        payer: d.fee.payer,
+        status: 'FINAL',
+        amountVnd: d.fee.agreement?.counterVnd ?? d.fee.agreement?.proposedVnd,
+        agreement: d.fee.agreement != null
+            ? AgreementSummary(
+                state: 'ACCEPTED',
+                proposedVnd: d.fee.agreement!.proposedVnd,
+                reasonCode: d.fee.agreement!.reasonCode,
+                counterVnd: d.fee.agreement!.counterVnd,
+                expiresAt: d.fee.agreement!.expiresAt,
+              )
+            : null,
+        decider: 'CUSTOMER',
+      ),
+    ));
+  }
+
+  @override
+  Future<DeliveryView> counterReject(String id, {required int expectedVersion, required String key}) async {
+    final DeliveryView d = _find(id);
+    return _replace(d.copyWith(
+      version: d.version + 1,
+      fee: FeeView(
+        mode: d.fee.mode,
+        payer: d.fee.payer,
+        status: 'REJECTED',
+        amountVnd: null,
+        agreement: d.fee.agreement != null
+            ? AgreementSummary(
+                state: 'REJECTED',
+                proposedVnd: d.fee.agreement!.proposedVnd,
+                reasonCode: d.fee.agreement!.reasonCode,
+                counterVnd: d.fee.agreement!.counterVnd,
+                expiresAt: d.fee.agreement!.expiresAt,
+              )
+            : null,
+        decider: 'CUSTOMER',
+      ),
+    ));
+  }
+
+  @override
+  Future<TrackingLinkResult> createTrackingLink(String id) async {
+    _find(id);
+    final TrackingLinkResult res = TrackingLinkResult(
+      trackingId: 'trk-$id',
+      token: 'sample-track-$id',
+      trackingUrl: 'https://11ship.app/track/sample-track-$id',
+      shareLocation: false,
+    );
+    _trackingLinks[id] = const TrackingLinkStatus(hasActiveLink: true, shareLocation: false);
+    return res;
+  }
+
+  @override
+  Future<TrackingLinkStatus> getTrackingLinkStatus(String id) async {
+    return _trackingLinks[id] ?? const TrackingLinkStatus(hasActiveLink: false, shareLocation: false);
+  }
+
+  @override
+  Future<TrackingLinkStatus> toggleTrackingLocation(String id, {required bool shareLocation}) async {
+    final TrackingLinkStatus current = await getTrackingLinkStatus(id);
+    final TrackingLinkStatus updated = TrackingLinkStatus(hasActiveLink: current.hasActiveLink, shareLocation: shareLocation);
+    _trackingLinks[id] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> revokeTrackingLink(String id) async {
+    _trackingLinks.remove(id);
+  }
+}

@@ -7,15 +7,18 @@ import { DeliveryCoreModule } from './delivery-core.module';
 import { ORDER_DELIVERY_PORT } from './delivery-order-port';
 import { OrdersCoreModule } from '../orders/orders-core.module';
 import { OrderDeliveryAdapter } from '../orders/order-delivery-adapter';
+import { DeliveryCustomerController } from './delivery-customer.controller';
+import { DeliveryCustomerService } from './delivery-customer-service';
 import { DeliveryShipperController } from './delivery-shipper.controller';
 import { DeliveryShipperService } from './delivery-shipper-service';
 import { DeliveryShopController } from './delivery-shop.controller';
 import { DeliveryShopService } from './delivery-shop-service';
 import { DeliverySweeper, DeliverySweeperRunner } from './delivery-sweeper';
+import { DeliveryTrackingPublicController } from './delivery-tracking-public.controller';
 import { M14RoutingModule } from './m14-routing.module';
 
 /**
- * M07, the delivery flow: the shop's routes under /v1/shop/me/deliveries, the Shipper's routes under /v1/driver/deliveries and /v1/driver/location, and the
+ * M07, the delivery flow: the shop's routes under /v1/shop/me/deliveries, the customer's routes under /v1/customers/me/deliveries, the Shipper's routes under /v1/driver/deliveries and /v1/driver/location, and the
  * timers (the search ends at 30 minutes, the reminders). The Administration routes are wired with the other Admin routes. `auth` must be the very same
  * object AppModule passes to its imports. The M10 order adapter (Orders core module, repository only) is bound to the port; a direct call (an outside order) never uses it.
  */
@@ -25,9 +28,9 @@ export class DeliveryModule {
     return {
       module: DeliveryModule,
       imports: [auth, DeliveryCoreModule.register(auth), OrdersCoreModule, M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule, ShipperSettlementModule],
-      controllers: [DeliveryShopController, DeliveryShipperController],
-      providers: [DeliveryShopService, DeliveryShipperService, DeliverySweeper, DeliverySweeperRunner, { provide: ORDER_DELIVERY_PORT, useExisting: OrderDeliveryAdapter }],
-      exports: [DeliverySweeper, DeliveryShopService],
+      controllers: [DeliveryShopController, DeliveryShipperController, DeliveryCustomerController, DeliveryTrackingPublicController],
+      providers: [DeliveryShopService, DeliveryShipperService, DeliveryCustomerService, DeliverySweeper, DeliverySweeperRunner, { provide: ORDER_DELIVERY_PORT, useExisting: OrderDeliveryAdapter }],
+      exports: [DeliverySweeper, DeliveryShopService, DeliveryCustomerService],
     };
   }
 }

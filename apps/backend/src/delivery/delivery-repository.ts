@@ -20,22 +20,33 @@ function safe(raw: unknown): number {
 
 const safeOrNull = (raw: unknown): number | null => (raw === null || raw === undefined ? null : safe(raw));
 
+export interface TrackingLinkRow {
+  readonly trackingId: string;
+  readonly deliveryId: string;
+  readonly tokenHash: string;
+  readonly shareLocation: boolean;
+  readonly revoked: boolean;
+  readonly revokedAtMs: number | null;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
 export interface DeliveryRow {
   readonly deliveryId: string;
   readonly code: string;
   readonly displayCode?: string | null;
-  readonly source: 'DIRECT' | 'ORDER';
+  readonly source: 'DIRECT' | 'ORDER' | 'CUSTOMER';
   readonly orderId: string | null;
   readonly previousDeliveryId: string | null;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly requestedBy: string;
   readonly state: DeliveryState;
   readonly version: number;
   readonly shopName: string;
   readonly shopPhone: string;
   readonly pickupAddressText: string;
-  readonly pickupLat: number;
-  readonly pickupLng: number;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
   readonly recipientName: string;
   readonly recipientPhone: string;
   readonly dropoffAddressText: string;
@@ -46,6 +57,7 @@ export interface DeliveryRow {
   readonly goodsDescription: string;
   readonly goodsValueVnd: number;
   readonly paidVnd: number;
+  readonly codVnd: number;
   readonly note: string | null;
   readonly dropoffNote: string | null;
   readonly feeMode: FeeMode;
@@ -68,18 +80,18 @@ interface RawDelivery {
   delivery_id: string;
   code: string;
   display_code?: string | null;
-  source: 'DIRECT' | 'ORDER';
+  source: 'DIRECT' | 'ORDER' | 'CUSTOMER';
   order_id: string | null;
   previous_delivery_id: string | null;
-  shop_id: string;
+  shop_id: string | null;
   requested_by: string;
   state: DeliveryState;
   version: string;
   shop_name: string;
   shop_phone: string;
   pickup_address_text: string;
-  pickup_lat: number;
-  pickup_lng: number;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
   recipient_name: string;
   recipient_phone: string;
   dropoff_address_text: string;
@@ -90,6 +102,7 @@ interface RawDelivery {
   goods_description: string;
   goods_value_vnd: string;
   paid_vnd: string;
+  cod_vnd: string;
   note: string | null;
   dropoff_note: string | null;
   fee_mode: FeeMode;
@@ -111,7 +124,7 @@ interface RawDelivery {
 export const DELIVERY_COLUMNS = `d.delivery_id::text AS delivery_id, d.code, app.shop_display_delivery(d.delivery_id) AS display_code, d.source, d.order_id::text AS order_id, d.previous_delivery_id::text AS previous_delivery_id,
   d.shop_id::text AS shop_id, d.requested_by::text AS requested_by, d.state, d.version::text AS version, d.shop_name, d.shop_phone, d.pickup_address_text,
   d.pickup_lat, d.pickup_lng, d.recipient_name, d.recipient_phone, d.dropoff_address_text, d.dropoff_area_text, d.dropoff_lat, d.dropoff_lng,
-  d.dropoff_pinned_by::text AS dropoff_pinned_by, d.goods_description, d.goods_value_vnd::text AS goods_value_vnd, d.paid_vnd::text AS paid_vnd, d.note, d.dropoff_note,
+  d.dropoff_pinned_by::text AS dropoff_pinned_by, d.goods_description, d.goods_value_vnd::text AS goods_value_vnd, d.paid_vnd::text AS paid_vnd, d.cod_vnd::text AS cod_vnd, d.note, d.dropoff_note,
   d.fee_mode, d.fee_payer, d.fee_vnd::text AS fee_vnd, d.route_distance_m,
   ${ms('d.search_started_at', 'started_ms')}, ${ms('d.search_expires_at', 'expires_ms')}, ${ms('d.search_stopped_at', 'stopped_ms')},
   ${ms('d.reminded_5_at', 'r5_ms')}, ${ms('d.reminded_15_at', 'r15_ms')}, ${ms('d.picked_up_at', 'picked_ms')}, ${ms('d.ended_at', 'ended_ms')}, d.end_reason,
@@ -144,6 +157,7 @@ export function toDelivery(row: RawDelivery): DeliveryRow {
     goodsDescription: row.goods_description,
     goodsValueVnd: safe(row.goods_value_vnd),
     paidVnd: safe(row.paid_vnd),
+    codVnd: safe(row.cod_vnd || '0'),
     note: row.note,
     dropoffNote: row.dropoff_note,
     feeMode: row.fee_mode,
@@ -166,16 +180,16 @@ export function toDelivery(row: RawDelivery): DeliveryRow {
 export interface NewDelivery {
   readonly deliveryId: string;
   readonly code: string;
-  readonly source: 'DIRECT' | 'ORDER';
+  readonly source: 'DIRECT' | 'ORDER' | 'CUSTOMER';
   readonly orderId: string | null;
   readonly previousDeliveryId: string | null;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly requestedBy: string;
   readonly shopName: string;
   readonly shopPhone: string;
   readonly pickupAddressText: string;
-  readonly pickupLat: number;
-  readonly pickupLng: number;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
   readonly recipientName: string;
   readonly recipientPhone: string;
   readonly dropoffAddressText: string;
@@ -185,6 +199,7 @@ export interface NewDelivery {
   readonly goodsDescription: string;
   readonly goodsValueVnd: number;
   readonly paidVnd: number;
+  readonly codVnd: number;
   readonly note: string | null;
   readonly dropoffNote: string | null;
   readonly feeMode: FeeMode;
@@ -355,16 +370,16 @@ export class DeliveryRepository {
     const result = await context.query(
       `INSERT INTO app.deliveries (
          delivery_id, code, source, order_id, previous_delivery_id, shop_id, requested_by, state, shop_name, shop_phone, pickup_address_text, pickup_lat, pickup_lng,
-          recipient_name, recipient_phone, dropoff_address_text, dropoff_area_text, dropoff_lat, dropoff_lng, goods_description, goods_value_vnd, paid_vnd, note, dropoff_note,
+          recipient_name, recipient_phone, dropoff_address_text, dropoff_area_text, dropoff_lat, dropoff_lng, goods_description, goods_value_vnd, paid_vnd, cod_vnd, note, dropoff_note,
          fee_mode, fee_payer, fee_vnd, route_distance_m, search_started_at, search_expires_at, version, created_at, updated_at)
        SELECT $1::uuid, $2, $3, $4::uuid, $5::uuid, $6::uuid, $7::uuid, 'waiting_driver', $8, $9, $10, $11::float8, $12::float8,
-               $13, $14, $15, $16, $17::float8, $18::float8, $19, $20::bigint, $21::bigint, $22, $23,
-               $24, $25, $26::bigint, $27::int, clock.t, clock.t + interval '30 minutes', 1, clock.t, clock.t
+               $13, $14, $15, $16, $17::float8, $18::float8, $19, $20::bigint, $21::bigint, $22::bigint, $23, $24,
+               $25, $26, $27::bigint, $28::int, clock.t, clock.t + interval '30 minutes', 1, clock.t, clock.t
          FROM (SELECT ${CLOCK} AS t) AS clock
        ON CONFLICT (code) DO NOTHING`,
       [
         d.deliveryId, d.code, d.source, d.orderId, d.previousDeliveryId, d.shopId, d.requestedBy, d.shopName, d.shopPhone, d.pickupAddressText, d.pickupLat, d.pickupLng,
-        d.recipientName, d.recipientPhone, d.dropoffAddressText, d.dropoffAreaText, d.dropoffLat, d.dropoffLng, d.goodsDescription, d.goodsValueVnd, d.paidVnd, d.note, d.dropoffNote,
+        d.recipientName, d.recipientPhone, d.dropoffAddressText, d.dropoffAreaText, d.dropoffLat, d.dropoffLng, d.goodsDescription, d.goodsValueVnd, d.paidVnd, d.codVnd ?? 0, d.note, d.dropoffNote,
         d.feeMode, d.feePayer, d.feeVnd, d.routeDistanceM,
       ],
     );
@@ -792,6 +807,125 @@ export class DeliveryRepository {
     );
     const row = result.rows[0];
     return { searching: safe(row?.searching), waitingPickup: safe(row?.waiting), delivering: safe(row?.delivering), needsAttention: safe(row?.attention) };
+  }
+
+  async listActiveOfCustomer(context: TransactionContext, userId: string): Promise<DeliveryRow[]> {
+    const result = await context.query<RawDelivery>(
+      `SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d
+        WHERE d.requested_by = $1::uuid AND d.source = 'CUSTOMER' AND d.state IN ('waiting_driver', 'accepted', 'location_confirmed', 'picked_up', 'delivering')
+        ORDER BY d.created_at DESC`,
+      [userId],
+    );
+    return result.rows.map(toDelivery);
+  }
+
+  async listEndedOfCustomer(context: TransactionContext, userId: string, limit: number): Promise<DeliveryRow[]> {
+    const result = await context.query<RawDelivery>(
+      `SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d
+        WHERE d.requested_by = $1::uuid AND d.source = 'CUSTOMER' AND d.state IN ('completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped')
+        ORDER BY d.created_at DESC LIMIT $2::int`,
+      [userId, limit],
+    );
+    return result.rows.map(toDelivery);
+  }
+
+  async findOfCustomer(context: TransactionContext, deliveryId: string, userId: string): Promise<DeliveryRow | undefined> {
+    const result = await context.query<RawDelivery>(
+      `SELECT ${DELIVERY_COLUMNS} FROM app.deliveries d
+        WHERE d.delivery_id = $1::uuid AND d.requested_by = $2::uuid AND d.source = 'CUSTOMER'`,
+      [deliveryId, userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toDelivery(row);
+  }
+
+  async insertTrackingLink(context: TransactionContext, link: { trackingId: string; deliveryId: string; tokenHash: string; shareLocation: boolean }): Promise<void> {
+    await context.query(
+      `INSERT INTO app.delivery_tracking_links (tracking_id, delivery_id, token_hash, share_location, revoked, created_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3, $4, false, ${CLOCK}, ${CLOCK})`,
+      [link.trackingId, link.deliveryId, link.tokenHash, link.shareLocation],
+    );
+  }
+
+  async findTrackingLinkByDeliveryId(context: TransactionContext, deliveryId: string): Promise<TrackingLinkRow | undefined> {
+    const result = await context.query<{
+      tracking_id: string;
+      delivery_id: string;
+      token_hash: string;
+      share_location: boolean;
+      revoked: boolean;
+      revoked_ms: string | null;
+      created_ms: string;
+      updated_ms: string;
+    }>(
+      `SELECT tracking_id::text, delivery_id::text, token_hash, share_location, revoked,
+              ${ms('revoked_at', 'revoked_ms')}, ${ms('created_at', 'created_ms')}, ${ms('updated_at', 'updated_ms')}
+         FROM app.delivery_tracking_links
+        WHERE delivery_id = $1::uuid AND revoked = false
+        ORDER BY created_at DESC LIMIT 1`,
+      [deliveryId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) return undefined;
+    return {
+      trackingId: row.tracking_id,
+      deliveryId: row.delivery_id,
+      tokenHash: row.token_hash,
+      shareLocation: row.share_location,
+      revoked: row.revoked,
+      revokedAtMs: safeOrNull(row.revoked_ms),
+      createdAtMs: safe(row.created_ms),
+      updatedAtMs: safe(row.updated_ms),
+    };
+  }
+
+  async findTrackingLinkByTokenHash(context: TransactionContext, tokenHash: string): Promise<TrackingLinkRow | undefined> {
+    const result = await context.query<{
+      tracking_id: string;
+      delivery_id: string;
+      token_hash: string;
+      share_location: boolean;
+      revoked: boolean;
+      revoked_ms: string | null;
+      created_ms: string;
+      updated_ms: string;
+    }>(
+      `SELECT tracking_id::text, delivery_id::text, token_hash, share_location, revoked,
+              ${ms('revoked_at', 'revoked_ms')}, ${ms('created_at', 'created_ms')}, ${ms('updated_at', 'updated_ms')}
+         FROM app.delivery_tracking_links
+        WHERE token_hash = $1
+        LIMIT 1`,
+      [tokenHash],
+    );
+    const row = result.rows[0];
+    if (row === undefined) return undefined;
+    return {
+      trackingId: row.tracking_id,
+      deliveryId: row.delivery_id,
+      tokenHash: row.token_hash,
+      shareLocation: row.share_location,
+      revoked: row.revoked,
+      revokedAtMs: safeOrNull(row.revoked_ms),
+      createdAtMs: safe(row.created_ms),
+      updatedAtMs: safe(row.updated_ms),
+    };
+  }
+
+  async updateTrackingLink(context: TransactionContext, trackingId: string, patch: { shareLocation?: boolean; revoked?: boolean }): Promise<void> {
+    const sets: string[] = [`updated_at = ${CLOCK}`];
+    const params: unknown[] = [trackingId];
+    if (patch.shareLocation !== undefined) {
+      params.push(patch.shareLocation);
+      sets.push(`share_location = $${params.length}::boolean`);
+    }
+    if (patch.revoked !== undefined) {
+      params.push(patch.revoked);
+      sets.push(`revoked = $${params.length}::boolean`);
+      if (patch.revoked) {
+        sets.push(`revoked_at = ${CLOCK}`);
+      }
+    }
+    await context.query(`UPDATE app.delivery_tracking_links SET ${sets.join(', ')} WHERE tracking_id = $1::uuid`, params);
   }
 }
 

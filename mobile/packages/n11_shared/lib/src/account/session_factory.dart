@@ -46,7 +46,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
 
 /// The three connected flows of an app, built on its session. [location] is for tests; the real one is the Kotlin channel.
 class AppFlows {
-  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.orders, this.notifications, this.notificationSource, this.push, this.feedback, this.picker = const NoImagePicker()});
+  AppFlows({required this.session, required this.reset, this.shop, this.driver, this.m02, this.addresses, this.shopDeliveries, this.shipperDeliveries, this.customerDeliveries, this.orders, this.notifications, this.notificationSource, this.push, this.feedback, this.picker = const NoImagePicker()});
 
   final SessionController session;
   final ResetController reset;
@@ -64,6 +64,9 @@ class AppFlows {
 
   /// Ship only: the Shipper's offers and deliveries (M07).
   final ShipperDeliverySource? shipperDeliveries;
+
+  /// Food only: the customer's direct delivery calls (M07 / PR #231). Sample data only in a preview build.
+  final CustomerDeliverySource? customerDeliveries;
 
   /// Food only: the cart and the food Orders of both sides (M10). Sample data only in a preview build.
   final OrderRuntime? orders;
@@ -94,6 +97,7 @@ AppFlows createFlows(
   NotificationSource? notificationSource,
   PushPort pushPort = const NoPushPort(),
   M11Source? feedbackSource,
+  CustomerDeliverySource? customerDeliveries,
   OrderRuntime? orderRuntime,
   M07MapBuilder? orderMapBuilder,
   M07PinPickerBuilder? orderPinPicker,
@@ -122,6 +126,7 @@ AppFlows createFlows(
     addresses: book,
     shopDeliveries: app == ClientApp.food ? (kM07UiPreview ? SampleShopSource() : HttpShopDeliverySource(session: session)) : null,
     shipperDeliveries: app == ClientApp.ship ? (kM07UiPreview ? SampleShipperSource() : HttpShipperDeliverySource(session: session)) : null,
+    customerDeliveries: customerDeliveries ?? (app == ClientApp.food ? (kM07UiPreview ? SampleCustomerDeliverySource() : HttpCustomerDeliverySource(session: session)) : null),
     m02: app == ClientApp.food
         ? createM02Flows(
             session: session,

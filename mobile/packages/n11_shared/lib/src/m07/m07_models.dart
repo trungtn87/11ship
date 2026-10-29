@@ -232,16 +232,24 @@ class PickupView {
 }
 
 class GoodsView {
-  const GoodsView({required this.description, required this.valueVnd, required this.paidVnd});
+  const GoodsView({required this.description, required this.valueVnd, required this.paidVnd, this.codVnd, this.recipientPaysVnd});
 
   factory GoodsView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return GoodsView(description: _str(m['description']), valueVnd: _int(m['value_vnd']), paidVnd: _int(m['paid_vnd']));
+    return GoodsView(
+      description: _str(m['description']),
+      valueVnd: _int(m['value_vnd']),
+      paidVnd: _int(m['paid_vnd']),
+      codVnd: _intOrNull(m['cod_vnd']),
+      recipientPaysVnd: _intOrNull(m['recipient_pays_vnd']),
+    );
   }
 
   final String description;
   final int valueVnd;
   final int paidVnd;
+  final int? codVnd;
+  final int? recipientPaysVnd;
 
   int get unpaidVnd => valueVnd - paidVnd;
 }
@@ -532,6 +540,8 @@ class OfferView {
     required this.destinationKnown,
     required this.goodsValueVnd,
     required this.unpaidVnd,
+    this.codVnd,
+    this.recipientPaysVnd,
     this.feeVnd,
     required this.feeStatus,
     required this.feePayer,
@@ -559,6 +569,8 @@ class OfferView {
       destinationKnown: _bool(m['destination_known']),
       goodsValueVnd: _int(m['goods_value_vnd']),
       unpaidVnd: _int(m['unpaid_vnd']),
+      codVnd: _intOrNull(m['cod_vnd']),
+      recipientPaysVnd: _intOrNull(m['recipient_pays_vnd']),
       feeVnd: _intOrNull(m['fee_vnd']),
       feeStatus: _str(m['fee_status']),
       feePayer: _str(m['fee_payer']),
@@ -601,6 +613,8 @@ class OfferView {
   final bool destinationKnown;
   final int goodsValueVnd;
   final int unpaidVnd;
+  final int? codVnd;
+  final int? recipientPaysVnd;
   final int? feeVnd;
   final String feeStatus;
   final String feePayer;

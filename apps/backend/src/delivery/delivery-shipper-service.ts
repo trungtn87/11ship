@@ -622,7 +622,7 @@ export class DeliveryShipperService {
 
   /** The original ETA of the hand-over (Shipper -> shop -> drop-off, plus service times), from M14, stored once on the assignment. Null if any leg is unknown. */
   async #originalEta(delivery: DeliveryRow, location: { lat: number; lng: number } | undefined, nowMs: number, pickupServiceSeconds: number, handoffServiceSeconds: number): Promise<number | null> {
-    if (location === undefined || delivery.dropoffLat === null || delivery.dropoffLng === null) {
+    if (location === undefined || delivery.dropoffLat === null || delivery.dropoffLng === null || delivery.pickupLat === null || delivery.pickupLng === null) {
       return null;
     }
     const shop = { lat: delivery.pickupLat, lng: delivery.pickupLng };

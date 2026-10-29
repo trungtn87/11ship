@@ -15,6 +15,7 @@ import '../addresses/address_location_picker.dart';
 import '../m02/m02_widgets.dart';
 import '../m02/route_distance.dart';
 import '../m02/shop_contact.dart';
+import '../m07/m07_customer_views.dart';
 import '../m07/m07_models.dart';
 import '../m07/m07_source.dart';
 import '../m11/m11_entries.dart';
@@ -1020,6 +1021,110 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'POLICY_NOT_CONFIGURED' => 'Chưa có bảng giá giao hàng.',
         _ => 'Cần xác định lại phí giao.',
       };
+}
+
+// ---- Customer Orders Tab (PR #231: Đơn món & Giao hàng) ----------------------------------------------------------------
+
+class CustomerOrdersTab extends StatefulWidget {
+  const CustomerOrdersTab({
+    super.key,
+    required this.runtime,
+    this.deliveries,
+    this.mapBuilder,
+    this.pinPicker,
+  });
+
+  final OrderRuntime runtime;
+  final CustomerDeliverySource? deliveries;
+  final M07MapBuilder? mapBuilder;
+  final M07PinPickerBuilder? pinPicker;
+
+  @override
+  State<CustomerOrdersTab> createState() => _CustomerOrdersTabState();
+}
+
+class _CustomerOrdersTabState extends State<CustomerOrdersTab> {
+  bool _deliveries = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final CustomerDeliverySource? d = widget.deliveries;
+    if (d == null) {
+      return CustomerOrdersView(runtime: widget.runtime);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _CustomerTabSegment(
+                key: const Key('customer-orders-part-orders'),
+                label: 'Đơn món',
+                selected: !_deliveries,
+                onTap: () => setState(() => _deliveries = false),
+              ),
+            ),
+            const SizedBox(width: N11Space.gap2),
+            Expanded(
+              child: _CustomerTabSegment(
+                key: const Key('customer-orders-part-deliveries'),
+                label: 'Giao hàng',
+                selected: _deliveries,
+                onTap: () => setState(() => _deliveries = true),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: N11Space.gap3),
+        if (_deliveries)
+          CustomerDeliveryHub(
+            source: d,
+            mapBuilder: widget.mapBuilder,
+            pinPicker: widget.pinPicker,
+          )
+        else
+          CustomerOrdersView(runtime: widget.runtime),
+      ],
+    );
+  }
+}
+
+class _CustomerTabSegment extends StatelessWidget {
+  const _CustomerTabSegment({super.key, required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadiusControl),
+        onTap: onTap,
+        child: Container(
+          height: kControlHeight,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? N11Colors.black : N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl),
+            border: Border.all(color: selected ? N11Colors.black : N11Colors.line),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: selected ? N11Colors.white : (onTap == null ? N11Colors.disabledInk : N11Colors.black),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ---- the list --------------------------------------------------------------------------------------------------------

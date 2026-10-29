@@ -281,3 +281,81 @@ export function parseDeliveryId(value: unknown): string {
   }
   return value;
 }
+
+export interface CreateCustomerDeliveryInput {
+  readonly senderName: string;
+  readonly senderPhone: string;
+  readonly pickupAddressText: string;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
+  readonly recipientName: string;
+  readonly recipientPhone: string;
+  readonly dropoffAddressText: string;
+  readonly dropoffLat: number | null;
+  readonly dropoffLng: number | null;
+  readonly goodsDescription: string;
+  readonly goodsValueVnd: number;
+  readonly codVnd: number;
+  readonly feePayer: FeePayer;
+  readonly note: string | null;
+  readonly agreedFee: AgreedFeeInput | null;
+}
+
+export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryInput {
+  const b = shaped(
+    body,
+    ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description'],
+    ['sender_name', 'sender_phone', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng', 'goods_value_vnd', 'cod_vnd', 'fee_payer', 'note', 'agreed_fee']
+  );
+  const recipientPhone = normalizeVietnamPhone(b.recipient_phone);
+  if (recipientPhone === undefined) return reject();
+  const senderPhone = b.sender_phone !== undefined ? normalizeVietnamPhone(b.sender_phone) : undefined;
+
+  const hasPickupLat = b.pickup_lat !== undefined && b.pickup_lat !== null;
+  const hasPickupLng = b.pickup_lng !== undefined && b.pickup_lng !== null;
+  if (hasPickupLat !== hasPickupLng) return reject();
+
+  const hasDropoffLat = b.dropoff_lat !== undefined && b.dropoff_lat !== null;
+  const hasDropoffLng = b.dropoff_lng !== undefined && b.dropoff_lng !== null;
+  if (hasDropoffLat !== hasDropoffLng) return reject();
+
+  const goodsValueVnd = b.goods_value_vnd !== undefined ? whole(b.goods_value_vnd, 0, MAX_MONEY_VND) : 0;
+  const codVnd = b.cod_vnd !== undefined ? whole(b.cod_vnd, 0, MAX_FEE_VND) : 0;
+
+  const feePayer = ((b.fee_payer as FeePayer) ?? 'RECIPIENT');
+  if (feePayer !== 'SENDER' && feePayer !== 'RECIPIENT' && feePayer !== 'CUSTOMER' && feePayer !== 'SHOP') {
+    return reject();
+  }
+
+  let agreedFee: AgreedFeeInput | null = null;
+  if (b.agreed_fee !== undefined && b.agreed_fee !== null) {
+    const f = shaped(b.agreed_fee, ['amount_vnd'], ['reason_code', 'reason_note']);
+    const reasonCode = (f.reason_code as AgreementReason) ?? 'CUSTOMER_DIRECT';
+    agreedFee = { reasonCode, reasonNote: optionalText(f.reason_note, 200), amountVnd: whole(f.amount_vnd, 0, MAX_FEE_VND) };
+  }
+
+  return {
+    senderName: b.sender_name !== undefined ? text(b.sender_name, 1, 80) : 'Khách gửi hàng',
+    senderPhone: senderPhone ?? recipientPhone,
+    pickupAddressText: b.pickup_address_text !== undefined ? text(b.pickup_address_text, 1, 300) : 'Điểm lấy hàng',
+    pickupLat: hasPickupLat ? coordinate(b.pickup_lat, 90) : null,
+    pickupLng: hasPickupLng ? coordinate(b.pickup_lng, 180) : null,
+    recipientName: text(b.recipient_name, 1, 80),
+    recipientPhone,
+    dropoffAddressText: text(b.dropoff_address_text, 1, 300),
+    dropoffLat: hasDropoffLat ? coordinate(b.dropoff_lat, 90) : null,
+    dropoffLng: hasDropoffLng ? coordinate(b.dropoff_lng, 180) : null,
+    goodsDescription: text(b.goods_description, 1, 120),
+    goodsValueVnd,
+    codVnd,
+    feePayer,
+    note: optionalText(b.note, 200),
+    agreedFee,
+  };
+}
+
+export function parseToggleLocationBody(body: unknown): { shareLocation: boolean } {
+  const b = shaped(body, ['share_location']);
+  if (typeof b.share_location !== 'boolean') return reject();
+  return { shareLocation: b.share_location };
+}

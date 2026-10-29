@@ -413,7 +413,7 @@ export class ComplaintService {
       orderId: delivery.orderId,
       deliveryId: delivery.deliveryId,
       reviewId,
-      shopId: delivery.shopId,
+      shopId: delivery.shopId ?? '',
       shopName: delivery.shopName,
       driverId: driver?.driverId ?? null,
       driverName: driver?.name ?? null,
