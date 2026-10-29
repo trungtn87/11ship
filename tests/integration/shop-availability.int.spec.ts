@@ -66,6 +66,17 @@ describe('M02-A — availability on PostgreSQL', () => {
     (await at(instant, owner.shopId, timeZone)).availability.online;
 
   describe('A06 — the open minute is inclusive, the close minute exclusive, on Vietnam time', () => {
+    it('#204: 15:00–22:00 daily, exact closing instant and Sunday to Monday', async () => {
+      await setSchedule(owner.shopId, Array.from({ length: 7 }, (_, i) => interval(i + 1, 900, 1320)));
+      for (const [instant, reason] of [
+        ['2026-10-25T21:59:59.999+07:00', 'ONLINE'],
+        ['2026-10-25T22:00:00.000+07:00', 'OUTSIDE_BUSINESS_HOURS'],
+        ['2026-10-26T00:00:00.000+07:00', 'OUTSIDE_BUSINESS_HOURS'],
+        ['2026-10-26T14:59:59.999+07:00', 'OUTSIDE_BUSINESS_HOURS'],
+        ['2026-10-26T15:00:00.000+07:00', 'ONLINE'],
+      ]) expect((await at(instant)).availability.reason).toBe(reason);
+    });
+
     it('Monday 08:00-17:00', async () => {
       await setSchedule(owner.shopId, [interval(1, 480, 1020)]);
       // 2026-10-05 is a Monday.

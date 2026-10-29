@@ -45,7 +45,8 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
   const feeAmount = known ? (fee.feeVnd as number) : null;
   const payer = fee?.feePayer ?? 'CUSTOMER';
   const status = fee !== undefined ? (known ? 'FINAL' : 'UNKNOWN') : o.feeEstimateVnd !== null ? 'ESTIMATE' : 'UNKNOWN';
-  const dishesRemaining = o.itemsTotalVnd - o.paidVnd;
+  const dishesRemaining = Math.max(0, o.itemsTotalVnd - o.paidVnd);
+  const customerProposed = o.feeQuoteVnd !== null && o.feeQuoteVnd !== undefined && o.feeEstimateVnd !== null && o.feeEstimateVnd > o.feeQuoteVnd;
   // The expected total is given only when nobody has to guess the fee: a final fee paid by the customer adds to it, a fee paid by the shop does not.
   const expectedTotal = o.status === 'PENDING_CONFIRMATION' ? (o.feeEstimateVnd !== null ? o.itemsTotalVnd + o.feeEstimateVnd : null) : payer === 'SHOP' ? o.itemsTotalVnd : known ? o.itemsTotalVnd + (feeAmount as number) : null;
   return {
@@ -53,7 +54,23 @@ export function moneyView(o: OrderRow, latest: DeliveryRow | undefined): JsonObj
     items_total_vnd: o.itemsTotalVnd,
     paid_vnd: o.paidVnd,
     items_remaining_vnd: dishesRemaining,
-    fee: { payer, amount_vnd: feeAmount, estimate_vnd: o.feeEstimateVnd, status, distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM },
+    fee: {
+      payer,
+      amount_vnd: feeAmount,
+      estimate_vnd: o.feeEstimateVnd,
+      fee_vnd: feeAmount ?? o.feeEstimateVnd,
+      status: known ? 'FINAL' : o.feeEstimateVnd !== null ? 'PRICED' : 'UNAVAILABLE',
+      distance_m: fee?.routeDistanceM ?? o.feeEstimateDistanceM,
+      // New Orders preserve the reason the customer confirmed. Historical Orders
+      // have NULL here, which deliberately remains neutral rather than inferred.
+      reason: known || o.feeEstimateVnd !== null ? null : o.feeEstimateReason ?? null,
+      snapshot: `order:${o.orderId}:v${o.version}`,
+      version: o.version,
+      policy_version: null,
+      quoted_at: iso(o.createdAtMs),
+      customer_proposed: customerProposed,
+      legacy_status: status,
+    },
     expected_total_vnd: expectedTotal,
   };
 }
@@ -79,6 +96,7 @@ export class OrderViews {
       shop: { shop_id: o.shopId, name: o.shopName, phone: o.shopPhone, address_text: o.shopAddressText },
       recipient: { name: o.recipientName, phone: o.recipientPhone, address_text: o.addressText, lat: o.addressLat, lng: o.addressLng },
       note: o.note,
+      delivery_note: o.deliveryNote,
       scheduled_for: iso(o.scheduledForMs),
       items: items.map(itemView),
       money: moneyView(o, latest),

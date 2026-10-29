@@ -4,9 +4,8 @@ import 'form_feedback.dart';
 
 import '../tokens.dart';
 
-// Shared components of the 11Food / 11Ship phone UI, built from the approved M01 design ("Phone" component of m01.zip, Brand Board
-// v1.1): every interactive control is >= 44 px and 48 px for buttons; a disabled business action always shows its reason as text.
-// Radius: controls 14, cards 16, chips pill. Text on yellow is always charcoal.
+// Shared V4 components. Preserve public names, validation and action callbacks.
+// Interactive targets are at least 48dp; text can wrap as system font size grows.
 
 /// A column with the same gap between children (the `c-stack` of the web UI).
 Widget vstack(List<Widget> children, {double gap = N11Space.gap3}) {
@@ -36,16 +35,19 @@ class N11Chip extends StatelessWidget {
       ChipKind.neutral => (N11Colors.chipSoon, N11Colors.ink2),
       ChipKind.soon => (N11Colors.chipSoon, N11Colors.ink2),
       ChipKind.ok => (N11Colors.successSoft, N11Colors.successInk),
-      ChipKind.warn => (N11Colors.yellowSoft, N11Colors.black),
+      ChipKind.warn => (N11Colors.warningSoft, N11Colors.warning),
       ChipKind.bad => (N11Colors.errorSoft, N11Colors.errorInk),
-      ChipKind.info => (N11Colors.black, N11Colors.white),
+      ChipKind.info => (N11Colors.infoSoft, N11Colors.info),
       ChipKind.yellow => (N11Colors.yellow, N11Colors.black),
       ChipKind.dark => (N11Colors.black, N11Colors.white),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(kRadiusPill)),
-      child: Text(label, style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w700, color: ink)),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w700, color: ink),
+      ),
     );
   }
 }
@@ -75,12 +77,16 @@ class N11Banner extends StatelessWidget {
     final (Color background, Color border, Color ink, Color badge, Color badgeInk, String glyph) = switch (kind) {
       BannerKind.error => (N11Colors.errorSoft, N11Colors.errorBorder, N11Colors.errorInk, N11Colors.error, N11Colors.white, '!'),
       BannerKind.success => (N11Colors.successSoft, N11Colors.successBorder, N11Colors.successInk, N11Colors.success, N11Colors.white, '✓'),
-      BannerKind.warn => (N11Colors.yellowSoft, N11Colors.yellow, N11Colors.black, N11Colors.yellow, N11Colors.black, '!'),
-      BannerKind.info => (N11Colors.white, N11Colors.line, N11Colors.black, N11Colors.black, N11Colors.white, 'i'),
+      BannerKind.warn => (N11Colors.warningSoft, N11Colors.warningSoft, N11Colors.warning, N11Colors.warning, N11Colors.white, '!'),
+      BannerKind.info => (N11Colors.infoSoft, N11Colors.infoSoft, N11Colors.info, N11Colors.info, N11Colors.white, 'i'),
     };
     return Container(
       padding: const EdgeInsets.all(N11Space.gap3),
-      decoration: BoxDecoration(color: background, border: Border.all(color: border), borderRadius: BorderRadius.circular(kRadiusControl)),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(kRadiusControl),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -90,7 +96,12 @@ class N11Banner extends StatelessWidget {
             margin: const EdgeInsets.only(top: 1),
             alignment: Alignment.center,
             decoration: BoxDecoration(color: badge, shape: BoxShape.circle),
-            child: icon != null ? Icon(icon, size: 14, color: badgeInk) : Text(glyph, style: TextStyle(fontSize: 12, height: 1, fontWeight: FontWeight.w800, color: badgeInk)),
+            child: icon != null
+                ? Icon(icon, size: 14, color: badgeInk)
+                : Text(
+                    glyph,
+                    style: TextStyle(fontSize: 12, height: 1, fontWeight: FontWeight.w800, color: badgeInk),
+                  ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -99,10 +110,31 @@ class N11Banner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(title, style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w700, color: ink)),
-                  if (text != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(text!, style: TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w500, color: ink))),
-                  if (meta != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(meta!, style: TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w500, color: ink))),
-                  if (trailing != null) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: trailing),
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w700, color: ink),
+                  ),
+                  if (text != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        text!,
+                        style: TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w500, color: ink),
+                      ),
+                    ),
+                  if (meta != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        meta!,
+                        style: TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w500, color: ink),
+                      ),
+                    ),
+                  if (trailing != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: N11Space.gap2),
+                      child: trailing,
+                    ),
                 ],
               ),
             ),
@@ -115,11 +147,20 @@ class N11Banner extends StatelessWidget {
 
 // ---- Buttons ---------------------------------------------------------------------------------------------------------
 
-/// primary = yellow, secondary = outlined ("ghost" of the design), dark = charcoal.
-enum ButtonKind { primary, secondary, dark }
+/// Primary = yellow, secondary = outlined, ghost = text, dark = charcoal.
+enum ButtonKind { primary, secondary, dark, ghost }
 
 class N11Button extends StatefulWidget {
-  const N11Button({super.key, required this.label, this.onPressed, this.kind = ButtonKind.primary, this.icon, this.compact = false, this.loading = false, this.validate = false});
+  const N11Button({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.kind = ButtonKind.primary,
+    this.icon,
+    this.compact = false,
+    this.loading = false,
+    this.validate = false,
+  });
 
   final String label;
 
@@ -128,7 +169,7 @@ class N11Button extends StatefulWidget {
   final ButtonKind kind;
   final IconData? icon;
 
-  /// Compact buttons size to their content (still >= 44 px high); normal ones fill the width and are 48 px high.
+  /// Compact buttons size to their content (still >= 48 px high); normal ones fill the width and are at least 48 px high.
   final bool compact;
 
   /// Shows a spinner and the loading shade; the button does nothing while loading.
@@ -155,14 +196,15 @@ class _N11ButtonState extends State<N11Button> {
     final bool enabled = widget.onPressed != null && !widget.loading;
     final bool unavailable = widget.onPressed == null && !widget.loading;
     Color background = switch (widget.kind) {
-      ButtonKind.primary => _pressed && enabled ? N11Colors.yellowStrong : N11Colors.yellow,
+      ButtonKind.primary => _pressed && enabled ? N11Colors.yellowHover : N11Colors.yellow,
       ButtonKind.secondary => _pressed && enabled ? N11Colors.bg : N11Colors.white,
       ButtonKind.dark => N11Colors.black,
+      ButtonKind.ghost => _pressed && enabled ? N11Colors.bg : Colors.transparent,
     };
     Color ink = widget.kind == ButtonKind.dark ? N11Colors.white : N11Colors.black;
     Color border = widget.kind == ButtonKind.secondary ? N11Colors.line : Colors.transparent;
     if (widget.loading) {
-      background = N11Colors.yellowHover;
+      background = widget.kind == ButtonKind.dark ? N11Colors.black : N11Colors.yellowSoft;
     }
     if (unavailable) {
       background = N11Colors.disabledBg;
@@ -185,7 +227,11 @@ class _N11ButtonState extends State<N11Button> {
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: widget.compact ? kTapMin : kControlHeight),
           child: DecoratedBox(
-            decoration: BoxDecoration(color: background, border: Border.all(color: border), borderRadius: radius),
+            decoration: BoxDecoration(
+              color: background,
+              border: Border.all(color: border),
+              borderRadius: radius,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: N11Space.gap4, vertical: 4),
               child: Row(
@@ -195,11 +241,14 @@ class _N11ButtonState extends State<N11Button> {
                   if (widget.loading) ...<Widget>[
                     SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: ink)),
                     const SizedBox(width: 10),
-                  ] else if (widget.icon != null) ...<Widget>[
-                    Icon(widget.icon, size: 20, color: ink),
-                    const SizedBox(width: N11Space.gap2),
-                  ],
-                  Flexible(child: Text(widget.label, textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: ink))),
+                  ] else if (widget.icon != null) ...<Widget>[Icon(widget.icon, size: 20, color: ink), const SizedBox(width: N11Space.gap2)],
+                  Flexible(
+                    child: Text(
+                      widget.label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ink),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -229,7 +278,11 @@ class N11Link extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Center(
               widthFactor: 1,
-              child: Text(label, textAlign: TextAlign.center, style: onPressed == null ? N11Text.link.copyWith(color: N11Colors.disabledInk, decorationColor: N11Colors.disabledInk) : N11Text.link),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: onPressed == null ? N11Text.link.copyWith(color: N11Colors.disabledInk, decorationColor: N11Colors.disabledInk) : N11Text.link,
+              ),
             ),
           ),
         ),
@@ -250,7 +303,10 @@ class ReasonNote extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: N11Colors.ink3)),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 16, color: N11Colors.ink3),
+        ),
         const SizedBox(width: N11Space.gap2),
         Expanded(child: Text(text, style: N11Text.captionInk2)),
       ],
@@ -297,8 +353,16 @@ class N11Heading extends StatelessWidget {
     return Column(
       crossAxisAlignment: centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
       children: <Widget>[
-        Text(title, textAlign: centered ? TextAlign.center : TextAlign.start, style: (size == null ? N11Text.title : N11Text.title.copyWith(fontSize: size))),
-        if (sub != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(sub!, textAlign: centered ? TextAlign.center : TextAlign.start, style: N11Text.lead)),
+        Text(
+          title,
+          textAlign: centered ? TextAlign.center : TextAlign.start,
+          style: (size == null ? N11Text.title : N11Text.title.copyWith(fontSize: size)),
+        ),
+        if (sub != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(sub!, textAlign: centered ? TextAlign.center : TextAlign.start, style: N11Text.lead),
+          ),
       ],
     );
   }
@@ -321,12 +385,20 @@ class N11Steps extends StatelessWidget {
           children: <Widget>[
             for (int i = 0; i < count; i++) ...<Widget>[
               if (i > 0) const SizedBox(width: 4),
-              Expanded(child: Container(height: 4, decoration: BoxDecoration(color: i < current ? N11Colors.yellow : N11Colors.line, borderRadius: BorderRadius.circular(2)))),
+              Expanded(
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(color: i < current ? N11Colors.yellow : N11Colors.line, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
             ],
           ],
         ),
         const SizedBox(height: 6),
-        Text('Bước $current/$count${label == null ? '' : ' · $label'}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: N11Colors.ink2)),
+        Text(
+          'Bước $current/$count${label == null ? '' : ' · $label'}',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: N11Colors.ink2),
+        ),
       ],
     );
   }
@@ -346,9 +418,9 @@ class N11StateBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (Color background, Color ink, String glyph) = switch (kind) {
-      StateKind.ok => (N11Colors.success, N11Colors.white, '✓'),
-      StateKind.error => (N11Colors.error, N11Colors.white, '!'),
-      StateKind.warn => (N11Colors.yellow, N11Colors.black, '!'),
+      StateKind.ok => (N11Colors.successSoft, N11Colors.success, '✓'),
+      StateKind.error => (N11Colors.errorSoft, N11Colors.error, '!'),
+      StateKind.warn => (N11Colors.warningSoft, N11Colors.warning, '!'),
     };
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
@@ -359,11 +431,24 @@ class N11StateBlock extends StatelessWidget {
             height: 72,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: background, shape: BoxShape.circle),
-            child: icon != null ? Icon(icon, size: 34, color: ink) : Text(glyph, style: TextStyle(fontSize: 34, height: 1, fontWeight: FontWeight.w800, color: ink)),
+            child: icon != null
+                ? Icon(icon, size: 34, color: ink)
+                : Text(
+                    glyph,
+                    style: TextStyle(fontSize: 34, height: 1, fontWeight: FontWeight.w800, color: ink),
+                  ),
           ),
           const SizedBox(height: 16),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black)),
-          if (text != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(text!, textAlign: TextAlign.center, style: N11Text.lead)),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
+          ),
+          if (text != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(text!, textAlign: TextAlign.center, style: N11Text.lead),
+            ),
         ],
       ),
     );
@@ -392,15 +477,25 @@ class N11AvatarCard extends StatelessWidget {
             height: 56,
             alignment: Alignment.center,
             decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle),
-            child: Text(initial, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: N11Colors.black)),
+            child: Text(
+              initial,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: N11Colors.black),
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(name, key: nameKey, style: const TextStyle(fontSize: 16, height: 1.3, fontWeight: FontWeight.w800, color: N11Colors.black)),
-                Padding(padding: const EdgeInsets.only(top: 2, bottom: 8), child: Text(phone, key: phoneKey, style: N11Text.caption)),
+                Text(
+                  name,
+                  key: nameKey,
+                  style: const TextStyle(fontSize: 16, height: 1.3, fontWeight: FontWeight.w800, color: N11Colors.black),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 8),
+                  child: Text(phone, key: phoneKey, style: N11Text.caption),
+                ),
                 if (chips.isNotEmpty) Wrap(spacing: 6, runSpacing: 6, children: chips),
               ],
             ),
@@ -430,7 +525,11 @@ class N11CheckList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: N11Space.gap4, vertical: 6),
-      decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.line), borderRadius: BorderRadius.circular(kRadiusCard)),
+      decoration: BoxDecoration(
+        color: N11Colors.white,
+        border: Border.all(color: N11Colors.line),
+        borderRadius: BorderRadius.circular(kRadiusCard),
+      ),
       child: Column(
         children: <Widget>[
           for (final N11CheckItem item in items)
@@ -444,16 +543,34 @@ class N11CheckList extends StatelessWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: switch (item.state) { CheckState.done => N11Colors.yellow, CheckState.missing => N11Colors.errorSoft, CheckState.todo => null },
+                      color: switch (item.state) {
+                        CheckState.done => N11Colors.yellow,
+                        CheckState.missing => N11Colors.errorSoft,
+                        CheckState.todo => null,
+                      },
                       border: item.state == CheckState.todo ? Border.all(color: N11Colors.line, width: 2) : null,
                     ),
                     child: Text(
-                      switch (item.state) { CheckState.done => '✓', CheckState.missing => '!', CheckState.todo => '' },
-                      style: TextStyle(fontSize: 13, height: 1, fontWeight: FontWeight.w800, color: item.state == CheckState.missing ? N11Colors.errorInk : N11Colors.black),
+                      switch (item.state) {
+                        CheckState.done => '✓',
+                        CheckState.missing => '!',
+                        CheckState.todo => '',
+                      },
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                        color: item.state == CheckState.missing ? N11Colors.errorInk : N11Colors.black,
+                      ),
                     ),
                   ),
                   const SizedBox(width: N11Space.gap3),
-                  Expanded(child: Text(item.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black))),
+                  Expanded(
+                    child: Text(
+                      item.label,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: N11Colors.black),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -479,13 +596,21 @@ class N11ChoiceCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(kRadiusCard),
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: selected ? N11Colors.yellow : N11Colors.line, width: 2), borderRadius: BorderRadius.circular(kRadiusCard)),
+        decoration: BoxDecoration(
+          color: N11Colors.white,
+          border: Border.all(color: selected ? N11Colors.yellow : N11Colors.line, width: 2),
+          borderRadius: BorderRadius.circular(kRadiusCard),
+        ),
         child: Row(
           children: <Widget>[
             Container(
               width: 22,
               height: 22,
-              decoration: BoxDecoration(color: N11Colors.white, shape: BoxShape.circle, border: Border.all(color: selected ? N11Colors.yellow : N11Colors.line, width: selected ? 7 : 2)),
+              decoration: BoxDecoration(
+                color: N11Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? N11Colors.yellow : N11Colors.line, width: selected ? 7 : 2),
+              ),
             ),
             const SizedBox(width: N11Space.gap3),
             Expanded(
@@ -493,7 +618,11 @@ class N11ChoiceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(title, style: N11Text.bodyStrong),
-                  if (text != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(text!, style: N11Text.caption)),
+                  if (text != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(text!, style: N11Text.caption),
+                    ),
                 ],
               ),
             ),
@@ -517,6 +646,7 @@ class N11Card extends StatelessWidget {
       padding: const EdgeInsets.all(N11Space.gap4),
       decoration: BoxDecoration(
         color: N11Colors.white,
+        boxShadow: const <BoxShadow>[BoxShadow(color: Color(0x0A191919), offset: Offset(0, 4), blurRadius: 16)],
         border: Border.all(color: N11Colors.line),
         borderRadius: BorderRadius.circular(kRadiusCard),
       ),
@@ -545,23 +675,37 @@ class N11InfoCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              Expanded(child: Text(title, key: titleKey, style: N11Text.bodyStrong)),
+              Expanded(
+                child: Text(title, key: titleKey, style: N11Text.bodyStrong),
+              ),
               if (chip != null) ...<Widget>[const SizedBox(width: N11Space.gap2), chip!],
             ],
           ),
-          if (text != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(text!, key: textKey, style: N11Text.caption)),
+          if (text != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(text!, key: textKey, style: N11Text.caption),
+            ),
           for (final (String k, String v) in rows)
             Container(
               margin: const EdgeInsets.only(top: 10),
               padding: const EdgeInsets.only(top: 8),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: N11Colors.line))),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: N11Colors.line)),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
                   Text(k, style: N11Text.caption),
                   const SizedBox(width: N11Space.gap3),
-                  Flexible(child: Text(v, textAlign: TextAlign.right, style: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w600, color: N11Colors.black))),
+                  Flexible(
+                    child: Text(
+                      v,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.w600, color: N11Colors.black),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -592,7 +736,8 @@ class N11ListItem extends StatelessWidget {
     final bool enabled = onTap != null && !soon;
     // A row without an action (a status) is information, not an unavailable feature: only "soon" rows are drawn grey.
     final Color ink = soon ? N11Colors.disabledInk : N11Colors.black;
-    final Widget? end = trailing ?? (soon ? const N11Chip('Sắp có', kind: ChipKind.soon) : (enabled ? const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2) : null));
+    final Widget? end =
+        trailing ?? (soon ? const N11Chip('Sắp có', kind: ChipKind.soon) : (enabled ? const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2) : null));
     return Semantics(
       button: true,
       enabled: enabled,
@@ -618,8 +763,18 @@ class N11ListItem extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(title, style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w600, color: ink)),
-                      if (sub != null) Padding(padding: const EdgeInsets.only(top: 1), child: Text(sub!, style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: N11Colors.ink2))),
+                      Text(
+                        title,
+                        style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w600, color: ink),
+                      ),
+                      if (sub != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Text(
+                            sub!,
+                            style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: N11Colors.ink2),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -657,7 +812,10 @@ class N11List extends StatelessWidget {
         border: Border.all(color: N11Colors.line),
         borderRadius: BorderRadius.circular(kRadiusCard),
       ),
-      child: Material(color: Colors.transparent, child: Column(children: rows)),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(children: rows),
+      ),
     );
     if (title == null) {
       return card;
@@ -665,7 +823,13 @@ class N11List extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 8), child: Text(title!, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.ink2))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(
+            title!,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: N11Colors.ink2),
+          ),
+        ),
         card,
       ],
     );
@@ -705,7 +869,7 @@ class EmptyState extends StatelessWidget {
 
 enum FieldTone { normal, error, ok }
 
-/// Labelled input of the design: white, 48 px, 14 px radius; focus = 2 px yellow + soft ring; error = 2 px red + soft ring. A password
+/// Labelled input of the design: white, minimum 48 px, 12 px radius; focus = 2 px yellow + soft ring; error = 2 px red + soft ring. A password
 /// field ([password]) carries its own "Hiện / Ẩn" switch.
 class N11Field extends StatefulWidget {
   const N11Field({
@@ -775,8 +939,12 @@ class _N11FieldState extends State<N11Field> {
     key: _validation,
     initialValue: widget.controller.text,
     autovalidateMode: AutovalidateMode.onUserInteraction,
-    validator: (_) => !widget.enabled ? null : widget.validator?.call(widget.controller.text) ??
-        (widget.password ? (widget.requiredInput && widget.controller.text.isEmpty ? 'Nhập ${widget.label.toLowerCase()}.' : null) : textError(widget.controller.text, widget.label.toLowerCase(), widget.maxLength ?? 10000, optional: !widget.requiredInput)),
+    validator: (_) => !widget.enabled
+        ? null
+        : widget.validator?.call(widget.controller.text) ??
+              (widget.password
+                  ? (widget.requiredInput && widget.controller.text.isEmpty ? 'Nhập ${widget.label.toLowerCase()}.' : null)
+                  : textError(widget.controller.text, widget.label.toLowerCase(), widget.maxLength ?? 10000, optional: !widget.requiredInput)),
     builder: (FormFieldState<String> field) => _buildField(context, field),
   );
 
@@ -793,12 +961,21 @@ class _N11FieldState extends State<N11Field> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text.rich(TextSpan(children: <InlineSpan>[
-          TextSpan(text: widget.label, style: N11Text.label),
-          if (widget.optionalLabel) const TextSpan(text: ' · không bắt buộc', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.ink2)),
-        ])),
+        Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: widget.label, style: N11Text.label),
+              if (widget.optionalLabel)
+                const TextSpan(
+                  text: ' · không bắt buộc',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.ink2),
+                ),
+            ],
+          ),
+        ),
         const SizedBox(height: 6),
         Container(
+          constraints: const BoxConstraints(minHeight: kControlHeight),
           decoration: BoxDecoration(
             color: widget.enabled ? N11Colors.white : N11Colors.bg,
             borderRadius: BorderRadius.circular(kRadiusControl),
@@ -816,14 +993,17 @@ class _N11FieldState extends State<N11Field> {
             maxLength: widget.maxLength,
             autocorrect: false,
             enableSuggestions: !widget.password,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.black),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: N11Colors.black),
             cursorColor: N11Colors.black,
-            onChanged: (String value) { field.didChange(value); widget.onChanged?.call(); },
+            onChanged: (String value) {
+              field.didChange(value);
+              widget.onChanged?.call();
+            },
             decoration: InputDecoration(
               counterText: '',
               isDense: true,
               hintText: widget.placeholder,
-              hintStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: N11Colors.placeholder),
+              hintStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: N11Colors.placeholder),
               border: none,
               enabledBorder: none,
               focusedBorder: none,
@@ -833,14 +1013,31 @@ class _N11FieldState extends State<N11Field> {
                   ? TextButton(
                       key: Key('${(widget.fieldKey as ValueKey<String>).value}-toggle'),
                       onPressed: widget.enabled ? () => setState(() => _hidden = !_hidden) : null,
-                      style: TextButton.styleFrom(minimumSize: const Size(kTapMin, kTapMin), padding: const EdgeInsets.symmetric(horizontal: 14), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                      child: Text(_hidden ? 'Hiện' : 'Ẩn', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: N11Colors.ink2)),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(kTapMin, kTapMin),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        _hidden ? 'Hiện' : 'Ẩn',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: N11Colors.ink2),
+                      ),
                     )
                   : widget.suffix,
             ),
           ),
         ),
-        if (hint != null) Padding(padding: const EdgeInsets.only(top: 6), child: Semantics(liveRegion: true, child: Text(hint, style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: hintInk)))),
+        if (hint != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                hint,
+                style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: hintInk),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -861,10 +1058,16 @@ class N11AppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 52),
-      decoration: const BoxDecoration(color: N11Colors.white, border: Border(bottom: BorderSide(color: N11Colors.line))),
+      decoration: const BoxDecoration(
+        color: N11Colors.white,
+        border: Border(bottom: BorderSide(color: N11Colors.line)),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: logo != null
-          ? Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: logo))
+          ? Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: logo),
+            )
           : Row(
               children: <Widget>[
                 if (onBack != null)
@@ -879,7 +1082,12 @@ class N11AppBar extends StatelessWidget {
                     ),
                   ),
                 if (onBack == null) const SizedBox(width: 4),
-                Expanded(child: Semantics(header: true, child: Text(title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.barTitle))),
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.barTitle),
+                  ),
+                ),
               ],
             ),
     );
@@ -904,7 +1112,10 @@ class N11BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(color: N11Colors.white, border: Border(top: BorderSide(color: N11Colors.line))),
+      decoration: const BoxDecoration(
+        color: N11Colors.white,
+        border: Border(top: BorderSide(color: N11Colors.line)),
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -913,12 +1124,7 @@ class N11BottomNav extends StatelessWidget {
             children: <Widget>[
               for (int i = 0; i < items.length; i++)
                 Expanded(
-                  child: _NavTab(
-                    key: Key('tab-${items[i].id}'),
-                    item: items[i],
-                    active: i == activeIndex,
-                    onTap: () => onSelect(i),
-                  ),
+                  child: _NavTab(key: Key('tab-${items[i].id}'), item: items[i], active: i == activeIndex, onTap: () => onSelect(i)),
                 ),
             ],
           ),
@@ -954,17 +1160,16 @@ class _NavTab extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               Container(
-                width: 56,
-                height: 28,
+                width: N11V5.navIndicatorWidth,
+                height: N11V5.navIndicatorHeight,
                 decoration: BoxDecoration(color: active ? N11Colors.yellowSoft : Colors.transparent, borderRadius: BorderRadius.circular(kRadiusPill)),
-                child: Icon(item.icon, size: 20, color: active ? N11Colors.black : N11Colors.ink2),
+                child: Icon(item.icon, size: 24, color: active ? N11Colors.accentOrange : N11Colors.ink2),
               ),
               const SizedBox(height: 2),
               Text(
                 item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: active ? N11Colors.black : N11Colors.ink2),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: active ? N11Colors.accentOrange : N11Colors.ink2),
               ),
             ],
           ),

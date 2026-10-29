@@ -5,6 +5,7 @@ export 'src/account/account_views.dart';
 export 'src/addresses/address_controller.dart';
 export 'src/addresses/address_models.dart';
 export 'src/addresses/address_location_picker.dart';
+export 'src/addresses/place_search.dart';
 export 'src/addresses/address_views.dart';
 export 'src/addresses/http_address_api.dart';
 export 'src/account/api_client.dart';
@@ -107,3 +108,5 @@ export 'src/widgets/diagnostics_view.dart';
 export 'src/flows/shop_logo_data.dart' show ShopLogoPickerPort, ShopLogoException;
 
 export 'src/finance/finance_views.dart';
+
+export 'src/widgets/discovery_controls.dart';

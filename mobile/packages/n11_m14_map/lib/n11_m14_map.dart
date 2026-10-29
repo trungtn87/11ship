@@ -15,11 +15,13 @@ const bool kM14MapEnabled = bool.fromEnvironment('M14_OFFLINE_MAP');
 /// Coordinates are [latitude, longitude]; attribution is always visible.
 class M14OfflineMap extends StatelessWidget {
   const M14OfflineMap({super.key, this.pins = const <Map<String, dynamic>>[],
-    this.route = const <List<double>>[], this.onPoint, this.onReady, this.onError, this.focusPin = false, this.centerRequest = 0});
+    this.route = const <List<double>>[], this.onPoint, this.onReady, this.onError, this.focusPin = false, this.centerRequest = 0, this.radiusCircle});
   final List<Map<String, dynamic>> pins;
   final List<List<double>> route;
   final bool focusPin;
   final int centerRequest;
+  /// Visual-only radius overlay (`lat`, `lon`, `radius_m`, `color`, `fill_color`).
+  final Map<String, dynamic>? radiusCircle;
   final VoidCallback? onReady;
   final ValueChanged<String>? onError;
   final void Function(double latitude, double longitude, bool insideCoverage)? onPoint;
@@ -29,16 +31,17 @@ class M14OfflineMap extends StatelessWidget {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return const Center(child: Text('Bản đồ offline M14 dành cho Android'));
     }
-    return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError, focusPin: focusPin, centerRequest: centerRequest);
+    return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError, focusPin: focusPin, centerRequest: centerRequest, radiusCircle: radiusCircle);
   }
 }
 
 class _NativeMap extends StatefulWidget {
-  const _NativeMap({required this.pins, required this.route, this.onPoint, this.onReady, this.onError, this.focusPin = false, this.centerRequest = 0});
+  const _NativeMap({required this.pins, required this.route, this.onPoint, this.onReady, this.onError, this.focusPin = false, this.centerRequest = 0, this.radiusCircle});
   final List<Map<String, dynamic>> pins;
   final List<List<double>> route;
   final bool focusPin;
   final int centerRequest;
+  final Map<String, dynamic>? radiusCircle;
   final VoidCallback? onReady;
   final ValueChanged<String>? onError;
   final void Function(double, double, bool)? onPoint;
@@ -47,7 +50,8 @@ class _NativeMap extends StatefulWidget {
 }
 class _NativeMapState extends State<_NativeMap> {
   MethodChannel? _channel;
-  Map<String, dynamic> get _data => <String, dynamic>{'pins': widget.pins, 'route': widget.route, 'focus_pin': widget.focusPin, 'center_request': widget.centerRequest};
+  Map<String, dynamic> get _data => <String, dynamic>{'pins': widget.pins, 'route': widget.route, 'focus_pin': widget.focusPin,
+    'select_points': widget.onPoint != null, 'center_request': widget.centerRequest, if (widget.radiusCircle != null) 'radius_circle': widget.radiusCircle};
   @override
   void didUpdateWidget(covariant _NativeMap oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -61,7 +65,8 @@ class _NativeMapState extends State<_NativeMap> {
   @override
   Widget build(BuildContext context) => AndroidView(
     viewType: 'vn.eleven/m14/map',
-    gestureRecognizers: widget.focusPin ? <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)} : const <Factory<OneSequenceGestureRecognizer>>{},
+    // A bounded map card must receive pan/pinch gestures even when embedded in a ScrollView.
+    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)},
     creationParams: _data,
     creationParamsCodec: const StandardMessageCodec(),
     onPlatformViewCreated: (int id) {

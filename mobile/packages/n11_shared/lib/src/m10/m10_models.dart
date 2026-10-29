@@ -134,11 +134,11 @@ class OrderLine {
 }
 
 class OrderFee {
-  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM});
+  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.customerProposed = false, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
 
   factory OrderFee.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']));
+    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']), customerProposed: m['customer_proposed'] == true, reason: _strOrNull(m['reason']), snapshot: _strOrNull(m['snapshot']), policyVersion: _intOrNull(m['policy_version']), quotedAt: _timeOrNull(m['quoted_at']));
   }
 
   final String payer;
@@ -152,6 +152,12 @@ class OrderFee {
   /// FINAL / ESTIMATE / UNKNOWN.
   final String status;
   final int? distanceM;
+  /// The customer deliberately raised the checkout fee (currently the voluntary tip flow).
+  final bool customerProposed;
+  final String? reason;
+  final String? snapshot;
+  final int? policyVersion;
+  final DateTime? quotedAt;
 
   /// The figure to show: the fixed fee, else the estimate, else null.
   int? get shownVnd => amountVnd ?? estimateVnd;
@@ -337,6 +343,7 @@ class OrderView {
     required this.shop,
     required this.recipient,
     required this.note,
+    this.deliveryNote,
     required this.scheduledFor,
     required this.items,
     required this.money,
@@ -371,6 +378,7 @@ class OrderView {
       shop: OrderShop.fromJson(m['shop']),
       recipient: OrderRecipient.fromJson(m['recipient']),
       note: _strOrNull(m['note']),
+      deliveryNote: _strOrNull(m['delivery_note']),
       scheduledFor: _timeOrNull(m['scheduled_for']),
       items: <OrderLine>[for (final Object? i in _list(m['items'])) OrderLine.fromJson(i)],
       money: OrderMoney.fromJson(m['money']),
@@ -386,7 +394,12 @@ class OrderView {
       shopDelivery: delivery != null && shopSide ? DeliveryView.fromJson(delivery) : null,
       deliveries: m['deliveries'] == null ? const <DeliveryBrief>[] : <DeliveryBrief>[for (final Object? d in _list(m['deliveries'])) DeliveryBrief.fromJson(d)],
       scheduleConflict: m['schedule_conflict'] == true,
-      can: can is Map<String, Object?> ? <String, bool>{for (final MapEntry<String, Object?> e in can.entries) if (e.value is bool) e.key: e.value! as bool} : const <String, bool>{},
+      can: can is Map<String, Object?>
+          ? <String, bool>{
+              for (final MapEntry<String, Object?> e in can.entries)
+                if (e.value is bool) e.key: e.value! as bool
+            }
+          : const <String, bool>{},
       timeline: m['timeline'] == null ? const <OrderEvent>[] : <OrderEvent>[for (final Object? e in _list(m['timeline'])) OrderEvent.fromJson(e)],
       story: storyOf(m['story']),
     );
@@ -400,6 +413,7 @@ class OrderView {
   final OrderShop shop;
   final OrderRecipient recipient;
   final String? note;
+  final String? deliveryNote;
 
   /// The time the customer WANTS the food (not a promise): null for "sớm nhất".
   final DateTime? scheduledFor;
@@ -515,7 +529,7 @@ class CartLine {
 }
 
 class CartView {
-  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd, this.feeEstimateVnd});
+  const CartView({required this.shopId, required this.shopName, required this.online, required this.lines, required this.note, required this.itemsVnd, this.feeEstimateVnd, this.nextRefreshMs});
 
   factory CartView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -524,6 +538,7 @@ class CartView {
       shopId: _str(shop['shop_id']),
       shopName: _strOrNull(shop['name']) ?? 'Quán',
       online: _bool(shop['online']),
+      nextRefreshMs: m['next_refresh_ms'] as int?,
       lines: <CartLine>[for (final Object? l in _list(m['lines'])) CartLine.fromJson(l)],
       note: _strOrNull(m['note']),
       itemsVnd: _int(m['items_total_vnd']),
@@ -534,9 +549,11 @@ class CartView {
   final String shopId;
   final String shopName;
   final bool online;
+  final int? nextRefreshMs;
   final List<CartLine> lines;
   final String? note;
   final int itemsVnd;
+
   /// Provisional entry-tier rate from the active M06 table, not a final delivery fee.
   final int? feeEstimateVnd;
 }
@@ -576,43 +593,56 @@ class DraftAddress {
   bool get hasPin => lat != null && lng != null;
 
   Map<String, Object?> toJson() => typed
-      ? <String, Object?>{'address_text': addressText, if (lat != null && lng != null) ...<String, Object?>{'lat': lat, 'lng': lng}}
+      ? <String, Object?>{
+          'address_text': addressText,
+          if (lat != null && lng != null) ...<String, Object?>{'lat': lat, 'lng': lng}
+        }
       : <String, Object?>{'address_id': addressId};
 }
 
 class CheckoutDraft {
-  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor});
+  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, this.deliveryNote, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor, this.tipVnd = 0});
 
   final String shopId;
   final String shopName;
   final List<DraftLine> lines;
   final String? note;
+  final String? deliveryNote;
   final String recipientName;
   final String recipientPhone;
   final DraftAddress address;
   final DateTime? scheduledFor;
+  final int tipVnd;
 
   int get itemsVnd => lines.fold(0, (int sum, DraftLine l) => sum + l.totalVnd);
 }
 
 class CheckoutPreview {
-  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd});
+  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs});
 
   factory CheckoutPreview.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
     final Map<String, Object?> fee = _obj(m['fee']);
     return CheckoutPreview(
       ok: _bool(m['ok']),
+      nextRefreshMs: m['next_refresh_ms'] as int?,
       blockers: <String>[for (final Object? b in _list(m['blockers'])) _str(b)],
       lines: <PreviewLine>[for (final Object? l in _list(m['lines'])) PreviewLine.fromJson(l)],
       itemsVnd: _int(m['items_total_vnd']),
       feeEstimateVnd: _intOrNull(fee['estimate_vnd']),
       feeDistanceM: _intOrNull(fee['distance_m']),
       expectedTotalVnd: _intOrNull(m['expected_total_vnd']),
+      tipVnd: _int(m['tip_vnd'] ?? 0),
+      feeStatus: _str(fee['status']),
+      feeReason: _strOrNull(fee['reason']),
+      quoteSnapshot: _strOrNull(fee['snapshot']) ?? '',
+      policyVersion: _intOrNull(fee['policy_version']),
+      quotedAt: _timeOrNull(fee['quoted_at']),
     );
   }
 
   final bool ok;
+  final int? nextRefreshMs;
 
   /// SHOP_NOT_OPEN, SCHEDULE_TOO_SOON, SCHEDULE_TOO_FAR, SCHEDULE_OUTSIDE_HOURS, ADDRESS_NOT_FOUND.
   final List<String> blockers;
@@ -623,6 +653,14 @@ class CheckoutPreview {
   final int? feeEstimateVnd;
   final int? feeDistanceM;
   final int? expectedTotalVnd;
+  final int tipVnd;
+  final String feeStatus;
+  final String? feeReason;
+  final String quoteSnapshot;
+  final int? policyVersion;
+  final DateTime? quotedAt;
+
+  Map<String, Object?> get expectedQuoteJson => <String, Object?>{'status': feeStatus, 'distance_m': feeDistanceM, 'fee_vnd': feeEstimateVnd, 'reason': feeReason, 'policy_version': policyVersion, 'snapshot': quoteSnapshot};
 
   bool lineChanged(DraftLine draft) {
     for (final PreviewLine l in lines) {

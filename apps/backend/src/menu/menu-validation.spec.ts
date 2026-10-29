@@ -17,6 +17,21 @@ describe('menu request parsers', () => {
     expect(parseItemCreateBody({ name: 'Ốc', price_vnd: 1, category_id: CATEGORY, image_id: IMAGE }).imageId).toBe(IMAGE);
   });
 
+  it('counts Vietnamese combining marks and emoji as graphemes; empty clears, omission preserves (#207)', () => {
+    const base = { name: 'A', price_vnd: 10, category_id: CATEGORY, image_id: null };
+    const text = '👨‍👩‍👦'.repeat(298) + 'a\u0306\u0301\r\n';
+    expect(parseItemCreateBody({ ...base, description: text }).description).toBe('👨‍👩‍👦'.repeat(298) + 'ắ\n');
+    expect(() => parseItemCreateBody({ ...base, description: '👨‍👩‍👦'.repeat(301) })).toThrow();
+    expect(parseItemCreateBody({ ...base, description: '  1 đĩa  500g\nít cay  ' }).description).toBe('  1 đĩa  500g\nít cay  ');
+    expect(parseItemUpdateBody({ ...base, expected_version: 1 }).description).toBeUndefined();
+    for (const description of ['', '  \n', null]) {
+      expect(parseItemUpdateBody({ ...base, expected_version: 1, description }).description).toBeNull();
+    }
+    for (const description of [5, {}, 'bad\u0000text']) {
+      expect(() => parseItemCreateBody({ ...base, description })).toThrow();
+    }
+  });
+
   it('refuses a missing key, an extra key, a bad price and a bad id', () => {
     const base = { name: 'A', price_vnd: 10, category_id: CATEGORY, image_id: null };
     for (const body of [

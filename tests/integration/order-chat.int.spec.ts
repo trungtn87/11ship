@@ -84,7 +84,10 @@ describe('#191 — order chat', () => {
   const ADDRESS = { address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', lat: 21.0, lng: 105.82 };
   async function placeOrder(c: Customer): Promise<Json> {
     const lines = [{ item_id: pho.itemId, quantity: 2, unit_price_vnd: pho.price }];
-    return ok(await call(c.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), shop_id: shop.shopId, lines, items_total_vnd: 90_000, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: ADDRESS }), 201);
+    const draft = { shop_id: shop.shopId, lines, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: ADDRESS };
+    const preview = ok(await call(c.token, 'POST', '/customers/me/orders/preview', { ...draft, lines: lines.map(({ item_id, quantity }) => ({ item_id, quantity })) }));
+    const fee = preview.fee as Json;
+    return ok(await call(c.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), ...draft, items_total_vnd: 90_000, expected_quote: { status: fee.status, distance_m: fee.distance_m, fee_vnd: fee.fee_vnd, reason: fee.reason, policy_version: fee.policy_version, snapshot: fee.snapshot } }), 201);
   }
   const confirm = async (order: Json): Promise<Json> => ok(await call(shop.token, 'POST', `/shop/me/orders/${String(order.order_id)}/confirm`, { expected_version: order.version }));
   const confirmed = async (c: Customer): Promise<Json> => confirm(await placeOrder(c));

@@ -60,8 +60,8 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
   };
 
   /**
-   * An ACTIVE shop in `areaId` named `name` with the given dishes (all VISIBLE, each with a picture) and a schedule: open all day, or (default) scheduled
-   * but closed now. Issue #190: a shop with NO schedule or NO sellable dish is not set up and never listed (`unscheduled`, `noPicture` build those).
+   * An ACTIVE shop in `areaId` named `name` with the given dishes (all VISIBLE, pictures optional) and a schedule: open all day, or (default) scheduled
+   * but closed now. Issue #190: a shop with NO schedule or NO sellable dish is not set up and never listed (`unscheduled` builds the former).
    */
   async function shop(name: string, dishes: [string, number, string][], options: { open?: boolean; areaId?: string; unscheduled?: boolean; noPicture?: boolean } = {}): Promise<ShopOwner> {
     const owner = await createShopOwner(app, { areaId: options.areaId ?? area });
@@ -159,21 +159,24 @@ describe('M02 — public discovery: areas, groups, shops, dishes, search and fil
     expect(names(await discoveryShops(app, { area_id: otherArea }))).toEqual(['Quán Khu Khác']);
   });
 
-  it('issue #190: a shop with no schedule, no picture on its only dish, or a locked owner never reaches the shop list, the dish search or a group list; a closed shop that IS set up stays', async () => {
+  it('issue #209: an image-less dish is eligible across discovery and direct links; missing hours and locked owners still block shops', async () => {
     const setUpClosed = await shop('Quán Đủ Điều Kiện 190', [['Phở đủ 190', 40000, snail]]);
     await shop('Quán Thiếu Giờ 190', [['Phở thiếu giờ 190', 40000, snail]], { unscheduled: true });
-    await shop('Quán Thiếu Ảnh 190', [['Phở thiếu ảnh 190', 40000, snail]], { noPicture: true });
+    const noPicture = await shop('Quán Thiếu Ảnh 190', [['Phở thiếu ảnh 190', 40000, snail]], { noPicture: true });
     const locked = await shop('Quán Chủ Bị Khóa 190', [['Phở khóa 190', 40000, snail]]);
     await app.pool.query(`UPDATE app.users SET status = 'DISABLED' WHERE user_id = $1::uuid`, [locked.userId]);
     const query = { area_id: area, q: '190' };
-    expect(names(await discoveryShops(app, query))).toEqual(['Quán Đủ Điều Kiện 190']);
-    expect(names(await discoveryShops(app, { ...query, category_id: snail }))).toEqual(['Quán Đủ Điều Kiện 190']);
+    expect(names(await discoveryShops(app, query))).toEqual(['Quán Đủ Điều Kiện 190', 'Quán Thiếu Ảnh 190']);
+    expect(names(await discoveryShops(app, { ...query, category_id: snail }))).toEqual(['Quán Đủ Điều Kiện 190', 'Quán Thiếu Ảnh 190']);
     expect(names(await discoveryShops(app, { ...query, open_only: 'true' }))).toEqual([]);
     const dishes = dataOf(await discoveryDishes(app, query)).dishes as { name: string; shop: { shop_id: string; availability: { reason: string } } }[];
-    expect(dishes.map((dish) => dish.name)).toEqual(['Phở đủ 190']);
-    expect(dishes[0]?.shop).toMatchObject({ shop_id: setUpClosed.shopId, availability: { reason: 'OUTSIDE_BUSINESS_HOURS' } });
+    expect(dishes.map((dish) => dish.name).sort()).toEqual(['Phở đủ 190', 'Phở thiếu ảnh 190'].sort());
+    for (const owner of [setUpClosed, noPicture]) {
+      expect(dishes.find((dish) => dish.shop.shop_id === owner.shopId)?.shop).toMatchObject({ availability: { reason: 'OUTSIDE_BUSINESS_HOURS' } });
+      expect((await app.call('GET', `/shops/${owner.shopId}`, {})).status).toBe(200);
+    }
     // The same shops are refused on their direct link and take no new order, whatever their old status says.
-    for (const name of ['Quán Thiếu Giờ 190', 'Quán Thiếu Ảnh 190', 'Quán Chủ Bị Khóa 190']) {
+    for (const name of ['Quán Thiếu Giờ 190', 'Quán Chủ Bị Khóa 190']) {
       const row = await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shops WHERE name = $1', [name]);
       const link = await app.call('GET', `/shops/${row.rows[0]!.shop_id}`, {});
       expect([name, link.status, errorCode(link)]).toEqual([name, 403, 'SHOP_UNAVAILABLE']);

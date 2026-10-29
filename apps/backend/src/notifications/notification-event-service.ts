@@ -90,13 +90,15 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
+    const ownType = event.eventType === 'business.finance.updated.v1' || event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
       return;
     }
     switch (event.eventType) {
+      case 'business.finance.updated.v1':
+        return this.#finance(event);
       case OUTBOX_DELIVERY_CHANGED_TYPE:
         return this.#delivery(event);
       case OUTBOX_ORDER_CHANGED_TYPE:
@@ -316,6 +318,20 @@ export class NotificationEventService {
         });
         await this.pushes.queue(context, { config, notificationId: card.notificationId, userId: r.userId, app: r.app, category, pushKey: `chat:${event.eventId}`, ttlMs: PUSH_TTL_MS.result });
       }
+    });
+  }
+
+  async #finance(event:OutboxPublishEvent):Promise<void> {
+    const {request_id:id,sequence}=event.payload;
+    const valid=isCanonicalUuid(id)&&typeof sequence==='string'&&/^[1-9][0-9]{0,17}$/.test(sequence);
+    await this.transactions.withTransaction(async context=>{
+      const config=await this.repo.readConfig(context);
+      if(!await this.repo.claimEvent(context,event.eventId,event.eventType,valid?'OK':'INVALID_PAYLOAD')||!valid)return;
+      const room=await this.recipients.financeNotice(context,id,sequence);
+      if(!room)return;
+      const app=room.kind==='TOPUP'?'SHIP':'FOOD';
+      const card=await this.repo.upsertCollapsedCard(context,{notificationId:randomUUID(),recipientUserId:room.owner_user_id,app,kind:'FINANCE_UPDATED',category:'WALLET_PROFILE',title:'Có cập nhật về thanh toán',body:'Mở Trao đổi thanh toán để xem cập nhật.',targetType:'FINANCE_REQUEST',targetId:id,targetVersion:Number(room.version),dedupeKey:'finance:'+id,sourceEventId:event.eventId,validForMs:null,purgeDays:config.purgeDays});
+      await this.pushes.queue(context,{config,notificationId:card.notificationId,userId:room.owner_user_id,app,category:'WALLET_PROFILE',pushKey:'finance:'+event.eventId,ttlMs:PUSH_TTL_MS.result});
     });
   }
 

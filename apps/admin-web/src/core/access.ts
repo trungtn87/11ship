@@ -18,7 +18,7 @@ export interface AppPermissionRow {
 }
 
 /** The function rights SYSTEM gives one by one (wallet.read, wallet.topup.record, report.read, report.export, audit.read). */
-export const RIGHT_KEYS = ['wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read'] as const;
+export const RIGHT_KEYS = ['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage', 'wallet.read', 'wallet.topup.record', 'wallet.withdrawal.process', 'wallet.withdrawal.confirm', 'wallet.withdrawal.reconcile', 'report.read', 'report.export', 'audit.read'] as const;
 export type RightKey = (typeof RIGHT_KEYS)[number];
 
 export interface RightState {
@@ -73,6 +73,9 @@ export const NOT_WIRED_ACCESS: AccessSource = {
 export const APP_LABEL: Record<AppName, string> = { CUSTOMER: 'Tài khoản khách hàng', SHOP: 'Quán', DRIVER: 'Shipper và giao hàng' };
 
 export const RIGHT_LABEL: Record<RightKey, string> = {
+  'shop.payment.read': 'Xem thanh toán và trao đổi của quán',
+  'shop.payment.record': 'Ghi nhận tiền quán và gửi trao đổi',
+  'shop.entitlement.manage': 'Cấp hoặc thu hồi quyền mở rộng thực đơn',
   'wallet.read': 'Xem ví và nạp tiền',
   'wallet.topup.record': 'Xác nhận nạp tiền (ghi tiền vào ví)',
   'wallet.withdrawal.process': 'Nhận xử lý và chuyển khoản rút tiền',

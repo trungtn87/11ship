@@ -52,8 +52,8 @@ export const createItem = (app: AuthApp, token: string | undefined, body: unknow
   call(app, 'POST', '/shop/me/menu/items', token, body, key);
 
 /**
- * A dish that is ON SALE the way the shop setup needs it (issue #190): a picture is uploaded first and the dish points at it, so the shop with this
- * first dish can be public. `createItem` with `image_id: null` stays for the tests of a dish without a picture.
+ * A dish WITH a picture, for image/menu integration tests. The setup requirement is only VISIBLE + price > 0;
+ * `createItem` with `image_id: null` is equally eligible for shop activation.
  */
 export async function createItemWithPicture(app: AuthApp, token: string | undefined, body: Record<string, unknown>, key: string | null = randomUUID()): Promise<ApiResponse> {
   const upload = await uploadImage(app, token, { content_type: 'image/jpeg', data_base64: jpegBase64() });
