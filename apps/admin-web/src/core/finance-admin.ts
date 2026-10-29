@@ -14,9 +14,15 @@ export type FinancePermissionKey =
   | typeof FINANCE_PERMISSION_RECORD
   | typeof FINANCE_PERMISSION_PROCESS
   | typeof FINANCE_PERMISSION_CONFIRM
-  | typeof FINANCE_PERMISSION_RECONCILE;
-export const FINANCE_PERMISSIONS: readonly FinancePermissionKey[] = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_RECORD, FINANCE_PERMISSION_PROCESS, FINANCE_PERMISSION_CONFIRM, FINANCE_PERMISSION_RECONCILE];
+  | typeof FINANCE_PERMISSION_RECONCILE
+  | 'shop.payment.read'
+  | 'shop.payment.record'
+  | 'shop.entitlement.manage';
+export const FINANCE_PERMISSIONS: readonly FinancePermissionKey[] = [FINANCE_PERMISSION_READ, FINANCE_PERMISSION_RECORD, FINANCE_PERMISSION_PROCESS, FINANCE_PERMISSION_CONFIRM, FINANCE_PERMISSION_RECONCILE, 'shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage'];
 export const FINANCE_PERMISSION_LABEL: Record<FinancePermissionKey, string> = {
+  'shop.payment.read': 'Xem thanh toán và trao đổi của quán',
+  'shop.payment.record': 'Ghi nhận tiền quán và gửi trao đổi',
+  'shop.entitlement.manage': 'Cấp hoặc thu hồi quyền mở rộng thực đơn',
   'wallet.read': 'Xem tài chính (ví, giao dịch, nạp, rút, đối soát)',
   'wallet.topup.record': 'Xác nhận / từ chối nạp tiền',
   'wallet.withdrawal.process': 'Nhận xử lý yêu cầu rút tiền (chuyển tiền thủ công)',

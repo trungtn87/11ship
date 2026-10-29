@@ -1,3 +1,5 @@
+import { ShopEntitlements } from '../shop-entitlements/shop-entitlements';
+import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { OrderSalesReader } from '../orders/order-sales-reader';
@@ -66,6 +68,7 @@ export class MenuService {
     private readonly sales: OrderSalesReader,
     private readonly activation: ShopActivation,
     private readonly gate: ShopSetupGate,
+    private readonly entitlements: ShopEntitlements,
   ) {}
 
   // ---- reads ----------------------------------------------------------------------------------------------------
@@ -88,6 +91,7 @@ export class MenuService {
         categories: categories.map(toCategoryWire),
         items: items.map(toItemWire),
         limits: MENU_LIMITS,
+        visible_quota: {used:await this.menu.countVisibleItems(context,shop.shopId),limit:(await this.entitlements.policy(context)).visible_limit,expanded:await this.entitlements.expanded(context,shop.shopId)},
       };
     });
   }
@@ -136,6 +140,7 @@ export class MenuService {
           reason: reason,
           evaluated_at: gate.availability.evaluatedAt,
         },
+        next_refresh_ms: businessHoursRefreshMs(snapshot.hours, gate.availability.evaluatedAt),
         hours: snapshot.hours.map(toWire),
         // Groups without a public dish are left out; the order is the group order, then the creation order of the dish.
         categories: categories
@@ -147,6 +152,7 @@ export class MenuService {
               .map((item) => ({
                 item_id: item.itemId,
                 name: item.name,
+                description: item.description ?? null,
                 price_vnd: item.priceVnd,
                 sold_count: sold.get(item.itemId) ?? 0,
                 image_id: item.imageId,
@@ -211,6 +217,7 @@ export class MenuService {
         if ((await this.menu.countLiveItems(context, shop.shopId)) >= MENU_ITEMS_MAX_PER_SHOP) {
           throw new AppError('MENU_LIMIT_REACHED');
         }
+        await this.#requireVisibleRoom(context,shop.shopId);
         const item = await this.menu.insertItem(context, randomUUID(), shop.shopId, input);
         await this.#record(context, requestId, actor.userId, item, MENU_ITEM_CREATE_OPERATION_ID);
         await this.activation.reconcile(context, shop.shopId, requestId, 'menu_change');
@@ -240,8 +247,10 @@ export class MenuService {
   }
 
   async showItem(actor: SessionActor, itemId: string, expectedVersion: number, key: string | readonly string[] | undefined, requestId: string): Promise<MenuOutcome> {
-    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, (context, _shop, current) =>
-      this.menu.setItemStatus(context, current, 'VISIBLE'),
+    return this.#mutate(actor, itemId, expectedVersion, MENU_ITEM_SHOW_OPERATION_ID, {}, key, requestId, async (context, shop, current) => {
+      if(current.status!=='VISIBLE')await this.#requireVisibleRoom(context,shop.shopId);
+      return this.menu.setItemStatus(context, current, 'VISIBLE');
+    },
     );
   }
 
@@ -314,6 +323,11 @@ export class MenuService {
     }
   }
 
+  async #requireVisibleRoom(context:TransactionContext,shopId:string):Promise<void> {
+    const policy=await this.entitlements.policy(context,true);
+    if(!await this.entitlements.expanded(context,shopId)&&await this.menu.countVisibleItems(context,shopId)>=policy.visible_limit)throw new AppError('MENU_VISIBLE_LIMIT_REACHED');
+  }
+
   async #lockWritableShop(context: TransactionContext, userId: string): Promise<ShopRow> {
     const shop = await this.shops.lockOwnedShop(context, userId);
     if (shop === undefined) {
@@ -369,6 +383,7 @@ function guardOf(userId: string, shopId: string): JsonObject {
 function toLogical(input: MenuItemFields & { expectedVersion?: number; itemId?: string }): JsonObject {
   return {
     ...(input.expectedVersion === undefined ? {} : { expected_version: input.expectedVersion }),
+    ...(input.description === undefined ? {} : { description: input.description }),
     name: input.name,
     price_vnd: input.priceVnd,
     category_id: input.categoryId,
@@ -384,6 +399,7 @@ export function toItemWire(item: MenuItemRow): JsonObject {
   return {
     item_id: item.itemId,
     name: item.name,
+    description: item.description ?? null,
     price_vnd: item.priceVnd,
     category_id: item.categoryId,
     image_id: item.imageId,

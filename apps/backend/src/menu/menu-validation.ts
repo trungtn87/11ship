@@ -23,6 +23,7 @@ export interface MenuItemFields {
   readonly priceVnd: number;
   readonly categoryId: string;
   readonly imageId: string | null;
+  readonly description?: string | null;
 }
 
 function uuid(value: unknown): string {
@@ -39,8 +40,20 @@ function price(value: unknown): number {
   return value;
 }
 
+const descriptionSegments = new Intl.Segmenter('vi', { granularity: 'grapheme' });
+
+/** Omitted on an old client's update means preserve; explicit null/empty means clear. */
+export function parseDescription(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || /[\uD800-\uDFFF]/u.test(value) || value.length > 30000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) return reject();
+  const text = value.replace(/\r\n?/g, '\n').normalize('NFC');
+  if ([...descriptionSegments.segment(text)].length > 300) return reject();
+  return text.trim().length === 0 ? null : text;
+}
+
 function fields(parsed: Record<string, unknown>): MenuItemFields {
   return {
+    ...(Object.hasOwn(parsed, 'description') ? { description: parseDescription(parsed.description) } : {}),
     name: boundedText(parsed.name, MENU_ITEM_NAME_MAX_LENGTH),
     priceVnd: price(parsed.price_vnd),
     categoryId: uuid(parsed.category_id),
@@ -50,7 +63,7 @@ function fields(parsed: Record<string, unknown>): MenuItemFields {
 
 /** POST /v1/shop/me/menu/items. image_id is required but may be null (no picture). */
 export function parseItemCreateBody(body: unknown): MenuItemFields {
-  return fields(objectWithKeys(body, ['name', 'price_vnd', 'category_id', 'image_id'], []));
+  return fields(objectWithKeys(body, ['name', 'price_vnd', 'category_id', 'image_id'], ['description']));
 }
 
 export interface ItemUpdateInput extends MenuItemFields {
@@ -59,7 +72,7 @@ export interface ItemUpdateInput extends MenuItemFields {
 
 /** PUT /v1/shop/me/menu/items/:id: a FULL replacement of the editable fields at an exact version. */
 export function parseItemUpdateBody(body: unknown): ItemUpdateInput {
-  const parsed = objectWithKeys(body, ['expected_version', 'name', 'price_vnd', 'category_id', 'image_id'], []);
+  const parsed = objectWithKeys(body, ['expected_version', 'name', 'price_vnd', 'category_id', 'image_id'], ['description']);
   return { ...fields(parsed), expectedVersion: positiveVersion(parsed.expected_version) };
 }
 

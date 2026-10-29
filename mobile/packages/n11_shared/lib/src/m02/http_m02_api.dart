@@ -45,6 +45,7 @@ class HttpMenuApi implements MenuApi {
     return MenuItem(
       id: _str(m['item_id']),
       name: _str(m['name']),
+      description: _strOrNull(m['description']),
       priceVnd: _int(m['price_vnd']),
       categoryId: _str(m['category_id']),
       imageRef: image,
@@ -62,7 +63,7 @@ class HttpMenuApi implements MenuApi {
     return response.data;
   }
 
-  Map<String, Object?> _input(MenuItemInput i) => <String, Object?>{'name': i.name, 'price_vnd': i.priceVnd, 'category_id': i.categoryId, 'image_id': i.imageRef};
+  Map<String, Object?> _input(MenuItemInput i) => <String, Object?>{'name': i.name, 'price_vnd': i.priceVnd, 'category_id': i.categoryId, 'image_id': i.imageRef, 'description': i.description};
 
   @override
   Future<MenuSnapshot> load() async {
@@ -73,6 +74,8 @@ class HttpMenuApi implements MenuApi {
           MenuCategory(id: _str(_obj(c)['category_id']), name: _str(_obj(c)['name']), active: _str(_obj(c)['status']) == 'ACTIVE'),
       ],
       items: <MenuItem>[for (final Object? i in _list(data['items'])) _item(i)],
+      visibleLimit: data['visible_quota'] == null ? null : _obj(data['visible_quota'])['limit'] as int?,
+      expanded: data['visible_quota'] != null && _obj(data['visible_quota'])['expanded'] == true,
     );
   }
 
@@ -139,6 +142,7 @@ class HttpPublicShopApi implements PublicShopApi {
       contact: ShopContact.fromWire(data['contact']),
       availabilityReason: _str(availability['reason']),
       serverNow: at is String ? DateTime.tryParse(at) : null,
+      nextRefreshMs: data['next_refresh_ms'] as int?,
       hours: hours,
       categories: <PublicCategory>[
         for (final Object? c in _list(data['categories']))
@@ -149,6 +153,7 @@ class HttpPublicShopApi implements PublicShopApi {
                 PublicItem(
                   id: _str(_obj(i)['item_id']),
                   name: _str(_obj(i)['name']),
+                  description: _strOrNull(_obj(i)['description']),
                   priceVnd: _int(_obj(i)['price_vnd']),
                   soldCount: _obj(i)['sold_count'] == null ? null : _int(_obj(i)['sold_count']),
                   imageUrl: _obj(i)['image_id'] == null ? null : imageUrlOf(base, _str(_obj(i)['image_id'])),
@@ -226,7 +231,7 @@ class HttpDiscoveryApi implements DiscoveryApi {
   @override
   Future<DiscoveryPage<ShopCardData>> shops(DiscoveryQuery query) async {
     final Map<String, Object?> data = _obj(await _publicGet(transport, '/v1/discovery/shops?${_query(query)}'));
-    return DiscoveryPage<ShopCardData>(items: <ShopCardData>[for (final Object? s in _list(data['shops'])) _shopCard(_obj(s), base: base)], hasMore: _bool(data['has_more']));
+    return DiscoveryPage<ShopCardData>(items: <ShopCardData>[for (final Object? s in _list(data['shops'])) _shopCard(_obj(s), base: base)], hasMore: _bool(data['has_more']), nextRefreshMs: data['next_refresh_ms'] as int?);
   }
 
   @override
@@ -244,7 +249,7 @@ class HttpDiscoveryApi implements DiscoveryApi {
             shop: _shopCard(_obj(_obj(d)['shop']), base: base),
           ),
       ],
-      hasMore: _bool(data['has_more']),
+      hasMore: _bool(data['has_more']), nextRefreshMs: data['next_refresh_ms'] as int?,
     );
   }
 }

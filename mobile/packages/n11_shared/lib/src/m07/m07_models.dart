@@ -400,6 +400,7 @@ class DeliveryView {
     required this.fee,
     required this.search,
     this.note,
+    this.dropoffNote,
     this.assignment,
     this.location,
     this.result,
@@ -427,6 +428,7 @@ class DeliveryView {
       fee: FeeView.fromJson(m['fee']),
       search: SearchView.fromJson(m['search']),
       note: _strOrNull(m['note']),
+      dropoffNote: _strOrNull(m['dropoff_note']),
       assignment: m['assignment'] == null ? null : AssignmentView.fromJson(m['assignment']),
       location: m['location'] == null ? null : LocationView.fromJson(m['location']),
       result: m['result'] == null ? null : ResultView.fromJson(m['result']),
@@ -456,6 +458,7 @@ class DeliveryView {
   final FeeView fee;
   final SearchView search;
   final String? note;
+  final String? dropoffNote;
   final AssignmentView? assignment;
   final LocationView? location;
   final ResultView? result;
@@ -502,6 +505,7 @@ class DeliveryView {
         fee: fee ?? this.fee,
         search: search ?? this.search,
         note: note,
+        dropoffNote: dropoffNote,
         assignment: clearAssignment ? null : (assignment ?? this.assignment),
         location: clearLocation ? null : (location ?? this.location),
         result: result ?? this.result,

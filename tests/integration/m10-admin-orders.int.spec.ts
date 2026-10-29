@@ -117,8 +117,12 @@ describe('M10.05 — Admin orders', () => {
     app.call(method, path, { bearer: customer.token, ...(method === 'POST' ? { headers: { 'idempotency-key': randomUUID() } } : {}), ...(body === undefined ? {} : { body }) });
   async function confirmedOrder(): Promise<Json> {
     const lines = [{ item_id: pho.itemId, quantity: 2, unit_price_vnd: 45_000 }];
+    const draft = { shop_id: shop.shopId, lines, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: { address_text: '12 Phố Huế, Hà Nội', lat: 21.0, lng: 105.82 } };
+    const previewResponse = await asCustomer('POST', '/customers/me/orders/preview', { ...draft, lines: lines.map(({ item_id, quantity }) => ({ item_id, quantity })) });
+    expect(previewResponse.status).toBe(200);
+    const fee = (dataOf(previewResponse) as Json).fee as Json;
     const placed = await asCustomer('POST', '/customers/me/orders', {
-      client_ref: randomUUID(), shop_id: shop.shopId, lines, items_total_vnd: 90_000, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: { address_text: '12 Phố Huế, Hà Nội', lat: 21.0, lng: 105.82 },
+      client_ref: randomUUID(), ...draft, items_total_vnd: 90_000, expected_quote: { status: fee.status, distance_m: fee.distance_m, fee_vnd: fee.fee_vnd, reason: fee.reason, policy_version: fee.policy_version, snapshot: fee.snapshot },
     });
     expect(placed.status).toBe(201);
     const order = dataOf(placed) as Json;

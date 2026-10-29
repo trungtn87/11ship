@@ -47,6 +47,11 @@ describe('finance API (B3a) - parsers', () => {
     const access = { user_id: ID, permissions: [{ permission_key: 'wallet.read', state: 'NONE', version: 0, granted_at: null, revoked_at: null }] };
     expect(parseAdminAccess(access)?.permissions[0]).toMatchObject({ key: 'wallet.read', state: 'NONE', version: 0 });
     expect(parseAdminAccess({ ...access, permissions: [{ ...access.permissions[0], permission_key: 'wallet.everything' }] })).toBeUndefined();
+    // A real server response includes the shop rights too. They must not make the entire dialog unreadable.
+    for (const key of ['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage']) {
+      expect(parseAdminAccess({ ...access, permissions: [...access.permissions, { ...access.permissions[0], permission_key: key }] })?.permissions).toHaveLength(2);
+    }
+    expect(parseRights({ role: 'ADMIN', implicit: false, permissions: ['shop.payment.read', 'shop.payment.record', 'shop.entitlement.manage'] })).toMatchObject({ canRead: false, canRecord: false, canProcess: false, canConfirm: false, canReconcile: false });
   });
 });
 

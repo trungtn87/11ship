@@ -27,6 +27,12 @@ describe('Business Dashboard money and privacy boundaries',()=>{
     expect(()=>object({body:'x',owner_user_id:'x'},['body'])).toThrow();expect(()=>sequence('1e99')).toThrow();expect(()=>id('not-a-uuid')).toThrow();expect(()=>page({state:['PENDING']})).toThrow();expect(()=>text('\0secret')).toThrow();
     expect(text('  Chuyển khoản\nđã gửi ')).toBe('Chuyển khoản\nđã gửi');
   });
+  it('limits new finance messages to 500 user-visible characters, including Vietnamese marks and joined emoji',()=>{
+    for(const character of ['a','a\u0301','👨‍👩‍👧‍👦']){
+      expect(text(character.repeat(500))).toBe(character.repeat(500));
+      expect(()=>text(character.repeat(501))).toThrow();
+    }
+  });
   it('does not turn a Push endpoint into server-side access to private networks or arbitrary hosts',()=>{
     const e=createECDH('prime256v1');e.generateKeys();const keys={p256dh:e.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,1).toString('base64url')};
     expect(subscription({endpoint:'https://fcm.googleapis.com/fcm/send/test',keys}).endpoint).toContain('fcm.googleapis.com');

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
@@ -43,7 +45,40 @@ final SampleDish pho = kSampleDishes[0];
 final SampleDish tea = kSampleDishes[2];
 
 void main() {
+  test('checkout confirmation sends the complete canonical quote', () {
+    final CheckoutPreview preview = CheckoutPreview.fromJson(<String, Object?>{
+      'ok': true, 'blockers': <Object?>[], 'lines': <Object?>[], 'items_total_vnd': 45000, 'expected_total_vnd': null,
+      'fee': <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff', 'quoted_at': '2026-10-27T00:00:00.000Z'},
+    });
+    expect(preview.expectedQuoteJson, <String, Object?>{'status': 'UNAVAILABLE', 'distance_m': 12000, 'fee_vnd': null, 'reason': 'OUT_OF_PRICE_RANGE', 'policy_version': 7, 'snapshot': 'pickup>dropoff'});
+  });
+
   group('cart', () {
+    testWidgets('cart quantity actions remain usable on a small phone with large text', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: 'Phở bò tái phần đặc biệt', priceVnd: 45000);
+      await mount(
+          tester,
+          Builder(
+              builder: (BuildContext context) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+                    child: CartScreen(runtime: runtime),
+                  )));
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      await tap(tester, key('cart-plus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 2);
+      await tap(tester, key('cart-minus-${pho.id}'));
+      expect(runtime.cart.lines.single.quantity, 1);
+      await tap(tester, key('cart-remove-${pho.id}'));
+      expect(key('cart-empty'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
     test('one shop; the same dish with the same note joins one line, another note is another line; the server keeps it', () async {
       final SampleOrderStore store = SampleOrderStore();
       final CartController cart = CartController(source: SampleCustomerOrders(store));
@@ -122,6 +157,120 @@ void main() {
       await settle(tester);
     }
 
+    testWidgets('choosing A then B replaces all recipient data; one-order edits do not change the address book', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _CapturedOrders customer = _CapturedOrders(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final DeliveryAddress a = const DeliveryAddress(id: 'a', label: AddressLabel.home, recipientName: 'Người A', contactPhone: '+84901111111', addressText: 'Địa chỉ A', deliveryNote: 'Cổng A', isDeliveryDefault: true, version: 1);
+      final DeliveryAddress b = const DeliveryAddress(id: 'b', label: AddressLabel.office, recipientName: null, contactPhone: '+84902222222', addressText: 'Địa chỉ B', deliveryNote: 'Cổng B', version: 1);
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(<DeliveryAddress>[a, b]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      expect(tester.widget<TextField>(key('checkout-name')).controller!.text, 'Người A');
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-b'));
+      await tap(tester, key('picker-confirm'));
+      expect(tester.widget<TextField>(key('checkout-name')).controller!.text, isEmpty, reason: 'B has no name, so A must be cleared');
+      expect(tester.widget<TextField>(key('checkout-phone')).controller!.text, '0902222222');
+      expect(tester.widget<TextField>(key('checkout-delivery-note')).controller!.text, 'Cổng B');
+      expect(find.text('Địa chỉ B'), findsWidgets);
+      await tester.enterText(key('checkout-name'), 'Người nhận hộ');
+      await tester.enterText(key('checkout-phone'), '0903333333');
+      await tester.enterText(key('checkout-delivery-note'), 'Gọi số 3, cửa sau');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      await tap(tester, key('checkout-send'));
+      expect(customer.placed, isNotNull);
+      expect(customer.placed?.recipientName, 'Người nhận hộ');
+      expect(customer.placed?.recipientPhone, '0903333333');
+      expect(customer.placed?.address.addressId, 'b');
+      expect(customer.placed?.deliveryNote, 'Gọi số 3, cửa sau');
+      expect(book.byId('b')?.recipientName, isNull);
+      expect(book.byId('b')?.contactPhone, '+84902222222');
+      expect(book.byId('b')?.deliveryNote, 'Cổng B');
+      await unmount(tester);
+    });
+
+    testWidgets('a late preview failure for A is ignored and B receives a fresh canonical quote', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _DeferredPreviews customer = _DeferredPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Shop', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final DeliveryAddress a = const DeliveryAddress(id: 'a', label: AddressLabel.home, recipientName: 'Receiver A', contactPhone: '+84901111111', addressText: 'Address A', deliveryNote: null, isDeliveryDefault: true, version: 1, latitude: 22.65, longitude: 106.25);
+      final DeliveryAddress b = const DeliveryAddress(id: 'b', label: AddressLabel.office, recipientName: 'Receiver B', contactPhone: '+84902222222', addressText: 'Address B', deliveryNote: null, version: 1, latitude: 22.67, longitude: 106.27);
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(<DeliveryAddress>[a, b]));
+      addTearDown(book.dispose);
+      await book.load();
+
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      expect(customer.drafts.map((CheckoutDraft d) => d.address.addressId), <String?>['a']);
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-b'));
+      await tap(tester, key('picker-confirm'));
+      expect(customer.drafts, hasLength(1), reason: 'B waits for the one in-flight preview instead of starting a duplicate request');
+
+      customer.pending.single.completeError(const M07Failure(M07FailureKind.offline));
+      await settle(tester);
+      expect(customer.drafts.map((CheckoutDraft d) => d.address.addressId), <String?>['a', 'b']);
+      customer.pending[1].complete(pricedPreview(fee: 12000, distance: 3600, snapshot: 'quote-b'));
+      await settle(tester);
+
+      expect(find.text('Address B'), findsWidgets);
+      expect(containing('3,6 km'), findsOneWidget);
+      expect(find.text(m10Money(12000)), findsOneWidget);
+      expect(find.text(m10Money(57000)), findsWidgets);
+      expect(key('checkout-failed'), findsNothing, reason: 'the timeout belongs to A, not B');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+
+      await tap(tester, key('checkout-send'));
+      expect(customer.placed?.address.addressId, 'b');
+      expect(customer.placed?.address.lat, 22.67);
+      expect(customer.placed?.address.lng, 106.27);
+      expect(customer.acceptedPreview?.quoteSnapshot, 'quote-b');
+      await unmount(tester);
+    });
+
+    testWidgets('a late successful preview is ignored after several address changes and only the latest address is quoted', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _DeferredPreviews customer = _DeferredPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Shop', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final List<DeliveryAddress> addresses = <DeliveryAddress>[
+        const DeliveryAddress(id: 'a', label: AddressLabel.home, recipientName: 'Receiver A', contactPhone: '+84901111111', addressText: 'Address A', deliveryNote: null, isDeliveryDefault: true, version: 1, latitude: 22.65, longitude: 106.25),
+        const DeliveryAddress(id: 'b', label: AddressLabel.office, recipientName: 'Receiver B', contactPhone: '+84902222222', addressText: 'Address B', deliveryNote: null, version: 1, latitude: 22.66, longitude: 106.26),
+        const DeliveryAddress(id: 'c', label: AddressLabel.other, recipientName: 'Receiver C', contactPhone: '+84903333333', addressText: 'Address C', deliveryNote: null, version: 1, latitude: 22.68, longitude: 106.28),
+      ];
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(addresses));
+      addTearDown(book.dispose);
+      await book.load();
+
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-b'));
+      await tap(tester, key('picker-confirm'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-c'));
+      await tap(tester, key('picker-confirm'));
+      expect(customer.drafts, hasLength(1));
+
+      customer.pending.single.complete(pricedPreview(fee: 99000, distance: 9900, snapshot: 'stale-a'));
+      await settle(tester);
+      expect(customer.drafts.map((CheckoutDraft d) => d.address.addressId), <String?>['a', 'c']);
+      customer.pending[1].complete(pricedPreview(fee: 13000, distance: 4200, snapshot: 'quote-c'));
+      await settle(tester);
+
+      expect(find.text('Address C'), findsWidgets);
+      expect(containing('4,2 km'), findsOneWidget);
+      expect(find.text(m10Money(13000)), findsOneWidget);
+      expect(find.text(m10Money(99000)), findsNothing);
+      expect(key('checkout-failed'), findsNothing);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+      await unmount(tester);
+    });
+
     testWidgets('invalid recipient phone blocks both preview and order placement, then correction sends once', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final _CountedPreviews customer = _CountedPreviews(store);
@@ -147,14 +296,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('no pin: show provisional system M06 fee and expected total without inventing GPS coordinates', (WidgetTester tester) async {
+    testWidgets('no pin: fee and total stay unknown and the checkout says they are not included', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
       expect(containing('Phí giao (dự tính)'), findsWidgets);
-      expect(find.text(m10Money(10000)), findsWidgets);
+      expect(find.text(m10Money(10000)), findsNothing);
       expect(find.text(m10Money(0)), findsNothing);
-      expect(key('checkout-total'), findsOneWidget);
+      expect(key('checkout-total'), findsNothing);
+      expect(containing('Chưa gồm phí giao'), findsOneWidget);
+      expect(containing('chọn điểm giao trên bản đồ'), findsOneWidget);
       expect(containing('Thanh toán trực tiếp'), findsWidgets);
       await tap(tester, key('checkout-send'));
       expect(store.orderCount, 1);
@@ -293,16 +444,16 @@ void main() {
       final String pending = store.seed();
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: pending));
       expect(containing('Hủy đơn'), findsWidgets);
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Hủy đơn'));
+      await tap(tester, key('order-cancel'));
       await tap(tester, key('m07-confirm-yes'));
       expect(containing('Đã hủy'), findsWidgets);
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(key('order-reorder'), findsOneWidget);
       await unmount(tester);
 
       final String running = store.seed(status: 'PREPARING');
       await mount(tester, CustomerOrderDetailScreen(runtime: runtime, orderId: running));
-      expect(find.widgetWithText(OutlinedButton, 'Hủy đơn'), findsNothing);
+      expect(key('order-cancel'), findsNothing);
       expect(containing('Quán đang chuẩn bị'), findsWidgets);
       await unmount(tester);
     });
@@ -433,6 +584,11 @@ void main() {
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
       expect(key('order-edit-note'), findsOneWidget);
+      expect(find.text('Sửa đơn'), findsOneWidget);
+      final Rect editButton = tester.getRect(key('order-edit'));
+      final Rect rejectButton = tester.getRect(key('order-reject'));
+      expect(editButton.center.dy, closeTo(rejectButton.center.dy, 0.1));
+      expect(editButton.right, lessThan(rejectButton.left));
       await tap(tester, key('order-edit'));
       await tap(tester, key('edit-minus-line-1-0'));
       await tap(tester, key('edit-save'));
@@ -440,7 +596,7 @@ void main() {
       await tap(tester, key('order-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       await tap(tester, key('m07-reason-back'));
-      expect(containing('Xác nhận đơn đã chỉnh'), findsOneWidget);
+      expect(containing('Xác nhận đơn đã sửa'), findsOneWidget);
       await tap(tester, key('order-confirm'));
       await tester.enterText(key('m07-reason-field'), 'Hết bún, khách đồng ý bớt');
       await settle(tester);
@@ -460,7 +616,7 @@ void main() {
       expect(key('order-confirm'), findsNothing, reason: 'starting new work is blocked');
       expect(key('order-confirm-blocked'), findsOneWidget);
       expect(containing('Cần cập nhật ứng dụng trước khi nhận đơn mới'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Từ chối đơn'), findsOneWidget, reason: 'the shop can still turn the order down');
+      expect(key('order-reject'), findsOneWidget, reason: 'the shop can still turn the order down');
       await unmount(tester);
       // Once the app is updated (or when no update is required) the same order confirms normally, and then its next steps are never blocked.
       runtime.newWorkBlocked = () => false;
@@ -482,7 +638,7 @@ void main() {
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed();
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
-      await tap(tester, find.widgetWithText(OutlinedButton, 'Từ chối đơn'));
+      await tap(tester, key('order-reject'));
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
       expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
@@ -695,7 +851,6 @@ class _Offline extends SampleCustomerOrders {
   }
 }
 
-
 class _CountedPreviews extends SampleCustomerOrders {
   _CountedPreviews(super.store);
   int previews = 0;
@@ -704,4 +859,52 @@ class _CountedPreviews extends SampleCustomerOrders {
     previews++;
     return super.preview(draft);
   }
+}
+
+class _CapturedOrders extends SampleCustomerOrders {
+  _CapturedOrders(super.store);
+  CheckoutDraft? placed;
+  CheckoutPreview? acceptedPreview;
+
+  @override
+  Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) {
+    placed = draft;
+    acceptedPreview = preview;
+    return super.place(draft, preview: preview, clientRef: clientRef, key: key);
+  }
+}
+
+CheckoutPreview pricedPreview({required int fee, required int distance, required String snapshot}) => CheckoutPreview(ok: true, blockers: const <String>[], lines: const <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: fee, feeDistanceM: distance, expectedTotalVnd: 45000 + fee, feeStatus: 'PRICED', quoteSnapshot: snapshot, policyVersion: 1);
+
+class _DeferredPreviews extends _CapturedOrders {
+  _DeferredPreviews(super.store);
+
+  final List<CheckoutDraft> drafts = <CheckoutDraft>[];
+  final List<Completer<CheckoutPreview>> pending = <Completer<CheckoutPreview>>[];
+
+  @override
+  Future<CheckoutPreview> preview(CheckoutDraft draft) {
+    drafts.add(draft);
+    final Completer<CheckoutPreview> request = Completer<CheckoutPreview>();
+    pending.add(request);
+    return request.future;
+  }
+}
+
+class _StaticAddressApi implements AddressApi {
+  const _StaticAddressApi(this.rows);
+  final List<DeliveryAddress> rows;
+
+  @override
+  Future<List<DeliveryAddress>> list() async => rows;
+  @override
+  Future<DeliveryAddress> create(AddressInput input, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<DeliveryAddress> update(String id, AddressInput input, {required int expectedVersion, required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<String?> delete(String id, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<void> setDefault(String id, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled, {required String key}) => throw UnsupportedError('read only');
 }

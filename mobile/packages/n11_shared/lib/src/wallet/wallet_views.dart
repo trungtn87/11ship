@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../tokens.dart';
+import '../m07/m07_widgets.dart' show KeyValueRows;
 import '../widgets/components.dart';
 import 'wallet_models.dart';
 import 'wallet_http.dart';
@@ -119,19 +120,8 @@ class _KV extends StatelessWidget {
   final Key? valueKey;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(flex: 4, child: Text(label, style: N11Text.caption)),
-          const SizedBox(width: N11Space.gap2),
-          Expanded(flex: 6, child: Text(value, key: valueKey, textAlign: TextAlign.right, style: N11Text.bodyStrong)),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      KeyValueRows(<(String, String)>[(label, value)], valueKeys: <String, Key>{if (valueKey != null) label: valueKey!}, responsive: true);
 }
 
 Future<bool> _confirm(BuildContext context, {required String title, required String text}) async {
@@ -198,39 +188,50 @@ class WalletTxnTile extends StatelessWidget {
     return InkWell(
       key: Key('txn-${txn.id}'),
       onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kTapMin + 12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(color: credit ? N11Colors.successSoft : (neutral ? N11Colors.chipSoon : N11Colors.errorSoft), shape: BoxShape.circle),
-                child: Icon(_txnIcon(txn.type), size: 18, color: credit ? N11Colors.successInk : (neutral ? N11Colors.ink2 : N11Colors.errorInk)),
-              ),
-              const SizedBox(width: N11Space.gap3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(txn.title, style: const TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w600, color: N11Colors.black)),
-                    Text(txn.orderRef == null ? formatWalletTime(txn.at) : '${formatWalletTime(txn.at)} · ${txn.orderRef}', style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: N11Colors.ink2)),
-                  ],
+      child: Padding(
+        padding: const EdgeInsets.all(N11Space.gap3),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
+            final Widget amount = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  txn.amountText,
+                  key: Key('txn-amount-${txn.id}'),
+                  style: N11Text.bodyStrong.copyWith(color: _amountInk(txn)),
                 ),
-              ),
-              const SizedBox(width: N11Space.gap2),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  Text(txn.amountText, key: Key('txn-amount-${txn.id}'), style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w800, color: _amountInk(txn))),
-                  const SizedBox(height: 2),
-                  N11Chip(txnStatusLabel(txn.status), kind: _txnChip(txn.status)),
-                ],
-              ),
-            ],
-          ),
+                const SizedBox(height: N11Space.gap1),
+                N11Chip(txnStatusLabel(txn.status), kind: _txnChip(txn.status)),
+              ],
+            );
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: credit ? N11Colors.successSoft : (neutral ? N11Colors.chipSoon : N11Colors.errorSoft),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(_txnIcon(txn.type), size: 20, color: credit ? N11Colors.successInk : (neutral ? N11Colors.ink2 : N11Colors.errorInk)),
+                ),
+                const SizedBox(width: N11Space.gap3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(txn.title, style: N11Text.bodyStrong),
+                      Text(txn.orderRef == null ? formatWalletTime(txn.at) : '${formatWalletTime(txn.at)} · ${txn.orderRef}', style: N11Text.caption),
+                      if (stacked) ...<Widget>[const SizedBox(height: N11Space.gap2), amount],
+                    ],
+                  ),
+                ),
+                if (!stacked) ...<Widget>[const SizedBox(width: N11Space.gap3), amount],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -283,7 +284,7 @@ Future<void> _openTxn(BuildContext context, WalletSource source, WalletTxn txn) 
     isScrollControlled: true,
     backgroundColor: N11Colors.white,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusCard))),
-    builder: (BuildContext sheet) => _TxnSheet(txn: txn),
+    builder: (BuildContext sheet) => SingleChildScrollView(child: _TxnSheet(txn: txn)),
   );
   if (code == null || !context.mounted) {
     return;
@@ -384,18 +385,20 @@ class _BalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text('Số dư khả dụng', style: TextStyle(fontSize: 14, height: 1.4, fontWeight: FontWeight.w600, color: N11Colors.black)),
+          const Text('Số dư khả dụng', style: N11Text.bodyStrong),
           const SizedBox(height: 6),
-          Text(formatWalletVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.display),
+          Text(formatWalletVnd(wallet.available), key: const Key('wallet-available'), style: N11Text.title),
           const SizedBox(height: N11Space.gap4),
-          Row(
-            children: <Widget>[
-              Expanded(child: _Mini(label: 'Tổng số dư', value: formatWalletVnd(wallet.total), valueKey: const Key('wallet-total'))),
-              Expanded(child: _Mini(label: 'Tiền tạm giữ', value: formatWalletVnd(wallet.held), valueKey: const Key('wallet-held'), end: true)),
-            ],
-          ),
+          LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+            final Widget total = _Mini(label: 'Tổng số dư', value: formatWalletVnd(wallet.total), valueKey: const Key('wallet-total'));
+            final Widget held = _Mini(label: 'Tiền tạm giữ', value: formatWalletVnd(wallet.held), valueKey: const Key('wallet-held'));
+            if (constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(16) > 21) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[total, const SizedBox(height: N11Space.gap3), held]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Expanded(child: total), const SizedBox(width: N11Space.gap4), Expanded(child: held)]);
+          }),
           const SizedBox(height: N11Space.gap2),
-          const Text('Tiền tạm giữ là tiền giữ chỗ, chưa bị trừ khỏi sổ giao dịch.', key: Key('wallet-hold-note'), style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: N11Colors.black)),
+          const Text('Tiền tạm giữ là tiền giữ chỗ, chưa bị trừ khỏi sổ giao dịch.', key: Key('wallet-hold-note'), style: TextStyle(fontSize: 14, height: 1.4, color: N11Colors.black)),
         ],
       ),
     );
@@ -403,17 +406,16 @@ class _BalanceCard extends StatelessWidget {
 }
 
 class _Mini extends StatelessWidget {
-  const _Mini({required this.label, required this.value, required this.valueKey, this.end = false});
+  const _Mini({required this.label, required this.value, required this.valueKey});
 
   final String label;
   final String value;
   final Key valueKey;
-  final bool end;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(label, style: const TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w600, color: N11Colors.black)),
         Text(value, key: valueKey, style: const TextStyle(fontSize: 16, height: 1.4, fontWeight: FontWeight.w800, color: N11Colors.black)),
