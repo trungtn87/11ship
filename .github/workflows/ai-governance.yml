@@ -1,0 +1,29 @@
+name: AI Governance readiness
+
+# Read-only, trusted main-branch code: never check out or execute PR head with pull_request_target.
+# Developer may code despite local/remote drift. This gate evaluates READY FOR REVIEW evidence only.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  report:
+    name: Agent handoff/readiness evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted default branch only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Check PR report (event JSON is read as data, never executed)
+        run: node scripts/ai-governance/check-pr-report.mjs
