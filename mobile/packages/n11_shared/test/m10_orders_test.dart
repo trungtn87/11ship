@@ -155,6 +155,42 @@ void main() {
       await settle(tester);
     }
 
+    testWidgets('choosing A then B replaces all recipient data; one-order edits do not change the address book', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _CapturedOrders customer = _CapturedOrders(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final DeliveryAddress a = const DeliveryAddress(id: 'a', label: AddressLabel.home, recipientName: 'Người A', contactPhone: '+84901111111', addressText: 'Địa chỉ A', deliveryNote: 'Cổng A', isDeliveryDefault: true, version: 1);
+      final DeliveryAddress b = const DeliveryAddress(id: 'b', label: AddressLabel.office, recipientName: null, contactPhone: '+84902222222', addressText: 'Địa chỉ B', deliveryNote: 'Cổng B', version: 1);
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(<DeliveryAddress>[a, b]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      expect(tester.widget<TextField>(key('checkout-name')).controller!.text, 'Người A');
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-b'));
+      await tap(tester, key('picker-confirm'));
+      expect(tester.widget<TextField>(key('checkout-name')).controller!.text, isEmpty, reason: 'B has no name, so A must be cleared');
+      expect(tester.widget<TextField>(key('checkout-phone')).controller!.text, '0902222222');
+      expect(tester.widget<TextField>(key('checkout-delivery-note')).controller!.text, 'Cổng B');
+      expect(find.text('Địa chỉ B'), findsWidgets);
+      await tester.enterText(key('checkout-name'), 'Người nhận hộ');
+      await tester.enterText(key('checkout-phone'), '0903333333');
+      await tester.enterText(key('checkout-delivery-note'), 'Gọi số 3, cửa sau');
+      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
+      await tap(tester, key('checkout-send'));
+      expect(customer.placed, isNotNull);
+      expect(customer.placed?.recipientName, 'Người nhận hộ');
+      expect(customer.placed?.recipientPhone, '0903333333');
+      expect(customer.placed?.address.addressId, 'b');
+      expect(customer.placed?.deliveryNote, 'Gọi số 3, cửa sau');
+      expect(book.byId('b')?.recipientName, isNull);
+      expect(book.byId('b')?.contactPhone, '+84902222222');
+      expect(book.byId('b')?.deliveryNote, 'Cổng B');
+      await unmount(tester);
+    });
+
     testWidgets('invalid recipient phone blocks both preview and order placement, then correction sends once', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final _CountedPreviews customer = _CountedPreviews(store);
@@ -743,4 +779,33 @@ class _CountedPreviews extends SampleCustomerOrders {
     previews++;
     return super.preview(draft);
   }
+}
+
+class _CapturedOrders extends SampleCustomerOrders {
+  _CapturedOrders(super.store);
+  CheckoutDraft? placed;
+
+  @override
+  Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) {
+    placed = draft;
+    return super.place(draft, preview: preview, clientRef: clientRef, key: key);
+  }
+}
+
+class _StaticAddressApi implements AddressApi {
+  const _StaticAddressApi(this.rows);
+  final List<DeliveryAddress> rows;
+
+  @override
+  Future<List<DeliveryAddress>> list() async => rows;
+  @override
+  Future<DeliveryAddress> create(AddressInput input, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<DeliveryAddress> update(String id, AddressInput input, {required int expectedVersion, required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<String?> delete(String id, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<void> setDefault(String id, {required String key}) => throw UnsupportedError('read only');
+  @override
+  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled, {required String key}) => throw UnsupportedError('read only');
 }

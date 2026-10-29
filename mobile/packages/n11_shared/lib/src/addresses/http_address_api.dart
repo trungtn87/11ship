@@ -23,11 +23,13 @@ DeliveryAddress parseAddress(Object? raw) {
   return DeliveryAddress(
     id: _str(m['id']),
     label: label,
+    displayName: _strOrNull(m['display_name']),
     recipientName: _strOrNull(m['recipient_name']),
     contactPhone: _str(m['contact_phone']),
     addressText: _str(m['address_description']),
     deliveryNote: _strOrNull(m['delivery_note']),
-    isDefault: _bool(m['is_default']),
+    isPickupDefault: m.containsKey('is_pickup_default') ? _bool(m['is_pickup_default']) : false,
+    isDeliveryDefault: m.containsKey('is_delivery_default') ? _bool(m['is_delivery_default']) : _bool(m['is_default']),
     version: _int(m['version']),
     latitude: _numOrNull(m['latitude']),
     longitude: _numOrNull(m['longitude']),
@@ -50,6 +52,7 @@ class HttpAddressApi implements AddressApi {
 
   Map<String, Object?> _fields(AddressInput i) => <String, Object?>{
         'label': i.label.code,
+        'display_name': i.displayName.trim(),
         'recipient_name': i.recipientName.trim(),
         'contact_phone': i.phone.trim(),
         'address_description': i.addressText.trim(),
@@ -68,12 +71,12 @@ class HttpAddressApi implements AddressApi {
 
   @override
   Future<DeliveryAddress> create(AddressInput input, {required String key}) async => parseAddress(
-        await _call('POST', '/v1/customers/me/addresses', body: <String, Object?>{..._fields(input), 'is_default': input.makeDefault}, key: key, ok: const <int>{201}),
+        await _call('POST', '/v1/customers/me/addresses', body: <String, Object?>{..._fields(input), 'is_pickup_default': input.pickupDefault, 'is_delivery_default': input.deliveryDefault}, key: key, ok: const <int>{201}),
       );
 
   @override
   Future<DeliveryAddress> update(String id, AddressInput input, {required int expectedVersion, required String key}) async => parseAddress(
-        await _call('PATCH', '/v1/customers/me/addresses/$id', body: <String, Object?>{'expected_version': expectedVersion, ..._fields(input), if (input.makeDefault) 'is_default': true}, key: key),
+        await _call('PATCH', '/v1/customers/me/addresses/$id', body: <String, Object?>{'expected_version': expectedVersion, ..._fields(input), 'is_pickup_default': input.pickupDefault, 'is_delivery_default': input.deliveryDefault}, key: key),
       );
 
   @override
@@ -85,5 +88,10 @@ class HttpAddressApi implements AddressApi {
   @override
   Future<void> setDefault(String id, {required String key}) async {
     await _call('PUT', '/v1/customers/me/addresses/$id/default', key: key);
+  }
+
+  @override
+  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled, {required String key}) async {
+    await _call(enabled ? 'PUT' : 'DELETE', '/v1/customers/me/addresses/$id/defaults/${kind.name}', key: key);
   }
 }

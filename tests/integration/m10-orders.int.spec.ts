@@ -235,7 +235,7 @@ describe('M10 — food orders', () => {
   });
 
   it('rejects a route if the address-book or pickup coordinates change before the Order snapshot is locked', async () => {
-    const book = ok(await asCustomer(alice, 'POST', '/customers/me/addresses', { label: 'HOME', contact_phone: '0912345678', address_description: 'Điểm cũ', latitude: 21.001, longitude: 105.821 }), 201);
+    const book = ok(await asCustomer(alice, 'POST', '/customers/me/addresses', { label: 'HOME', recipient_name: 'Người nhận', contact_phone: '0912345678', address_description: 'Điểm cũ', latitude: 21.001, longitude: 105.821 }), 201);
     const lines = [line(pho, 1)];
     const body = checkout(lines, { address: { address_id: book.id }, expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21.001,105.821' } });
     let routeStarted!: () => void;
@@ -267,7 +267,7 @@ describe('M10 — food orders', () => {
 
   it('sending creates "Chờ quán xác nhận" with a snapshot: the menu and the address book changing afterwards do not change the Order', async () => {
     const dish = await newDish(app, shop.token, 'Món snapshot', 30_000);
-    const book = ok(await asCustomer(alice, 'POST', '/customers/me/addresses', { label: 'HOME', contact_phone: '0912345678', address_description: '77 Phố Mới, Cầu Giấy', latitude: 21.0, longitude: 105.82 }), 201);
+    const book = ok(await asCustomer(alice, 'POST', '/customers/me/addresses', { label: 'HOME', recipient_name: 'Người nhận', contact_phone: '0912345678', address_description: '77 Phố Mới, Cầu Giấy', latitude: 21.0, longitude: 105.82 }), 201);
     const order = await place(alice, [line(dish, 2, 'không hành')], { address: { address_id: book.id } });
     expect(order).toMatchObject({ status: 'PENDING_CONFIRMATION', display_status: 'AWAITING_SHOP', version: 1 });
     expect(order.code).toMatch(/^DH-/u);
@@ -491,13 +491,17 @@ describe('M10 — food orders', () => {
   });
 
   it('the delivery carries the confirmed snapshot: dishes, recipient, address, the amounts, who pays the fee; the paid amount is noted before the call and fixed while a delivery runs', async () => {
-    const order = await confirmed(alice, [line(pho, 2), line(tea, 1)], { note: 'Giao giờ trưa' });
+    const order = await confirmed(alice, [line(pho, 2), line(tea, 1)], { note: 'Giao giờ trưa', delivery_note: 'Cổng xanh, gọi bảo vệ' });
+    expect(order).toMatchObject({ note: 'Giao giờ trưa', delivery_note: 'Cổng xanh, gọi bảo vệ' });
     const paid = ok(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: order.version, paid_vnd: 50_000 }));
     expect(paid.money).toMatchObject({ paid_vnd: 50_000, items_remaining_vnd: 45_000 });
     expect(refused(await asShop('POST', `/shop/me/orders/${String(order.order_id)}/payment`, { expected_version: paid.version, paid_vnd: 999_999 }))).toEqual({ status: 400, code: 'ORDER_PAYMENT_INVALID' });
     const called = ok(await callShipper(paid, { fee_payer: 'SHOP' }), 201);
     const [delivery] = await deliveryOf(String(order.order_id));
-    expect(delivery).toMatchObject({ source: 'ORDER', recipient_name: 'Người nhận', dropoff_address_text: ADDRESS.address_text, goods_description: '2× Phở bò, 1× Trà đá', fee_payer: 'SHOP', note: 'Giao giờ trưa' });
+    expect(delivery).toMatchObject({ source: 'ORDER', recipient_name: 'Người nhận', dropoff_address_text: ADDRESS.address_text, goods_description: '2× Phở bò, 1× Trà đá', fee_payer: 'SHOP', note: 'Giao giờ trưa', dropoff_note: 'Cổng xanh, gọi bảo vệ' });
+    expect(called.delivery).toMatchObject({ dropoff_note: 'Cổng xanh, gọi bảo vệ' });
+    await expect(app.pool.query(`UPDATE app.orders SET delivery_note = 'đổi' WHERE order_id = $1::uuid`, [order.order_id])).rejects.toThrow(/ORDER_DELIVERY_NOTE_IMMUTABLE/u);
+    await expect(app.pool.query(`UPDATE app.deliveries SET dropoff_note = 'đổi' WHERE delivery_id = $1::uuid`, [delivery?.delivery_id])).rejects.toThrow(/DELIVERY_DROPOFF_NOTE_IMMUTABLE/u);
     expect([Number(delivery?.goods_value_vnd), Number(delivery?.paid_vnd), Number(delivery?.fee_vnd)]).toEqual([95_000, 50_000, 10_000]);
     expect(called.money.fee).toMatchObject({ payer: 'SHOP', amount_vnd: 10_000, status: 'FINAL' });
     expect(called.money.expected_total_vnd).toBe(95_000);

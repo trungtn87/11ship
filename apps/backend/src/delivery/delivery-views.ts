@@ -211,6 +211,7 @@ export class DeliveryViews {
       fee: this.#fee(d, agreement),
       search: this.#search(d, nowMs),
       note: d.note,
+      dropoff_note: d.dropoffNote,
       assignment: assignmentView,
       location,
       result: this.#result(d, incident),

@@ -576,7 +576,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       _contactCard(
         'Người nhận',
         d.recipient.name,
-        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—')],
+        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—'), if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) ('Hướng dẫn tìm đường', d.dropoffNote!)],
         key: 'm07-recipient-card',
         show: active,
         phone: d.recipient.phone,

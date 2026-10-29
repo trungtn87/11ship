@@ -37,7 +37,7 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/n11_update_paths"/>
         </provider>
         <activity
-            android:name=".MainActivity"
+            android:name="@APP_PACKAGE@.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

@@ -341,6 +341,7 @@ class OrderView {
     required this.shop,
     required this.recipient,
     required this.note,
+    this.deliveryNote,
     required this.scheduledFor,
     required this.items,
     required this.money,
@@ -375,6 +376,7 @@ class OrderView {
       shop: OrderShop.fromJson(m['shop']),
       recipient: OrderRecipient.fromJson(m['recipient']),
       note: _strOrNull(m['note']),
+      deliveryNote: _strOrNull(m['delivery_note']),
       scheduledFor: _timeOrNull(m['scheduled_for']),
       items: <OrderLine>[for (final Object? i in _list(m['items'])) OrderLine.fromJson(i)],
       money: OrderMoney.fromJson(m['money']),
@@ -409,6 +411,7 @@ class OrderView {
   final OrderShop shop;
   final OrderRecipient recipient;
   final String? note;
+  final String? deliveryNote;
 
   /// The time the customer WANTS the food (not a promise): null for "sớm nhất".
   final DateTime? scheduledFor;
@@ -596,12 +599,13 @@ class DraftAddress {
 }
 
 class CheckoutDraft {
-  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor});
+  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, this.deliveryNote, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor});
 
   final String shopId;
   final String shopName;
   final List<DraftLine> lines;
   final String? note;
+  final String? deliveryNote;
   final String recipientName;
   final String recipientPhone;
   final DraftAddress address;

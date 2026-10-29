@@ -479,6 +479,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _note = TextEditingController();
+  final TextEditingController _deliveryNote = TextEditingController();
   final TextEditingController _typed = TextEditingController();
   DraftAddress? _address;
   bool _typedMode = false;
@@ -513,8 +514,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final DeliveryAddress? book = widget.addresses?.defaultAddress;
     if (book != null) {
       _address = _fromBook(book);
-      _name.text = book.recipientName ?? _name.text;
+      _name.text = book.recipientName ?? '';
       _phone.text = '0${book.contactPhone.replaceFirst('+84', '')}';
+      _deliveryNote.text = book.deliveryNote ?? '';
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_check()));
   }
@@ -524,6 +526,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _name.dispose();
     _phone.dispose();
     _note.dispose();
+    _deliveryNote.dispose();
     _typed.dispose();
     _freshness.dispose();
     super.dispose();
@@ -542,6 +545,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _pinLat = selected.latitude;
     _pinLng = selected.longitude;
     _typedMode = true;
+    if (fresh) _deliveryNote.clear();
     _touch();
   }
 
@@ -569,6 +573,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       shopName: cart.shopName,
       lines: cart.lines,
       note: _note.text.trim().isEmpty ? (cart.note) : _note.text.trim(),
+      deliveryNote: _deliveryNote.text.trim().isEmpty ? null : _deliveryNote.text.trim(),
       recipientName: _name.text.trim(),
       recipientPhone: _phone.text.trim(),
       address: address,
@@ -579,7 +584,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _check() async {
     if (_previewing || _attempt != _Attempt.none) return;
     final CheckoutDraft? draft = _draft();
-    if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null) {
+    if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null || textError(draft.deliveryNote ?? '', 'hướng dẫn tìm đường', 200, optional: true) != null) {
       setState(() => _preview = null);
       return;
     }
@@ -621,9 +626,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (picked != null) {
       _address = _fromBook(picked);
       _typedMode = false;
-      if (picked.recipientName != null && _name.text.trim().isEmpty) {
-        _name.text = picked.recipientName!;
-      }
+      _name.text = picked.recipientName ?? '';
+      _phone.text = formatVnPhone(picked.contactPhone);
+      _deliveryNote.text = picked.deliveryNote ?? '';
       _touch();
     }
   }
@@ -790,6 +795,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, onChanged: _touch),
+        N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
         N11Card(
           key: const Key('checkout-summary'),
           child: Column(
@@ -1154,7 +1160,8 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
         summary: '${o.recipient.name} · ${o.recipient.addressText}',
         builder: (BuildContext _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]),
-          if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption)
+          if (o.note != null) Text('Ghi chú: ${o.note}', style: N11Text.caption),
+          if (o.deliveryNote != null) Text('Hướng dẫn tìm đường: ${o.deliveryNote}', style: N11Text.caption),
         ]),
       ),
       if (o.ended && widget.runtime.feedback != null && widget.runtime.picker != null) customerOrderFeedbackCard(context, source: widget.runtime.feedback!, picker: widget.runtime.picker!, orderId: o.orderId, orderCode: o.code),

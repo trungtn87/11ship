@@ -242,6 +242,7 @@ export class OrderShopService {
         paidVnd: order.paidVnd,
         feePayer: input.feePayer,
         note: order.note,
+        dropoffNote: order.deliveryNote,
         agreedFee: input.agreedFee,
         estimatedDistanceM: order.feeEstimateDistanceM,
         route: routeResult.route?.leg,

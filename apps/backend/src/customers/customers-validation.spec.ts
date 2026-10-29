@@ -9,19 +9,21 @@ import {
   rejectQuery,
 } from './customers-validation';
 
-const VALID = { label: 'HOME', contact_phone: '0901234567', address_description: 'Tổ 5, phường Thục Phán, Cao Bằng' };
+const VALID = { label: 'HOME', recipient_name: 'Nguyễn Văn A', contact_phone: '0901234567', address_description: 'Tổ 5, phường Thục Phán, Cao Bằng' };
 
 describe('parseAddressCreateBody', () => {
-  it('returns the normalized fields; only label, phone and address are required', () => {
+  it('returns the normalized fields; recipient, label, phone and address are required', () => {
     expect(parseAddressCreateBody(VALID)).toEqual({
       label: 'HOME',
-      recipientName: null,
+      displayName: null,
+      recipientName: 'Nguyễn Văn A',
       contactPhone: '+84901234567',
       addressDescription: 'Tổ 5, phường Thục Phán, Cao Bằng',
       latitude: null,
       longitude: null,
       deliveryNote: null,
-      makeDefault: false,
+      pickupDefault: false,
+      deliveryDefault: false,
     });
   });
 
@@ -40,25 +42,28 @@ describe('parseAddressCreateBody', () => {
       }),
     ).toEqual({
       label: 'OFFICE',
+      displayName: null,
       recipientName: 'Nguyễn Văn A',
       contactPhone: '+84901234567',
       addressDescription: 'Đường Hoàng Đình Giong',
       latitude: 22.6657,
       longitude: 106.2522,
       deliveryNote: null,
-      makeDefault: true,
+      pickupDefault: false,
+      deliveryDefault: true,
     });
   });
 
-  it('absent and null mean the same: no value and no position', () => {
+  it('absent and null mean the same for optional values and position', () => {
     const absent = parseAddressCreateBody(VALID);
-    const nulls = parseAddressCreateBody({ ...VALID, recipient_name: null, delivery_note: null, latitude: null, longitude: null });
+    const nulls = parseAddressCreateBody({ ...VALID, display_name: null, delivery_note: null, latitude: null, longitude: null });
     expect(nulls).toEqual(absent);
   });
 
   it('refuses a missing required key (M05-08), an extra key and an identity selector', () => {
     for (const body of [
       {},
+      { label: 'HOME', contact_phone: '0901234567', address_description: 'x' },
       { label: 'HOME', contact_phone: '0901234567' },
       { label: 'HOME', address_description: 'x' },
       { contact_phone: '0901234567', address_description: 'x' },
@@ -85,7 +90,8 @@ describe('parseAddressCreateBody', () => {
       { label: null },
       { recipient_name: 'a'.repeat(121) },
       { recipient_name: 7 },
-      { delivery_note: 'a'.repeat(301) },
+      { display_name: 'a'.repeat(51) },
+      { delivery_note: 'a'.repeat(201) },
       { delivery_note: false },
       { is_default: 'true' },
       { is_default: 1 },
@@ -140,9 +146,9 @@ describe('parseAddressUpdateBody', () => {
   });
 
   it('only the keys sent are changed; null clears an optional field and a position together', () => {
-    expect(parseAddressUpdateBody({ expected_version: 1, recipient_name: null, delivery_note: '', latitude: null, longitude: null })).toEqual({
+    expect(parseAddressUpdateBody({ expected_version: 1, display_name: null, delivery_note: '', latitude: null, longitude: null })).toEqual({
       expectedVersion: 1,
-      patch: { recipientName: null, deliveryNote: null, position: null },
+      patch: { displayName: null, deliveryNote: null, position: null },
     });
     expect(
       parseAddressUpdateBody({ expected_version: 3, label: 'OTHER', contact_phone: '84901234567', address_description: ' Xóm Nà Cạn ', latitude: 22.5, longitude: 106.1 }),
@@ -170,10 +176,17 @@ describe('parseAddressUpdateBody', () => {
   });
 
   it('is_default accepts only true: the default is moved to another address, never simply removed', () => {
-    expect(parseAddressUpdateBody({ expected_version: 1, is_default: true })).toEqual({ expectedVersion: 1, patch: { makeDefault: true } });
+    expect(parseAddressUpdateBody({ expected_version: 1, is_default: true })).toEqual({ expectedVersion: 1, patch: { deliveryDefault: true } });
     for (const value of [false, 'true', 1, null]) {
       expect(() => parseAddressUpdateBody({ expected_version: 1, is_default: value, delivery_note: 'x' })).toThrow(BadRequestException);
     }
+  });
+
+  it('supports setting and clearing pickup and delivery defaults independently', () => {
+    expect(parseAddressUpdateBody({ expected_version: 2, is_pickup_default: true, is_delivery_default: false })).toEqual({
+      expectedVersion: 2,
+      patch: { pickupDefault: true, deliveryDefault: false },
+    });
   });
 });
 

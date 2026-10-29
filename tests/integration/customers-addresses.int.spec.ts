@@ -31,6 +31,7 @@ const CUSTOMER_KEYS = ['customer_id', 'user_id', 'full_name', 'phone', 'created_
 const ADDRESS_KEYS = [
   'id',
   'label',
+  'display_name',
   'recipient_name',
   'contact_phone',
   'address_description',
@@ -38,6 +39,8 @@ const ADDRESS_KEYS = [
   'longitude',
   'delivery_note',
   'is_default',
+  'is_pickup_default',
+  'is_delivery_default',
   'version',
   'created_at',
   'updated_at',
@@ -114,6 +117,10 @@ describe('M05 — customer record and address book', () => {
     app.call('DELETE', `/customers/me/addresses/${id}`, { bearer: token, ...(key === null ? {} : { headers: { 'idempotency-key': key } }) });
   const makeDefault = (token: string, id: string, key: string | null = randomUUID()) =>
     app.call('PUT', `/customers/me/addresses/${id}/default`, { bearer: token, ...(key === null ? {} : { headers: { 'idempotency-key': key } }) });
+  const setDefaultKind = (token: string, id: string, kind: 'pickup' | 'delivery', key: string | null = randomUUID()) =>
+    app.call('PUT', `/customers/me/addresses/${id}/defaults/${kind}`, { bearer: token, ...(key === null ? {} : { headers: { 'idempotency-key': key } }) });
+  const clearDefaultKind = (token: string, id: string, kind: 'pickup' | 'delivery', key: string | null = randomUUID()) =>
+    app.call('DELETE', `/customers/me/addresses/${id}/defaults/${kind}`, { bearer: token, ...(key === null ? {} : { headers: { 'idempotency-key': key } }) });
 
   async function list(token: string): Promise<Address[]> {
     const response = await listRaw(token);
@@ -226,7 +233,7 @@ describe('M05 — customer record and address book', () => {
       expect(await addressRows(user.userId)).toBe(0);
     });
 
-    it('M05-02 and M05-07: the first address is the default whatever the request says, and it is saved without a GPS position', async () => {
+    it('the first address may have no default and may be saved without a GPS position', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
       const response = await create(token, body({ is_default: false }));
@@ -243,19 +250,21 @@ describe('M05 — customer record and address book', () => {
         latitude: null,
         longitude: null,
         delivery_note: 'Gọi trước khi đến',
-        is_default: true,
+        is_default: false,
+        is_pickup_default: false,
+        is_delivery_default: false,
         version: 1,
       });
       expect(await customerRows(user.userId)).toBe(1);
-      expect(await defaults(user.userId)).toBe(1);
+      expect(await defaults(user.userId)).toBe(0);
       expect(await list(token)).toEqual([created]);
       expect(await auditCount(user.userId, CREATE_ACTION)).toBe(1);
     });
 
-    it('M05-03: a second address without the default flag leaves the old default alone; the book lists the default first', async () => {
+    it('a second address without a default flag leaves an explicitly selected delivery default alone', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const first = await add(token);
+      const first = await add(token, { is_delivery_default: true });
       const second = await add(token, { label: 'OFFICE', address_description: 'Đường Hoàng Đình Giong, Cao Bằng' });
       expect(second.is_default).toBe(false);
       const book = await list(token);
@@ -278,14 +287,14 @@ describe('M05 — customer record and address book', () => {
     it('stores a position only when both coordinates come, a different receiver phone is kept, and the number of addresses is not limited', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const pinned = await add(token, { latitude: 22.6657, longitude: 106.2522, contact_phone: '+84988777666', recipient_name: null });
-      expect(pinned).toMatchObject({ latitude: 22.6657, longitude: 106.2522, contact_phone: '+84988777666', recipient_name: null });
+      const pinned = await add(token, { latitude: 22.6657, longitude: 106.2522, contact_phone: '+84988777666', recipient_name: 'Người nhận khác' });
+      expect(pinned).toMatchObject({ latitude: 22.6657, longitude: 106.2522, contact_phone: '+84988777666', recipient_name: 'Người nhận khác' });
       expect(pinned.contact_phone).not.toBe(user.phone.normalized);
       for (let index = 0; index < 24; index += 1) {
         await add(token, { address_description: `Địa chỉ số ${index}` });
       }
       expect(await addressRows(user.userId)).toBe(25);
-      expect(await defaults(user.userId)).toBe(1);
+      expect(await defaults(user.userId)).toBe(0);
     });
 
     it('M05-08: a missing or invalid phone or address, a half position or an identity field is refused and nothing is written', async () => {
@@ -296,9 +305,11 @@ describe('M05 — customer record and address book', () => {
       const without = (key: string) => Object.fromEntries(Object.entries(body()).filter(([name]) => name !== key));
       const withoutPhone = without('contact_phone');
       const withoutAddress = without('address_description');
+      const withoutRecipient = without('recipient_name');
       const cases: Array<[string, unknown, number, string]> = [
         ['no phone', withoutPhone, 400, 'BAD_REQUEST'],
         ['no address', withoutAddress, 400, 'BAD_REQUEST'],
+        ['no recipient', withoutRecipient, 400, 'BAD_REQUEST'],
         ['blank address', body({ address_description: '   ' }), 400, 'BAD_REQUEST'],
         ['bad phone', body({ contact_phone: '12345' }), 400, 'INVALID_PHONE'],
         ['bad label', body({ label: 'WORK' }), 400, 'BAD_REQUEST'],
@@ -334,7 +345,7 @@ describe('M05 — customer record and address book', () => {
         delivery_note: 'Nhà màu xanh, cổng sắt',
         latitude: 22.5,
         longitude: 106.1,
-        is_default: true,
+        is_default: false,
         version: 2,
       });
       expect(await auditCount(user.userId, UPDATE_ACTION)).toBe(1);
@@ -344,18 +355,18 @@ describe('M05 — customer record and address book', () => {
       );
       expect(audit.rows[0]?.resource_type).toBe('customer_address');
       expect(audit.rows[0]?.resource_version).toBe('2');
-      expect(Object.keys(audit.rows[0]?.metadata ?? {}).sort()).toEqual(['customer_id', 'from_version', 'is_default', 'to_version']);
+      expect(Object.keys(audit.rows[0]?.metadata ?? {}).sort()).toEqual(['customer_id', 'from_version', 'is_delivery_default', 'is_pickup_default', 'to_version']);
       expect(JSON.stringify(audit.rows[0])).not.toContain('Thục Phán');
       expect(JSON.stringify(audit.rows[0])).not.toContain(token);
     });
 
-    it('null clears the note, the receiver and the position; the phone and the address stay required', async () => {
+    it('null clears optional display name, note and position; recipient, phone and address stay required', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
       const created = await add(token, { latitude: 22.5, longitude: 106.1 });
-      const cleared = await patch(token, String(created.id), { expected_version: 1, delivery_note: null, recipient_name: null, latitude: null, longitude: null });
-      expect(dataOf(cleared)).toMatchObject({ delivery_note: null, recipient_name: null, latitude: null, longitude: null, version: 2 });
-      for (const payload of [{ address_description: null }, { address_description: '  ' }, { contact_phone: null }]) {
+      const cleared = await patch(token, String(created.id), { expected_version: 1, display_name: null, delivery_note: null, latitude: null, longitude: null });
+      expect(dataOf(cleared)).toMatchObject({ display_name: null, delivery_note: null, latitude: null, longitude: null, version: 2 });
+      for (const payload of [{ recipient_name: null }, { address_description: null }, { address_description: '  ' }, { contact_phone: null }]) {
         const response = await patch(token, String(created.id), { expected_version: 2, ...payload });
         expect(response.status).toBe(400);
       }
@@ -407,6 +418,23 @@ describe('M05 — customer record and address book', () => {
       expect(await defaults(user.userId)).toBe(1);
       expect(await auditCount(user.userId, DEFAULT_ACTION)).toBe(2);
     });
+
+    it('sets and clears pickup and delivery defaults independently, including both on one address', async () => {
+      const user = await newCustomer();
+      const token = await clientLogin(user);
+      const first = await add(token);
+      const second = await add(token, { address_description: 'Cơ quan' });
+      expect((await setDefaultKind(token, String(first.id), 'pickup')).status).toBe(200);
+      expect((await setDefaultKind(token, String(second.id), 'delivery')).status).toBe(200);
+      expect(await list(token)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: first.id, is_pickup_default: true, is_delivery_default: false }),
+        expect.objectContaining({ id: second.id, is_pickup_default: false, is_delivery_default: true }),
+      ]));
+      expect((await setDefaultKind(token, String(second.id), 'pickup')).status).toBe(200);
+      expect(dataOf(await setDefaultKind(token, String(second.id), 'delivery'))).toMatchObject({ is_pickup_default: true, is_delivery_default: true });
+      expect((await clearDefaultKind(token, String(second.id), 'pickup')).status).toBe(200);
+      expect(dataOf(await clearDefaultKind(token, String(second.id), 'delivery'))).toMatchObject({ is_pickup_default: false, is_delivery_default: false });
+    });
   });
 
   // ------------------------------------------------------------------------------------------ E — delete
@@ -419,7 +447,7 @@ describe('M05 — customer record and address book', () => {
       const second = await add(token, { address_description: 'Cơ quan' });
       const response = await remove(token, String(second.id));
       expect(response.status).toBe(200);
-      expect(dataOf(response)).toEqual({ id: second.id, deleted: true, default_address_id: null });
+      expect(dataOf(response)).toEqual({ id: second.id, deleted: true, default_address_id: null, pickup_default_address_id: null, delivery_default_address_id: null });
       expect(await storedAddress(String(second.id))).toEqual({ isActive: false, isDefault: false, version: 2, description: 'Cơ quan' });
       expect((await list(token)).map((a) => a.id)).toEqual([first.id]);
       const gone = await remove(token, String(second.id));
@@ -429,34 +457,33 @@ describe('M05 — customer record and address book', () => {
       expect(await auditCount(user.userId, DELETE_ACTION)).toBe(1);
     });
 
-    it('M05-06: deleting the default makes the most recently updated active address the default; with none left there is no default', async () => {
+    it('deleting a default clears it and never assigns another address automatically', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const first = await add(token, { address_description: 'Một' });
+      const first = await add(token, { address_description: 'Một', is_pickup_default: true, is_delivery_default: true });
       const second = await add(token, { address_description: 'Hai' });
       const third = await add(token, { address_description: 'Ba' });
-      // The second address is edited last, so it is the most recently updated of the remaining ones.
       expect((await patch(token, String(second.id), { expected_version: 1, delivery_note: 'mới nhất' })).status).toBe(200);
       const response = await remove(token, String(first.id));
-      expect(dataOf(response)).toEqual({ id: first.id, deleted: true, default_address_id: second.id });
-      expect((await storedAddress(String(second.id))).isDefault).toBe(true);
-      expect(await defaults(user.userId)).toBe(1);
+      expect(dataOf(response)).toEqual({ id: first.id, deleted: true, default_address_id: null, pickup_default_address_id: null, delivery_default_address_id: null });
+      expect((await storedAddress(String(second.id))).isDefault).toBe(false);
+      expect(await defaults(user.userId)).toBe(0);
 
-      expect(dataOf(await remove(token, String(second.id))).default_address_id).toBe(third.id);
+      expect(dataOf(await remove(token, String(second.id))).default_address_id).toBeNull();
       expect(dataOf(await remove(token, String(third.id))).default_address_id).toBeNull();
       expect(await defaults(user.userId)).toBe(0);
       expect(await list(token)).toEqual([]);
       // The rows are kept: nothing was physically removed.
       expect(await addressRows(user.userId)).toBe(3);
 
-      // A new address after an empty book is the default again.
-      expect((await add(token)).is_default).toBe(true);
+      // A new address after an empty book also remains non-default until explicitly selected.
+      expect((await add(token)).is_default).toBe(false);
     });
 
     it('deleting a non-default address leaves the default alone', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const first = await add(token);
+      const first = await add(token, { is_delivery_default: true });
       const second = await add(token, { address_description: 'Cơ quan' });
       expect(dataOf(await remove(token, String(second.id))).default_address_id).toBeNull();
       expect((await storedAddress(String(first.id))).isDefault).toBe(true);
@@ -489,7 +516,7 @@ describe('M05 — customer record and address book', () => {
       expect(await storedAddress(id)).toEqual(before);
       expect((await list(otherToken)).map((a) => a.address_description)).toEqual(['Của người khác']);
       expect((await list(myToken)).map((a) => a.address_description)).toEqual(['Số 9 đường bí mật']);
-      expect((await defaults(other.userId)) + (await defaults(mine.userId))).toBe(2);
+      expect((await defaults(other.userId)) + (await defaults(mine.userId))).toBe(0);
     });
 
     it('an account that is not a customer, a malformed id and an unknown id all get the same refusal of the address', async () => {
@@ -640,7 +667,7 @@ describe('M05 — customer record and address book', () => {
     it('a delete of the default and a default switch at the same time never leave two defaults', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const first = await add(token);
+      const first = await add(token, { is_delivery_default: true });
       const second = await add(token, { address_description: 'Hai' });
       await add(token, { address_description: 'Ba' });
       await Promise.all([remove(token, String(first.id)), makeDefault(token, String(second.id))]);
@@ -714,7 +741,7 @@ describe('M05 — customer record and address book', () => {
     it('a failed audit write rolls back an edit and a default switch', async () => {
       const user = await newCustomer();
       const token = await clientLogin(user);
-      const first = await add(token);
+      const first = await add(token, { is_delivery_default: true });
       const second = await add(token, { address_description: 'Hai' });
       await installFault(app.pool, 'test_fault_cust_audit', 'app.audit_logs', 'INSERT', `NEW.actor_id = '${user.userId}' AND NEW.action IN ('${UPDATE_ACTION}', '${DEFAULT_ACTION}')`);
       try {

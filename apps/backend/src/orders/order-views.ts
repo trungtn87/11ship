@@ -94,6 +94,7 @@ export class OrderViews {
       shop: { shop_id: o.shopId, name: o.shopName, phone: o.shopPhone, address_text: o.shopAddressText },
       recipient: { name: o.recipientName, phone: o.recipientPhone, address_text: o.addressText, lat: o.addressLat, lng: o.addressLng },
       note: o.note,
+      delivery_note: o.deliveryNote,
       scheduled_for: iso(o.scheduledForMs),
       items: items.map(itemView),
       money: moneyView(o, latest),

@@ -14,6 +14,7 @@ import {
   ADDRESS_MAX_VERSION,
   CUSTOMER_ADDRESS_CREATE_OPERATION_ID,
   CUSTOMER_ADDRESS_DEFAULT_OPERATION_ID,
+  CUSTOMER_ADDRESS_DEFAULTS_OPERATION_ID,
   CUSTOMER_ADDRESS_DELETE_OPERATION_ID,
   CUSTOMER_ADDRESS_RESOURCE_TYPE,
   CUSTOMER_ADDRESS_SCOPE_TYPE,
@@ -22,7 +23,7 @@ import {
   CUSTOMER_RESOURCE_TYPE,
 } from './customers-constants';
 import { AddressRow, CustomerRow, CustomersRepository } from './customers-repository';
-import { AddressCreateInput, AddressFields, AddressUpdateInput } from './customers-validation';
+import { AddressCreateInput, AddressDefaultKind, AddressFields, AddressUpdateInput } from './customers-validation';
 
 /** The `data` of GET /v1/customers/me. The account phone is the M01 login number: it only pre-fills a new address. */
 export type CustomerView = {
@@ -36,6 +37,7 @@ export type CustomerView = {
 export type AddressView = {
   id: string;
   label: string;
+  display_name: string | null;
   recipient_name: string | null;
   contact_phone: string;
   address_description: string;
@@ -43,13 +45,15 @@ export type AddressView = {
   longitude: number | null;
   delivery_note: string | null;
   is_default: boolean;
+  is_pickup_default: boolean;
+  is_delivery_default: boolean;
   version: number;
   created_at: string;
   updated_at: string;
 };
 
 export type AddressListView = { addresses: AddressView[] };
-export type AddressDeletedView = { id: string; deleted: true; default_address_id: string | null };
+export type AddressDeletedView = { id: string; deleted: true; default_address_id: null; pickup_default_address_id: null; delivery_default_address_id: null };
 
 export interface AddressOutcome<T> {
   readonly status: number;
@@ -144,7 +148,7 @@ export class CustomersService {
 
   // ------------------------------------------------------------------------------------------------------------ writes
 
-  /** POST /v1/customers/me/addresses. The first address is the default; later ones only when asked. */
+  /** POST /v1/customers/me/addresses. Defaults are optional and independent; the first address is not assigned implicitly. */
   async createAddress(
     principal: AuthPrincipal,
     input: AddressCreateInput,
@@ -159,13 +163,15 @@ export class CustomersService {
         idempotencyKey,
         logicalRequest: {
           label: input.label,
+          display_name: input.displayName,
           recipient_name: input.recipientName,
           contact_phone: input.contactPhone,
           address_description: input.addressDescription,
           latitude: input.latitude,
           longitude: input.longitude,
           delivery_note: input.deliveryNote,
-          is_default: input.makeDefault,
+          is_pickup_default: input.pickupDefault,
+          is_delivery_default: input.deliveryDefault,
         },
         replay: this.#replayPolicy(principal),
       },
@@ -173,13 +179,14 @@ export class CustomersService {
         const actor = await this.authority.lock(context, principal, 'update');
         await this.#requireCustomerRole(context, actor.userId);
         const customerId = await this.#ensureCustomer(context, actor, requestId);
-        const isFirst = (await this.customers.countActive(context, customerId)) === 0;
-        const makeDefault = isFirst || input.makeDefault;
-        if (makeDefault && !isFirst) {
-          await this.customers.clearDefault(context, customerId);
-        }
-        const created = await this.customers.insertAddress(context, randomUUID(), customerId, input, makeDefault);
-        await this.#audit(context, requestId, actor.userId, CUSTOMER_ADDRESS_CREATE_OPERATION_ID, created, { customer_id: customerId, is_default: created.isDefault });
+        if (input.pickupDefault) await this.customers.clearDefault(context, customerId, 'pickup');
+        if (input.deliveryDefault) await this.customers.clearDefault(context, customerId, 'delivery');
+        const created = await this.customers.insertAddress(context, randomUUID(), customerId, input, input.pickupDefault, input.deliveryDefault);
+        await this.#audit(context, requestId, actor.userId, CUSTOMER_ADDRESS_CREATE_OPERATION_ID, created, {
+          customer_id: customerId,
+          is_pickup_default: created.isPickupDefault,
+          is_delivery_default: created.isDeliveryDefault,
+        });
         return { status: 201, replayGuard: { user_id: actor.userId }, payload: addressView(created) };
       },
     );
@@ -221,6 +228,7 @@ export class CustomersService {
         const patch = input.patch;
         const merged: AddressFields = {
           label: patch.label ?? current.label,
+          displayName: patch.displayName !== undefined ? patch.displayName : current.displayName,
           recipientName: patch.recipientName !== undefined ? patch.recipientName : current.recipientName,
           contactPhone: patch.contactPhone ?? current.contactPhone,
           addressDescription: patch.addressDescription ?? current.addressDescription,
@@ -228,7 +236,7 @@ export class CustomersService {
           longitude: patch.position !== undefined ? (patch.position === null ? null : patch.position.longitude) : current.longitude,
           deliveryNote: patch.deliveryNote !== undefined ? patch.deliveryNote : current.deliveryNote,
         };
-        const changesContent = Object.keys(patch).some((key) => key !== 'makeDefault');
+        const changesContent = Object.keys(patch).some((key) => key !== 'pickupDefault' && key !== 'deliveryDefault');
         let updated: AddressRow = current;
         if (changesContent) {
           const changed = await this.customers.updateFields(context, customerId, addressId, merged, current.version);
@@ -238,16 +246,25 @@ export class CustomersService {
           }
           updated = changed;
         }
-        if (patch.makeDefault === true && !current.isDefault) {
-          await this.customers.clearDefault(context, customerId);
-          await this.customers.markDefault(context, customerId, addressId);
-          updated = await this.#reread(context, customerId, addressId);
+        if (patch.pickupDefault !== undefined && patch.pickupDefault !== current.isPickupDefault) {
+          if (patch.pickupDefault) {
+            await this.customers.clearDefault(context, customerId, 'pickup');
+            await this.customers.markDefault(context, customerId, addressId, 'pickup');
+          } else await this.customers.clearAddressDefault(context, customerId, addressId, 'pickup');
         }
+        if (patch.deliveryDefault !== undefined && patch.deliveryDefault !== current.isDeliveryDefault) {
+          if (patch.deliveryDefault) {
+            await this.customers.clearDefault(context, customerId, 'delivery');
+            await this.customers.markDefault(context, customerId, addressId, 'delivery');
+          } else await this.customers.clearAddressDefault(context, customerId, addressId, 'delivery');
+        }
+        if (patch.pickupDefault !== undefined || patch.deliveryDefault !== undefined) updated = await this.#reread(context, customerId, addressId);
         await this.#audit(context, requestId, actor.userId, CUSTOMER_ADDRESS_UPDATE_OPERATION_ID, updated, {
           customer_id: customerId,
           from_version: current.version,
           to_version: updated.version,
-          is_default: updated.isDefault,
+          is_pickup_default: updated.isPickupDefault,
+          is_delivery_default: updated.isDeliveryDefault,
         });
         return { status: 200, replayGuard: { user_id: actor.userId }, payload: addressView(updated) };
       },
@@ -281,14 +298,6 @@ export class CustomersService {
           // Unreachable under the address lock.
           throw new AppError('CUSTOMER_ADDRESS_NOT_FOUND');
         }
-        let defaultId: string | null = null;
-        if (current.isDefault) {
-          const next = await this.customers.newestActiveId(context, customerId);
-          if (next !== undefined) {
-            await this.customers.markDefault(context, customerId, next);
-            defaultId = next;
-          }
-        }
         await this.audit.append(context, {
           requestId,
           actorType: 'USER',
@@ -298,24 +307,36 @@ export class CustomersService {
           resourceId: addressId,
           resourceVersion: current.version + 1,
           outcome: 'SUCCESS',
-          metadata: { customer_id: customerId, was_default: current.isDefault, new_default_id: defaultId },
+          metadata: { customer_id: customerId, was_pickup_default: current.isPickupDefault, was_delivery_default: current.isDeliveryDefault },
         });
-        const payload: AddressDeletedView = { id: addressId, deleted: true, default_address_id: defaultId };
+        const payload: AddressDeletedView = { id: addressId, deleted: true, default_address_id: null, pickup_default_address_id: null, delivery_default_address_id: null };
         return { status: 200, replayGuard: { user_id: actor.userId }, payload };
       },
     );
     return { status: outcome.status, payload: outcome.payload as AddressDeletedView };
   }
 
-  /** PUT /v1/customers/me/addresses/:id/default. Atomic: the old default is cleared and the new one set in one transaction. */
+  /** Legacy Food endpoint: delivery default. */
   async setDefaultAddress(principal: AuthPrincipal, addressId: string, idempotencyKey: Key, requestId: string): Promise<AddressOutcome<AddressView>> {
+    return this.setAddressDefault(principal, addressId, 'delivery', true, idempotencyKey, requestId, CUSTOMER_ADDRESS_DEFAULT_OPERATION_ID);
+  }
+
+  async setAddressDefault(
+    principal: AuthPrincipal,
+    addressId: string,
+    kind: AddressDefaultKind,
+    enabled: boolean,
+    idempotencyKey: Key,
+    requestId: string,
+    operationId = CUSTOMER_ADDRESS_DEFAULTS_OPERATION_ID,
+  ): Promise<AddressOutcome<AddressView>> {
     const outcome = await this.executor.execute(
       {
         scopeType: CUSTOMER_ADDRESS_SCOPE_TYPE,
         scopeId: principal.userId,
-        operationId: CUSTOMER_ADDRESS_DEFAULT_OPERATION_ID,
+        operationId,
         idempotencyKey,
-        logicalRequest: { address_id: addressId },
+        logicalRequest: { address_id: addressId, kind, enabled },
         replay: this.#replayPolicy(principal),
       },
       async (context) => {
@@ -326,15 +347,17 @@ export class CustomersService {
         if (current === undefined) {
           throw new AppError('CUSTOMER_ADDRESS_NOT_FOUND');
         }
-        let result = current;
-        if (!current.isDefault) {
-          await this.customers.clearDefault(context, customerId);
-          await this.customers.markDefault(context, customerId, addressId);
-          result = await this.#reread(context, customerId, addressId);
-        }
-        await this.#audit(context, requestId, actor.userId, CUSTOMER_ADDRESS_DEFAULT_OPERATION_ID, result, {
+        const wasEnabled = kind === 'pickup' ? current.isPickupDefault : current.isDeliveryDefault;
+        if (enabled && !wasEnabled) {
+          await this.customers.clearDefault(context, customerId, kind);
+          await this.customers.markDefault(context, customerId, addressId, kind);
+        } else if (!enabled && wasEnabled) await this.customers.clearAddressDefault(context, customerId, addressId, kind);
+        const result = enabled === wasEnabled ? current : await this.#reread(context, customerId, addressId);
+        await this.#audit(context, requestId, actor.userId, operationId, result, {
           customer_id: customerId,
-          changed: !current.isDefault,
+          kind,
+          enabled,
+          changed: enabled !== wasEnabled,
         });
         return { status: 200, replayGuard: { user_id: actor.userId }, payload: addressView(result) };
       },
@@ -436,6 +459,7 @@ function addressView(row: AddressRow): AddressView {
   return {
     id: row.id,
     label: row.label,
+    display_name: row.displayName,
     recipient_name: row.recipientName,
     contact_phone: row.contactPhone,
     address_description: row.addressDescription,
@@ -443,6 +467,8 @@ function addressView(row: AddressRow): AddressView {
     longitude: row.longitude,
     delivery_note: row.deliveryNote,
     is_default: row.isDefault,
+    is_pickup_default: row.isPickupDefault,
+    is_delivery_default: row.isDeliveryDefault,
     version: row.version,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -456,6 +482,7 @@ function logicalPatch(addressId: string, input: AddressUpdateInput): JsonObject 
   if (patch.label !== undefined) {
     logical.label = patch.label;
   }
+  if (patch.displayName !== undefined) logical.display_name = patch.displayName;
   if (patch.recipientName !== undefined) {
     logical.recipient_name = patch.recipientName;
   }
@@ -472,8 +499,7 @@ function logicalPatch(addressId: string, input: AddressUpdateInput): JsonObject 
   if (patch.deliveryNote !== undefined) {
     logical.delivery_note = patch.deliveryNote;
   }
-  if (patch.makeDefault !== undefined) {
-    logical.is_default = true;
-  }
+  if (patch.pickupDefault !== undefined) logical.is_pickup_default = patch.pickupDefault;
+  if (patch.deliveryDefault !== undefined) logical.is_delivery_default = patch.deliveryDefault;
   return logical;
 }
