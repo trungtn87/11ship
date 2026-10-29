@@ -102,13 +102,60 @@ test('dirty local worktree stays untouched when remote is ahead', t => {
   assert.equal(result.action, 'REPORT_ONLY');
   assert.equal(readFileSync(join(local, 'untracked.local'), 'utf8'), 'DO NOT DELETE\n');
 });
-test('offline/read-only observe cannot claim successful synchronization', t => {
+test('offline cached equality is unverified and never reported as synced', t => {
+  const { local } = setup(t);
+  const offline = guard(local, 'postflight', '--offline');
+  assert.equal(offline.fetchVerified, false);
+  assert.equal(offline.state, 'LOCAL_UNVERIFIED');
+  assert.equal(offline.remoteSha, null);
+  assert.equal(offline.cachedRemoteSha, git(local, 'rev-parse', 'HEAD'));
+  assert.equal(offline.countsVerified, false);
+  assert.deepEqual([offline.ahead, offline.behind], [0, 0]);
+  assert.equal(offline.action, 'REPORT_ONLY');
+});
+
+test('real fetch failure with a matching cached ref remains unverified', t => {
+  const { dir, local } = setup(t);
+  git(local, 'remote', 'set-url', 'origin', join(dir, 'missing-remote.git'));
+  const failed = guard(local, 'postflight');
+  assert.equal(failed.fetchVerified, false);
+  assert.equal(failed.state, 'LOCAL_UNVERIFIED');
+  assert.equal(failed.remoteSha, null);
+  assert.equal(failed.cachedRemoteSha, git(local, 'rev-parse', 'HEAD'));
+  assert.deepEqual([failed.ahead, failed.behind], [0, 0]);
+  assert.equal(failed.countsVerified, false);
+  assert.equal(failed.action, 'REPORT_ONLY');
+});
+
+test('offline cached ahead/behind snapshots are never treated as verified or mutated', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'cached remote ahead\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  git(local, 'fetch', 'origin');
+  const before = git(local, 'rev-parse', 'HEAD');
+  const behind = guard(local, 'preflight', '--offline');
+  assert.equal(behind.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([behind.ahead, behind.behind], [0, 1]);
+  assert.equal(behind.countsVerified, false);
+  assert.equal(behind.action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), before);
+
+  commit(local, 'local diverges from cached remote\n');
+  const diverged = guard(local, 'postflight', '--offline');
+  assert.equal(diverged.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([diverged.ahead, diverged.behind], [1, 1]);
+  assert.equal(diverged.action, 'REPORT_ONLY');
+});
+
+test('offline unpublished work and read-only observe cannot mutate', t => {
   const { local } = setup(t);
   commit(local, 'unpublished\n');
   const offline = guard(local, 'postflight', '--offline');
   assert.equal(offline.fetchVerified, false);
   assert.equal(offline.action, 'REPORT_ONLY');
-  assert.equal(offline.state, 'LOCAL_AHEAD');
+  assert.equal(offline.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([offline.ahead, offline.behind], [1, 0]);
+  assert.equal(offline.countsVerified, false);
   const observe = guard(local, 'observe');
   assert.equal(observe.action, 'REPORT_ONLY');
   assert.equal(observe.state, 'LOCAL_AHEAD');

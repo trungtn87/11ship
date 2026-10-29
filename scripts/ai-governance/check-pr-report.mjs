@@ -14,7 +14,7 @@ export const REQUIRED = [
 const invalid = value => !value || /^(?:TODO|TBD|PENDING|PLACEHOLDER|N\/A|UNKNOWN|-)$/i.test(value.trim())
   || /^\[.*\]$/.test(value.trim()) || /<[^>]+>/.test(value);
 
-export function validate(body, { draft = false, createdAt = '1970-01-01T00:00:00Z' } = {}) {
+export function validate(body, { draft = false, createdAt = '1970-01-01T00:00:00Z', headSha = null } = {}) {
   const marker = '<!-- 11ship-agent-report:v1 -->';
   const enforced = Date.parse(createdAt) >= Date.parse(EFFECTIVE_FOR_PRS_CREATED_AT_OR_AFTER)
     || (body || '').includes(marker);
@@ -40,6 +40,12 @@ export function validate(body, { draft = false, createdAt = '1970-01-01T00:00:00
     const sha = values.get(shaKey) || '';
     if (!/^[0-9a-f]{40}$/i.test(sha)) errors.push(shaKey + ' must be full 40-character SHA');
   }
+  const reportedHead = values.get('Remote-head-SHA') || '';
+  if (!/^[0-9a-f]{40}$/i.test(headSha || '')) {
+    errors.push('Trusted PR head SHA is missing or invalid');
+  } else if (/^[0-9a-f]{40}$/i.test(reportedHead) && reportedHead.toLowerCase() !== headSha.toLowerCase()) {
+    errors.push('Remote-head-SHA must match the current trusted PR head SHA');
+  }
   const blockers = values.get('Open-blockers') || '';
   if (/^(?:BLOCKED|UNRESOLVED)(?:\b|:)/i.test(blockers)) errors.push('Material blocker remains unresolved');
   // A draft may be incomplete while coding; do not block development.
@@ -52,7 +58,11 @@ function main() {
   const event = JSON.parse(readFileSync(file, 'utf8'));
   const pr = event.pull_request;
   if (!pr) throw Error('This check only supports PR events');
-  const result = validate(pr.body || '', { draft: Boolean(pr.draft), createdAt: pr.created_at });
+  const result = validate(pr.body || '', {
+    draft: Boolean(pr.draft),
+    createdAt: pr.created_at,
+    headSha: pr.head?.sha,
+  });
   const note = (result.passed ? 'PASS' : 'FAIL') + ': ' +
     (result.enforced ? 'governance evidence' : 'pre-policy legacy PR') +
     ', PR #' + pr.number + ', head ' + String(pr.head?.sha || '').slice(0, 12);

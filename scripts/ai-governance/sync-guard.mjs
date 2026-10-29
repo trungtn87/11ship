@@ -44,18 +44,25 @@ export function inspect(repo, fetchResult) {
   const changes = git(root, ['status', '--porcelain=v1', '--untracked-files=normal']).value;
   const remoteRef = branch === 'HEAD' ? null : 'refs/remotes/origin/' + branch;
   const remoteLookup = remoteRef ? git(root, ['rev-parse', '--verify', remoteRef], true) : { ok: false };
-  const remoteSha = remoteLookup.ok ? remoteLookup.value : null;
+  const cachedRemoteSha = remoteLookup.ok ? remoteLookup.value : null;
   let ahead = null, behind = null;
-  if (remoteSha) {
+  if (cachedRemoteSha) {
     const parts = git(root, ['rev-list', '--left-right', '--count', 'HEAD...' + remoteRef]).value.split(/\s+/);
     [ahead, behind] = parts.map(Number);
   }
+  const remoteVerified = fetchResult.ok && Boolean(cachedRemoteSha);
   return {
-    root, branch, localSha, remoteSha, dirty: Boolean(changes),
+    root, branch, localSha,
+    // A tracking ref is only current remote evidence after this run successfully fetched.
+    // Preserve a failed-fetch snapshot separately so callers cannot mistake cache for proof.
+    remoteSha: remoteVerified ? cachedRemoteSha : null,
+    cachedRemoteSha,
+    dirty: Boolean(changes),
     // Never publish filenames or secret-bearing contents in automatic reports.
     changeCount: changes ? changes.split('\n').length : 0,
     ahead, behind,
-    state: classifySync(ahead, behind, Boolean(remoteSha)),
+    countsVerified: remoteVerified,
+    state: remoteVerified ? classifySync(ahead, behind, true) : 'LOCAL_UNVERIFIED',
     fetchVerified: fetchResult.ok,
     fetchError: fetchResult.ok ? null : 'Remote fetch unavailable; remote refs may be stale',
   };
@@ -106,8 +113,14 @@ export function runSync(options) {
       const verified = git(repo, ['ls-remote', '--heads', 'origin', report.branch], true);
       const actual = verified.ok ? verified.value.split(/\s/)[0] : null;
       report.remoteSha = actual || null;
+      report.cachedRemoteSha = actual || report.cachedRemoteSha;
+      report.countsVerified = actual === report.localSha;
       report.state = actual === report.localSha ? 'SYNCED' : 'LOCAL_UNVERIFIED';
       report.remoteHeadVerified = actual === report.localSha;
+      if (report.remoteHeadVerified) {
+        report.ahead = 0;
+        report.behind = 0;
+      }
     }
   }
   report.safeToContinueIndependentWork = true;

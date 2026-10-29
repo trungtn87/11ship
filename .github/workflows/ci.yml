@@ -616,7 +616,9 @@ jobs:
   launcher-windows:
     name: Launcher behaviour (Windows PowerShell 5.1)
     runs-on: windows-2022
-    timeout-minutes: 15
+    # The launcher suite keeps its own 14-minute deadlock timeout. Allow setup/build plus
+    # the governance regressions to finish without the job-level limit cancelling it first.
+    timeout-minutes: 20
 
     steps:
       - name: Check out
