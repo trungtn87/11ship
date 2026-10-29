@@ -5,6 +5,7 @@ import { TransactionModule } from '../transaction/transaction.module';
 import { CustomersController } from './customers.controller';
 import { CustomersRepository } from './customers-repository';
 import { CustomersService } from './customers-service';
+import { PlaceSearchService } from './place-search';
 
 /**
  * Customer record and delivery address book (M05): GET /v1/customers/me and /v1/customers/me/addresses. Like CustomerProfile it
@@ -20,7 +21,7 @@ export class CustomersModule {
       module: CustomersModule,
       imports: [auth, TransactionModule, IdempotencyModule, AuditModule],
       controllers: [CustomersController],
-      providers: [CustomersService, CustomersRepository],
+      providers: [CustomersService, CustomersRepository, PlaceSearchService],
       exports: [CustomersService],
     };
   }

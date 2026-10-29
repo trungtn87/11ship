@@ -44,6 +44,7 @@ export interface OrderCallSpec {
   readonly paidVnd: number;
   readonly feePayer: 'CUSTOMER' | 'SHOP';
   readonly note: string | null;
+  readonly dropoffNote: string | null;
   readonly agreedFee: { reasonCode: import('../shipping-policy/shipping-fee-agreement').AgreementReason; reasonNote: string | null; amountVnd: number } | null;
   readonly route: RouteLeg | undefined;
   readonly routeFrom: Pickup | undefined;
@@ -275,6 +276,7 @@ export class DeliveryShopService {
       paidVnd: number;
       feePayer: 'CUSTOMER' | 'SHOP';
       note: string | null;
+      dropoffNote?: string | null;
       agreedFee: { reasonCode: import('../shipping-policy/shipping-fee-agreement').AgreementReason; reasonNote: string | null; amountVnd: number } | null;
       /** One of the three bands of the fee table, chosen by the shop for an address without a map point (an estimate, not a measured distance). */
       feeBand: number | null;
@@ -344,6 +346,7 @@ export class DeliveryShopService {
       goodsValueVnd: spec.goodsValueVnd,
       paidVnd: spec.paidVnd,
       note: spec.note,
+      dropoffNote: spec.dropoffNote ?? null,
       feeMode,
       feePayer: spec.feePayer,
       feeVnd: null,

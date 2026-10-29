@@ -78,7 +78,7 @@ else
   push_permissions=''
   push_service=''
 fi
-sed -e "s/@LABEL@/$label/g" -e "s/@PEER_PACKAGE@/$peer_id/g" -e "s/@DEVICE_ENVIRONMENT@/$environment/g" -e "s#@LOCATION_PERMISSIONS@#$location_permissions#" \
+sed -e "s/@LABEL@/$label/g" -e "s/@APP_PACKAGE@/$app_id/g" -e "s/@PEER_PACKAGE@/$peer_id/g" -e "s/@DEVICE_ENVIRONMENT@/$environment/g" -e "s#@LOCATION_PERMISSIONS@#$location_permissions#" \
   -e "s#@PUSH_PERMISSIONS@#$push_permissions#" -e "s#@PUSH_SERVICE@#$push_service#" \
   "$here/android-templates/AndroidManifest.xml" > "$dest/app/src/main/AndroidManifest.xml"
 cp "$here/android-templates/styles.xml" "$res/values/styles.xml"
@@ -134,7 +134,7 @@ if [ "$app" = food ]; then
 fi
 cp "$here/android-templates/kotlin/N11LocationChannel.kt" "$kt/vn/eleven/n11/N11LocationChannel.kt"
 cp "$here/android-templates/kotlin/N11DialerChannel.kt" "$kt/vn/eleven/n11/N11DialerChannel.kt"
-sed "s/@APP_PACKAGE@/vn.eleven.$app/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
+sed "s/@APP_PACKAGE@/$app_id/" "$here/android-templates/kotlin/$main_template" > "$kt/vn/eleven/$app/MainActivity.kt"
 # JVM unit test of the Binder join rules (no device needed), run by `./gradlew :app:testDebugUnitTest` in CI.
 mkdir -p "$dest/app/src/test/kotlin/vn/eleven/n11"
 cp "$here/android-templates/kotlin-test/N11PeerPolicyTest.kt" "$dest/app/src/test/kotlin/vn/eleven/n11/N11PeerPolicyTest.kt"

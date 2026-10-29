@@ -70,6 +70,7 @@ Map<String, Object?> _draftBody(CheckoutDraft d, {required bool withPrice}) => <
         for (final DraftLine l in d.lines) <String, Object?>{'item_id': l.itemId, 'quantity': l.quantity, if (withPrice) 'unit_price_vnd': l.priceVnd, if (l.note != null) 'note': l.note},
       ],
       if (d.note != null) 'note': d.note,
+      if (d.deliveryNote != null) 'delivery_note': d.deliveryNote,
       'recipient_name': d.recipientName,
       'recipient_phone': d.recipientPhone,
       'address': d.address.toJson(),

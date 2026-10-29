@@ -106,6 +106,7 @@ export interface CheckoutInput {
   readonly shopId: string;
   readonly lines: readonly LineInput[];
   readonly note: string | null;
+  readonly deliveryNote: string | null;
   readonly recipientName: string;
   readonly recipientPhone: string;
   readonly address: AddressInput;
@@ -134,6 +135,7 @@ function checkout(b: Record<string, unknown>, withPrice: boolean): CheckoutInput
     shopId: uuid(b.shop_id),
     lines: lines(b.lines, withPrice),
     note: optionalText(b.note, MAX_ORDER_NOTE),
+    deliveryNote: optionalText(b.delivery_note, MAX_ORDER_NOTE),
     recipientName: text(b.recipient_name, 1, 80),
     recipientPhone: phone,
     address: address(b.address),
@@ -143,7 +145,7 @@ function checkout(b: Record<string, unknown>, withPrice: boolean): CheckoutInput
 
 /** POST /v1/customers/me/orders/preview : what the checkout shows before sending (no prices from the client). */
 export function parsePreviewBody(body: unknown): CheckoutInput {
-  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'scheduled_for']), false);
+  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'delivery_note', 'scheduled_for']), false);
 }
 
 export interface PlaceInput extends CheckoutInput {
@@ -155,7 +157,7 @@ export interface PlaceInput extends CheckoutInput {
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
 export function parsePlaceBody(body: unknown): PlaceInput {
-  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'scheduled_for', 'expected_quote']);
+  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'delivery_note', 'scheduled_for', 'expected_quote']);
   let expectedQuote: PlaceInput['expectedQuote'] = null;
   if (b.expected_quote !== undefined) {
     const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version']);

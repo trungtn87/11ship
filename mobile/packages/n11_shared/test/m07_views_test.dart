@@ -84,6 +84,7 @@ void main() {
         'goods': <String, Object?>{'description': 'g', 'value_vnd': 1000, 'paid_vnd': 0},
         'fee': <String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'amount_vnd': null, 'status': 'UNKNOWN', 'distance_m': null, 'agreement': null, 'decider': 'SHOP', 'basis': null},
         'search': <String, Object?>{'started_at': '2026-10-18T09:00:00Z', 'expires_at': '2026-10-18T09:30:00Z', 'server_now': '2026-10-18T09:05:00Z', 'stopped_at': null},
+        'dropoff_note': 'Cổng xanh, gọi bảo vệ',
         'can': <String, Object?>{'cancel': true, 'recall': false, 'confirm_fee': true},
       });
       expect(d.state, DeliveryState.waitingDriver);
@@ -96,6 +97,7 @@ void main() {
       expect(d.allows('recall'), isFalse);
       expect(d.search.elapsedMinutes, 5);
       expect(d.goods.unpaidVnd, 1000);
+      expect(d.dropoffNote, 'Cổng xanh, gọi bảo vệ');
     });
 
     test('a body that is not the contract is refused, not half filled', () {
