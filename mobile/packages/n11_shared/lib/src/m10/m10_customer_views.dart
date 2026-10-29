@@ -481,6 +481,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _note = TextEditingController();
   final TextEditingController _deliveryNote = TextEditingController();
   final TextEditingController _typed = TextEditingController();
+  final TextEditingController _customTip = TextEditingController();
   DraftAddress? _address;
   bool _typedMode = false;
   DateTime? _scheduled;
@@ -500,6 +501,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
+  int _tipVnd = 0;
+  bool _tipValid = true;
+  int? _baseFee;
+  Timer? _tipDebounce;
+  CheckoutDraft? _sendingDraft;
+  CheckoutPreview? _sendingPreview;
+  bool _lookingUp = false;
+
+  bool get _locked => _attempt == _Attempt.sending || _attempt == _Attempt.unknown || _lookingUp;
 
   CartController get cart => widget.runtime.cart;
   CustomerOrderSource get source => widget.runtime.customer;
@@ -523,11 +533,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    _tipDebounce?.cancel();
     _name.dispose();
     _phone.dispose();
     _note.dispose();
     _deliveryNote.dispose();
     _typed.dispose();
+    _customTip.dispose();
     _freshness.dispose();
     super.dispose();
   }
@@ -535,22 +547,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   DraftAddress _fromBook(DeliveryAddress a) => DraftAddress.book(a.id, text: a.addressText, lat: a.latitude, lng: a.longitude);
 
   Future<void> _editAddress({bool fresh = false}) async {
+    if (_locked) return;
     final SessionController? session = widget.session ?? widget.runtime.session;
     final int? epoch = session?.sessionEpoch;
     final M07PinPickerBuilder? builder = widget.pinPicker ?? widget.runtime.pinPicker;
     final AddressLocation initial = fresh ? const AddressLocation('') : AddressLocation(_typedMode ? _typed.text : (_address?.text ?? ''), latitude: _typedMode ? _pinLat : _address?.lat, longitude: _typedMode ? _pinLng : _address?.lng);
     final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(initial: initial, session: session, requirePoint: false, location: widget.runtime.location, mapBuilder: builder == null ? null : (BuildContext context, double? lat, double? lng, void Function(double, double) onPick) => builder(context, lat: lat, lng: lng, onPick: onPick))));
-    if (selected == null || !mounted || session?.sessionEpoch != epoch || (session != null && session.status != SessionStatus.signedIn)) return;
+    if (selected == null || !mounted || _locked || session?.sessionEpoch != epoch || (session != null && session.status != SessionStatus.signedIn)) return;
     _typed.text = selected.text;
     _pinLat = selected.latitude;
     _pinLng = selected.longitude;
     _typedMode = true;
     if (fresh) _deliveryNote.clear();
+    _baseFee = null;
     _touch();
   }
 
   /// An address edit makes a new order attempt; an unchanged retry retains its key.
   void _touch() {
+    if (_locked) return;
+    _tipDebounce?.cancel();
     _previewEpoch++;
     setState(() {
       _previewFresh = false;
@@ -578,14 +594,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       recipientPhone: _phone.text.trim(),
       address: address,
       scheduledFor: _scheduled,
+      tipVnd: _tipVnd,
     );
   }
 
   Future<void> _check() async {
-    if (_previewing || _attempt != _Attempt.none) return;
+    if (_previewing || _locked) return;
     final CheckoutDraft? draft = _draft();
     if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null || textError(draft.deliveryNote ?? '', 'hướng dẫn tìm đường', 200, optional: true) != null) {
-      setState(() => _preview = null);
+      setState(() {
+        _preview = null;
+        _baseFee = null;
+      });
       return;
     }
     final int epoch = _previewEpoch;
@@ -597,6 +617,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _preview = p;
         _previewFresh = true;
+        _baseFee = p.feeEstimateVnd;
         _freshness.arm(p.nextRefreshMs);
         _previewing = false;
       });
@@ -618,34 +639,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _restartStalePreview(int epoch) {
     if (!mounted || epoch == _previewEpoch) return false;
     setState(() => _previewing = false);
-    unawaited(_check());
+    if (_tipDebounce == null || !_tipDebounce!.isActive) {
+      unawaited(_check());
+    }
     return true;
   }
 
   Future<void> _pickAddress() async {
+    if (_locked) return;
     final AddressBookController? book = widget.addresses;
     if (book == null) {
       return;
     }
     final DeliveryAddress? picked = await Navigator.of(context).push<DeliveryAddress>(MaterialPageRoute<DeliveryAddress>(builder: (BuildContext c) => m07Page('Chọn địa chỉ giao', false, <Widget>[DeliveryAddressPicker(controller: book, initialId: _address?.addressId, onConfirm: (DeliveryAddress a) => Navigator.of(c).pop(a))])));
     if (picked != null) {
+      if (!mounted || _locked) return;
       _address = _fromBook(picked);
       _typedMode = false;
       _name.text = picked.recipientName ?? '';
       _phone.text = formatVnPhone(picked.contactPhone);
       _deliveryNote.text = picked.deliveryNote ?? '';
+      _baseFee = null;
       _touch();
     }
   }
 
   Future<void> _pickTime() async {
+    if (_locked) return;
     final DateTime now = DateTime.now();
     final DateTime? day = await showDatePicker(context: context, initialDate: _scheduled ?? now, firstDate: now, lastDate: now.add(const Duration(days: 7)));
-    if (day == null || !mounted) {
+    if (day == null || !mounted || _locked) {
       return;
     }
     final TimeOfDay? t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_scheduled ?? now.add(const Duration(hours: 1))));
-    if (t == null) {
+    if (t == null || !mounted || _locked) {
       return;
     }
     _scheduled = DateTime(day.year, day.month, day.day, t.hour, t.minute);
@@ -653,30 +680,63 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _send() async {
-    final CheckoutDraft? draft = _draft();
-    if (draft == null || _attempt == _Attempt.sending) {
+    if (_attempt == _Attempt.sending || _lookingUp) {
       return;
     }
+    _tipDebounce?.cancel();
+
+    final CheckoutDraft draftToSend;
+    final CheckoutPreview previewToSend;
+
+    if (_attempt == _Attempt.unknown) {
+      final CheckoutDraft? d = _sendingDraft ?? _draft();
+      final CheckoutPreview? p = _sendingPreview ?? _preview;
+      if (d == null || p == null) return;
+      draftToSend = d;
+      previewToSend = p;
+    } else {
+      if (!_previewFresh || _preview == null) return;
+      final CheckoutDraft? d = _draft();
+      if (d == null) return;
+      draftToSend = CheckoutDraft(
+        shopId: d.shopId,
+        shopName: d.shopName,
+        lines: List<DraftLine>.of(d.lines),
+        note: d.note,
+        deliveryNote: d.deliveryNote,
+        recipientName: d.recipientName,
+        recipientPhone: d.recipientPhone,
+        address: d.address,
+        scheduledFor: d.scheduledFor,
+        tipVnd: d.tipVnd,
+      );
+      previewToSend = _preview!;
+      _sendingDraft = draftToSend;
+      _sendingPreview = previewToSend;
+    }
+
     setState(() {
       _attempt = _Attempt.sending;
       _failure = null;
     });
     try {
-      final CheckoutPreview? accepted = _preview;
-      if (!_previewFresh || accepted == null) return;
-      final OrderView order = await source.place(draft, preview: accepted, clientRef: _clientRef, key: _key);
+      final OrderView order = await source.place(draftToSend, preview: previewToSend, clientRef: _clientRef, key: _key);
+      _sendingDraft = null;
+      _sendingPreview = null;
       _done(order);
     } on M07Failure catch (failure) {
       if (!mounted) {
         return;
       }
       if (failure.kind == M07FailureKind.offline) {
-        // The Order may or may not have been created: it is NOT reported as sent or as failed. The same reference finds out.
+        // The Order may or may not have been created: retain _sendingDraft, _sendingPreview, _clientRef, and _key.
         setState(() {
           _attempt = _Attempt.unknown;
           _failure = failure;
         });
       } else {
+        _sendingDraft = null;
+        _sendingPreview = null;
         setState(() {
           _attempt = _Attempt.none;
           _failure = failure;
@@ -698,25 +758,66 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _lookup() async {
-    setState(() => _attempt = _Attempt.sending);
+    if (_attempt == _Attempt.sending || _lookingUp) return;
+    setState(() => _lookingUp = true);
     try {
       final OrderView? found = await source.lookup(_clientRef);
       if (found != null) {
+        _sendingDraft = null;
+        _sendingPreview = null;
         _done(found);
       } else if (mounted) {
+        _sendingDraft = null;
+        _sendingPreview = null;
         setState(() {
           _attempt = _Attempt.none;
+          _lookingUp = false;
           _failure = null;
         });
         m02Toast(context, 'Đơn chưa được gửi. Bạn có thể gửi lại.');
       }
-    } on M07Failure catch (failure) {
+    } catch (failure) {
       if (mounted) {
         setState(() {
           _attempt = _Attempt.unknown;
-          _failure = failure;
+          _lookingUp = false;
+          if (failure is M07Failure) {
+            _failure = failure;
+          }
         });
       }
+    }
+  }
+
+  void _onCustomTipChanged() {
+    if (_locked) return;
+    final String value = _customTip.text.trim();
+    final int? amount = value.isEmpty ? 0 : int.tryParse(value);
+    final bool valid = amount != null &&
+        amount >= 0 &&
+        amount <= 10000000 &&
+        (_baseFee == null || amount + _baseFee! <= 10000000);
+
+    _tipDebounce?.cancel();
+    _previewEpoch++;
+    setState(() {
+      _tipValid = valid;
+      if (valid) {
+        _tipVnd = amount;
+      }
+      _previewFresh = false;
+      _clientRef = newIdempotencyKey();
+      _key = newIdempotencyKey();
+      _attempt = _Attempt.none;
+      _failure = null;
+      _changed = false;
+    });
+
+    if (valid) {
+      _tipDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted || _locked) return;
+        unawaited(_check());
+      });
     }
   }
 
@@ -731,11 +832,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final CheckoutPreview? p = _preview;
-    final bool blocked = p != null && (!p.ok || p.blockers.isNotEmpty);
-    final bool ready = _previewFresh && !_previewing && p != null && !cart.isEmpty && cart.shopId != null && !blocked && _attempt != _Attempt.sending && _attempt != _Attempt.unknown;
-    final int items = p?.itemsVnd ?? cart.itemsVnd;
-    final int? estimateFee = p == null ? cart.feeEstimateVnd : p.feeEstimateVnd;
-    final int? expectedTotal = p == null ? (estimateFee == null ? null : items + estimateFee) : p.expectedTotalVnd;
+    // A changed address/tip invalidates every amount from the previous preview immediately.
+    final CheckoutPreview? confirmed = _previewFresh && !_previewing ? p : null;
+    final bool blocked = confirmed != null && (!confirmed.ok || confirmed.blockers.isNotEmpty);
+    final bool tipConfirmed = _tipVnd == 0 || (confirmed?.feeEstimateVnd != null && confirmed?.tipVnd == _tipVnd);
+    final bool ready = _tipValid && tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && !_locked;
+    final int items = confirmed?.itemsVnd ?? cart.itemsVnd;
+    final int? estimateFee = confirmed?.feeEstimateVnd;
+    final int? expectedTotal = confirmed?.expectedTotalVnd;
+    final bool canTip = _baseFee != null;
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -750,10 +855,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         if (_changed) N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
-        if (p != null && p.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: p.blockers.map(_blockerText).join('\n')),
+        if (confirmed != null && confirmed.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: confirmed.blockers.map(_blockerText).join('\n')),
         const Text('Người nhận', style: N11Text.h2),
-        N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, onChanged: _touch),
-        N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
+        N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, enabled: !_locked, onChanged: _touch),
+        N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, enabled: !_locked, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
         N11Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,7 +871,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       key: const Key('checkout-address'),
                       label: 'Địa chỉ giao',
                       text: _typedMode ? _typed.text : (_address?.text ?? ''),
-                      onTap: _attempt == _Attempt.sending || _attempt == _Attempt.unknown
+                      onTap: _locked
                           ? null
                           : () async {
                               await _editAddress();
@@ -774,9 +879,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             })),
               const SizedBox(height: N11Space.gap2),
               Row(children: <Widget>[
-                if (widget.addresses != null) Expanded(child: N11Button(key: const Key('checkout-pick'), label: 'Chọn từ sổ địa chỉ', kind: ButtonKind.secondary, compact: true, onPressed: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : _pickAddress)),
+                if (widget.addresses != null) Expanded(child: N11Button(key: const Key('checkout-pick'), label: 'Chọn từ sổ địa chỉ', kind: ButtonKind.secondary, compact: true, onPressed: _locked ? null : _pickAddress)),
                 if (widget.addresses != null) const SizedBox(width: N11Space.gap2),
-                Expanded(child: N11Button(key: const Key('checkout-typed-toggle'), label: 'Địa chỉ khác', kind: ButtonKind.secondary, compact: true, onPressed: _attempt == _Attempt.sending || _attempt == _Attempt.unknown ? null : () => _editAddress(fresh: true))),
+                Expanded(child: N11Button(key: const Key('checkout-typed-toggle'), label: 'Địa chỉ khác', kind: ButtonKind.secondary, compact: true, onPressed: _locked ? null : () => _editAddress(fresh: true))),
               ]),
             ],
           ),
@@ -790,17 +895,60 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   key: const Key('checkout-asap'),
                   selected: _scheduled == null,
                   label: 'Giao sớm nhất',
-                  onTap: () {
-                    _scheduled = null;
-                    _touch();
-                  }),
-              _TimeChoice(key: const Key('checkout-scheduled'), selected: _scheduled != null, label: _scheduled == null ? 'Hẹn giờ nhận món' : 'Hẹn lúc ${m10When(_scheduled!)}', onTap: () => unawaited(_pickTime())),
+                  onTap: _locked
+                      ? null
+                      : () {
+                          _scheduled = null;
+                          _touch();
+                        }),
+              _TimeChoice(key: const Key('checkout-scheduled'), selected: _scheduled != null, label: _scheduled == null ? 'Hẹn giờ nhận món' : 'Hẹn lúc ${m10When(_scheduled!)}', onTap: _locked ? null : () => unawaited(_pickTime())),
               if (_scheduled != null) const ReasonNote(kScheduleNote, icon: Icons.info_outline),
             ],
           ),
         ),
-        N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, onChanged: _touch),
-        N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
+        N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, enabled: !_locked, onChanged: _touch),
+        N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, enabled: !_locked, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
+        N11Card(
+          key: const Key('checkout-tip'),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text('Thêm tiền cảm ơn shipper · Không bắt buộc', style: N11Text.label),
+            const SizedBox(height: 4),
+            const Text('Hoàn toàn tự nguyện, ví dụ khi thời tiết xấu. Khoản này không cam kết giao nhanh hay ưu tiên.', style: N11Text.caption),
+            const SizedBox(height: N11Space.gap2),
+            Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
+              for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
+                if (canTip || value == 0)
+                ChoiceChip(
+                  key: Key('checkout-tip-$value'),
+                  label: Text(label),
+                  selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
+                  onSelected: _locked || (!canTip && value > 0) ? null : (_) {
+                    _tipDebounce?.cancel();
+                    _customTip.clear();
+                    _tipVnd = value;
+                    _tipValid = true;
+                    _touch();
+                  },
+                ),
+            ]),
+            const SizedBox(height: N11Space.gap2),
+            N11Field(
+              fieldKey: const Key('checkout-tip-custom'),
+              label: 'Nhập số khác',
+              controller: _customTip,
+              keyboard: TextInputType.number,
+              enabled: canTip && !_locked,
+              validator: (String value) {
+                if (value.isEmpty) return null;
+                final int? amount = int.tryParse(value);
+                if (amount == null || amount < 0 || amount > 10000000 || _baseFee == null || amount + _baseFee! > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
+                return null;
+              },
+              onChanged: _onCustomTipChanged,
+              hint: canTip ? 'Số VND nguyên, tối đa theo giới hạn phí giao' : 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.',
+            ),
+          ]),
+        ),
         N11Card(
           key: const Key('checkout-summary'),
           child: Column(
@@ -810,13 +958,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               KeyValueRows(<(String, String)>[
                 ('Tiền món', m10Money(items)),
                 ('Điểm giao', _draft()?.address.text ?? 'Chưa chọn'),
-                ('Quãng đường', p?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(p!.feeDistanceM!)} · đường đi'),
+                ('Quãng đường', confirmed?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(confirmed!.feeDistanceM!)} · đường đi'),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa xác định được phí giao' : m10Money(estimateFee)),
+                if (_tipVnd > 0) ('Tiền cảm ơn', m10Money(_tipVnd)),
+                if (_tipVnd > 0 && estimateFee != null) ('Tổng phí giao đề xuất', m10Money(estimateFee + _tipVnd)),
                 ('Người trả phí', 'Khách trả phí'),
               ]),
-              if (expectedTotal != null) Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)]) else ReasonNote('Chưa gồm phí giao. ${_quoteReason(p?.feeReason)}', icon: Icons.warning_amber_rounded),
-              if (p?.feeReason == 'ROUTE_UNAVAILABLE' || p?.feeReason == 'ROUTE_TIMEOUT') TextButton(key: const Key('checkout-quote-retry'), onPressed: _check, child: const Text('Thử tính lại')),
-              if (!_previewFresh && !_previewing) TextButton(onPressed: _check, child: const Text('Cập nhật trạng thái quán')),
+              if (_previewing || (!_previewFresh && p != null))
+                const ReasonNote('Đang tính lại phí và tổng tiền. Báo giá trước không còn hiệu lực.', key: Key('checkout-repricing'), icon: Icons.sync)
+              else if (expectedTotal != null)
+                Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(expectedTotal), key: const Key('checkout-total'), style: N11Text.bodyStrong)])
+              else
+                ReasonNote('Chưa gồm phí giao. ${_quoteReason(confirmed?.feeReason)}', icon: Icons.warning_amber_rounded),
+              if (confirmed?.feeReason == 'ROUTE_UNAVAILABLE' || confirmed?.feeReason == 'ROUTE_TIMEOUT') TextButton(key: const Key('checkout-quote-retry'), onPressed: _locked ? null : _check, child: const Text('Thử tính lại')),
+              if (!_previewFresh && !_previewing) TextButton(onPressed: _locked ? null : _check, child: const Text('Cập nhật trạng thái quán')),
               if (_previewing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: LinearProgressIndicator()),
               const SizedBox(height: N11Space.gap2),
               const ReasonNote(kDirectPayNote, icon: Icons.info_outline),
@@ -831,16 +986,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             text: 'Mất kết nối khi gửi. Đơn có thể đã được tạo. Hãy kiểm tra kết quả trước khi gửi lại để không bị đặt hai lần.',
             icon: Icons.cloud_off_outlined,
             trailing: Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
-              N11Button(key: const Key('checkout-lookup'), label: 'Kiểm tra kết quả', compact: true, onPressed: () => unawaited(_lookup())),
+              N11Button(key: const Key('checkout-lookup'), label: 'Kiểm tra kết quả', compact: true, loading: _lookingUp, onPressed: _lookingUp ? null : () => unawaited(_lookup())),
               N11Button(
                   key: const Key('checkout-resend'),
                   label: 'Gửi lại',
                   kind: ButtonKind.secondary,
                   compact: true,
-                  onPressed: () {
-                    setState(() => _attempt = _Attempt.none);
-                    unawaited(_send());
-                  }),
+                  onPressed: _lookingUp ? null : () => unawaited(_send())),
             ]),
           )
         else if (_failure != null && !_changed)
@@ -1289,11 +1441,11 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
 
 /// A radio-style choice row (no deprecated Radio widget).
 class _TimeChoice extends StatelessWidget {
-  const _TimeChoice({super.key, required this.selected, required this.label, required this.onTap});
+  const _TimeChoice({super.key, required this.selected, required this.label, this.onTap});
 
   final bool selected;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

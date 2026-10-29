@@ -48,6 +48,8 @@ export interface OrderRow {
   readonly itemsTotalVnd: number;
   readonly paidVnd: number;
   readonly feeEstimateVnd: number | null;
+  /** The policy quote before a voluntary increase; read from the immutable placed event. */
+  readonly feeQuoteVnd?: number | null;
   readonly feeEstimateDistanceM: number | null;
   /** Null for priced quotes and historical Orders that predate persisted quote reasons. */
   readonly feeEstimateReason?: string | null;
@@ -88,6 +90,7 @@ interface RawOrder {
   items_total_vnd: string;
   paid_vnd: string;
   fee_estimate_vnd: string | null;
+  fee_quote_vnd: string | null;
   fee_estimate_distance_m: number | null;
   fee_estimate_reason: string | null;
   edited_ms: string | null;
@@ -107,6 +110,7 @@ export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, app.shop_dis
   o.source_address_id::text AS source_address_id, o.note, o.delivery_note, ${ms('o.scheduled_for', 'scheduled_ms')},
   o.items_original_total_vnd::text AS items_original_total_vnd, o.items_total_vnd::text AS items_total_vnd, o.paid_vnd::text AS paid_vnd,
   o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m,
+  (SELECT e.details->>'quote_fee_vnd' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type = 'order.placed' ORDER BY e.at, e.event_id LIMIT 1) AS fee_quote_vnd,
   (SELECT e.details->>'quote_reason' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type = 'order.placed' ORDER BY e.at, e.event_id LIMIT 1) AS fee_estimate_reason,
   ${ms('o.edited_at', 'edited_ms')}, o.change_reason,
   ${ms('o.confirmed_at', 'confirmed_ms')}, ${ms('o.ready_at', 'ready_ms')}, ${ms('o.schedule_reminded_at', 'reminded_ms')}, ${ms('o.ended_at', 'ended_ms')}, o.end_actor, o.end_reason,
@@ -138,6 +142,7 @@ function toOrder(row: RawOrder): OrderRow {
     itemsTotalVnd: safe(row.items_total_vnd),
     paidVnd: safe(row.paid_vnd),
     feeEstimateVnd: safeOrNull(row.fee_estimate_vnd),
+    feeQuoteVnd: safeOrNull(row.fee_quote_vnd),
     feeEstimateDistanceM: row.fee_estimate_distance_m,
     feeEstimateReason: row.fee_estimate_reason,
     editedAtMs: safeOrNull(row.edited_ms),

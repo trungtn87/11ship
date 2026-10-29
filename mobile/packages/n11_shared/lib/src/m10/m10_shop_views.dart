@@ -307,6 +307,18 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   }
 
   Future<void> _call(OrderView o) async {
+    if (o.money.fee.customerProposed) {
+      final int proposed = o.money.fee.estimateVnd ?? 0;
+      final String? payer = await showDecision(
+        context,
+        title: 'Gọi shipper',
+        text: 'Khách đã chủ động đề xuất tổng phí giao ${m10Money(proposed)} và khách là người trả khoản này. Quán không bị chuyển khoản phí hoặc tiền cảm ơn sang mình.',
+        dismissible: true,
+        actions: const <DialogAction>[DialogAction('Gọi shipper · Khách trả phí', 'CUSTOMER', kind: ButtonKind.primary, key: Key('call-payer-customer-proposed'))],
+      );
+      if (payer != null) await _callWith(o, payer, null);
+      return;
+    }
     final String? payer = await showDecision(
       context,
       title: 'Gọi shipper',
