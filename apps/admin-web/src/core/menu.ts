@@ -128,7 +128,6 @@ export interface MenuGroup {
   readonly items: readonly MenuItem[];
 }
 
-const soon = (id: string, label: string, icon: IconName, access: GrantId): MenuItem => ({ id, label, icon, ready: false, access });
 
 export const MENU: readonly MenuGroup[] = [
   {
