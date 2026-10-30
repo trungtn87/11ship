@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TERMINAL_STATES } from '../delivery/delivery-constants';
 import { ENDED_STATUSES } from '../orders/order-constants';
-import { pinInAreaSql, pinInCircleSql } from '../shop/service-area-repository';
+import { pinInAreaSql, pinInCircleSql } from '../shop/shop-availability-sql';
 import { toSafeInteger } from '../shop/shop-db';
 import { TransactionContext } from '../transaction/transaction-context';
 import { Coverage } from './admin-service-area-validation';

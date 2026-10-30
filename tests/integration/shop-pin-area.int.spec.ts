@@ -70,7 +70,7 @@ describe('issue #252 — pickup pin, configured service area and public consiste
     const owner = await createShopOwner(app, { areaId: await circleArea() });
     const before = await shopRow(owner.shopId);
     const refused = await save(owner, Number(before.version), { pickup_lat: 10.5, pickup_lng: 106.5 });
-    expect(refused.status).toBe(422);
+    expect(refused.status).toBe(400);
     expect(errorCode(refused)).toBe('PICKUP_OUTSIDE_SERVICE_AREA');
     expect(await shopRow(owner.shopId)).toEqual(before);
   });

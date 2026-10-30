@@ -312,7 +312,7 @@ class FakeShopOpsServer {
   int reads = 0;
   bool loseAnswerOnce = false;
 
-  /// When set, a profile save is refused with this code (HTTP 422) and nothing is stored (issue #252: PICKUP_OUTSIDE_SERVICE_AREA).
+  /// When set, a profile save is refused with this code (HTTP 400) and nothing is stored (issue #252: PICKUP_OUTSIDE_SERVICE_AREA).
   String? profileRefusal;
 
   /// Every write that reached the server and had an effect (a replay does not add one).
@@ -384,7 +384,7 @@ class FakeShopOpsServer {
     final String key = headers['idempotency-key'] ?? '';
     arrived.add('$kind:$key');
     if (kind == 'profile' && profileRefusal != null) {
-      return apiError(422, profileRefusal!);
+      return apiError(400, profileRefusal!);
     }
     final ApiResponse? stored = _byKey[key];
     if (stored != null) {

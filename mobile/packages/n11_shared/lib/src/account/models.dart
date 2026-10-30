@@ -212,7 +212,7 @@ enum AuthFailureKind {
   /// 400 INVALID_SERVICE_AREA: the chosen area is not an ACTIVE one any more.
   invalidServiceArea,
 
-  /// 422 PICKUP_OUTSIDE_SERVICE_AREA (issue #252): the pin lies outside the circle the server configured for the chosen area.
+  /// 400 PICKUP_OUTSIDE_SERVICE_AREA (issue #252): the pin lies outside the circle the server configured for the chosen area.
   pickupOutsideArea,
 
   /// 403 ROLE_NOT_AVAILABLE (a context the account can not wear now).

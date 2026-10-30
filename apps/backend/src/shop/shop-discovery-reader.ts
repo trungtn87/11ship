@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../transaction/transaction-context';
-import { pinInAreaSql } from './service-area-repository';
-import { AVAILABILITY_TIME_ZONE } from './shop-availability-sql';
+import { AVAILABILITY_TIME_ZONE, pinInAreaSql } from './shop-availability-sql';
 
 /**
  * A shop a customer may be shown (issue #190): ACTIVE, in an ACTIVE area, its owner account not locked, with a weekly schedule AND a real pickup point,

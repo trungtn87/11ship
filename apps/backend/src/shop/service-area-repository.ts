@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { EARTH_RADIUS_M } from './shop-availability-sql';
 import { ServiceAreaStatus } from './shop-types';
 
 export interface ServiceAreaRow {
@@ -29,8 +30,6 @@ export interface ServiceAreaCoverage extends ActiveServiceAreaRow {
  */
 export type PinPlacement = 'INSIDE' | 'OUTSIDE' | 'UNCONFIGURED';
 
-const EARTH_RADIUS_M = 6371008.8;
-
 /** Great-circle (haversine) distance in metres: the one formula of containment, shared by the resolver and the pin guard. */
 export function distanceMeters(latA: number, lngA: number, latB: number, lngB: number): number {
   const radians = Math.PI / 180;
@@ -51,22 +50,6 @@ export function assertPinInArea(area: ServiceAreaRow, latitude: number | null, l
   if (placeOfPin(area, latitude, longitude) === 'OUTSIDE') {
     throw new AppError('PICKUP_OUTSIDE_SERVICE_AREA');
   }
-}
-
-/**
- * SQL twin of `placeOfPin`, for the public reads: true when the area has no geometry (not provable, legacy-compatible), the shop has no pin yet (the
- * pickup-point rule answers that one) or the pin lies inside the circle. Same sphere radius and formula, so a list never disagrees with a save.
- */
-export function pinInAreaSql(shopAlias: string, areaAlias: string): string {
-  return `(${areaAlias}.coverage_radius_m IS NULL OR ${shopAlias}.pickup_lat IS NULL OR ${shopAlias}.pickup_lng IS NULL
-     OR ${pinInCircleSql(shopAlias, `${areaAlias}.coverage_lat`, `${areaAlias}.coverage_lng`, `${areaAlias}.coverage_radius_m`)})`;
-}
-
-/** True when the shop's pin lies within `radiusExpr` metres of the given centre expressions (haversine, the sphere radius of the resolver). */
-export function pinInCircleSql(shopAlias: string, latExpr: string, lngExpr: string, radiusExpr: string): string {
-  return `(${EARTH_RADIUS_M} * 2 * asin(sqrt(least(1.0, greatest(0.0,
-          power(sin(radians(${shopAlias}.pickup_lat - ${latExpr}) / 2), 2)
-          + cos(radians(${shopAlias}.pickup_lat)) * cos(radians(${latExpr})) * power(sin(radians(${shopAlias}.pickup_lng - ${lngExpr}) / 2), 2))))) <= ${radiusExpr})`;
 }
 
 /** Exact containment of configured circles; overlaps use the smallest circle then stable id. */
