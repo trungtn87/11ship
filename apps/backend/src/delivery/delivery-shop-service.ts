@@ -148,7 +148,7 @@ export class DeliveryShopService {
           goodsDescription: input.goodsDescription,
           goodsValueVnd: input.goodsValueVnd,
           paidVnd: input.paidVnd,
-          feePayer: input.feePayer,
+          feePayer: input.feePayer === 'SHOP' ? 'SHOP' : 'CUSTOMER',
           note: input.note,
           agreedFee: input.agreedFee,
           feeBand: input.feeBand,
@@ -212,7 +212,7 @@ export class DeliveryShopService {
         const bands = previous.feeMode === 'STANDARD' && previous.feeVnd !== null && previous.routeDistanceM === null ? await this.agreements.bands(context) : null;
         const sameBand = bands?.bands.find((band) => band.feeVnd === previous.feeVnd);
         const created = await this.#createDelivery(context, caller, {
-          source: previous.source,
+          source: previous.source === 'ORDER' ? 'ORDER' : 'DIRECT',
           orderId: previous.orderId,
           previousDeliveryId: previous.deliveryId,
           recipientName: previous.recipientName,
@@ -223,7 +223,7 @@ export class DeliveryShopService {
           goodsDescription: previous.goodsDescription,
           goodsValueVnd: previous.goodsValueVnd,
           paidVnd: previous.paidVnd,
-          feePayer: previous.feePayer,
+          feePayer: previous.feePayer === 'SHOP' ? 'SHOP' : 'CUSTOMER',
           note: previous.note,
           agreedFee:
             agreement !== undefined && agreement.feeMode === 'AGREED' && agreement.reasonCode !== null && agreement.proposedFeeVnd !== null
@@ -345,6 +345,7 @@ export class DeliveryShopService {
       goodsDescription: spec.goodsDescription,
       goodsValueVnd: spec.goodsValueVnd,
       paidVnd: spec.paidVnd,
+      codVnd: 0,
       note: spec.note,
       dropoffNote: spec.dropoffNote ?? null,
       feeMode,

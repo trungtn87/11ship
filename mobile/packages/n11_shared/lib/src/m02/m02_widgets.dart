@@ -6,6 +6,16 @@ import '../account/models.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'schedule.dart';
+import 'dish_image_crop.dart';
+
+export 'dish_image_crop.dart'
+    show
+        kDishImageAspectRatio,
+        kDishImageMaxBytes,
+        DishImageCropScreen,
+        DishImageCropperPort,
+        bakeDishCrop,
+        computeDishCropRect;
 
 // Widgets shared by the M02 screens (Q01-Q07, K01-K02): the screen frame with a footer that stays above the keyboard, the one dialog
 // and the one toast, loading / failed / unavailable blocks, the dish row and the schedule row. Words are fixed here; nothing the server
@@ -299,7 +309,7 @@ class DishThumb extends StatelessWidget {
     }
     return Container(
       width: size,
-      height: size,
+      height: size / kDishImageAspectRatio,
       clipBehavior: Clip.antiAlias,
       alignment: Alignment.center,
       decoration: BoxDecoration(color: N11Colors.yellowFaint, borderRadius: BorderRadius.circular(12), border: Border.all(color: N11Colors.line)),

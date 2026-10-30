@@ -95,6 +95,14 @@ class HttpM11Source extends M11Source {
   }
 
   @override
+  Future<CustomerDeliveryReviewState> customerDelivery(String deliveryId) async => _parse(await _call('GET', '/v1/customers/me/deliveries/$deliveryId/review'), CustomerDeliveryReviewState.fromJson);
+
+  @override
+  Future<void> customerRateDeliveryShipper(String deliveryId, {required int stars, String? comment, required String key}) async {
+    await _call('POST', '/v1/customers/me/deliveries/$deliveryId/review/shipper', body: _rating(stars, comment), key: key, ok: const <int>{200, 201});
+  }
+
+  @override
   Future<ShopDeliveryReviewState> shopDelivery(String deliveryId) async => _parse(await _call('GET', '/v1/shop/me/deliveries/$deliveryId/review'), ShopDeliveryReviewState.fromJson);
 
   @override

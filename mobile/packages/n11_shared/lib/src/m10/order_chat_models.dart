@@ -2,7 +2,7 @@
 // what the contract says is a FormatException (a server failure for the screen), never a half-filled chat. Times are the server's.
 
 /// Which door of the server a chat is read and written through. The identifier is the order (customer, shop) or the delivery (the shop's direct call, the Shipper).
-enum ChatDoor { customerOrder, shopOrder, shopDirect, shipperDelivery }
+enum ChatDoor { customerOrder, customerDelivery, shopOrder, shopDirect, shipperDelivery }
 
 class ChatRoomRef {
   const ChatRoomRef(this.door, this.id);

@@ -16,7 +16,7 @@ class Harness {
   final FakeMenuApi menuApi;
 }
 
-Future<Harness> harness(WidgetTester tester, {double width = 390, double height = 800, FakeMenuApi? menu, PublicShopApi? publicApi}) async {
+Future<Harness> harness(WidgetTester tester, {double width = 390, double height = 800, FakeMenuApi? menu, PublicShopApi? publicApi, DishImageCropperPort? cropper}) async {
   tester.view.physicalSize = Size(width * 3, height * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -28,7 +28,7 @@ Future<Harness> harness(WidgetTester tester, {double width = 390, double height 
   await session.login(phone: '0901234567', password: 'Correct-Horse-9');
   final FakeLocationProvider gps = FakeLocationProvider();
   final FakeMenuApi menuApi = menu ?? FakeMenuApi();
-  final M02Flows flows = createM02Flows(session: session, location: gps, menuApi: menuApi, publicApi: publicApi ?? FakePublicShopApi(null), picker: FakeImagePicker(), pollEvery: Duration.zero);
+  final M02Flows flows = createM02Flows(session: session, location: gps, menuApi: menuApi, publicApi: publicApi ?? FakePublicShopApi(null), picker: FakeImagePicker(), cropper: cropper ?? ((PickedImage raw) async => raw), pollEvery: Duration.zero);
   addTearDown(flows.dispose);
   return Harness(api, server, session, flows, gps, menuApi);
 }
