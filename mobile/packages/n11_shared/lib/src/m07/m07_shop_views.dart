@@ -106,11 +106,6 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
     });
   }
 
-  Future<void> _call() async {
-    await Navigator.of(context).push(n11Route(ShopCallScreen(source: widget.source, pinPicker: widget.pinPicker, mapBuilder: widget.mapBuilder)));
-    if (mounted) setState(() => _rev++);
-  }
-
   Future<void> _open(DeliveryView delivery) async {
     await Navigator.of(context).push(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: delivery.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker, feedbackSlot: widget.feedbackSlot)));
     if (mounted) setState(() => _rev++);
@@ -122,8 +117,6 @@ class _ShopDeliveryHubState extends State<ShopDeliveryHub> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (widget.source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M07SampleBanner()),
-        N11Button(key: const Key('m07-call-shipper'), label: 'Gọi shipper', icon: Icons.two_wheeler, onPressed: _call),
-        const SizedBox(height: N11Space.gap3),
         Row(children: <Widget>[
           Expanded(
             child: TextField(

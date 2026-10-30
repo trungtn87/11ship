@@ -38,7 +38,10 @@ export function agreementView(agreement: Agreement | undefined): JsonObject | nu
 
 /** Who answers a fee the Shipper proposed: the customer for an ORDER they pay, the shop in every other case (for a DIRECT call, on behalf of a customer without an app). */
 export function feeDeciderOf(d: Pick<DeliveryRow, 'source' | 'feePayer'>): 'CUSTOMER' | 'SHOP' {
-  return d.source === 'ORDER' && d.feePayer === 'CUSTOMER' ? 'CUSTOMER' : 'SHOP';
+  if (d.source === 'CUSTOMER') {
+    return 'CUSTOMER';
+  }
+  return d.source === 'ORDER' && (d.feePayer === 'CUSTOMER' || d.feePayer === 'RECIPIENT') ? 'CUSTOMER' : 'SHOP';
 }
 
 /**
@@ -66,6 +69,7 @@ function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
       state: 'COUNTERED',
       current_vnd: agreement.finalFeeVnd,
       offered_vnd: agreement.revisionFeeVnd,
+      counter_vnd: agreement.revisionFeeVnd,
       can_decline: true,
       expires_at: new Date(agreement.answerExpiresAtMs ?? agreement.expiresAtMs).toISOString(),
       search_expires_at: new Date(agreement.expiresAtMs).toISOString(),
@@ -74,10 +78,12 @@ function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
   if (agreement === undefined || agreement.feeMode !== 'AGREED' || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
     return null;
   }
+  const offeredVnd = agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd;
   return {
     state: agreement.status,
     current_vnd: agreement.proposedFeeVnd,
-    offered_vnd: agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd,
+    offered_vnd: offeredVnd,
+    counter_vnd: offeredVnd,
     // Only a Shipper's counter-offer can be refused; the shop's own proposal is answered by accepting or by the shop cancelling.
     can_decline: agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER',
     // The time the PAYER has to answer this offer (never later than the search deadline); a shop's own proposal only has the search deadline.
@@ -193,7 +199,9 @@ export class DeliveryViews {
       // Tracking is readable only while this shipper HOLDS the delivery (an active assignment of a running delivery).
       // A DIRECT call has no map point to deliver to and is followed by its STATUS only, never by the Shipper's route (Owner decision 2026-10-23).
       if (activeAssignment !== undefined && RUNNING_STATES.includes(d.state) && d.source === 'ORDER') {
+        if (d.pickupLat !== null && d.dropoffLat !== null) {
         location = await this.#location(context, assignment.driverId);
+      }
       }
     }
     const decider = feeDeciderOf(d);
@@ -209,7 +217,15 @@ export class DeliveryViews {
       version: d.version,
       pickup: { shop_name: d.shopName, phone: d.shopPhone, address_text: d.pickupAddressText, lat: d.pickupLat, lng: d.pickupLng },
       recipient: { name: d.recipientName, phone: d.recipientPhone, address_text: d.dropoffAddressText, lat: d.dropoffLat, lng: d.dropoffLng },
-      goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd },
+      goods: {
+        description: d.goodsDescription,
+        value_vnd: d.goodsValueVnd,
+        paid_vnd: d.paidVnd,
+        cod_vnd: d.codVnd ?? 0,
+        recipient_pays_vnd: d.source === 'CUSTOMER'
+          ? (d.feePayer === 'RECIPIENT' || d.feePayer === 'CUSTOMER' ? (d.feeVnd !== null ? d.codVnd + d.feeVnd : null) : d.codVnd)
+          : (d.goodsValueVnd - d.paidVnd + (d.feePayer === 'CUSTOMER' && d.feeVnd !== null ? d.feeVnd : 0)),
+      },
       fee: this.#fee(d, agreement),
       search: this.#search(d, nowMs),
       note: d.note,
@@ -242,21 +258,62 @@ export class DeliveryViews {
    * has ended (or the Shipper gave it back) there is no Shipper and no position: tracking stops with the right to see it.
    */
   async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number): Promise<JsonObject> {
-    const assignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const isRunning = activeAssignment !== undefined && RUNNING_STATES.includes(d.state);
+    const assignment = isRunning
+      ? activeAssignment
+      : (d.source === 'CUSTOMER' && (d.state === 'completed' || d.state === 'failed'))
+        ? await this.deliveries.findExecutingAssignment(context, d.deliveryId)
+        : undefined;
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
+    let assignmentView: JsonObject | null = null;
     let shipper: JsonObject | null = null;
     let location: JsonObject | null = null;
-    if (assignment !== undefined && RUNNING_STATES.includes(d.state)) {
+    if (assignment !== undefined) {
       const identity = await this.shipperOf(context, assignment.driverId);
       shipper = {
         name: identity?.driver.fullName ?? '—',
-        phone: identity?.phone ?? null,
-        plate_number: identity?.driver.plateNumber ?? null,
+        phone: isRunning ? identity?.phone ?? null : null,
+        plate_number: isRunning ? identity?.driver.plateNumber ?? null : null,
         accepted_at: iso(assignment.acceptedAtMs),
         picked_up_at: iso(assignment.pickedUpAtMs),
       };
-      location = await this.#location(context, assignment.driverId);
+      assignmentView = {
+        assignment_id: assignment.assignmentId,
+        shipper,
+        accepted_at: iso(assignment.acceptedAtMs),
+        picked_up_at: iso(assignment.pickedUpAtMs),
+        destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
+      };
+      if (isRunning && d.pickupLat !== null && d.dropoffLat !== null) {
+        location = await this.#location(context, assignment.driverId);
+      }
+    } else if (d.source === 'CUSTOMER' && (agreement?.counterBy || agreement?.boundDriverId)) {
+      const pendingDriverId = agreement.counterBy ?? agreement.boundDriverId!;
+      const identity = await this.shipperOf(context, pendingDriverId);
+      if (identity !== undefined) {
+        shipper = {
+          name: identity.driver.fullName ?? '—',
+          phone: identity.phone ?? null,
+          plate_number: identity.driver.plateNumber ?? null,
+          accepted_at: iso(agreement.createdAtMs),
+          picked_up_at: null,
+        };
+        assignmentView = {
+          assignment_id: null,
+          shipper,
+          accepted_at: iso(agreement.createdAtMs),
+          picked_up_at: null,
+          destination_confirmed: false,
+        };
+      }
+    }
+    const decider = feeDeciderOf(d);
+    const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
+    const feeView = this.#fee(d, agreement);
+    if (feeQuestionOpen && decider === 'CUSTOMER') {
+      feeView.status = 'AWAITING_CUSTOMER';
     }
     return {
       delivery_id: d.deliveryId,
@@ -264,15 +321,31 @@ export class DeliveryViews {
       display_code: d.displayCode ?? d.code,
       state: d.state,
       version: d.version,
-      fee: { payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }), distance_m: d.routeDistanceM },
+      fee: feeView,
       search: this.#search(d, nowMs),
+      assignment: assignmentView,
       shipper,
       location,
       result: this.#result(d, incident),
       goods_custody: d.state === 'failed' || incident !== undefined ? (incident?.custody ?? null) : null,
-      fee_decision: feeDeciderOf(d) === 'CUSTOMER' && d.source === 'ORDER' ? feeDecisionView(agreement) : null,
+      fee_decision: decider === 'CUSTOMER' ? feeDecisionView(agreement) : null,
+      source: d.source,
+      cod_vnd: d.codVnd ?? 0,
+      recipient_pays_vnd: d.source === 'CUSTOMER'
+        ? (d.feePayer === 'RECIPIENT' || d.feePayer === 'CUSTOMER' ? (d.feeVnd !== null ? d.codVnd + d.feeVnd : null) : d.codVnd)
+        : (d.goodsValueVnd - d.paidVnd + (d.feePayer === 'CUSTOMER' && d.feeVnd !== null ? d.feeVnd : 0)),
+      goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd, cod_vnd: d.codVnd ?? 0 },
+      note: d.note,
+      dropoff_note: d.dropoffNote,
+      recipient: { name: d.recipientName, phone: d.recipientPhone, address_text: d.dropoffAddressText, lat: d.dropoffLat, lng: d.dropoffLng },
+      can: {
+        cancel: shopMayCancel(d.state) || creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
+        cancel_after_pickup: creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
+        decide_fee: feeQuestionOpen && decider === 'CUSTOMER',
+        wait_shipper_fee: feeQuestionOpen && decider !== 'CUSTOMER',
+      },
       // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
-      pickup: { lat: d.pickupLat, lng: d.pickupLng },
+      pickup: { shop_name: d.shopName, phone: d.shopPhone, address_text: d.pickupAddressText, lat: d.pickupLat, lng: d.pickupLng },
       dropoff: d.dropoffLat === null || d.dropoffLng === null ? null : { lat: d.dropoffLat, lng: d.dropoffLng },
       created_at: iso(d.createdAtMs),
     };
@@ -307,7 +380,15 @@ export class DeliveryViews {
         lat: active ? d.dropoffLat : null,
         lng: active ? d.dropoffLng : null,
       },
-      goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd },
+      goods: {
+        description: d.goodsDescription,
+        value_vnd: d.goodsValueVnd,
+        paid_vnd: d.paidVnd,
+        cod_vnd: d.codVnd ?? 0,
+        recipient_pays_vnd: d.source === 'CUSTOMER'
+          ? (d.feePayer === 'RECIPIENT' || d.feePayer === 'CUSTOMER' ? (d.feeVnd !== null ? d.codVnd + d.feeVnd : null) : d.codVnd)
+          : (d.goodsValueVnd - d.paidVnd + (d.feePayer === 'CUSTOMER' && d.feeVnd !== null ? d.feeVnd : 0)),
+      },
       fee: this.#fee(d, agreement, assignment.driverId),
       search: this.#search(d, nowMs),
       note: active ? d.note : null,
@@ -342,16 +423,21 @@ export class DeliveryViews {
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     // Whether this Shipper may propose another fee BEFORE taking it: the shop's agreed proposal still open, or a final fee that is theirs to take (a table fee included).
     const counterable = agreement !== undefined && driverId !== null && !searchExpired(nowMs, d.searchExpiresAtMs) && ((agreement.feeMode === 'AGREED' && agreement.status === 'PROPOSED') || (agreement.status === 'ACCEPTED' && feeAllowsAssignment(agreement, driverId)));
+    const recipientPaysVnd = d.source === 'CUSTOMER'
+      ? (d.feePayer === 'RECIPIENT' ? (d.feeVnd !== null ? d.codVnd + d.feeVnd : null) : d.codVnd)
+      : (d.goodsValueVnd - d.paidVnd + (d.feePayer === 'CUSTOMER' && d.feeVnd !== null ? d.feeVnd : 0));
     return {
       delivery_id: d.deliveryId,
       code: d.code,
       display_code: d.displayCode ?? d.code,
-      shop: { name: d.shopName, area_text: dropoffAreaOf(d.pickupAddressText) },
+      shop: { name: d.source === 'CUSTOMER' ? (d.shopName || 'Khách gửi hàng') : d.shopName, area_text: dropoffAreaOf(d.pickupAddressText) },
       distance_to_shop_m: decision.distanceToShopM,
       dropoff_area_text: d.dropoffAreaText,
       destination_known: d.dropoffLat !== null && d.dropoffLng !== null,
       goods_value_vnd: d.goodsValueVnd,
       unpaid_vnd: d.goodsValueVnd - d.paidVnd,
+      cod_vnd: d.codVnd ?? 0,
+      recipient_pays_vnd: recipientPaysVnd,
       fee_vnd: d.feeVnd,
       fee_status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }),
       fee_payer: d.feePayer,
@@ -404,7 +490,15 @@ export class DeliveryViews {
       shop: { shop_id: d.shopId, name: d.shopName },
       shipper: shipper === undefined ? null : { driver_id: shipper.driver.driverId, name: shipper.driver.fullName },
       recipient: { name: canContact ? d.recipientName : null, phone: canContact ? d.recipientPhone : null, address_text: canContact ? d.dropoffAddressText : null },
-      goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd },
+      goods: {
+        description: d.goodsDescription,
+        value_vnd: d.goodsValueVnd,
+        paid_vnd: d.paidVnd,
+        cod_vnd: d.codVnd ?? 0,
+        recipient_pays_vnd: d.source === 'CUSTOMER'
+          ? (d.feePayer === 'RECIPIENT' || d.feePayer === 'CUSTOMER' ? (d.feeVnd !== null ? d.codVnd + d.feeVnd : null) : d.codVnd)
+          : (d.goodsValueVnd - d.paidVnd + (d.feePayer === 'CUSTOMER' && d.feeVnd !== null ? d.feeVnd : 0)),
+      },
       fee: { mode: d.feeMode, payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }) },
       search: this.#search(d, nowMs),
       location,

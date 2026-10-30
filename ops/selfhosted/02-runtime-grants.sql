@@ -109,6 +109,7 @@ GRANT SELECT, INSERT, UPDATE ON app.delivery_assignments TO ship11_app;
 GRANT SELECT, INSERT ON app.delivery_events TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.delivery_incidents TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.shipper_latest_locations TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.delivery_tracking_links TO ship11_app;
 
 -- M10: food orders. The cart is a working copy (replaced or cleared: hence DELETE of it only); an Order is created and moved along its status graph, its lines are
 -- written once and only the shop's edit columns change; nothing of an Order is ever deleted (triggers refuse it) and its event log is append-only.

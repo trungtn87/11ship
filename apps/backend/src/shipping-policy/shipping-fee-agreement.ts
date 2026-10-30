@@ -17,7 +17,7 @@ import { MAX_FEE_VND } from './shipping-fee-policy';
 // Nothing here adds a surcharge by itself (weather, urgency, bulk): an amount exists only because a person proposed or accepted it.
 
 export type FeeMode = 'STANDARD' | 'AGREED';
-export type FeePayer = 'CUSTOMER' | 'SHOP';
+export type FeePayer = 'CUSTOMER' | 'SHOP' | 'SENDER' | 'RECIPIENT';
 export type AgreementStatus = 'PROPOSED' | 'COUNTERED' | 'AWAITING_CUSTOMER' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'LOCKED';
 export type AgreementReason = 'URGENT' | 'BULKY' | 'BAD_WEATHER' | 'OUT_OF_PRICE_RANGE' | 'OTHER';
 export const AGREEMENT_REASONS: readonly AgreementReason[] = ['URGENT', 'BULKY', 'BAD_WEATHER', 'OUT_OF_PRICE_RANGE', 'OTHER'];

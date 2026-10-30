@@ -351,11 +351,35 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
       ),
       if (!source.isSample && source.canWrite) const ReasonNote('Để rút toàn bộ số dư, mở Tài khoản → Dừng hoạt động / Rút tiền.'),
       if (!source.canWrite) ReasonNote('${source.notWiredReason} Nạp và rút tiền chưa dùng được.'),
-      Row(
-        children: <Widget>[
-          const Expanded(child: Text('Giao dịch gần đây', style: N11Text.h2)),
-          TextButton(key: const Key('wallet-see-all'), onPressed: () => _open(TxnHistoryScreen(source: source, minTopup: widget.minTopup, minWithdraw: widget.minWithdraw)), child: const Text('Xem tất cả')),
-        ],
+      LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(16) > 21) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('Giao dịch gần đây', style: N11Text.h2),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    key: const Key('wallet-see-all'),
+                    onPressed: () => _open(TxnHistoryScreen(source: source, minTopup: widget.minTopup, minWithdraw: widget.minWithdraw)),
+                    child: const Text('Xem tất cả'),
+                  ),
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              const Expanded(child: Text('Giao dịch gần đây', style: N11Text.h2)),
+              TextButton(
+                key: const Key('wallet-see-all'),
+                onPressed: () => _open(TxnHistoryScreen(source: source, minTopup: widget.minTopup, minWithdraw: widget.minWithdraw)),
+                child: const Text('Xem tất cả'),
+              ),
+            ],
+          );
+        },
       ),
       WalletLoader<List<WalletTxn>>(
         key: ValueKey<String>('recent-$_rev'),

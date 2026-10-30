@@ -26,7 +26,7 @@ export class DeliveryCancel {
 
   async cancel(
     context: TransactionContext,
-    actor: { readonly type: 'SHOP' | 'ADMIN'; readonly userId: string } | { readonly type: 'SYSTEM'; readonly userId: null },
+    actor: { readonly type: 'SHOP' | 'ADMIN' | 'CUSTOMER'; readonly userId: string } | { readonly type: 'SYSTEM'; readonly userId: null },
     delivery: DeliveryRow,
     reason: string,
     requestId: string,
@@ -40,7 +40,7 @@ export class DeliveryCancel {
     }
     const assignment = await this.deliveries.lockActiveAssignment(context, delivery.deliveryId);
     if (assignment !== undefined) {
-      if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, actor.type === 'SYSTEM' ? 'CANCELLED_BY_SYSTEM' : 'CANCELLED_BY_SHOP', actor.type, reason))) {
+      if (!(await this.deliveries.endAssignment(context, assignment.assignmentId, assignment.version, actor.type === 'SYSTEM' ? 'CANCELLED_BY_SYSTEM' : actor.type === 'CUSTOMER' ? 'CANCELLED_BY_CUSTOMER' : 'CANCELLED_BY_SHOP', actor.type, reason))) {
         throw new TechnicalError('internal', 'Assignment changed under its lock');
       }
       const released = await this.commission.releaseCommission(context, assignment.assignmentId);
@@ -58,7 +58,7 @@ export class DeliveryCancel {
     }
     await this.recorder.record(context, {
       delivery: after,
-      type: actor.type === 'SYSTEM' ? 'cancelled_by_system' : 'cancelled_by_shop',
+      type: actor.type === 'SYSTEM' ? 'cancelled_by_system' : actor.type === 'CUSTOMER' ? 'cancelled_by_customer' : 'cancelled_by_shop',
       actorType: actor.type,
       actorId: actor.userId,
       assignmentId: assignment?.assignmentId ?? null,

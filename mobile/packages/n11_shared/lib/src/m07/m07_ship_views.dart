@@ -31,10 +31,22 @@ const String kReleaseExplain = 'Bạn sẽ không còn giữ đơn này. Hệ th
 typedef M07LocationSlot = Widget Function(BuildContext context);
 
 /// The pop-up where a Shipper types the fee they want instead (before taking the delivery, or after taking it and before the pickup). Null when they go back.
-Future<int?> askFeeProposal(BuildContext context) => showDialog<int>(context: context, builder: (BuildContext dialogContext) => const _FeeProposalDialog());
+Future<int?> askFeeProposal(BuildContext context, {int? currentFeeVnd, int? proposedFeeVnd, String? deciderText}) =>
+    showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => _FeeProposalDialog(
+        currentFeeVnd: currentFeeVnd,
+        proposedFeeVnd: proposedFeeVnd,
+        deciderText: deciderText,
+      ),
+    );
 
 class _FeeProposalDialog extends StatefulWidget {
-  const _FeeProposalDialog();
+  const _FeeProposalDialog({this.currentFeeVnd, this.proposedFeeVnd, this.deciderText});
+
+  final int? currentFeeVnd;
+  final int? proposedFeeVnd;
+  final String? deciderText;
 
   @override
   State<_FeeProposalDialog> createState() => _FeeProposalDialogState();
@@ -53,13 +65,50 @@ class _FeeProposalDialogState extends State<_FeeProposalDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final String subtitle = widget.proposedFeeVnd != null && widget.currentFeeVnd != null
+        ? 'Phí hiện tại: ${m07Vnd(widget.currentFeeVnd)} · Đang đề xuất: ${m07Vnd(widget.proposedFeeVnd)}'
+        : widget.proposedFeeVnd != null
+            ? 'Phí đang đề xuất: ${m07Vnd(widget.proposedFeeVnd)}'
+            : widget.currentFeeVnd != null
+                ? 'Phí hiện tại: ${m07Vnd(widget.currentFeeVnd)}'
+                : 'Gửi đề xuất phí tới ${widget.deciderText ?? 'người trả phí'}';
+
     return Form(
       key: _form,
       child: AlertDialog(
         key: const Key('m07-counter-dialog'),
-        scrollable: true,
-        title: const Text('Đề xuất mức phí khác', style: N11Text.h2),
-        content: N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: _amount, keyboard: TextInputType.number, maxLength: 10),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Text('Đề xuất mức phí', style: N11Text.h2),
+            const SizedBox(height: 4),
+            Text(subtitle, style: N11Text.caption),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(height: 8),
+                N11Field(
+                  validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null,
+                  fieldKey: const Key('m07-counter-amount'),
+                  label: 'Mức phí bạn đề xuất (đ)',
+                  controller: _amount,
+                  keyboard: TextInputType.number,
+                  maxLength: 10,
+                ),
+              ],
+            ),
+          ),
+        ),
         actions: <Widget>[
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Quay lại')),
           FilledButton(
@@ -130,7 +179,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
   }
 
   Future<void> _counter(OfferView o) async {
-    final int? value = await askFeeProposal(context);
+    final int? value = await askFeeProposal(context, proposedFeeVnd: o.agreement?.proposedVnd, currentFeeVnd: o.feeVnd, deciderText: o.deciderText);
     if (value == null || !mounted) {
       return;
     }
@@ -268,9 +317,18 @@ class OfferCard extends StatelessWidget {
           KeyValueRows(<(String, String)>[
             if (offer.shopAreaText != null) ('Khu vực lấy hàng', offer.shopAreaText!),
             ('Cách quán', m07Km(offer.distanceToShopM)),
-            ('Khu vực giao', offer.dropoffAreaText ?? '—'),
-            ('Tiền hàng', m07Vnd(offer.goodsValueVnd)),
-            ('Người trả phí', offer.feePayer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship'),
+            if (offer.codVnd != null && offer.codVnd! > 0)
+              ('Thu hộ (COD)', m07Vnd(offer.codVnd!))
+            else if (offer.source != 'CUSTOMER')
+              ('Tiền hàng', m07Vnd(offer.goodsValueVnd)),
+            if (offer.recipientPaysVnd != null)
+              ('Người nhận trả', m07Vnd(offer.recipientPaysVnd!)),
+            ('Người trả phí', switch (offer.feePayer) {
+              'RECIPIENT' => 'Người nhận trả ship',
+              'SENDER' => 'Người gửi trả ship',
+              'SHOP' => 'Quán trả ship',
+              _ => 'Khách trả ship',
+            }),
           ], responsive: true),
           if (!offer.destinationKnown)
             const Padding(
@@ -317,7 +375,6 @@ class OfferCard extends StatelessWidget {
                       kind: ButtonKind.secondary,
                       onPressed: busy ? null : onCounter,
                     ),
-                    N11Button(key: const Key('m07-fee-skip'), label: 'Bỏ qua', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : onSkip),
                   ],
                 ),
               ),
@@ -493,7 +550,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
 
   /// Before the pickup (also after taking the delivery) the Shipper may ask for another fee; the payer answers, and the pickup waits for the answer.
   Future<void> _propose(DeliveryView d) async {
-    final int? value = await askFeeProposal(context);
+    final int? value = await askFeeProposal(context, currentFeeVnd: d.fee.amountVnd, deciderText: d.fee.payer == 'CUSTOMER' || d.fee.payer == 'RECIPIENT' ? 'khách' : 'quán');
     if (value == null || !mounted) {
       return;
     }

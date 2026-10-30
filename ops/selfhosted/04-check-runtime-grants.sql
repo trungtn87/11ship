@@ -77,6 +77,7 @@ WITH expected(table_name, privileges) AS (
     ('delivery_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('delivery_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shipper_latest_locations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('delivery_tracking_links', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shop_public_ids', ARRAY['SELECT']::text[]),
     ('shop_display_counters', ARRAY['SELECT']::text[]),
     ('shop_display_numbers', ARRAY['SELECT']::text[]),
