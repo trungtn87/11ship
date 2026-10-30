@@ -126,9 +126,69 @@ void main() {
       expect(find.text('Yêu cầu đổi địa chỉ bị từ chối'), findsOneWidget);
       expect(find.text('Quá xa không giao được'), findsOneWidget);
     });
+    testWidgets('renders AddressChangeRequestSheet with location picker support', (WidgetTester tester) async {
+      String? submittedName;
+      String? submittedAddress;
+      double? submittedLat;
+      double? submittedLng;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AddressChangeRequestSheet(
+              initialName: 'Lê Văn C',
+              initialPhone: '0933333333',
+              initialAddress: '789 Giải Phóng',
+              initialLat: 20.99,
+              initialLng: 105.84,
+              onSubmit: ({required String name, required String phone, required String address, double? lat, double? lng, String? note}) async {
+                submittedName = name;
+                submittedAddress = address;
+                submittedLat = lat;
+                submittedLng = lng;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Xin đổi địa chỉ giao hàng'), findsOneWidget);
+      expect(find.textContaining('Tọa độ: 20.9900, 105.8400'), findsOneWidget);
+      expect(find.text('Sửa vị trí'), findsOneWidget);
+
+      await tester.tap(find.text('Gửi yêu cầu đổi địa chỉ'));
+      await tester.pumpAndSettle();
+
+      expect(submittedName, 'Lê Văn C');
+      expect(submittedAddress, '789 Giải Phóng');
+      expect(submittedLat, 20.99);
+      expect(submittedLng, 105.84);
+    });
   });
 
   group('OrderIncidentGuidance & ShipperOperationalGuidance (#217)', () {
+    testWidgets('shipper incident guidance aligns with M07 custody and lacks fail action', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: OrderIncidentGuidance(
+              role: 'SHIPPER',
+              deliveryState: 'delivering',
+              initiallyExpanded: true,
+            ),
+          ),
+        ),
+      );
+
+      // Verify guidance does NOT tell shipper to self-fail or cite 3 calls/15 mins
+      expect(find.textContaining('chọn "Giao thất bại"'), findsNothing);
+      expect(find.textContaining('Báo giao thất bại'), findsNothing);
+      expect(find.textContaining('3 cuộc'), findsNothing);
+
+      // Verify guidance directs contacting shop/customer and returning custody
+      expect(find.textContaining('liên hệ quán hoặc trung tâm hỗ trợ'), findsOneWidget);
+      expect(find.textContaining('mang trả lại quán'), findsOneWidget);
+    });
     testWidgets('displays collapsible incident guidance and triggers expansion', (WidgetTester tester) async {
       await tester.pumpWidget(
         const MaterialApp(

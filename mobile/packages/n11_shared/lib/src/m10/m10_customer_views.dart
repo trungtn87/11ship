@@ -1318,13 +1318,17 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
       initialName: o.recipient.name,
       initialPhone: o.recipient.phone,
       initialAddress: o.recipient.addressText,
-      onSubmit: ({required String name, required String phone, required String address, String? note}) async {
+      initialLat: o.recipient.lat,
+      initialLng: o.recipient.lng,
+      onSubmit: ({required String name, required String phone, required String address, double? lat, double? lng, String? note}) async {
         await act('address-change-request', (String key) async {
           await widget.runtime.customer.requestAddressChange(
             o.orderId,
             recipientName: name,
             recipientPhone: phone,
             addressText: address,
+            lat: lat,
+            lng: lng,
             note: note,
             expectedVersion: o.version,
             key: key,

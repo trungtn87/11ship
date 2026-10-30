@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../addresses/address_location_picker.dart';
 import 'address_change_models.dart';
 
 /// Hiển thị banner trạng thái yêu cầu đổi địa chỉ và các nút thao tác (#218).
@@ -190,16 +191,22 @@ class AddressChangeRequestSheet extends StatefulWidget {
     required this.initialName,
     required this.initialPhone,
     required this.initialAddress,
+    this.initialLat,
+    this.initialLng,
     required this.onSubmit,
   });
 
   final String initialName;
   final String initialPhone;
   final String initialAddress;
+  final double? initialLat;
+  final double? initialLng;
   final Future<void> Function({
     required String name,
     required String phone,
     required String address,
+    double? lat,
+    double? lng,
     String? note,
   }) onSubmit;
 
@@ -208,10 +215,14 @@ class AddressChangeRequestSheet extends StatefulWidget {
     required String initialName,
     required String initialPhone,
     required String initialAddress,
+    double? initialLat,
+    double? initialLng,
     required Future<void> Function({
       required String name,
       required String phone,
       required String address,
+      double? lat,
+      double? lng,
       String? note,
     }) onSubmit,
   }) {
@@ -228,6 +239,8 @@ class AddressChangeRequestSheet extends StatefulWidget {
           initialName: initialName,
           initialPhone: initialPhone,
           initialAddress: initialAddress,
+          initialLat: initialLat,
+          initialLng: initialLng,
           onSubmit: onSubmit,
         ),
       ),
@@ -243,6 +256,8 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _noteCtrl;
+  double? _lat;
+  double? _lng;
 
   bool _submitting = false;
   String? _error;
@@ -254,6 +269,8 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
     _phoneCtrl = TextEditingController(text: widget.initialPhone);
     _addressCtrl = TextEditingController(text: widget.initialAddress);
     _noteCtrl = TextEditingController();
+    _lat = widget.initialLat;
+    _lng = widget.initialLng;
   }
 
   @override
@@ -295,6 +312,8 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
         name: name,
         phone: phone,
         address: address,
+        lat: _lat,
+        lng: _lng,
         note: note.isNotEmpty ? note : null,
       );
       if (mounted) {
@@ -370,6 +389,40 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
                   labelText: 'Địa chỉ nhận hàng mới *',
                   border: OutlineInputBorder(),
                 ),
+              ),
+              const SizedBox(height: N11Space.gap1),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      _lat != null && _lng != null
+                          ? 'Tọa độ: ${_lat!.toStringAsFixed(4)}, ${_lng!.toStringAsFixed(4)}'
+                          : 'Chưa gắn tọa độ (nhập địa chỉ chữ)',
+                      style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.place_outlined, size: 16),
+                    label: Text(_lat != null && _lng != null ? 'Sửa vị trí' : 'Chọn vị trí'),
+                    onPressed: () async {
+                      final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(
+                        MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                            initial: AddressLocation(_addressCtrl.text, latitude: _lat, longitude: _lng),
+                            requirePoint: false,
+                          ),
+                        ),
+                      );
+                      if (selected != null && mounted) {
+                        setState(() {
+                          _addressCtrl.text = selected.text;
+                          _lat = selected.latitude;
+                          _lng = selected.longitude;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: N11Space.gap3),
 

@@ -186,9 +186,25 @@ export class AddressChangeRepository {
     return result.rows[0] ? mapRow(result.rows[0]) : undefined;
   }
 
+  async lockActiveByOrderId(context: TransactionContext, orderId: string): Promise<AddressChangeRequestRow | undefined> {
+    const result = await context.query<RawAddressChangeRequest>(
+      `SELECT ${SELECT_COLUMNS} FROM app.address_change_requests WHERE order_id = $1::uuid AND status = 'PENDING' FOR UPDATE`,
+      [orderId],
+    );
+    return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+  }
+
   async findActiveByDeliveryId(context: TransactionContext, deliveryId: string): Promise<AddressChangeRequestRow | undefined> {
     const result = await context.query<RawAddressChangeRequest>(
       `SELECT ${SELECT_COLUMNS} FROM app.address_change_requests WHERE delivery_id = $1::uuid AND status = 'PENDING'`,
+      [deliveryId],
+    );
+    return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+  }
+
+  async lockActiveByDeliveryId(context: TransactionContext, deliveryId: string): Promise<AddressChangeRequestRow | undefined> {
+    const result = await context.query<RawAddressChangeRequest>(
+      `SELECT ${SELECT_COLUMNS} FROM app.address_change_requests WHERE delivery_id = $1::uuid AND status = 'PENDING' FOR UPDATE`,
       [deliveryId],
     );
     return result.rows[0] ? mapRow(result.rows[0]) : undefined;

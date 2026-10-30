@@ -582,12 +582,16 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
       initialName: d.recipient.name,
       initialPhone: d.recipient.phone ?? '',
       initialAddress: d.recipient.addressText ?? '',
-      onSubmit: ({required String name, required String phone, required String address, String? note}) async {
+      initialLat: d.recipient.lat,
+      initialLng: d.recipient.lng,
+      onSubmit: ({required String name, required String phone, required String address, double? lat, double? lng, String? note}) async {
         final bool ok = await act('customer-address-change-${d.deliveryId}', (String key) => widget.source.requestAddressChange(
           d.deliveryId,
           recipientName: name,
           recipientPhone: phone,
           addressText: address,
+          lat: lat,
+          lng: lng,
           note: note,
           expectedVersion: d.version,
           key: key,

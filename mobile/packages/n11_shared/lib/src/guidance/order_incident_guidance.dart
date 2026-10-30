@@ -117,13 +117,13 @@ class _OrderIncidentGuidanceState extends State<OrderIncidentGuidance> {
     String text;
     if (widget.role == 'CUSTOMER') {
       text = widget.hasShipper
-          ? 'Nếu không liên lạc được shipper hoặc quán, hãy dùng nút Gọi hoặc Chat bên dưới. Nếu quá 10 phút không phản hồi, bạn có thể liên hệ hỗ trợ hoặc hủy đơn (khi shipper chưa lấy hàng).'
+          ? 'Nếu không liên lạc được shipper hoặc quán, hãy dùng nút Gọi hoặc Chat bên dưới. Nếu shipper chưa lấy hàng và cần hủy đơn, bạn có thể chọn hủy đơn theo quy định.'
           : 'Nếu quán chưa xác nhận hoặc không gọi được quán qua điện thoại, bạn có thể hủy đơn khi còn trong thời gian chờ xác nhận.';
     } else if (widget.role == 'SHOP') {
-      text = 'Khi không liên lạc được khách để chốt đơn hoặc giao hàng, hãy gọi qua số điện thoại đơn hàng hoặc nhắn tin chat trong đơn. Nếu không có phản hồi, quán có thể từ chối đơn trước khi làm món.';
+      text = 'Khi không liên lạc được khách để chốt đơn hoặc giao hàng, hãy gọi qua số điện thoại đơn hàng hoặc nhắn tin chat trong đơn. Nếu khách không phản hồi trước khi làm món, quán có thể từ chối đơn.';
     } else {
       // SHIPPER
-      text = 'Khi đến điểm giao mà không gọi được khách: Gọi tối thiểu 3 cuộc cách nhau 2-3 phút và gửi tin nhắn chat. Nếu sau 10-15 phút vẫn không nhận hàng, chọn "Giao thất bại" và ghi nhận lý do.';
+      text = 'Khi đến điểm giao mà không liên lạc được khách: Gọi điện thoại và gửi tin nhắn chat trong đơn. Nếu vẫn không nhận hàng, liên hệ quán hoặc trung tâm hỗ trợ để phối hợp xử lý, không tự ý hủy đơn.';
     }
 
     return _GuidanceBlock(
@@ -199,9 +199,9 @@ class _OrderIncidentGuidanceState extends State<OrderIncidentGuidance> {
     if (widget.incident != null) {
       text = 'Đang xử lý biên bản sự cố. Nếu shipper đã hoàn trả hàng về lại quán, quán vui lòng bấm "Xác nhận nhận lại hàng" để kết thúc.';
     } else if (widget.role == 'SHIPPER') {
-      text = 'Nếu gặp sự cố không thể giao (khách từ chối, sai địa chỉ không tìm thấy, hỏng xe), hãy bấm "Báo giao thất bại". Sau đó mang hàng trả lại quán hoặc liên hệ tổng đài hỗ trợ.';
+      text = 'Khi gặp sự cố không thể giao hàng đến tận tay khách (không liên lạc được, khách từ chối, sai địa chỉ không tìm thấy), shipper dùng nút Gọi/Chat để liên hệ khách hoặc quán hỗ trợ. Trường hợp đơn phát sinh sự cố giao hàng hoặc bị hủy sau khi đã lấy hàng, shipper giữ nguyên hiện trạng kiện hàng và mang trả lại quán để quán xác nhận nhận lại hàng.';
     } else if (widget.role == 'SHOP') {
-      text = 'Nếu shipper báo giao thất bại và mang trả hàng về quán, quán kiểm tra hàng và bấm "Xác nhận nhận lại hàng" để hoàn tất biên bản sự cố.';
+      text = 'Nếu đơn hàng phát sinh sự cố giao không thành công và shipper mang trả hàng về quán, quán kiểm tra tình trạng hàng và bấm "Xác nhận nhận lại hàng" để hoàn tất biên bản sự cố.';
     } else {
       text = 'Nếu đơn giao không thành công, hệ thống sẽ mở biên bản sự cố. Bạn có thể xem trạng thái hàng và liên hệ quán/shipper để được hỗ trợ giải quyết.';
     }
@@ -315,27 +315,27 @@ class ShipperOperationalGuidanceSheet extends StatelessWidget {
               const _GuidanceBlock(
                 title: 'Không thể Bật Online nhận đơn',
                 icon: Icons.wifi_tethering_off,
-                content: '1. Bật GPS trên máy và cấp quyền vị trí chính xác ("Luôn cho phép" hoặc "Khi dùng ứng dụng").\n'
-                    '2. Đảm bảo số dư ví ký quỹ đủ mức tối thiểu quy định.\n'
-                    '3. Kiểm tra trạng thái tài khoản tài xế đã được kích hoạt và không bị khóa tạm thời.',
+                content: '1. Tài khoản tài xế ở trạng thái Hợp lệ (ACTIVE), không bị khóa tạm thời.\n'
+                    '2. Ví tài xế đủ điều kiện nhận đơn theo hạn mức hệ thống (walletReady).\n'
+                    '3. Bật định vị GPS trên thiết bị và cấp quyền vị trí chính xác để chia sẻ vị trí khi nhận đơn.',
               ),
               const SizedBox(height: N11Space.gap4),
 
               const _GuidanceBlock(
                 title: 'Không thể Rút tiền từ ví',
                 icon: Icons.account_balance_wallet_outlined,
-                content: '1. Cần liên kết tài khoản ngân hàng chính chủ và đã được phê duyệt.\n'
-                    '2. Số dư khả dụng phải lớn hơn số tiền muốn rút cộng hạn mức giữ lại tối thiểu.\n'
-                    '3. Không có đơn đang thực hiện hoặc đang xử lý tranh chấp giữ cọc.',
+                content: '1. Cần liên kết tài khoản ngân hàng chính chủ và đã được Admin xác minh.\n'
+                    '2. Số dư khả dụng lớn hơn hoặc bằng hạn mức rút tối thiểu theo quy định hệ thống.\n'
+                    '3. Không có đơn đang thực hiện hoặc giao dịch đang trong diện tra soát.',
               ),
               const SizedBox(height: N11Space.gap4),
 
               const _GuidanceBlock(
                 title: 'Không thể Đóng hoạt động / Nghỉ ca',
                 icon: Icons.power_settings_new_outlined,
-                content: '1. Cần hoàn tất tất cả các đơn hàng đang nhận trước khi tắt ứng dụng.\n'
-                    '2. Nếu có đơn chưa lấy hàng muốn hủy, cần trả chuyến đúng quy định.\n'
-                    '3. Nếu có hàng đang giữ (custody) do giao thất bại, cần hoàn trả về quán trước khi kết thúc ca.',
+                content: '1. Cần hoàn tất tất cả các đơn hàng đang nhận trước khi tắt nhận đơn hoặc gửi yêu cầu ngừng hoạt động.\n'
+                    '2. Nếu có hàng đang giữ (custody) do sự cố giao hàng, cần hoàn trả về quán trước khi kết thúc ca.\n'
+                    '3. Số dư ví không bị mất và có thể rút hoàn tiền sau khi hoàn tất các thủ tục.',
               ),
               const SizedBox(height: N11Space.gap4),
 

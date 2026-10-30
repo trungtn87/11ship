@@ -93,9 +93,13 @@ export class AddressChangeService {
           throw new AppError('CANNOT_CHANGE_AFTER_PICKUP');
         }
 
-        const existingPending = await this.addressChangeRepo.findActiveByOrderId(context, orderId);
-        if (existingPending !== undefined && nowMs < existingPending.expiresAtMs) {
-          throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+        const existingPending = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
+        if (existingPending !== undefined) {
+          if (nowMs >= existingPending.expiresAtMs) {
+            await this.addressChangeRepo.resolve(context, existingPending.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', existingPending.version);
+          } else {
+            throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+          }
         }
 
         let newDistanceM: number | null = null;
@@ -206,7 +210,7 @@ export class AddressChangeService {
       },
       async (context) => {
         const nowMs = await freshClockMs(context);
-        const req = await this.addressChangeRepo.findActiveByOrderId(context, orderId);
+        const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -243,7 +247,10 @@ export class AddressChangeService {
         }
 
         if (!input.accept) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
 
           await this.orderRecorder.record(context, {
             order,
@@ -269,23 +276,27 @@ export class AddressChangeService {
         }
 
         // Accept
-        await this.addressChangeRepo.resolve(context, req.changeRequestId, 'ACCEPTED', principal.userId, null, req.version);
+        const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'ACCEPTED', principal.userId, null, req.version);
+        if (!resolved) {
+          throw new AppError('VERSION_CONFLICT');
+        }
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
 
+        // Note: Do NOT alter fee_estimate_vnd! The fee payer's agreed fee remains intact.
+        // Distance: updated when new coords are provided; set to null for text-only (no coords), not retaining old distance.
         await context.query(
           `UPDATE app.orders
            SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
-               fee_estimate_vnd = COALESCE($6, fee_estimate_vnd), fee_estimate_distance_m = COALESCE($7, fee_estimate_distance_m),
+               fee_estimate_distance_m = $6,
                version = version + 1, updated_at = clock_timestamp()
-           WHERE order_id = $8`,
+           WHERE order_id = $7`,
           [
             req.newRecipientName,
             req.newRecipientPhone,
             req.newAddressText,
             req.newLat,
             req.newLng,
-            req.newFeeVnd,
             req.newDistanceM,
             orderId,
           ],
@@ -296,9 +307,9 @@ export class AddressChangeService {
             `UPDATE app.deliveries
              SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
-                 fee_vnd = COALESCE($7, fee_vnd), route_distance_m = COALESCE($8, route_distance_m),
+                 route_distance_m = $7,
                  version = version + 1, updated_at = clock_timestamp()
-             WHERE delivery_id = $9`,
+             WHERE delivery_id = $8`,
             [
               req.newRecipientName,
               req.newRecipientPhone,
@@ -306,7 +317,6 @@ export class AddressChangeService {
               dropoffAreaOf(req.newAddressText),
               req.newLat,
               req.newLng,
-              req.newFeeVnd,
               req.newDistanceM,
               running.deliveryId,
             ],
@@ -358,7 +368,7 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
-        const req = await this.addressChangeRepo.findActiveByOrderId(context, orderId);
+        const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -369,7 +379,10 @@ export class AddressChangeService {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
+        const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
+        if (!resolved) {
+          throw new AppError('VERSION_CONFLICT');
+        }
 
         const order = (await this.orders.findById(context, orderId))!;
         await this.orderRecorder.record(context, {
@@ -431,9 +444,13 @@ export class AddressChangeService {
         }
 
         const nowMs = await freshClockMs(context);
-        const existingPending = await this.addressChangeRepo.findActiveByDeliveryId(context, deliveryId);
-        if (existingPending !== undefined && nowMs < existingPending.expiresAtMs) {
-          throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+        const existingPending = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
+        if (existingPending !== undefined) {
+          if (nowMs >= existingPending.expiresAtMs) {
+            await this.addressChangeRepo.resolve(context, existingPending.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', existingPending.version);
+          } else {
+            throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+          }
         }
 
         let newDistanceM: number | null = null;
@@ -462,9 +479,9 @@ export class AddressChangeService {
             `UPDATE app.deliveries
              SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
-                 fee_vnd = COALESCE($7, fee_vnd), route_distance_m = COALESCE($8, route_distance_m),
+                 route_distance_m = $7,
                  version = version + 1, updated_at = clock_timestamp()
-             WHERE delivery_id = $9`,
+             WHERE delivery_id = $8`,
             [
               input.recipientName,
               input.recipientPhone,
@@ -472,7 +489,6 @@ export class AddressChangeService {
               dropoffAreaOf(input.addressText),
               input.lat,
               input.lng,
-              newFeeVnd,
               newDistanceM,
               deliveryId,
             ],
@@ -604,7 +620,7 @@ export class AddressChangeService {
       },
       async (context) => {
         const nowMs = await freshClockMs(context);
-        const req = await this.addressChangeRepo.findActiveByDeliveryId(context, deliveryId);
+        const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -631,7 +647,10 @@ export class AddressChangeService {
         }
 
         if (!input.accept) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
 
           await this.deliveryRecorder.record(context, {
             delivery,
@@ -653,16 +672,21 @@ export class AddressChangeService {
         }
 
         // Accept
-        await this.addressChangeRepo.resolve(context, req.changeRequestId, 'ACCEPTED', principal.userId, null, req.version);
+        const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'ACCEPTED', principal.userId, null, req.version);
+        if (!resolved) {
+          throw new AppError('VERSION_CONFLICT');
+        }
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+        // Note: Do NOT alter fee_vnd! The fee payer's agreed fee remains intact.
+        // Distance: updated if new coordinates route was calculated; cleared to null if text only (no coords).
         await context.query(
           `UPDATE app.deliveries
            SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
-               fee_vnd = COALESCE($7, fee_vnd), route_distance_m = COALESCE($8, route_distance_m),
+               route_distance_m = $7,
                version = version + 1, updated_at = clock_timestamp()
-           WHERE delivery_id = $9`,
+           WHERE delivery_id = $8`,
           [
             req.newRecipientName,
             req.newRecipientPhone,
@@ -670,7 +694,6 @@ export class AddressChangeService {
             dropoffAreaOf(req.newAddressText),
             req.newLat,
             req.newLng,
-            req.newFeeVnd,
             req.newDistanceM,
             deliveryId,
           ],
@@ -717,7 +740,7 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
-        const req = await this.addressChangeRepo.findActiveByDeliveryId(context, deliveryId);
+        const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -728,7 +751,10 @@ export class AddressChangeService {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
+        const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
+        if (!resolved) {
+          throw new AppError('VERSION_CONFLICT');
+        }
 
         const delivery = (await this.deliveries.findById(context, deliveryId))!;
         await this.deliveryRecorder.record(context, {

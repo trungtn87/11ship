@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { ADDRESS_CHANGE_EXPIRY_MS } from './address-change-constants';
 import {
   parseCreateAddressChangeBody,
   parseDecideAddressChangeBody,
@@ -162,5 +163,77 @@ describe('Address Change Views (#218)', () => {
     expect(view?.status).toBe('EXPIRED');
     expect(view?.is_expired).toBe(true);
     expect(view?.time_remaining_seconds).toBe(0);
+  });
+});
+
+describe('Address Change Rules & Concurrency (#218)', () => {
+  it('enforces 5-minute expiry constant matching PR and UI', () => {
+    expect(ADDRESS_CHANGE_EXPIRY_MS).toBe(5 * 60_000);
+    expect(ADDRESS_CHANGE_EXPIRY_MS).toBe(300_000);
+  });
+
+  it('keeps fee unchanged and sets coordinates/distance to null for text-only address change', () => {
+    const input = parseCreateAddressChangeBody({
+      recipient_name: 'Khách đổi địa chỉ chữ',
+      recipient_phone: '0988888888',
+      address_text: 'Số 99 Phố Huế, Hai Bà Trưng, Hà Nội',
+      expected_version: 1,
+    });
+    expect(input.lat).toBeNull();
+    expect(input.lng).toBeNull();
+    expect(input.recipientName).toBe('Khách đổi địa chỉ chữ');
+    expect(input.addressText).toBe('Số 99 Phố Huế, Hai Bà Trưng, Hà Nội');
+  });
+
+  it('calculates remaining seconds correctly for 5-minute timeout window', () => {
+    const nowMs = 1_000_000;
+    const expiresAtMs = nowMs + ADDRESS_CHANGE_EXPIRY_MS;
+    const pendingRow: AddressChangeRequestRow = {
+      changeRequestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      orderId: 'oooooooo-oooo-4ooo-8ooo-oooooooooooo',
+      deliveryId: null,
+      source: 'ORDER',
+      requestedBy: 'uuuuuuuu-uuuu-4uuu-8uuu-uuuuuuuuuuuu',
+      status: 'PENDING',
+      targetActor: 'SHOP',
+      targetDriverId: null,
+      originalRecipientName: 'A',
+      originalRecipientPhone: '091',
+      originalAddressText: 'Old',
+      originalLat: null,
+      originalLng: null,
+      originalFeeVnd: 20_000,
+      originalDistanceM: null,
+      newRecipientName: 'B',
+      newRecipientPhone: '092',
+      newAddressText: 'New text',
+      newLat: null,
+      newLng: null,
+      newFeeVnd: null,
+      newDistanceM: null,
+      feeDifferenceVnd: null,
+      note: null,
+      rejectReason: null,
+      resolvedBy: null,
+      resolvedAtMs: null,
+      expiresAtMs,
+      orderVersion: 1,
+      deliveryVersion: null,
+      version: 1,
+      createdAtMs: nowMs,
+      updatedAtMs: nowMs,
+    };
+
+    const viewAtStart = addressChangeView(pendingRow, nowMs);
+    expect(viewAtStart?.time_remaining_seconds).toBe(300);
+    expect(viewAtStart?.status).toBe('PENDING');
+
+    const viewAtHalf = addressChangeView(pendingRow, nowMs + 150_000);
+    expect(viewAtHalf?.time_remaining_seconds).toBe(150);
+    expect(viewAtHalf?.status).toBe('PENDING');
+
+    const viewAtEnd = addressChangeView(pendingRow, nowMs + 300_001);
+    expect(viewAtEnd?.time_remaining_seconds).toBe(0);
+    expect(viewAtEnd?.status).toBe('EXPIRED');
   });
 });
