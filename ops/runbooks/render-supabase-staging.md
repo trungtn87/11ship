@@ -154,6 +154,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | order_events | SELECT, INSERT (M10: the append-only history of an Order) |
 | order_chat_messages | SELECT, INSERT, DELETE (#191: text messages of an order or direct delivery; never updated; deleted only by the retention job) |
 | order_chat_holds | SELECT, INSERT, UPDATE (#191: evidence hold on one chat; released once, never deleted) |
+| address_change_requests | SELECT, INSERT, UPDATE (#218: address change requests for confirmed orders and direct deliveries; never deleted) |
 | order_timeout_policy | SELECT, UPDATE (M10/M07: current versioned stage policy) |
 | order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
 | order_parameters | SELECT, UPDATE (M07: fee-answer time configured by SYSTEM) |

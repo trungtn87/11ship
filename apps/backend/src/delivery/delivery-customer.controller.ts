@@ -6,6 +6,8 @@ import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { DeliveryCustomerService } from './delivery-customer-service';
 import { parseCustomerCreateBody, parseDeliveryId, parseReasonBody, parseScopeQuery, parseToggleLocationBody, parseVersionBody } from './delivery-validation';
+import { AddressChangeService } from '../address-change/address-change-service';
+import { parseCancelAddressChangeBody, parseCreateAddressChangeBody } from '../address-change/address-change-validation';
 
 type Key = string | string[] | undefined;
 
@@ -32,7 +34,10 @@ function canonicalBaseUrl(request: AuthenticatedRequest): string {
 @UseGuards(SessionAuthGuard)
 @Controller('customers/me')
 export class DeliveryCustomerController {
-  constructor(private readonly customer: DeliveryCustomerService) {}
+  constructor(
+    private readonly customer: DeliveryCustomerService,
+    private readonly addressChange: AddressChangeService,
+  ) {}
 
   @Get('deliveries')
   async list(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
@@ -106,6 +111,42 @@ export class DeliveryCustomerController {
   @HttpCode(200)
   async revokeTrackingLink(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest) {
     return { data: await this.customer.revokeTrackingLink(this.#principal(request), parseDeliveryId(id)) };
+  }
+
+  @Post('deliveries/:delivery_id/address-change-request')
+  @HttpCode(200)
+  async requestAddressChange(
+    @Param('delivery_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.requestDeliveryChange(
+      this.#principal(request),
+      parseDeliveryId(id),
+      parseCreateAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
+    return { data: outcome.payload };
+  }
+
+  @Post('deliveries/:delivery_id/address-change-request/cancel')
+  @HttpCode(200)
+  async cancelAddressChange(
+    @Param('delivery_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.cancelDeliveryChange(
+      this.#principal(request),
+      parseDeliveryId(id),
+      parseCancelAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
+    return { data: outcome.payload };
   }
 
   #principal(request: AuthenticatedRequest): AuthPrincipal {

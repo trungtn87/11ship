@@ -205,6 +205,27 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
       _delivery(await _call(session, 'POST', _path(id, '/pickup'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
 
   @override
+  @override
+  Future<DeliveryView> decideAddressChange(
+    String id, {
+    required bool accept,
+    String? reason,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _delivery(await _call(
+        session,
+        'POST',
+        _path(id, '/address-change-request/decide'),
+        body: <String, Object?>{
+          'accept': accept,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+      ));
+
+  @override
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key}) async =>
       _delivery(await _call(session, 'POST', _path(id, '/complete'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
 }
@@ -293,6 +314,50 @@ class HttpCustomerDeliverySource extends CustomerDeliverySource {
     final Object? data = await _call(session, 'POST', _path(id, '/tracking-link/toggle-location'), body: <String, Object?>{'share_location': shareLocation});
     return TrackingLinkStatus.fromJson(data);
   }
+
+  @override
+  @override
+  Future<DeliveryView> requestAddressChange(
+    String id, {
+    required String recipientName,
+    required String recipientPhone,
+    required String addressText,
+    double? lat,
+    double? lng,
+    String? note,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _delivery(await _call(
+        session,
+        'POST',
+        _path(id, '/address-change-request'),
+        body: <String, Object?>{
+          'recipient_name': recipientName,
+          'recipient_phone': recipientPhone,
+          'dropoff_address_text': addressText,
+          if (lat != null && lng != null) 'dropoff_lat': lat,
+          if (lat != null && lng != null) 'dropoff_lng': lng,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+        ok: const <int>{200, 201},
+      ));
+
+  @override
+  Future<DeliveryView> cancelAddressChange(
+    String id, {
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _delivery(await _call(
+        session,
+        'POST',
+        _path(id, '/address-change-request/cancel'),
+        body: <String, Object?>{'expected_version': expectedVersion},
+        key: key,
+      ));
 
   @override
   Future<void> revokeTrackingLink(String id) async {

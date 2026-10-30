@@ -25,6 +25,7 @@ import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
 import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
 import { ShipperLocationRepository, shouldShareLocation } from './shipper-location';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
 
 const OFFER_LIMIT = 30;
 const HISTORY_LIMIT = 50;
@@ -61,6 +62,7 @@ export class DeliveryShipperService {
     private readonly locations: ShipperLocationRepository,
     private readonly settlement: ShipperSettlementReader,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
+    private readonly addressChanges: AddressChangeRepository,
   ) {}
 
   // ---- reads -----------------------------------------------------------------------------------------------------------------
@@ -233,6 +235,7 @@ export class DeliveryShipperService {
           throw new AppError('DELIVERY_NOT_ELIGIBLE');
         }
         const after = await this.#update(context, current, { state: 'accepted' });
+        await this.addressChanges.expirePendingForDelivery(context, current.deliveryId, current.orderId, 'Shipper mới nhận đơn');
         await this.recorder.record(context, { delivery: after, type: 'accepted', actorType: 'SHIPPER', actorId: caller.actor.userId, assignmentId, driverId, operation: OPERATIONS.accept, requestId, metadata: { commission_vnd: Number(policy.amountVnd) } });
         const assignment = await this.#assignment(context, assignmentId);
         return { status: 200, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShipper(context, after, assignment, await freshClockMs(context)) };
@@ -274,6 +277,7 @@ export class DeliveryShipperService {
           stoppedReason: 'Hết thời gian tìm shipper sau khi shipper hủy nhận',
           nowMs,
         });
+        await this.addressChanges.expirePendingForDelivery(context, delivery.deliveryId, delivery.orderId, 'Shipper hủy nhận đơn');
         await this.recorder.record(context, {
           delivery: after,
           type: 'released_by_shipper',
@@ -517,6 +521,7 @@ export class DeliveryShipperService {
         }
         await this.#touch(context, assignment, 'pickup');
         const after = await this.#update(context, current, { state: 'delivering', pickedUpNow: true });
+        await this.addressChanges.expirePendingForDelivery(context, current.deliveryId, current.orderId);
         await this.recorder.record(context, {
           delivery: after,
           type: 'picked_up',

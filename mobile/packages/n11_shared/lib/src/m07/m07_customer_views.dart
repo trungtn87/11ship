@@ -1,3 +1,5 @@
+import '../address_change/address_change_widgets.dart';
+import '../guidance/order_incident_guidance.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -574,6 +576,47 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
     } catch (_) {}
   }
 
+  Future<void> _requestAddressChange(DeliveryView d) async {
+    await AddressChangeRequestSheet.show(
+      context,
+      initialName: d.recipient.name,
+      initialPhone: d.recipient.phone ?? '',
+      initialAddress: d.recipient.addressText ?? '',
+      initialLat: d.recipient.lat,
+      initialLng: d.recipient.lng,
+      onSubmit: ({required String name, required String phone, required String address, double? lat, double? lng, String? note}) async {
+        final bool ok = await act('customer-address-change-${d.deliveryId}', (String key) => widget.source.requestAddressChange(
+          d.deliveryId,
+          recipientName: name,
+          recipientPhone: phone,
+          addressText: address,
+          lat: lat,
+          lng: lng,
+          note: note,
+          expectedVersion: d.version,
+          key: key,
+        ));
+        if (ok && mounted) setState(() => _rev++);
+      },
+    );
+  }
+
+  Future<void> _cancelAddressChange(DeliveryView d) async {
+    final bool yes = await showConfirmDialog(
+      context,
+      title: 'Hủy yêu cầu đổi địa chỉ?',
+      content: const Text('Bạn muốn hủy yêu cầu đổi địa chỉ và tiếp tục giao đến địa chỉ ban đầu?'),
+      confirmLabel: 'Hủy yêu cầu',
+    );
+    if (!yes) return;
+    final bool ok = await act('customer-address-change-cancel-${d.deliveryId}', (String key) => widget.source.cancelAddressChange(
+      d.deliveryId,
+      expectedVersion: d.addressChange?.version ?? 1,
+      key: key,
+    ));
+    if (ok && mounted) setState(() => _rev++);
+  }
+
   Future<void> _cancel(DeliveryView d) async {
     final TextEditingController reason = TextEditingController();
     final bool yes = await showConfirmDialog(
@@ -667,6 +710,27 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                 ),
                 const SizedBox(height: N11Space.gap3),
 
+                if (d.addressChange != null) ...<Widget>[
+                  AddressChangeBanner(
+                    request: d.addressChange!,
+                    canCancel: d.allows('cancel_address_change'),
+                    onCancel: () => _cancelAddressChange(d),
+                  ),
+                  const SizedBox(height: N11Space.gap3),
+                ],
+                OrderIncidentGuidance(
+                  role: 'CUSTOMER',
+                  deliveryState: d.state.name,
+                  hasShipper: d.assignment != null,
+                  shipperPhone: d.assignment?.shipperPhone,
+                  onCallShipper: d.assignment?.shipperPhone != null ? () => orderPhoneDialer.dial(d.assignment!.shipperPhone!) : null,
+                  canRequestAddressChange: d.allows('request_address_change') && d.addressChange?.isPending != true,
+                  onRequestAddressChange: () => _requestAddressChange(d),
+                  feePending: isFeeCountered,
+                  incident: d.incident,
+                  isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+                ),
+                const SizedBox(height: N11Space.gap3),
                 // MAP SECTION (only when both pins exist)
                 if (hasBothPins && widget.mapBuilder != null && isActive) ...<Widget>[
                   SizedBox(

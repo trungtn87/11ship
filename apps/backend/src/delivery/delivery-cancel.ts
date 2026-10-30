@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
 import { OPERATIONS } from './delivery-constants';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow } from './delivery-repository';
@@ -22,6 +23,7 @@ export class DeliveryCancel {
     private readonly deliveries: DeliveryRepository,
     private readonly recorder: DeliveryRecorder,
     private readonly commission: CommissionHoldService,
+    private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
   async cancel(
@@ -55,6 +57,9 @@ export class DeliveryCancel {
     });
     if (after === undefined) {
       throw new AppError('VERSION_CONFLICT');
+    }
+    if (this.addressChanges) {
+      await this.addressChanges.expirePendingForDelivery(context, delivery.deliveryId, delivery.orderId, 'Chuyến giao hàng đã bị hủy');
     }
     await this.recorder.record(context, {
       delivery: after,
@@ -101,6 +106,9 @@ export class DeliveryCancel {
     const after = await this.deliveries.update(context, delivery.deliveryId, delivery.version, { state: 'cancelled_by_merchant', endedNow: true, endReason: reason });
     if (after === undefined) {
       throw new AppError('VERSION_CONFLICT');
+    }
+    if (this.addressChanges) {
+      await this.addressChanges.expirePendingForDelivery(context, delivery.deliveryId, delivery.orderId, 'Chuyến giao hàng đã bị hủy');
     }
     await this.deliveries.insertIncident(context, {
       incidentId: randomUUID(),

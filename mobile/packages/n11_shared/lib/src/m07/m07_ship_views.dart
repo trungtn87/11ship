@@ -1,3 +1,5 @@
+import '../address_change/address_change_widgets.dart';
+import '../guidance/order_incident_guidance.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -570,6 +572,12 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
     }
   }
 
+  Future<void> _decideAddressChange(DeliveryView d, bool accept, String? reason) async {
+    if (await act('address-change-decide-$accept', (String key) => widget.source.decideAddressChange(d.deliveryId, accept: accept, reason: reason, expectedVersion: d.addressChange?.version ?? 1, key: key), onConflict: _reload)) {
+      await _reload();
+    }
+  }
+
   Future<void> _fee(DeliveryView d) async {
     final bool? changed = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(builder: (BuildContext context) => ConfirmFeeScreen(source: widget.source, delivery: d)));
     if (changed == true) {
@@ -599,6 +607,25 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
     final List<Widget> body = <Widget>[
       Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
+      if (d.addressChange != null)
+        AddressChangeBanner(
+          request: d.addressChange!,
+          canDecide: d.allows('decide_address_change'),
+          onAccept: busy ? null : () => _decideAddressChange(d, true, null),
+          onReject: busy ? null : (String reason) => _decideAddressChange(d, false, reason),
+        ),
+      OrderIncidentGuidance(
+        role: 'SHIPPER',
+        deliveryState: d.state.name,
+        hasShipper: true,
+        customerPhone: d.recipient.phone,
+        shopPhone: d.pickup.phone,
+        onCallCustomer: d.recipient.phone != null ? () => orderPhoneDialer.dial(d.recipient.phone!) : null,
+        onCallShop: d.pickup.phone != null ? () => orderPhoneDialer.dial(d.pickup.phone!) : null,
+        feePending: d.fee.negotiation != null,
+        incident: d.incident,
+        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+      ),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)

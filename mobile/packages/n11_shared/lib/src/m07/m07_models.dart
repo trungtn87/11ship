@@ -1,3 +1,4 @@
+import '../address_change/address_change_models.dart';
 // M07 (delivery flow) data the phone screens draw. Wire contract: docs/current/M07-implementation-20261018.md section 5.
 //
 // PRIVACY BY TYPE. [OfferView] (what a Shipper sees BEFORE accepting) has no field for a customer phone, a detailed address or a drop-off
@@ -421,6 +422,7 @@ class DeliveryView {
     this.can = const <String>{},
     this.timeline = const <TimelineEntry>[],
     this.story = const <StoryEntry>[],
+    this.addressChange,
   });
 
   factory DeliveryView.fromJson(Object? raw) {
@@ -449,6 +451,7 @@ class DeliveryView {
       can: <String>{for (final MapEntry<String, Object?> e in can.entries) if (_bool(e.value)) e.key},
       timeline: <TimelineEntry>[for (final Object? t in _list(m['timeline'] ?? <Object?>[])) TimelineEntry.fromJson(t)],
       story: storyOf(m['story']),
+      addressChange: m['address_change_request'] != null ? AddressChangeView.fromJson(m['address_change_request']) : null,
     );
   }
 
@@ -483,6 +486,7 @@ class DeliveryView {
 
   /// The milestones for the screen (plain words); [timeline] is the raw log and is never drawn.
   final List<StoryEntry> story;
+  final AddressChangeView? addressChange;
 
   bool allows(String action) => can.contains(action);
 
@@ -502,6 +506,8 @@ class DeliveryView {
     Set<String>? can,
     List<TimelineEntry>? timeline,
     List<StoryEntry>? story,
+    AddressChangeView? addressChange,
+    bool clearAddressChange = false,
   }) =>
       DeliveryView(
         deliveryId: deliveryId,
@@ -526,6 +532,7 @@ class DeliveryView {
         can: can ?? this.can,
         timeline: timeline ?? this.timeline,
         story: story ?? this.story,
+        addressChange: clearAddressChange ? null : (addressChange ?? this.addressChange),
       );
 
   /// The fee was never settled and the server lets the Shipper enter the agreed amount (`can.confirm_fee`). A missing map point never blocks anything:
