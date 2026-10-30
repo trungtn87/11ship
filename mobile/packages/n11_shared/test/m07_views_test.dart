@@ -655,6 +655,8 @@ void main() {
       await mount(tester, CustomerCallScreen(source: source));
       expect(find.text('Ghim vị trí lấy hàng (tùy chọn)'), findsOneWidget);
       expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
+      await tester.enterText(key('m07-c-sender-phone'), '0901234567');
+      await tester.enterText(key('m07-c-pickup-addr'), 'Số 1 Phố Huế');
       await tester.enterText(key('m07-c-recip-name'), 'Người nhận A');
       await tester.enterText(key('m07-c-recip-phone'), '0987654321');
       await tester.enterText(key('m07-c-dropoff-addr'), 'Số 10 Phố Trúc');
@@ -690,11 +692,38 @@ void main() {
       // Create link
       await tap(tester, find.text('Tạo liên kết chia sẻ cho người nhận'));
       expect(find.textContaining('https://11ship.app/track/sample-track-cd-wait'), findsOneWidget);
-      // Toggle live location
-      await tap(tester, find.text('Chia sẻ vị trí shipper trực tiếp'));
       // Revoke link
       await tap(tester, find.text('Thu hồi liên kết chia sẻ'));
       expect(find.text('Tạo liên kết chia sẻ cho người nhận'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerDeliveryDetailScreen: displays shipper card, chat, and live location toggle when GPS present', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-run'));
+      expect(find.text('Shipper phụ trách'), findsOneWidget);
+      expect(find.text('Shipper Mẫu'), findsOneWidget);
+      expect(find.text('SĐT: 0900000003'), findsOneWidget);
+      expect(find.text('Biển số: 11A-000.00'), findsOneWidget);
+      // Create link and toggle live location on GPS-enabled delivery
+      await tap(tester, find.text('Tạo liên kết chia sẻ cho người nhận'));
+      await tap(tester, find.text('Chia sẻ vị trí shipper trực tiếp'));
+      expect(find.text('Thu hồi liên kết chia sẻ'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerDeliveryDetailScreen: handles counter fee accept', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-counter'));
+      expect(find.text('Shipper đề xuất phí mới'), findsOneWidget);
+      expect(find.text('30.000đ'), findsWidgets);
+      expect(find.byKey(const Key('customer-counter-accept')), findsOneWidget);
+      expect(find.byKey(const Key('customer-counter-reject')), findsOneWidget);
+      await tap(tester, find.byKey(const Key('customer-counter-accept')));
+      await settle(tester);
+      final DeliveryView updated = await source.get('cd-counter');
+      expect(updated.fee.status, 'FINAL');
+      expect(updated.fee.amountVnd, 30000);
       await unmount(tester);
     });
 

@@ -23,11 +23,18 @@ function escapeHtml(str: unknown): string {
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
 
-// In-memory rate limiter: 60 requests per minute per IP
+// In-memory rate limiter: 60 requests per minute per IP, bounded cleanup
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
 function checkRateLimit(ip: string): void {
   const now = Date.now();
+  if (rateLimits.size > 1000) {
+    for (const [key, val] of rateLimits.entries()) {
+      if (now > val.resetAt) {
+        rateLimits.delete(key);
+      }
+    }
+  }
   const record = rateLimits.get(ip);
   if (!record || now > record.resetAt) {
     rateLimits.set(ip, { count: 1, resetAt: now + 60_000 });
@@ -248,6 +255,14 @@ export class DeliveryTrackingPublicController {
           } else {
             if (locText) {
               locText.innerText = 'Vị trí trực tiếp: Người gửi chưa bật chia sẻ vị trí';
+            }
+            if (marker) {
+              marker.remove();
+              marker = null;
+            }
+            if (map) {
+              map.remove();
+              map = null;
             }
             if (mapEl) {
               mapEl.style.display = 'none';

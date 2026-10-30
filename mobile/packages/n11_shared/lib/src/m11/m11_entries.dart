@@ -42,6 +42,34 @@ M07FeedbackSlot shopDeliveryFeedbackSlot({required M11Source source, required Im
       );
     };
 
+/// The customer's block under a finished customer delivery: rate the Shipper and send a complaint.
+M07FeedbackSlot customerDeliveryFeedbackSlot({required M11Source source, required ImagePickerPort picker}) => (BuildContext context, DeliveryView d) {
+      return N11Card(
+        key: const Key('m11-customer-delivery-feedback'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text('Đánh giá và phản ánh', style: N11Text.label),
+            const SizedBox(height: N11Space.gap2),
+            if (d.assignment != null && d.state == DeliveryState.completed)
+              N11Button(
+                key: const Key('m11-customer-rate-shipper'),
+                label: 'Đánh giá shipper',
+                kind: ButtonKind.secondary,
+                onPressed: () => Navigator.of(context).push<void>(n11Route(CustomerDeliveryRatingScreen(source: source, deliveryId: d.deliveryId, picker: picker))),
+              ),
+            if (d.assignment != null && d.state == DeliveryState.completed) const SizedBox(height: N11Space.gap2),
+            N11Button(
+              key: const Key('m11-customer-delivery-complain'),
+              label: 'Gửi phản ánh',
+              kind: ButtonKind.secondary,
+              onPressed: () => Navigator.of(context).push<void>(n11Route(ComplaintFormScreen(source: source, role: M11Role.customer, subject: ComplaintSubject.delivery(d.deliveryId), subjectLabel: 'Chuyến giao ${d.code}', picker: picker))),
+            ),
+          ],
+        ),
+      );
+    };
+
 /// The Shipper's block under a finished delivery: send a complaint about it.
 M07FeedbackSlot shipperDeliveryFeedbackSlot({required M11Source source, required ImagePickerPort picker}) => (BuildContext context, DeliveryView d) {
       return N11Card(

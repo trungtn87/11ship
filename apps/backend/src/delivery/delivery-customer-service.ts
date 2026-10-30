@@ -10,7 +10,7 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
-import { DELIVERY_SCOPE_TYPE, OPERATIONS } from './delivery-constants';
+import { DELIVERY_SCOPE_TYPE, OPERATIONS, RUNNING_STATES } from './delivery-constants';
 import { DeliveryCancel } from './delivery-cancel';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
 import { DeliveryHandback } from './delivery-handback';
@@ -148,6 +148,12 @@ export class DeliveryCustomerService {
           feeMode = 'AGREED';
         }
 
+        const resolvedSenderPhone = input.senderPhone ?? principal.phoneNormalized;
+        if (!resolvedSenderPhone) {
+          throw new AppError('DELIVERY_INPUT_INVALID');
+        }
+        const resolvedSenderName = input.senderName?.trim() ? input.senderName : 'Khách gửi hàng';
+
         const deliveryId = randomUUID();
         const base: NewDelivery = {
           deliveryId,
@@ -157,8 +163,8 @@ export class DeliveryCustomerService {
           previousDeliveryId: null,
           shopId: null,
           requestedBy: principal.userId,
-          shopName: input.senderName,
-          shopPhone: input.senderPhone,
+          shopName: resolvedSenderName,
+          shopPhone: resolvedSenderPhone,
           pickupAddressText: input.pickupAddressText,
           pickupLat: input.pickupLat,
           pickupLng: input.pickupLng,
@@ -424,6 +430,11 @@ export class DeliveryCustomerService {
         throw new AppError('DELIVERY_NOT_FOUND');
       }
 
+      const ended = ['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(delivery.state);
+      if (ended) {
+        throw new AppError('DELIVERY_STATE_CONFLICT');
+      }
+
       const existing = await this.deliveries.findTrackingLinkByDeliveryId(context, deliveryId);
       if (existing !== undefined) {
         await this.deliveries.updateTrackingLink(context, existing.trackingId, { revoked: true });
@@ -471,6 +482,10 @@ export class DeliveryCustomerService {
       const delivery = await this.deliveries.findOfCustomer(context, deliveryId, principal.userId);
       if (delivery === undefined) {
         throw new AppError('DELIVERY_NOT_FOUND');
+      }
+
+      if (shareLocation && (delivery.pickupLat === null || delivery.pickupLng === null || delivery.dropoffLat === null || delivery.dropoffLng === null)) {
+        throw new AppError('DELIVERY_STATE_CONFLICT');
       }
 
       const link = await this.deliveries.findTrackingLinkByDeliveryId(context, deliveryId);
@@ -531,7 +546,7 @@ export class DeliveryCustomerService {
       let location: PublicTrackResult['location'] = null;
       if (link.shareLocation && delivery.pickupLat !== null && delivery.dropoffLat !== null) {
         const assignment = await this.deliveries.findActiveAssignment(context, delivery.deliveryId);
-        if (assignment !== undefined && (delivery.state === 'picked_up' || delivery.state === 'delivering')) {
+        if (assignment !== undefined && RUNNING_STATES.includes(delivery.state)) {
           const loc = await this.locations.find(context, assignment.driverId);
           if (loc !== undefined && locationValid(loc.lat, loc.lng, loc.accuracyM)) {
             location = {

@@ -436,12 +436,11 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     expect(htmlText).toContain('unpkg.com/leaflet');
     expect(htmlText).toContain("L.map('map')");
 
-    // Toggle location sharing ON
-    const toggleOn = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link/toggle-location`, {
+    // Toggle location sharing ON without GPS pins fails with 409 DELIVERY_STATE_CONFLICT
+    const toggleFail = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link/toggle-location`, {
       share_location: true,
     });
-    expect(toggleOn.status).toBe(200);
-    expect((dataOf(toggleOn) as Json).share_location).toBe(true);
+    expect(toggleFail.status).toBe(409);
 
     // Revoke link
     const revoked = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link/revoke`);
@@ -551,5 +550,154 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     ).rows[0];
     expect(dbComplaint.shop_id).toBeNull();
     expect(dbComplaint.delivery_id).toBe(deliveryId);
+  });
+
+  it('11. Customer receives shipper counter fee and accepts it (contract returns assignment & decide_fee)', async () => {
+    const s = await newShipper(app, drivers, 100_000);
+
+    const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
+      recipient_name: 'Khách Đàm Phán',
+      recipient_phone: '0912345678',
+      pickup_address_text: 'Điểm lấy hàng',
+      dropoff_address_text: 'Điểm trả hàng',
+      goods_description: 'Giấy tờ',
+      agreed_fee: { amount_vnd: 20000 },
+      fee_payer: 'SENDER',
+    });
+    expect(res.status).toBe(201);
+    const deliveryId = String((dataOf(res) as Json).delivery_id);
+    createdDeliveryIds.push(deliveryId);
+
+    // Shipper counters fee
+    const counterRes = await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/fee/counter`, {
+      amount_vnd: 28000,
+    });
+    expect(counterRes.status).toBe(200);
+
+    // Customer views delivery detail: checks contract shape
+    const detailRes = await asCustomer(alice, 'GET', `/customers/me/deliveries/${deliveryId}`);
+    expect(detailRes.status).toBe(200);
+    const d = dataOf(detailRes) as Json;
+    expect(d.fee.status).toBe('AWAITING_CUSTOMER');
+    expect(d.can.decide_fee).toBe(true);
+    expect(d.fee_decision.counter_vnd).toBe(28000);
+    expect(d.assignment).toBeDefined();
+    expect(d.assignment.shipper.name).toBeDefined();
+    expect(d.assignment.shipper.plate_number).toBeDefined();
+
+    // Customer accepts counter fee
+    const acceptRes = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/fee/counter-accept`, {
+      expected_version: d.version,
+    });
+    expect(acceptRes.status).toBe(200);
+    const acceptedData = dataOf(acceptRes) as Json;
+    expect(acceptedData.fee.status).toBe('FINAL');
+    expect(acceptedData.fee.amount_vnd).toBe(28000);
+  });
+
+  it('12. Customer rejects shipper counter fee', async () => {
+    const s = await newShipper(app, drivers, 100_000);
+
+    const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
+      recipient_name: 'Khách Từ Chối',
+      recipient_phone: '0912345679',
+      pickup_address_text: 'Điểm lấy hàng 2',
+      dropoff_address_text: 'Điểm trả hàng 2',
+      goods_description: 'Quần áo',
+      agreed_fee: { amount_vnd: 22000 },
+      fee_payer: 'SENDER',
+    });
+    const deliveryId = String((dataOf(res) as Json).delivery_id);
+    createdDeliveryIds.push(deliveryId);
+
+    // Shipper counters fee
+    await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/fee/counter`, {
+      amount_vnd: 35000,
+    });
+
+    // Customer views detail
+    const detailRes = await asCustomer(alice, 'GET', `/customers/me/deliveries/${deliveryId}`);
+    const d = dataOf(detailRes) as Json;
+    expect(d.can.decide_fee).toBe(true);
+
+    // Customer rejects counter
+    const rejectRes = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/fee/counter-reject`, {
+      expected_version: d.version,
+    });
+    expect(rejectRes.status).toBe(200);
+    const rejectedData = dataOf(rejectRes) as Json;
+    expect(rejectedData.fee.amount_vnd).toBe(22000);
+  });
+
+  it('13. Ended delivery cannot create new tracking link; GPS enables live tracking on running delivery', async () => {
+    const s = await newShipper(app, drivers, 100_000);
+
+    // Create delivery with full GPS
+    const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
+      recipient_name: 'Khách GPS Live',
+      recipient_phone: '0911002200',
+      pickup_address_text: 'Điểm lấy có GPS',
+      pickup_lat: 21.0285,
+      pickup_lng: 105.8542,
+      dropoff_address_text: 'Điểm giao có GPS',
+      dropoff_lat: 21.0333,
+      dropoff_lng: 105.8000,
+      goods_description: 'Hàng điện tử',
+      agreed_fee: { amount_vnd: 25000 },
+      fee_payer: 'SENDER',
+    });
+    const deliveryId = String((dataOf(res) as Json).delivery_id);
+    createdDeliveryIds.push(deliveryId);
+
+    // Create tracking link
+    const linkRes = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link`);
+    expect(linkRes.status).toBe(201);
+    const token = String((dataOf(linkRes) as Json).token);
+
+    // With GPS, toggling location sharing ON succeeds
+    const toggleOn = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link/toggle-location`, {
+      share_location: true,
+    });
+    expect(toggleOn.status).toBe(200);
+    expect((dataOf(toggleOn) as Json).share_location).toBe(true);
+
+    // Shipper accepts delivery
+    const accepted = await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/accept`, {});
+    expect(accepted.status).toBe(200);
+
+    // Shipper sends GPS location report
+    await app.call('POST', '/driver/location', {
+      bearer: s.token,
+      body: {
+        lat: 21.0300,
+        lng: 105.8200,
+        accuracy_m: 10,
+        recorded_at: new Date().toISOString(),
+      },
+    });
+
+    // Public tracking now returns shipper live location
+    const publicTrack = await app.call('GET', `/public/tracking/${token}`);
+    expect(publicTrack.status).toBe(200);
+    const trackData = dataOf(publicTrack) as Json;
+    expect(trackData.location).toBeDefined();
+    expect(trackData.location.lat).toBe(21.0300);
+
+    // Shipper completes delivery
+    const picked = await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/pickup`, {
+      expected_version: (dataOf(accepted) as Json).version,
+    });
+    await asShipper(s, 'POST', `/driver/deliveries/${deliveryId}/complete`, {
+      expected_version: (dataOf(picked) as Json).version,
+    });
+
+    // Public tracking returns EXPIRED after completion
+    const expiredTrack = await app.call('GET', `/public/tracking/${token}`);
+    expect(expiredTrack.status).toBe(200);
+    expect((dataOf(expiredTrack) as Json).status).toBe('EXPIRED');
+
+    // Cannot create new tracking link on completed delivery (409 DELIVERY_STATE_CONFLICT)
+    const lateLink = await asCustomer(alice, 'POST', `/customers/me/deliveries/${deliveryId}/tracking-link`);
+    expect(lateLink.status).toBe(409);
   });
 });

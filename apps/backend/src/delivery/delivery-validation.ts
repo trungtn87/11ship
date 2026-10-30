@@ -285,7 +285,7 @@ export function parseDeliveryId(value: unknown): string {
 
 export interface CreateCustomerDeliveryInput {
   readonly senderName: string;
-  readonly senderPhone: string;
+  readonly senderPhone: string | null;
   readonly pickupAddressText: string;
   readonly pickupLat: number | null;
   readonly pickupLng: number | null;
@@ -305,12 +305,14 @@ export interface CreateCustomerDeliveryInput {
 export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryInput {
   const b = shaped(
     body,
-    ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description'],
-    ['sender_name', 'sender_phone', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng', 'goods_value_vnd', 'cod_vnd', 'fee_payer', 'note', 'agreed_fee']
+    ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description', 'pickup_address_text'],
+    ['sender_name', 'sender_phone', 'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng', 'goods_value_vnd', 'cod_vnd', 'fee_payer', 'note', 'agreed_fee']
   );
   const recipientPhone = normalizeVietnamPhone(b.recipient_phone);
   if (recipientPhone === undefined) return reject();
-  const senderPhone = b.sender_phone !== undefined ? normalizeVietnamPhone(b.sender_phone) : undefined;
+  const hasSenderPhone = b.sender_phone !== undefined && b.sender_phone !== null && String(b.sender_phone).trim() !== '';
+  const senderPhone = hasSenderPhone ? normalizeVietnamPhone(b.sender_phone) : undefined;
+  if (hasSenderPhone && senderPhone === undefined) return reject();
 
   const hasPickupLat = b.pickup_lat !== undefined && b.pickup_lat !== null;
   const hasPickupLng = b.pickup_lng !== undefined && b.pickup_lng !== null;
@@ -337,8 +339,8 @@ export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryIn
 
   return {
     senderName: b.sender_name !== undefined ? text(b.sender_name, 1, 80) : 'Khách gửi hàng',
-    senderPhone: senderPhone ?? recipientPhone,
-    pickupAddressText: b.pickup_address_text !== undefined ? text(b.pickup_address_text, 1, 300) : 'Điểm lấy hàng',
+    senderPhone: senderPhone ?? null,
+    pickupAddressText: text(b.pickup_address_text, 1, 300),
     pickupLat: hasPickupLat ? coordinate(b.pickup_lat, 90) : null,
     pickupLng: hasPickupLng ? coordinate(b.pickup_lng, 180) : null,
     recipientName: text(b.recipient_name, 1, 80),

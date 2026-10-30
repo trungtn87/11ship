@@ -18,6 +18,10 @@ abstract class M11Source {
   Future<void> customerRateShop(String orderId, {required int stars, String? comment, required String key});
   Future<void> customerRateShipper(String orderId, {required int stars, String? comment, required String key});
 
+  /// Customer: may they rate the Shipper of this customer delivery, and what they rated.
+  Future<CustomerDeliveryReviewState> customerDelivery(String deliveryId) => throw UnimplementedError();
+  Future<void> customerRateDeliveryShipper(String deliveryId, {required int stars, String? comment, required String key}) => throw UnimplementedError();
+
   /// Shop: may it rate the Shipper of this delivery, and what it rated.
   Future<ShopDeliveryReviewState> shopDelivery(String deliveryId);
   Future<void> shopRateShipper(String deliveryId, {required int stars, String? comment, required String key});

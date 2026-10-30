@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
 import '../m06/m06_views.dart' show parseAgreedFee;
+import '../m10/order_chat_models.dart';
+import '../m10/order_chat_view.dart';
+import '../m10/order_sections.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'm07_models.dart';
@@ -12,11 +15,14 @@ import 'm07_widgets.dart';
 // ---- Customer Call Screen ----------------------------------------------------------------------------------------------------
 
 class CustomerCallScreen extends StatefulWidget {
-  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder});
+  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.initialSenderName, this.initialSenderPhone});
 
   final CustomerDeliverySource source;
   final M07PinPickerBuilder? pinPicker;
   final M07MapBuilder? mapBuilder;
+  final M07FeedbackSlot? feedbackSlot;
+  final String? initialSenderName;
+  final String? initialSenderPhone;
 
   @override
   State<CustomerCallScreen> createState() => _CustomerCallScreenState();
@@ -38,6 +44,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   double? _dropoffLng;
 
   final TextEditingController _goodsDescription = TextEditingController();
+  final TextEditingController _note = TextEditingController();
   final TextEditingController _codAmount = TextEditingController(text: '0');
   bool _enableCod = false;
 
@@ -50,6 +57,19 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   String? _problem;
 
   @override
+  void initState() {
+    super.initState();
+    final String? userPhone = widget.initialSenderPhone ?? widget.source.session?.identity?.phoneNormalized;
+    final String? userName = widget.initialSenderName ?? widget.source.session?.identity?.profile.fullName;
+    if (userName != null && userName.trim().isNotEmpty) {
+      _senderName.text = userName.trim();
+    }
+    if (userPhone != null && userPhone.trim().isNotEmpty) {
+      _senderPhone.text = userPhone.trim();
+    }
+  }
+
+  @override
   void dispose() {
     _senderName.dispose();
     _senderPhone.dispose();
@@ -58,6 +78,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
     _recipientPhone.dispose();
     _dropoffAddress.dispose();
     _goodsDescription.dispose();
+    _note.dispose();
     _codAmount.dispose();
     _feeAmount.dispose();
     _feeNote.dispose();
@@ -132,6 +153,10 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
     final String dropoffAddr = _dropoffAddress.text.trim();
     final String goods = _goodsDescription.text.trim();
 
+    if (pickupAddr.isEmpty) {
+      setState(() => _problem = 'Vui lòng nhập địa chỉ lấy hàng bằng chữ.');
+      return;
+    }
     if (recipientName.isEmpty || dropoffAddr.isEmpty || goods.isEmpty) {
       setState(() => _problem = 'Hãy nhập đầy đủ thông tin người nhận, địa chỉ giao và mô tả hàng.');
       return;
@@ -140,13 +165,16 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
       setState(() => _problem = 'Số điện thoại người nhận không hợp lệ (10 chữ số).');
       return;
     }
-    if (senderPhone.isNotEmpty && !RegExp(r'^(0|\+84)\d{9}$').hasMatch(senderPhone)) {
+    if (senderPhone.isEmpty || !RegExp(r'^(0|\+84)\d{9}$').hasMatch(senderPhone)) {
       setState(() => _problem = 'Số điện thoại người gửi không hợp lệ (10 chữ số).');
       return;
     }
-    if (_enableCod && parseAgreedFee(_codAmount.text) == null) {
-      setState(() => _problem = 'Tiền thu hộ (COD) phải là số nguyên từ 0 đến 10.000.000đ.');
-      return;
+    if (_enableCod) {
+      final int? cod = parseAgreedFee(_codAmount.text);
+      if (cod == null || cod <= 0) {
+        setState(() => _problem = 'Khi bật thu hộ (COD), vui lòng nhập số tiền lớn hơn 0đ (tối đa 10.000.000đ).');
+        return;
+      }
     }
     if (!_hasGps && (_proposedFee == null || _proposedFee! <= 0)) {
       setState(() => _problem = 'Thiếu định vị GPS: Vui lòng nhập mức phí đề xuất để gọi shipper.');
@@ -165,6 +193,8 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          Text('Người gửi: ${senderName.isEmpty ? "Khách gửi hàng" : senderName} ($senderPhone)'),
+          Text('Lấy tại: $pickupAddr'),
           Text('Người nhận: $recipientName ($recipientPhone)'),
           Text('Giao đến: $dropoffAddr'),
           Text('Hàng hóa: $goods'),
@@ -184,8 +214,8 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
 
     final NewCustomerDeliveryInput input = NewCustomerDeliveryInput(
       senderName: senderName.isEmpty ? 'Khách gửi hàng' : senderName,
-      senderPhone: senderPhone.isEmpty ? recipientPhone : senderPhone,
-      pickupAddressText: pickupAddr.isEmpty ? 'Điểm lấy hàng' : pickupAddr,
+      senderPhone: senderPhone,
+      pickupAddressText: pickupAddr,
       pickupLat: _pickupLat,
       pickupLng: _pickupLng,
       recipientName: recipientName,
@@ -197,7 +227,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
       goodsValueVnd: 0,
       codVnd: _codVnd,
       feePayer: _feePayer,
-      note: _feeNote.text.trim().isEmpty ? null : _feeNote.text.trim(),
+      note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       agreedFee: (_customFee || !_hasGps) && _proposedFee != null && _proposedFee! > 0
           ? AgreedFeeInput(reasonCode: 'OTHER', reasonNote: _feeNote.text.trim().isEmpty ? 'Khách đề xuất phí' : _feeNote.text.trim(), amountVnd: _proposedFee!)
           : null,
@@ -210,7 +240,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
 
     if (ok && created != null && mounted) {
       Navigator.of(context).pushReplacement(
-        n11Route(CustomerDeliveryDetailScreen(source: widget.source, deliveryId: created!.deliveryId, mapBuilder: widget.mapBuilder)),
+        n11Route(CustomerDeliveryDetailScreen(source: widget.source, deliveryId: created!.deliveryId, mapBuilder: widget.mapBuilder, feedbackSlot: widget.feedbackSlot)),
       );
     }
   }
@@ -252,11 +282,11 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                   children: <Widget>[
                     const Text('Điểm lấy hàng', style: N11Text.h2),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-sender-name'), label: 'Tên người gửi', controller: _senderName),
+                    N11Field(fieldKey: const Key('m07-c-sender-name'), label: 'Tên người gửi (*)', controller: _senderName),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-sender-phone'), label: 'Số điện thoại người gửi', controller: _senderPhone, keyboard: TextInputType.phone),
+                    N11Field(fieldKey: const Key('m07-c-sender-phone'), label: 'Số điện thoại người gửi (*)', controller: _senderPhone, keyboard: TextInputType.phone),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-pickup-addr'), label: 'Địa chỉ lấy hàng', controller: _pickupAddress),
+                    N11Field(fieldKey: const Key('m07-c-pickup-addr'), label: 'Địa chỉ lấy hàng (*)', controller: _pickupAddress),
                     const SizedBox(height: N11Space.gap2),
                     Row(
                       children: <Widget>[
@@ -321,6 +351,8 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                     const Text('Hàng hóa & Thu hộ (COD)', style: N11Text.h2),
                     const SizedBox(height: N11Space.gap2),
                     N11Field(fieldKey: const Key('m07-c-goods'), label: 'Mô tả hàng hóa (*)', controller: _goodsDescription, hint: 'Ví dụ: Quần áo, tài liệu, đồ gia dụng...'),
+                    const SizedBox(height: N11Space.gap2),
+                    N11Field(fieldKey: const Key('m07-c-note'), label: 'Ghi chú cho tài xế (tùy chọn)', controller: _note, hint: 'Ví dụ: Hàng dễ vỡ, hướng dẫn nhận hàng...'),
                     const SizedBox(height: N11Space.gap3),
                     Material(
                       type: MaterialType.transparency,
@@ -412,7 +444,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                       const SizedBox(height: N11Space.gap2),
                       N11Field(
                         fieldKey: const Key('m07-c-fee-note'),
-                        label: 'Ghi chú cước (tùy chọn)',
+                        label: 'Lý do đề xuất phí (tùy chọn)',
                         controller: _feeNote,
                         hint: 'Ví dụ: Hàng cồng kềnh, cần giao gấp...',
                       ),
@@ -462,11 +494,12 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
 // ---- Customer Delivery Detail Screen -----------------------------------------------------------------------------------------
 
 class CustomerDeliveryDetailScreen extends StatefulWidget {
-  const CustomerDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder});
+  const CustomerDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.feedbackSlot});
 
   final CustomerDeliverySource source;
   final String deliveryId;
   final M07MapBuilder? mapBuilder;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<CustomerDeliveryDetailScreen> createState() => _CustomerDeliveryDetailScreenState();
@@ -476,11 +509,31 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
   int _rev = 0;
   TrackingLinkResult? _trackingLink;
   TrackingLinkStatus? _trackingStatus;
+  OrderChatController? _chat;
+
+  OrderChatController? _chatFor(DeliveryView d) {
+    final OrderChatApi? api = widget.source.chat;
+    if (api == null) return null;
+    final OrderChatController chat = _chat ??= OrderChatController(
+      api: api,
+      room: d.orderId != null
+          ? ChatRoomRef(ChatDoor.customerOrder, d.orderId!)
+          : ChatRoomRef(ChatDoor.customerDelivery, d.deliveryId),
+    );
+    chat.noteVersion(d.version);
+    return chat;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadTrackingStatus();
+  }
+
+  @override
+  void dispose() {
+    _chat?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTrackingStatus() async {
@@ -587,6 +640,7 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
           final bool hasBothPins = d.pickup.lat != null && d.pickup.lng != null && d.recipient.lat != null && d.recipient.lng != null;
           final bool isActive = d.state.isActive;
           final AgreementSummary? a = d.fee.agreement;
+          final bool isFeeCountered = (a != null && (a.state == 'COUNTERED' || a.state == 'AWAITING_CUSTOMER')) || (d.fee.negotiation != null && d.allows('decide_fee'));
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(N11Space.pad),
@@ -647,7 +701,7 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                 ],
 
                 // FEE COUNTER PROPOSAL
-                if (a != null && a.state == 'COUNTERED' && d.allows('decide_fee')) ...<Widget>[
+                if (isFeeCountered && d.allows('decide_fee')) ...<Widget>[
                   N11Card(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,8 +709,9 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                         const Text('Shipper đề xuất phí mới', style: N11Text.h2),
                         const SizedBox(height: N11Space.gap2),
                         KeyValueRows(<(String, String)>[
-                          if (a.counterVnd != null) ('Mức đề xuất', m07Vnd(a.counterVnd!)),
-                          if (a.reasonCode.isNotEmpty) ('Lý do', a.reasonCode),
+                          if (a?.counterVnd != null) ('Mức đề xuất', m07Vnd(a!.counterVnd!))
+                          else if (d.fee.negotiation?.offeredVnd != null) ('Mức đề xuất', m07Vnd(d.fee.negotiation!.offeredVnd)),
+                          if (a != null && a.reasonCode.isNotEmpty) ('Lý do', a.reasonCode),
                         ], responsive: true),
                         const SizedBox(height: N11Space.gap3),
                         Row(
@@ -783,9 +838,14 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                           child: SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('Chia sẻ vị trí shipper trực tiếp', style: N11Text.bodyStrong),
-                            subtitle: const Text('Mặc định tắt. Bật khi muốn người nhận thấy vị trí GPS trực tiếp.', style: N11Text.caption),
-                            value: _trackingStatus?.shareLocation ?? false,
-                            onChanged: _toggleLocation,
+                            subtitle: Text(
+                              hasBothPins
+                                  ? 'Mặc định tắt. Bật khi muốn người nhận thấy vị trí GPS trực tiếp.'
+                                  : 'Chuyến giao không có định vị GPS nên chỉ có thể theo dõi trạng thái.',
+                              style: N11Text.caption,
+                            ),
+                            value: hasBothPins && (_trackingStatus?.shareLocation ?? false),
+                            onChanged: hasBothPins ? _toggleLocation : null,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -793,6 +853,8 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                           onPressed: _revokeLink,
                           child: const Text('Thu hồi liên kết chia sẻ', style: TextStyle(color: Colors.red)),
                         ),
+                      ] else if (!isActive) ...<Widget>[
+                        const Text('Chuyến giao đã kết thúc, liên kết chia sẻ không còn hoạt động.', style: N11Text.caption),
                       ] else ...<Widget>[
                         FilledButton.tonalIcon(
                           icon: const Icon(Icons.link),
@@ -804,6 +866,27 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                   ),
                 ),
                 const SizedBox(height: N11Space.gap3),
+
+                // CHAT SECTION
+                if (_chatFor(d) case final OrderChatController chat) ...<Widget>[
+                  AnimatedBuilder(
+                    animation: chat,
+                    builder: (BuildContext context, Widget? _) => OrderSection(
+                      id: 'chat',
+                      title: 'Trao đổi chuyến giao',
+                      summary: chat.summary,
+                      initiallyExpanded: true,
+                      builder: (BuildContext _) => OrderChatPanel(controller: chat),
+                    ),
+                  ),
+                  const SizedBox(height: N11Space.gap3),
+                ],
+
+                // FEEDBACK (REVIEWS & COMPLAINTS)
+                if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed || d.state == DeliveryState.cancelledByMerchant || d.state == DeliveryState.cancelledBySystem)) ...<Widget>[
+                  widget.feedbackSlot!(context, d),
+                  const SizedBox(height: N11Space.gap3),
+                ],
 
                 // ACTIONS
                 if (d.can.contains('cancel') && d.state.beforePickup)
@@ -841,11 +924,12 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
 // ---- Customer Delivery Hub ---------------------------------------------------------------------------------------------------
 
 class CustomerDeliveryHub extends StatefulWidget {
-  const CustomerDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker});
+  const CustomerDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.feedbackSlot});
 
   final CustomerDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<CustomerDeliveryHub> createState() => _CustomerDeliveryHubState();
@@ -860,6 +944,7 @@ class _CustomerDeliveryHubState extends State<CustomerDeliveryHub> {
         source: widget.source,
         pinPicker: widget.pinPicker,
         mapBuilder: widget.mapBuilder,
+        feedbackSlot: widget.feedbackSlot,
       )),
     );
   }
@@ -934,6 +1019,7 @@ class _CustomerDeliveryHubState extends State<CustomerDeliveryHub> {
                           source: widget.source,
                           deliveryId: d.deliveryId,
                           mapBuilder: widget.mapBuilder,
+                          feedbackSlot: widget.feedbackSlot,
                         )),
                       );
                       await reload();

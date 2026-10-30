@@ -153,7 +153,7 @@ class FeeView {
   factory FeeView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
     final String payer = _str(m['payer']);
-    if (payer != 'CUSTOMER' && payer != 'SHOP') {
+    if (payer != 'CUSTOMER' && payer != 'SHOP' && payer != 'SENDER' && payer != 'RECIPIENT') {
       throw const FormatException('payer');
     }
     return FeeView(
@@ -196,7 +196,12 @@ class FeeView {
   final AgreementSummary? agreement;
 
   bool get isFinal => status == 'FINAL' && amountVnd != null;
-  String get payerText => payer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship';
+  String get payerText => switch (payer) {
+    'SENDER' => 'Người gửi trả ship',
+    'RECIPIENT' => 'Người nhận trả ship',
+    'SHOP' => 'Quán trả ship',
+    _ => 'Khách trả ship',
+  };
 }
 
 class RecipientView {

@@ -13,6 +13,22 @@ function requestIdOf(request: { requestId?: string }): string {
   return request.requestId ?? randomUUID();
 }
 
+function canonicalBaseUrl(request: AuthenticatedRequest): string {
+  const envUrl = process.env.APP_URL || process.env.CANONICAL_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  const rawHost = request.headers['x-forwarded-host'] || request.headers.host;
+  const host = (Array.isArray(rawHost) ? rawHost[0] : rawHost)?.trim().toLowerCase();
+  const trustedHosts = ['11ship.app', 'api.11ship.app', 'staging.11ship.app', 'localhost', '127.0.0.1'];
+  if (host && (trustedHosts.includes(host) || host.endsWith('.11ship.app') || host.startsWith('127.0.0.1:') || host.startsWith('localhost:'))) {
+    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+    const proto = isLocal ? 'http' : 'https';
+    return `${proto}://${host}`;
+  }
+  return 'https://11ship.app';
+}
+
 @UseGuards(SessionAuthGuard)
 @Controller('customers/me')
 export class DeliveryCustomerController {
@@ -69,11 +85,7 @@ export class DeliveryCustomerController {
   @Post('deliveries/:delivery_id/tracking-link')
   @HttpCode(201)
   async createTrackingLink(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest) {
-    const hostHeader = request.headers['x-forwarded-host'] || request.headers.host;
-    const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
-    const protoHeader = request.headers['x-forwarded-proto'];
-    const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || 'https';
-    const baseUrl = host ? `${proto}://${host}` : undefined;
+    const baseUrl = canonicalBaseUrl(request);
     return { data: await this.customer.createTrackingLink(this.#principal(request), parseDeliveryId(id), baseUrl) };
   }
 

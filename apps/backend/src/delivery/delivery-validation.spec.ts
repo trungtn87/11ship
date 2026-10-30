@@ -100,4 +100,17 @@ describe('M07 customer delivery validation (Phần A, B, C)', () => {
     expect(parseToggleLocationBody({ share_location: false })).toEqual({ shareLocation: false });
     expect(() => parseToggleLocationBody({ share_location: 'true' })).toThrow();
   });
+  it('requires pickup_address_text and does not fallback sender_phone to recipient_phone', () => {
+    expect(() => parseCustomerCreateBody({ ...validBase, pickup_address_text: '' })).toThrow();
+    expect(() => parseCustomerCreateBody({ ...validBase, pickup_address_text: '   ' })).toThrow();
+    const withoutPickup = { ...validBase };
+    delete (withoutPickup as any).pickup_address_text;
+    expect(() => parseCustomerCreateBody(withoutPickup)).toThrow();
+
+    const withoutSenderPhone = { ...validBase };
+    delete (withoutSenderPhone as any).sender_phone;
+    const parsed = parseCustomerCreateBody(withoutSenderPhone);
+    expect(parsed.senderPhone).toBeNull();
+    expect(parsed.recipientPhone).toBe('+84987654321');
+  });
 });

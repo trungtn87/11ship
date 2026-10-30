@@ -230,6 +230,7 @@ class HttpOrderChatApi extends OrderChatApi {
 
   static String pathOf(ChatRoomRef room) => switch (room.door) {
         ChatDoor.customerOrder => '/v1/customers/me/orders/${room.id}/chat',
+        ChatDoor.customerDelivery => '/v1/customers/me/deliveries/${room.id}/chat',
         ChatDoor.shopOrder => '/v1/shop/me/orders/${room.id}/chat',
         ChatDoor.shopDirect => '/v1/shop/me/deliveries/${room.id}/chat',
         ChatDoor.shipperDelivery => '/v1/driver/deliveries/${room.id}/chat',

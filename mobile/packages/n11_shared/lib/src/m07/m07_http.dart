@@ -212,7 +212,11 @@ class HttpShipperDeliverySource extends ShipperDeliverySource {
 class HttpCustomerDeliverySource extends CustomerDeliverySource {
   const HttpCustomerDeliverySource({required this.session});
 
+  @override
   final SessionController session;
+
+  @override
+  OrderChatApi get chat => HttpOrderChatApi(session: session);
 
   @override
   bool get isSample => false;

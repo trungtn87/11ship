@@ -255,37 +255,50 @@ export class DeliveryViews {
    * has ended (or the Shipper gave it back) there is no Shipper and no position: tracking stops with the right to see it.
    */
   async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number): Promise<JsonObject> {
-    const assignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
+    const assignment = activeAssignment ?? ((d.state === 'completed' || d.state === 'failed') ? await this.deliveries.findExecutingAssignment(context, d.deliveryId) : undefined);
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
+    let assignmentView: JsonObject | null = null;
     let shipper: JsonObject | null = null;
     let location: JsonObject | null = null;
-    if (assignment !== undefined && RUNNING_STATES.includes(d.state)) {
+    if (assignment !== undefined) {
       const identity = await this.shipperOf(context, assignment.driverId);
+      const isRunning = activeAssignment !== undefined && RUNNING_STATES.includes(d.state);
       shipper = {
         name: identity?.driver.fullName ?? '—',
-        phone: identity?.phone ?? null,
-        plate_number: identity?.driver.plateNumber ?? null,
+        phone: isRunning ? identity?.phone ?? null : null,
+        plate_number: isRunning ? identity?.driver.plateNumber ?? null : null,
         accepted_at: iso(assignment.acceptedAtMs),
         picked_up_at: iso(assignment.pickedUpAtMs),
       };
-      if (d.pickupLat !== null && d.dropoffLat !== null) {
+      assignmentView = {
+        assignment_id: assignment.assignmentId,
+        shipper,
+        accepted_at: iso(assignment.acceptedAtMs),
+        picked_up_at: iso(assignment.pickedUpAtMs),
+        destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
+      };
+      if (isRunning && d.pickupLat !== null && d.dropoffLat !== null) {
         location = await this.#location(context, assignment.driverId);
       }
     }
+    const decider = feeDeciderOf(d);
+    const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
     return {
       delivery_id: d.deliveryId,
       code: d.code,
       display_code: d.displayCode ?? d.code,
       state: d.state,
       version: d.version,
-      fee: { payer: d.feePayer, amount_vnd: d.feeVnd, status: feeStatusOf({ feeVnd: d.feeVnd, agreementStatus: agreement?.status ?? null }), distance_m: d.routeDistanceM },
+      fee: this.#fee(d, agreement),
       search: this.#search(d, nowMs),
+      assignment: assignmentView,
       shipper,
       location,
       result: this.#result(d, incident),
       goods_custody: d.state === 'failed' || incident !== undefined ? (incident?.custody ?? null) : null,
-      fee_decision: feeDeciderOf(d) === 'CUSTOMER' ? feeDecisionView(agreement) : null,
+      fee_decision: decider === 'CUSTOMER' ? feeDecisionView(agreement) : null,
       source: d.source,
       cod_vnd: d.codVnd ?? 0,
       recipient_pays_vnd: d.source === 'CUSTOMER'
@@ -298,6 +311,8 @@ export class DeliveryViews {
       can: {
         cancel: shopMayCancel(d.state) || creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
         cancel_after_pickup: creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
+        decide_fee: feeQuestionOpen && decider === 'CUSTOMER',
+        wait_shipper_fee: feeQuestionOpen && decider !== 'CUSTOMER',
       },
       // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
       pickup: { shop_name: d.shopName, phone: d.shopPhone, address_text: d.pickupAddressText, lat: d.pickupLat, lng: d.pickupLng },

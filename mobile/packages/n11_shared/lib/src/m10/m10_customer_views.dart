@@ -1032,12 +1032,14 @@ class CustomerOrdersTab extends StatefulWidget {
     this.deliveries,
     this.mapBuilder,
     this.pinPicker,
+    this.feedbackSlot,
   });
 
   final OrderRuntime runtime;
   final CustomerDeliverySource? deliveries;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
+  final M07FeedbackSlot? feedbackSlot;
 
   @override
   State<CustomerOrdersTab> createState() => _CustomerOrdersTabState();
@@ -1082,6 +1084,7 @@ class _CustomerOrdersTabState extends State<CustomerOrdersTab> {
             source: d,
             mapBuilder: widget.mapBuilder,
             pinPicker: widget.pinPicker,
+            feedbackSlot: widget.feedbackSlot,
           )
         else
           CustomerOrdersView(runtime: widget.runtime),

@@ -373,7 +373,24 @@ class SampleCustomerDeliverySource extends CustomerDeliverySource {
   SampleCustomerDeliverySource() {
     _items.addAll(<DeliveryView>[
       _customerDelivery('cd-wait', 'GC-100001', DeliveryState.waitingDriver, minutesAgo: 5, codVnd: 200000, recipientPaysVnd: 215000, can: const <String>{'cancel'}),
-      _customerDelivery('cd-run', 'GC-100002', DeliveryState.delivering, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 3))), location: _location(Freshness.live), codVnd: 150000, recipientPaysVnd: 165000, can: const <String>{'cancel', 'cancel_after_pickup'}),
+      _customerDelivery('cd-run', 'GC-100002', DeliveryState.delivering, pinned: true, assignment: _assignment(pickedUpAt: _now.subtract(const Duration(minutes: 3))), location: _location(Freshness.live), codVnd: 150000, recipientPaysVnd: 165000, can: const <String>{'cancel', 'cancel_after_pickup'}),
+      _customerDelivery('cd-counter', 'GC-100004', DeliveryState.waitingDriver,
+        fee: FeeView(
+          mode: 'AGREED',
+          payer: 'SENDER',
+          status: 'PENDING_AGREEMENT',
+          amountVnd: 20000,
+          agreement: AgreementSummary(
+            state: 'COUNTERED',
+            proposedVnd: 20000,
+            counterVnd: 30000,
+            reasonCode: 'DISTANCE_LONG',
+            expiresAt: _now.add(const Duration(minutes: 10)),
+          ),
+          decider: 'CUSTOMER',
+        ),
+        can: const <String>{'cancel', 'decide_fee'},
+      ),
       _customerDelivery('cd-done', 'GC-100003', DeliveryState.completed, codVnd: 0, recipientPaysVnd: 0, result: ResultView(outcome: 'completed', at: _now)),
     ]);
   }

@@ -84,7 +84,8 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
                 CustomerDeliveryDetailScreen(
                     source: customerSource,
                     deliveryId: target.id!,
-                    mapBuilder: foodMapBuilder()));
+                    mapBuilder: foodMapBuilder(),
+                    feedbackSlot: _customerFeedbackSlot(flows)));
           } else {
             actions.goTab('orders');
           }
@@ -142,6 +143,10 @@ Future<String?> _orderOfDelivery(
 M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null
     ? null
     : shopDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
+
+M07FeedbackSlot? _customerFeedbackSlot(AppFlows? flows) => flows?.feedback == null
+    ? null
+    : customerDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
 
 /// The bell at the top of the Food home and the page it opens (no new bottom tab).
 Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
@@ -278,7 +283,8 @@ Widget _orders(SessionController session, AppFlows? flows) {
         runtime: orders,
         deliveries: flows?.customerDeliveries,
         mapBuilder: foodMapBuilder(),
-        pinPicker: foodPinPicker());
+        pinPicker: foodPinPicker(),
+        feedbackSlot: _customerFeedbackSlot(flows));
   }
   return vstack(<Widget>[
     _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),

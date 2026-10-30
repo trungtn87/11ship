@@ -1,3 +1,4 @@
+import '../account/session_controller.dart' show SessionController;
 import '../m10/order_chat_models.dart' show OrderChatApi;
 import 'm07_models.dart';
 
@@ -274,6 +275,12 @@ class NewCustomerDeliveryInput {
 /// The customer side (11Food): call a shipper directly, track, cancel, decide fee, and share tracking link.
 abstract class CustomerDeliverySource {
   const CustomerDeliverySource();
+
+  /// The chat of a customer delivery; null in a build whose source has none.
+  OrderChatApi? get chat => null;
+
+  /// The active user session if available.
+  SessionController? get session => null;
 
   bool get isSample;
 
