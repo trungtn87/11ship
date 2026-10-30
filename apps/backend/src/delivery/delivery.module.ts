@@ -16,6 +16,7 @@ import { DeliveryShopService } from './delivery-shop-service';
 import { DeliverySweeper, DeliverySweeperRunner } from './delivery-sweeper';
 import { DeliveryTrackingPublicController } from './delivery-tracking-public.controller';
 import { M14RoutingModule } from './m14-routing.module';
+import { AddressChangeModule } from '../address-change/address-change.module';
 
 /**
  * M07, the delivery flow: the shop's routes under /v1/shop/me/deliveries, the customer's routes under /v1/customers/me/deliveries, the Shipper's routes under /v1/driver/deliveries and /v1/driver/location, and the
@@ -27,7 +28,7 @@ export class DeliveryModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryModule,
-      imports: [auth, DeliveryCoreModule.register(auth), OrdersCoreModule, M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule, ShipperSettlementModule],
+      imports: [auth, DeliveryCoreModule.register(auth), OrdersCoreModule, M14RoutingModule, DriverModule, TransactionModule, IdempotencyModule, ShipperSettlementModule, AddressChangeModule.register(auth)],
       controllers: [DeliveryShopController, DeliveryShipperController, DeliveryCustomerController, DeliveryTrackingPublicController],
       providers: [DeliveryShopService, DeliveryShipperService, DeliveryCustomerService, DeliverySweeper, DeliverySweeperRunner, { provide: ORDER_DELIVERY_PORT, useExisting: OrderDeliveryAdapter }],
       exports: [DeliverySweeper, DeliveryShopService, DeliveryCustomerService],

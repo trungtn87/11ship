@@ -1,3 +1,4 @@
+import '../address_change/address_change_models.dart';
 import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
 
@@ -362,6 +363,7 @@ class OrderView {
     required this.can,
     required this.timeline,
     this.story = const <StoryEntry>[],
+    this.addressChange,
   });
 
   factory OrderView.fromJson(Object? raw) {
@@ -402,6 +404,7 @@ class OrderView {
           : const <String, bool>{},
       timeline: m['timeline'] == null ? const <OrderEvent>[] : <OrderEvent>[for (final Object? e in _list(m['timeline'])) OrderEvent.fromJson(e)],
       story: storyOf(m['story']),
+      addressChange: m['address_change_request'] != null ? AddressChangeView.fromJson(m['address_change_request']) : null,
     );
   }
 
@@ -440,6 +443,7 @@ class OrderView {
 
   /// "Diễn biến" in plain words, order and every call for a Shipper together (what the screen draws). [timeline] is the raw log.
   final List<StoryEntry> story;
+  final AddressChangeView? addressChange;
 
   bool get isScheduled => scheduledFor != null;
   bool get ended => display.ended;

@@ -1,3 +1,4 @@
+import '../guidance/order_incident_guidance.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -811,6 +812,17 @@ class _ShopDeliveryDetailScreenState extends State<ShopDeliveryDetailScreen> wit
         ],
       ),
       actionBanner(),
+      OrderIncidentGuidance(
+        role: 'SHOP',
+        deliveryState: d.state.name,
+        hasShipper: d.assignment != null,
+        customerPhone: d.recipient.phone,
+        shipperPhone: d.assignment?.shipperPhone,
+        onCallCustomer: d.recipient.phone != null ? () => orderPhoneDialer.dial(d.recipient.phone!) : null,
+        onCallShipper: d.assignment?.shipperPhone != null ? () => orderPhoneDialer.dial(d.assignment!.shipperPhone!) : null,
+        incident: d.incident,
+        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+      ),
       ShopDeliveryPanel(source: widget.source, delivery: d, onChanged: _reload, mapBuilder: widget.mapBuilder),
       _recipientCard(d),
       MoneySummary(goods: d.goods, fee: d.fee),

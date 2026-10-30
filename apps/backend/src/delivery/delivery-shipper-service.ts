@@ -25,6 +25,7 @@ import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
 import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
 import { ShipperLocationRepository, shouldShareLocation } from './shipper-location';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
 
 const OFFER_LIMIT = 30;
 const HISTORY_LIMIT = 50;
@@ -61,6 +62,7 @@ export class DeliveryShipperService {
     private readonly locations: ShipperLocationRepository,
     private readonly settlement: ShipperSettlementReader,
     @Inject(ORDER_DELIVERY_PORT) private readonly orders: OrderDeliveryPort,
+    private readonly addressChanges: AddressChangeRepository,
   ) {}
 
   // ---- reads -----------------------------------------------------------------------------------------------------------------
@@ -517,6 +519,7 @@ export class DeliveryShipperService {
         }
         await this.#touch(context, assignment, 'pickup');
         const after = await this.#update(context, current, { state: 'delivering', pickedUpNow: true });
+        await this.addressChanges.expirePendingForDelivery(context, current.deliveryId, current.orderId);
         await this.recorder.record(context, {
           delivery: after,
           type: 'picked_up',

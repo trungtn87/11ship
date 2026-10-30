@@ -1,3 +1,6 @@
+import '../address_change/address_change_models.dart';
+import '../address_change/address_change_widgets.dart';
+import '../guidance/order_incident_guidance.dart';
 import 'dart:async';
 import '../m02/availability_refresh.dart';
 
@@ -1310,6 +1313,47 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     }, onConflict: _fetcher.reload);
   }
 
+  Future<void> _requestAddressChange(OrderView o) async {
+    await AddressChangeRequestSheet.show(
+      context,
+      initialName: o.recipient.name,
+      initialPhone: o.recipient.phone,
+      initialAddress: o.recipient.addressText,
+      onSubmit: ({required String name, required String phone, required String address, String? note}) async {
+        await act('address-change-request', (String key) async {
+          await widget.runtime.customer.requestAddressChange(
+            o.orderId,
+            recipientName: name,
+            recipientPhone: phone,
+            addressText: address,
+            note: note,
+            expectedVersion: o.version,
+            key: key,
+          );
+          await _fetcher.reload();
+        }, onConflict: _fetcher.reload);
+      },
+    );
+  }
+
+  Future<void> _cancelAddressChange(OrderView o) async {
+    final bool yes = await showConfirmDialog(
+      context,
+      title: 'Hủy yêu cầu đổi địa chỉ?',
+      content: const Text('Bạn muốn hủy yêu cầu đổi địa chỉ và tiếp tục giao đến địa chỉ ban đầu?'),
+      confirmLabel: 'Hủy yêu cầu',
+    );
+    if (!yes) return;
+    await act('address-change-cancel', (String key) async {
+      await widget.runtime.customer.cancelAddressChange(
+        o.orderId,
+        expectedVersion: o.addressChange?.version ?? 1,
+        key: key,
+      );
+      await _fetcher.reload();
+    }, onConflict: _fetcher.reload);
+  }
+
   Future<void> _reorder(OrderView o) async {
     final CartController cart = widget.runtime.cart;
     var replace = false;
@@ -1391,6 +1435,12 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           ],
         ),
       ),
+      if (o.addressChange != null)
+        AddressChangeBanner(
+          request: o.addressChange!,
+          canCancel: o.can['cancel_address_change'] ?? false,
+          onCancel: busy ? null : () => _cancelAddressChange(o),
+        ),
       if (d?.feeDecision != null) _feeDecisionCard(o, d!, d.feeDecision!),
       if (o.edited && o.confirmedAt != null) N11Banner(key: const Key('order-edited'), kind: BannerKind.info, title: 'Quán đã chỉnh đơn', text: 'Lý do: ${o.changeReason ?? '—'}. Bên dưới là bản đã chốt, kèm số liệu ban đầu của bạn.'),
       if (shipperHeld)
@@ -1416,6 +1466,22 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             if (!o.ended && (o.shop.contact.zaloUrl != null || o.shop.contact.messengerUrl != null)) _shopChats(o.shop.contact),
           ],
         ),
+      ),
+      OrderIncidentGuidance(
+        role: 'CUSTOMER',
+        orderStatus: o.status,
+        deliveryState: d?.state.name,
+        hasShipper: shipperHeld,
+        shopPhone: shopCall,
+        shipperPhone: d?.shipperPhone,
+        onCallShop: shopCall != null ? () => orderPhoneDialer.dial(shopCall) : null,
+        onCallShipper: d?.shipperPhone != null ? () => orderPhoneDialer.dial(d!.shipperPhone!) : null,
+        onRequestAddressChange: (o.can['request_address_change'] ?? false) && o.addressChange?.isPending != true
+            ? () => _requestAddressChange(o)
+            : null,
+        canRequestAddressChange: (o.can['request_address_change'] ?? false) && o.addressChange?.isPending != true,
+        feePending: d?.feeDecision != null,
+        isAfterPickup: d != null && ['delivering', 'completed', 'failed'].contains(d.state.name),
       ),
       OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: !o.ended, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
       OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),

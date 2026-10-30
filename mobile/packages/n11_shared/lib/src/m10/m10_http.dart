@@ -148,6 +148,50 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/delivery/fee', body: <String, Object?>{'decision': accept ? 'ACCEPT' : 'REJECT', 'expected_version': deliveryVersion}, key: key));
 
   @override
+  @override
+  Future<OrderView> requestAddressChange(
+    String id, {
+    required String recipientName,
+    required String recipientPhone,
+    required String addressText,
+    double? lat,
+    double? lng,
+    String? note,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        '/v1/customers/me/orders/$id/address-change-request',
+        body: <String, Object?>{
+          'recipient_name': recipientName,
+          'recipient_phone': recipientPhone,
+          'address_text': addressText,
+          if (lat != null && lng != null) 'lat': lat,
+          if (lat != null && lng != null) 'lng': lng,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+        ok: const <int>{200, 201},
+      ));
+
+  @override
+  Future<OrderView> cancelAddressChange(
+    String id, {
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        '/v1/customers/me/orders/$id/address-change-request/cancel',
+        body: <String, Object?>{'expected_version': expectedVersion},
+        key: key,
+      ));
+
+  @override
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key}) async {
     final Object? data = await _call(session, 'POST', '/v1/customers/me/orders/$id/reorder', body: <String, Object?>{if (replaceCart) 'replace_cart': true}, key: key);
     return _parse<ReorderResult>(data, (Object? d) {
@@ -211,6 +255,27 @@ class HttpShopOrderSource extends ShopOrderSource {
 
   @override
   Future<OrderView> closeNotCompleted(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/close-not-completed'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
+
+  @override
+  @override
+  Future<OrderView> decideAddressChange(
+    String id, {
+    required bool accept,
+    String? reason,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        _path(id, '/address-change-request/decide'),
+        body: <String, Object?>{
+          'accept': accept,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+      ));
 
   @override
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key}) async {
