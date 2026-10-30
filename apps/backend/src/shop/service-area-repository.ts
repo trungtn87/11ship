@@ -59,9 +59,14 @@ export function assertPinInArea(area: ServiceAreaRow, latitude: number | null, l
  */
 export function pinInAreaSql(shopAlias: string, areaAlias: string): string {
   return `(${areaAlias}.coverage_radius_m IS NULL OR ${shopAlias}.pickup_lat IS NULL OR ${shopAlias}.pickup_lng IS NULL
-     OR ${EARTH_RADIUS_M} * 2 * asin(sqrt(least(1.0, greatest(0.0,
-          power(sin(radians(${shopAlias}.pickup_lat - ${areaAlias}.coverage_lat) / 2), 2)
-          + cos(radians(${shopAlias}.pickup_lat)) * cos(radians(${areaAlias}.coverage_lat)) * power(sin(radians(${shopAlias}.pickup_lng - ${areaAlias}.coverage_lng) / 2), 2))))) <= ${areaAlias}.coverage_radius_m)`;
+     OR ${pinInCircleSql(shopAlias, `${areaAlias}.coverage_lat`, `${areaAlias}.coverage_lng`, `${areaAlias}.coverage_radius_m`)})`;
+}
+
+/** True when the shop's pin lies within `radiusExpr` metres of the given centre expressions (haversine, the sphere radius of the resolver). */
+export function pinInCircleSql(shopAlias: string, latExpr: string, lngExpr: string, radiusExpr: string): string {
+  return `(${EARTH_RADIUS_M} * 2 * asin(sqrt(least(1.0, greatest(0.0,
+          power(sin(radians(${shopAlias}.pickup_lat - ${latExpr}) / 2), 2)
+          + cos(radians(${shopAlias}.pickup_lat)) * cos(radians(${latExpr})) * power(sin(radians(${shopAlias}.pickup_lng - ${lngExpr}) / 2), 2))))) <= ${radiusExpr})`;
 }
 
 /** Exact containment of configured circles; overlaps use the smallest circle then stable id. */
