@@ -213,10 +213,17 @@ class OrderMoneyBody extends StatelessWidget {
           ('Quãng đường giao', fee.distanceM == null ? 'Chưa xác định quãng đường' : '≈ ${RouteDistance.text(fee.distanceM!)} · đường đi'),
           (fee.isEstimate ? 'Phí giao (dự tính)' : 'Phí giao', m10Fee(fee.shownVnd)),
           ('Người trả phí', fee.payerText),
+          ('Đã thanh toán tiền món', m10Money(money.paidVnd)),
         ]),
+        const Divider(height: N11Space.gap4, color: N11Colors.line),
+        Row(children: <Widget>[
+          const Expanded(child: Text('Còn phải thanh toán tiền món', style: N11Text.bodyStrong)),
+          Text(m10Money(money.remainingVnd), key: const Key('m10-items-remaining'), style: N11Text.title.copyWith(fontSize: 18)),
+        ]),
+        const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Số đã thanh toán là tiền món do quán ghi nhận thủ công; không phải xác nhận thanh toán ngân hàng và không tự thay đổi khi giao xong.', icon: Icons.receipt_long_outlined)),
         if (money.expectedTotalVnd != null) ...<Widget>[
           const Divider(height: N11Space.gap4, color: N11Colors.line),
-          Row(children: <Widget>[const Expanded(child: Text('Tổng dự kiến', style: N11Text.bodyStrong)), Text(m10Money(money.expectedTotalVnd!), key: const Key('m10-expected-total'), style: N11Text.title.copyWith(fontSize: 18))]),
+          Row(children: <Widget>[Expanded(child: Text(fee.isEstimate ? 'Tổng dự kiến' : 'Tổng cộng', style: N11Text.bodyStrong)), Text(m10Money(money.expectedTotalVnd!), key: const Key('m10-expected-total'), style: N11Text.title.copyWith(fontSize: 18))]),
         ] else
           Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Chưa gồm phí giao. ${_orderQuoteReason(fee.reason)}', icon: Icons.warning_amber_rounded)),
         const SizedBox(height: N11Space.gap2),

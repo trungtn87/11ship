@@ -56,6 +56,18 @@
     "1796947200000_shared-address-book": {
       "sha256": "9d132b41afa68479d67a419990b2cf5ed37e66da28bf3fc1eaf38d51d7d1d254",
       "review": "PR #229 / #222 #223; compatibility review 2026-10-29: Up adds nullable display_name, two NOT NULL boolean default flags (false for existing rows), independent partial indexes, and nullable immutable delivery guidance snapshots on orders/deliveries. It backfills only the existing legacy is_default=true rows into is_delivery_default and does not change recipient, address, order, delivery, fee or route values. Every existing row satisfies the new checks. The previous backend names columns explicitly, ignores the additions and its existing writes remain valid; the new backend keeps legacy is_default synchronized with the delivery default. Down refuses any new address/default/guidance data it cannot represent. Code rollback should retain this additive schema. No remote migration or deployment is authorized by this review."
+    },
+    "1797033600000_customer-courier-cod": {
+      "sha256": "63d963e2eea68a22ab1c33d771ac9a7a12cb9545e0c6891614d1789a78b92f06",
+      "review": "PR #231 / #221 #212; compatibility review 2026-10-30: Up allows CUSTOMER delivery source, nullable shop_id/pickup GPS, optional COD up to 10M VND, widened fee_payer in deliveries and agreement events, and creates app.delivery_tracking_links. Existing orders and direct shop calls remain valid; new runtime grants for delivery_tracking_links are required. No remote migration or deployment authorized."
+    },
+    "1797120000000_customer-courier-agreements-reviews": {
+      "sha256": "46ff037fba775719feacbde4e5ee232caf66be72a7098bf0cddd2afe35096c87",
+      "review": "PR #231 / #221 #212; compatibility review 2026-10-30: Up widens payer column in app.shipping_fee_agreements to varchar(16) supporting SENDER/RECIPIENT and updates pending fee checks. Drops NOT NULL on shop_id in app.reviews and app.complaints for customer direct courier support. No remote migration or deployment authorized."
+    },
+    "1797206400000_order-address-change-guidance": {
+      "sha256": "0a6cde7f9e47b23eee5cbb782696d5b05a2eed637e43d97c7e9a4c673f7d441c",
+      "review": "PR #232 / #218 #217; compatibility review 2026-10-30: Up creates app.address_change_requests table, indexes, and updates triggers orders_guard and deliveries_guard to allow address_change_in_progress context updates. Existing orders, deliveries, items, snapshots and events remain unchanged; old backend continues to operate without writing new address change requests. New runtime table grant in ops/selfhosted/02-runtime-grants.sql required before using address change endpoints. No remote migration or deployment authorized."
     }
   }
 }

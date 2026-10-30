@@ -6,6 +6,8 @@ import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { OrderShopService } from './order-shop-service';
 import { parseCallBody, parseConfirmBody, parseEditBody, parseOrderId, parsePaymentBody, parseReasonBody, parseShopListQuery, parseVersionBody } from './order-validation';
+import { AddressChangeService } from '../address-change/address-change-service';
+import { parseDecideAddressChangeBody } from '../address-change/address-change-validation';
 
 type Key = string | string[] | undefined;
 
@@ -21,7 +23,10 @@ function requestIdOf(request: { requestId?: string }): string {
 @UseGuards(SessionAuthGuard)
 @Controller('shop/me/orders')
 export class OrderShopController {
-  constructor(private readonly shop: OrderShopService) {}
+  constructor(
+    private readonly shop: OrderShopService,
+    private readonly addressChange: AddressChangeService,
+  ) {}
 
   @Get()
   async list(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
@@ -88,6 +93,24 @@ export class OrderShopController {
   @HttpCode(200)
   async closeNotCompleted(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const outcome = await this.shop.closeNotCompleted(this.#principal(request), parseOrderId(id), parseReasonBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  @Post(':order_id/address-change-request/decide')
+  @HttpCode(200)
+  async decideAddressChange(
+    @Param('order_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.decideOrderChange(
+      this.#principal(request),
+      parseOrderId(id),
+      parseDecideAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
     return { data: outcome.payload };
   }
 

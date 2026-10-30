@@ -68,6 +68,7 @@ import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
 import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_CHAT, OrderChatSource } from '../core/order-chat.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
+import { QueueTarget } from '../core/action-queue.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
@@ -1217,10 +1218,26 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       open: (link) => this.go(routeOfLink(link.area, link.query)),
+      openQueue: () => this.go({ name: 'notifications' }),
     };
     const view = new OverviewView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
+  }
+
+  /** Opens what a "Việc cần xử lý" row points at. The owning screen or endpoint decides the right and the version again; nothing is changed from here. */
+  #openQueueTarget(target: QueueTarget): void {
+    switch (target.kind) {
+      case 'route':
+        this.go(routeOfLink(target.area, target.query));
+        break;
+      case 'detail':
+        this.go(target.area === 'shipper' ? { name: 'shipper', id: target.id } : target.area === 'finance-topup' ? { name: 'finance-topup', id: target.id } : { name: 'finance-withdrawal', id: target.id });
+        break;
+      case 'page':
+        window.location.assign(target.href);
+        break;
+    }
   }
 
   /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
@@ -1276,6 +1293,18 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       openDeliveries: () => this.go({ name: 'deliveries' }),
+      actionQueue: {
+        read: (query) => this.overview.actionQueue(query),
+        onSessionLost: () => this.onSessionLost(),
+        onForbidden: () => {
+          if (this.#role === 'ADMIN') {
+            this.#loadGrants(true);
+          }
+        },
+        login: () => this.history.restart(),
+        home: () => this.go({ name: 'home' }),
+        open: (target) => this.#openQueueTarget(target),
+      },
       canEdit: this.#role === 'SYSTEM',
     };
     const view = new NotificationsView(content, host);

@@ -1,3 +1,4 @@
+import '../guidance/order_incident_guidance.dart';
 import '../wallet/wallet_source.dart';
 import '../wallet/wallet_views.dart';
 import 'package:flutter/material.dart';
@@ -410,6 +411,11 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
                 text: r.blocks.map(driverBlockLabel).join('\n'),
               ),
             const SizedBox(height: N11Space.gap2),
+            N11Link(
+              'Hướng dẫn xử lý khi không thể bật online, rút tiền hoặc đóng hoạt động',
+              onPressed: () => ShipperOperationalGuidanceSheet.show(context),
+            ),
+            const SizedBox(height: N11Space.gap3),
             const N11Heading('Dừng hoạt động / Rút tiền', sub: 'Gửi yêu cầu nếu bạn không muốn làm shipper nữa. Đơn đang giao phải hoàn tất, số dư ví không bị mất.'),
             if (profile.status == 'CLOSING') ...<Widget>[
               N11Banner(key: const Key('driver-closure-pending'), kind: BannerKind.warn, title: 'Đã gửi yêu cầu ngừng hoạt động', text: profile.closure?.note == null ? 'Bạn đã ngừng nhận đơn mới.' : 'Ghi chú: ${profile.closure!.note}'),

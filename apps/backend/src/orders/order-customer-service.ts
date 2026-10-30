@@ -13,6 +13,7 @@ import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempoten
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { MenuRepository, MenuItemRow } from '../menu/menu-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
+import { MAX_FEE_VND } from '../shipping-policy/shipping-fee-policy';
 import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-reader';
 import { ShopRepository } from '../shop/shop-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -220,6 +221,7 @@ export class OrderCustomerService {
       const estimate = await this.#estimate(context, checked.shop, checked.address, prepared, leg);
       const lines = checked.lines.map((l) => ({ item_id: l.itemId, name: l.name, note: l.note, quantity: l.quantity, unit_price_vnd: l.priceVnd, issue: l.issue }));
       const total = totalOf(checked.lines.filter((l) => l.priceVnd !== null).map((l) => ({ unitPriceVnd: l.priceVnd as number, quantity: l.quantity })));
+      const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
       return {
         next_refresh_ms: checked.shop === undefined ? null : businessHoursRefreshMs(checked.shop.hours, checked.shop.availability.evaluatedAt),
         ok: checked.blockers.length === 0 && checked.lines.every((l) => l.issue === null),
@@ -228,7 +230,8 @@ export class OrderCustomerService {
         lines,
         items_total_vnd: total,
         fee: this.#quoteView(estimate),
-        expected_total_vnd: estimate.feeVnd === null ? null : total + estimate.feeVnd,
+        tip_vnd: input.tipVnd,
+        expected_total_vnd: proposedFee === null ? null : total + proposedFee,
         server_now: iso(await freshClockMs(context)),
       };
     });
@@ -258,6 +261,16 @@ export class OrderCustomerService {
 
   #quoteView(q: CheckoutQuote): JsonObject {
     return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, quoted_at: iso(q.quotedAtMs) };
+  }
+
+  #proposedFee(baseFeeVnd: number | null, tipVnd: number): number | null {
+    if (baseFeeVnd === null) {
+      if (tipVnd !== 0) throw new AppError('ORDER_INPUT_INVALID');
+      return null;
+    }
+    const total = baseFeeVnd + tipVnd;
+    if (!Number.isSafeInteger(total) || total > MAX_FEE_VND) throw new AppError('ORDER_INPUT_INVALID');
+    return total;
   }
 
   /**
@@ -339,6 +352,7 @@ export class OrderCustomerService {
           shop_id: input.shopId,
           lines: input.lines.map((l) => ({ item_id: l.itemId, quantity: l.quantity, note: l.note, price: l.expectedPriceVnd })),
           items_total_vnd: input.expectedItemsTotalVnd,
+          tip_vnd: input.tipVnd,
           expected_quote: input.expectedQuote,
           note: input.note,
           delivery_note: input.deliveryNote,
@@ -405,6 +419,7 @@ export class OrderCustomerService {
         if (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.reason !== estimate.reason || input.expectedQuote.policyVersion !== estimate.policyVersion || input.expectedQuote.snapshot !== estimate.snapshot) {
           throw new AppError('ORDER_QUOTE_CHANGED');
         }
+        const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
         const items: NewItem[] = priced.map((l, index) => ({ lineId: randomUUID(), lineNo: index + 1, menuItemId: l.itemId, name: l.name as string, note: l.note, unitPriceVnd: l.priceVnd, quantity: l.quantity }));
         const orderId = randomUUID();
         let inserted = false;
@@ -430,7 +445,7 @@ export class OrderCustomerService {
               deliveryNote: input.deliveryNote,
               scheduledForMs: input.scheduledForMs,
               itemsTotalVnd: total,
-              feeEstimateVnd: estimate.feeVnd,
+              feeEstimateVnd: proposedFee,
               feeEstimateDistanceM: estimate.distanceM,
             },
             items,
@@ -455,6 +470,7 @@ export class OrderCustomerService {
           details: {
             items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })),
             items_total_vnd: total,
+            quote_fee_vnd: estimate.feeVnd,
             quote_reason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
           },
           metadata: { scheduled: input.scheduledForMs !== null },
