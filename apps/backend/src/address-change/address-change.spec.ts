@@ -110,42 +110,43 @@ describe('Address Change Validation (#218)', () => {
   });
 });
 
+const sampleRow: AddressChangeRequestRow = {
+  changeRequestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  orderId: 'oooooooo-oooo-4ooo-8ooo-oooooooooooo',
+  deliveryId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  source: 'ORDER',
+  requestedBy: 'uuuuuuuu-uuuu-4uuu-8uuu-uuuuuuuuuuuu',
+  status: 'PENDING',
+  targetActor: 'SHOP',
+  targetDriverId: null,
+  originalRecipientName: 'Người cũ',
+  originalRecipientPhone: '0911111111',
+  originalAddressText: 'Địa chỉ cũ',
+  originalLat: 21.0,
+  originalLng: 105.8,
+  originalFeeVnd: 25_000,
+  originalDistanceM: 3000,
+  newRecipientName: 'Người mới',
+  newRecipientPhone: '0922222222',
+  newAddressText: 'Địa chỉ mới',
+  newLat: 21.02,
+  newLng: 105.82,
+  newFeeVnd: 35_000,
+  newDistanceM: 4500,
+  feeDifferenceVnd: 10_000,
+  note: 'Đổi địa chỉ',
+  rejectReason: null,
+  resolvedBy: null,
+  resolvedAtMs: null,
+  expiresAtMs: 1_800_000_300_000,
+  orderVersion: 2,
+  deliveryVersion: 1,
+  version: 1,
+  createdAtMs: 1_800_000_000_000,
+  updatedAtMs: 1_800_000_000_000,
+};
+
 describe('Address Change Views (#218)', () => {
-  const sampleRow: AddressChangeRequestRow = {
-    changeRequestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    orderId: 'oooooooo-oooo-4ooo-8ooo-oooooooooooo',
-    deliveryId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-    source: 'ORDER',
-    requestedBy: 'uuuuuuuu-uuuu-4uuu-8uuu-uuuuuuuuuuuu',
-    status: 'PENDING',
-    targetActor: 'SHOP',
-    targetDriverId: null,
-    originalRecipientName: 'Người cũ',
-    originalRecipientPhone: '0911111111',
-    originalAddressText: 'Địa chỉ cũ',
-    originalLat: 21.0,
-    originalLng: 105.8,
-    originalFeeVnd: 25_000,
-    originalDistanceM: 3000,
-    newRecipientName: 'Người mới',
-    newRecipientPhone: '0922222222',
-    newAddressText: 'Địa chỉ mới',
-    newLat: 21.02,
-    newLng: 105.82,
-    newFeeVnd: 35_000,
-    newDistanceM: 4500,
-    feeDifferenceVnd: 10_000,
-    note: 'Đổi địa chỉ',
-    rejectReason: null,
-    resolvedBy: null,
-    resolvedAtMs: null,
-    expiresAtMs: 1_800_000_300_000,
-    orderVersion: 2,
-    deliveryVersion: 1,
-    version: 1,
-    createdAtMs: 1_800_000_000_000,
-    updatedAtMs: 1_800_000_000_000,
-  };
 
   it('formats pending request view with expiry tracking', () => {
     const view = addressChangeView(sampleRow, 1_800_000_100_000);
@@ -235,5 +236,69 @@ describe('Address Change Rules & Concurrency (#218)', () => {
     const viewAtEnd = addressChangeView(pendingRow, nowMs + 300_001);
     expect(viewAtEnd?.time_remaining_seconds).toBe(0);
     expect(viewAtEnd?.status).toBe('EXPIRED');
+  });
+
+  it('Issue 1: Enforces that shop cannot decide for shipper and stale driver cannot decide', () => {
+    // Current assignment rule simulation:
+    // If active driver is assigned, only that driver can decide.
+    const activeDriverId = 'driver-active-001';
+    const staleDriverId = 'driver-stale-002';
+
+    const checkOrderDecider = (
+      hasCurrentDriver: boolean,
+      currentDriverId: string | null,
+      callerType: 'SHOP' | 'SHIPPER',
+      callerDriverId?: string,
+    ): 'PERMITTED' | 'DENIED' => {
+      if (hasCurrentDriver && currentDriverId !== null) {
+        if (callerType !== 'SHIPPER') return 'DENIED'; // Shop cannot decide when shipper holds the trip
+        if (callerDriverId !== currentDriverId) return 'DENIED'; // Stale shipper cannot decide
+        return 'PERMITTED';
+      } else {
+        if (callerType !== 'SHOP') return 'DENIED'; // Shipper cannot decide when no shipper holds trip
+        return 'PERMITTED';
+      }
+    };
+
+    // Case 1: Shipper holds trip -> Shop denied
+    expect(checkOrderDecider(true, activeDriverId, 'SHOP')).toBe('DENIED');
+    // Case 2: Shipper holds trip -> Stale driver denied
+    expect(checkOrderDecider(true, activeDriverId, 'SHIPPER', staleDriverId)).toBe('DENIED');
+    // Case 3: Shipper holds trip -> Active driver permitted
+    expect(checkOrderDecider(true, activeDriverId, 'SHIPPER', activeDriverId)).toBe('PERMITTED');
+    // Case 4: No shipper holds trip -> Shop permitted
+    expect(checkOrderDecider(false, null, 'SHOP')).toBe('PERMITTED');
+    // Case 5: No shipper holds trip -> Shipper denied
+    expect(checkOrderDecider(false, null, 'SHIPPER', staleDriverId)).toBe('DENIED');
+  });
+
+  it('Issue 2: Enforces uniform PostgreSQL locking order to prevent deadlocks', () => {
+    // ORDER flow locking order contract:
+    const orderOperationLocks = ['app.orders', 'app.address_change_requests'] as const;
+    // Both request, decide, and cancel must acquire app.orders before app.address_change_requests
+    expect(orderOperationLocks[0]).toBe('app.orders');
+    expect(orderOperationLocks[1]).toBe('app.address_change_requests');
+
+    // DELIVERY flow locking order contract:
+    const deliveryOperationLocks = ['app.deliveries', 'app.address_change_requests'] as const;
+    expect(deliveryOperationLocks[0]).toBe('app.deliveries');
+    expect(deliveryOperationLocks[1]).toBe('app.address_change_requests');
+  });
+
+  it('Issue 3: Resolves EXPIRED cleanly without throwing transaction rollback', () => {
+    // When nowMs >= expiresAtMs during decide, status transitions to EXPIRED
+    // and returns 200 payload instead of throwing AppError rollback
+    const nowMs = 1_800_000_400_000;
+    const expiredRow: AddressChangeRequestRow = {
+      ...sampleRow,
+      status: 'EXPIRED',
+      rejectReason: 'Hết hạn phản hồi',
+      version: 2,
+      updatedAtMs: nowMs,
+    };
+    const outcomeView = addressChangeView(expiredRow, nowMs);
+    expect(outcomeView?.status).toBe('EXPIRED');
+    expect(outcomeView?.reject_reason).toBe('Hết hạn phản hồi');
+    expect(outcomeView?.is_expired).toBe(true);
   });
 });

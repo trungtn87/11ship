@@ -109,12 +109,17 @@ export class AddressChangeService {
 
         if (pickupLat !== null && pickupLng !== null && input.lat !== null && input.lng !== null) {
           const route = await this.routes.route({ lat: pickupLat, lng: pickupLng }, { lat: input.lat, lng: input.lng });
-          if (route?.distanceM !== null && route?.distanceM !== undefined) {
-            newDistanceM = route.distanceM;
-            const quote = await this.agreements.estimate(context, route.distanceM);
-            if (quote.status === 'PRICED') {
-              newFeeVnd = quote.feeVnd;
+          if (!route || route.distanceM === null || route.distanceM === undefined) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
+          newDistanceM = route.distanceM;
+          const quote = await this.agreements.estimate(context, route.distanceM);
+          if (quote.status === 'UNPRICED') {
+            if (quote.reason === 'OUT_OF_PRICE_RANGE') {
+              throw new AppError('OUT_OF_PRICE_RANGE');
             }
+          } else if (quote.status === 'PRICED') {
+            newFeeVnd = quote.feeVnd;
           }
         }
 
@@ -209,41 +214,69 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
-        const nowMs = await freshClockMs(context);
+        const order = await this.orders.lockById(context, orderId);
+        if (order === undefined) {
+          throw new AppError('ORDER_NOT_FOUND');
+        }
+        if (isEnded(order.status)) {
+          throw new AppError('ORDER_STATE_CONFLICT');
+        }
+        if (order.status !== 'PREPARING') {
+          throw new AppError('ORDER_NOT_CONFIRMED');
+        }
+
         const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
-        }
-        if (nowMs >= req.expiresAtMs) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
-          throw new AppError('ADDRESS_CHANGE_NOT_PENDING');
         }
         if (req.version !== input.expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        const order = await this.orders.lockById(context, orderId);
-        if (order === undefined) {
-          throw new AppError('ORDER_NOT_FOUND');
-        }
-
-        if (req.targetActor === 'SHOP') {
-          const { shop } = await this.actors.shopWriter(context, principal);
-          if (order.shopId !== shop.shopId) {
-            throw new AppError('ORDER_NOT_FOUND');
+        const nowMs = await freshClockMs(context);
+        if (nowMs >= req.expiresAtMs) {
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
           }
-        } else if (req.targetActor === 'SHIPPER') {
-          const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
-          if (req.targetDriverId !== driver.driverId) {
-            throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
-          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
         }
 
         const allDeliveries = await this.deliveries.listOfOrder(context, orderId);
         const running = allDeliveries.find((d) => ACTIVE_STATES.includes(d.state));
         if (running !== undefined && (running.pickedUpAtMs !== null || ['picked_up', 'delivering', 'completed', 'failed'].includes(running.state))) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hàng đã được lấy', req.version);
-          throw new AppError('CANNOT_CHANGE_AFTER_PICKUP');
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hàng đã được lấy', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
+        }
+
+        const activeAssignment = running ? await this.deliveries.findActiveAssignment(context, running.deliveryId) : undefined;
+        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(running!.state)
+          ? activeAssignment.driverId
+          : null;
+
+        if (currentDriverId !== null) {
+          const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
+          if (driver.driverId !== currentDriverId) {
+            throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
+          }
+        } else {
+          const { shop } = await this.actors.shopWriter(context, principal);
+          if (order.shopId !== shop.shopId) {
+            throw new AppError('ORDER_NOT_FOUND');
+          }
         }
 
         if (!input.accept) {
@@ -368,6 +401,11 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
+        const order = await this.orders.lockById(context, orderId);
+        if (order === undefined) {
+          throw new AppError('ORDER_NOT_FOUND');
+        }
+
         const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
@@ -379,12 +417,25 @@ export class AddressChangeService {
           throw new AppError('VERSION_CONFLICT');
         }
 
+        const nowMs = await freshClockMs(context);
+        if (nowMs >= req.expiresAtMs) {
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
+        }
+
         const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
         if (!resolved) {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        const order = (await this.orders.findById(context, orderId))!;
         await this.orderRecorder.record(context, {
           order,
           type: 'address_change_cancelled',
@@ -396,7 +447,6 @@ export class AddressChangeService {
           requestId,
         });
 
-        const nowMs = await freshClockMs(context);
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
         return {
           status: 200,
@@ -457,12 +507,17 @@ export class AddressChangeService {
         let newFeeVnd: number | null = null;
         if (delivery.pickupLat !== null && delivery.pickupLng !== null && input.lat !== null && input.lng !== null) {
           const route = await this.routes.route({ lat: delivery.pickupLat, lng: delivery.pickupLng }, { lat: input.lat, lng: input.lng });
-          if (route?.distanceM !== null && route?.distanceM !== undefined) {
-            newDistanceM = route.distanceM;
-            const quote = await this.agreements.estimate(context, route.distanceM);
-            if (quote.status === 'PRICED') {
-              newFeeVnd = quote.feeVnd;
+          if (!route || route.distanceM === null || route.distanceM === undefined) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
+          newDistanceM = route.distanceM;
+          const quote = await this.agreements.estimate(context, route.distanceM);
+          if (quote.status === 'UNPRICED') {
+            if (quote.reason === 'OUT_OF_PRICE_RANGE') {
+              throw new AppError('OUT_OF_PRICE_RANGE');
             }
+          } else if (quote.status === 'PRICED') {
+            newFeeVnd = quote.feeVnd;
           }
         }
 
@@ -619,30 +674,56 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
-        const nowMs = await freshClockMs(context);
+        const delivery = await this.deliveries.lockById(context, deliveryId);
+        if (delivery === undefined) {
+          throw new AppError('DELIVERY_NOT_FOUND');
+        }
+        if (['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(delivery.state)) {
+          throw new AppError('DELIVERY_STATE_CONFLICT');
+        }
+
         const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
-        }
-        if (nowMs >= req.expiresAtMs) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
-          throw new AppError('ADDRESS_CHANGE_NOT_PENDING');
         }
         if (req.version !== input.expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        const delivery = await this.deliveries.lockById(context, deliveryId);
-        if (delivery === undefined) {
-          throw new AppError('DELIVERY_NOT_FOUND');
-        }
-        if (delivery.pickedUpAtMs !== null || ['picked_up', 'delivering', 'completed', 'failed'].includes(delivery.state)) {
-          await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hàng đã được lấy', req.version);
-          throw new AppError('CANNOT_CHANGE_AFTER_PICKUP');
+        const nowMs = await freshClockMs(context);
+        if (nowMs >= req.expiresAtMs) {
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
         }
 
+        if (delivery.pickedUpAtMs !== null || ['picked_up', 'delivering'].includes(delivery.state)) {
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hàng đã được lấy', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
+        }
+
+        const activeAssignment = await this.deliveries.findActiveAssignment(context, deliveryId);
+        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(delivery.state)
+          ? activeAssignment.driverId
+          : null;
+
         const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
-        if (req.targetDriverId !== driver.driverId) {
+        if (currentDriverId === null || driver.driverId !== currentDriverId) {
           throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
         }
 
@@ -740,6 +821,11 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
+        const delivery = await this.deliveries.lockById(context, deliveryId);
+        if (delivery === undefined) {
+          throw new AppError('DELIVERY_NOT_FOUND');
+        }
+
         const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
@@ -751,12 +837,25 @@ export class AddressChangeService {
           throw new AppError('VERSION_CONFLICT');
         }
 
+        const nowMs = await freshClockMs(context);
+        if (nowMs >= req.expiresAtMs) {
+          const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', req.version);
+          if (!resolved) {
+            throw new AppError('VERSION_CONFLICT');
+          }
+          const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          return {
+            status: 200,
+            replayGuard: { user_id: principal.userId },
+            payload: { address_change_request: addressChangeView(updated, nowMs) },
+          };
+        }
+
         const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'CANCELLED', principal.userId, 'Khách hủy yêu cầu đổi địa chỉ', req.version);
         if (!resolved) {
           throw new AppError('VERSION_CONFLICT');
         }
 
-        const delivery = (await this.deliveries.findById(context, deliveryId))!;
         await this.deliveryRecorder.record(context, {
           delivery,
           type: 'address_change_cancelled',
@@ -767,7 +866,6 @@ export class AddressChangeService {
           requestId,
         });
 
-        const nowMs = await freshClockMs(context);
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
         return {
           status: 200,

@@ -5,7 +5,7 @@ export function addressChangeView(req: AddressChangeRequestRow | undefined, nowM
   if (req === undefined) {
     return null;
   }
-  const isExpired = req.status === 'PENDING' && nowMs >= req.expiresAtMs;
+  const isExpired = req.status === 'EXPIRED' || (req.status === 'PENDING' && nowMs >= req.expiresAtMs);
   const effectiveStatus = isExpired ? 'EXPIRED' : req.status;
   const timeRemainingSeconds = req.status === 'PENDING' && !isExpired ? Math.max(0, Math.floor((req.expiresAtMs - nowMs) / 1000)) : 0;
 
