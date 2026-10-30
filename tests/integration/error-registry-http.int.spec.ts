@@ -132,8 +132,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 8 canonical delivery quote codes (#211/#239: quote required/changed, missing pins,
     //   route unavailable/timeout, fee range and policy availability)
     // + 6 address change & guidance codes (#218: ADDRESS_CHANGE_ALREADY_PENDING, ADDRESS_CHANGE_NOT_FOUND, ADDRESS_CHANGE_NOT_PENDING, ADDRESS_CHANGE_NOT_PERMITTED, CANNOT_CHANGE_AFTER_PICKUP, ORDER_NOT_CONFIRMED)
+    // + 2 Nhóm 15 codes (#255/#256: WITHDRAWAL_ONLY_WHEN_CLOSING, TOPUP_NOT_ALLOWED_WHEN_CLOSING)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(229);
+    expect(codes).toHaveLength(231);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);

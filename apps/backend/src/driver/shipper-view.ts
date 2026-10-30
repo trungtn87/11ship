@@ -82,8 +82,6 @@ export class ShipperViewBuilder {
       accepting_deliveries: driver.acceptingDeliveries,
       version: driver.version,
       can_edit_profile: driver.status === 'ACTIVE' || (inReview && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED')),
-      // A closure may be asked from ACTIVE and from SUSPENDED (the balance is returned without unlocking). Everything else is decided again by the server on the command.
-      can_request_closure: driver.status === 'ACTIVE' || driver.status === 'SUSPENDED',
       can_submit: inReview && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED'),
       bank:
         bank === undefined

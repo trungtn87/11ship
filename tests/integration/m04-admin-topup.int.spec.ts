@@ -364,10 +364,11 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
   it('6b. a request made before CLOSING is still decided by the Admin: CONFIRMED credits exactly one TOPUP_CREDIT into the balance to hand back, REJECTED credits nothing, and the duplicate or stale decision does nothing', async () => {
     const confirmed = await newShipper(100_000, 'CLOSING');
     const key = randomUUID();
-    const first = await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 }), key);
+    const decision = confirmBody({ actual_amount_vnd: 80_000 });
+    const first = await confirm(recorderLogin, confirmed.requestId, decision, key);
     expect(first.status).toBe(200);
     expect(adminData(first)).toMatchObject({ state: 'CONFIRMED', actual_amount_vnd: 80_000 });
-    expect((await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 }), key)).status).toBe(200); // replay
+    expect((await confirm(recorderLogin, confirmed.requestId, decision, key)).status).toBe(200); // replay of the same decision
     expect(code(await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 })))).toMatchObject({ status: 409 }); // a second decision
     expect((await walletOf(confirmed.walletId)).balance).toBe('80000');
     expect((await ledgerOf(confirmed.walletId)).length).toBe(1);
