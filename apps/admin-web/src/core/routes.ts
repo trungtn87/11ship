@@ -38,6 +38,9 @@ export type Route =
   | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'otp-policy' }
+  // Issue #253: Hệ thống › Vùng hoạt động (the list and one area).
+  | { readonly name: 'zones' }
+  | { readonly name: 'zone'; readonly id: string }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   | { readonly name: 'config' }
@@ -193,6 +196,13 @@ export function parseRoute(pathname: string, search = ''): Route {
       filters.schedule = schedule as ScheduleFilter;
     }
     return { name: 'shops', ...filters };
+  }
+  if (path === '/system/zones') {
+    return { name: 'zones' };
+  }
+  const zone = /^\/system\/zones\/([^/]+)$/.exec(path);
+  if (zone !== null && isUuid(zone[1])) {
+    return { name: 'zone', id: zone[1] };
   }
   const shop = /^\/operations\/shops\/([^/]+)$/.exec(path);
   if (shop !== null && isUuid(shop[1])) {
@@ -367,6 +377,10 @@ export function formatRoute(route: Route): string {
       return '/system/monitoring/errors';
     case 'otp-policy':
       return '/system/parameters/otp';
+    case 'zones':
+      return '/system/zones';
+    case 'zone':
+      return `/system/zones/${route.id}`;
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':

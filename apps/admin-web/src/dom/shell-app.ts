@@ -39,6 +39,7 @@ import { h } from './dom.js';
 import { ProvisioningView } from './provisioning-view.js';
 import { orderTimeoutsPage } from './order-timeouts-page.js';
 import { otpPolicyPage } from './otp-policy-page.js';
+import { zonesPage } from './zones-page.js';
 import { SettingsView } from './settings-view.js';
 import { NOT_WIRED_CATALOG, CatalogSource } from '../core/catalog.js';
 import { CatalogController } from '../core/catalog-controller.js';
@@ -503,6 +504,10 @@ export class ShellApp implements ShellHost {
         return;
       case 'otp-policy':
         otpPolicyPage(content, this.sessionCsrf, this.onSessionLost);
+        return;
+      case 'zones':
+      case 'zone':
+        zonesPage(content, { role: this.#role ?? 'ADMIN', csrf: this.sessionCsrf, onSessionLost: () => this.onSessionLost(), go: (target) => this.go(target) }, route.name === 'zone' ? route.id : undefined);
         return;
       case 'shipping-policy':
         this.#shippingPolicy(content);

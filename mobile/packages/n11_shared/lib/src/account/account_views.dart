@@ -76,6 +76,8 @@ String _failureMessage(AuthFailure failure) {
       return 'Hồ sơ đã ở trạng thái khác trên máy chủ. Hãy tải lại để xem bản hiện tại.';
     case AuthFailureKind.invalidServiceArea:
       return 'Khu vực đã chọn không còn hợp lệ. Hãy tải lại danh sách khu vực và chọn lại.';
+    case AuthFailureKind.pickupOutsideArea:
+      return 'Ghim vị trí lấy hàng nằm ngoài khu vực phục vụ đã chọn. Hãy chọn lại ghim trên bản đồ; thông tin bạn đã nhập được giữ nguyên.';
     case AuthFailureKind.roleNotAvailable:
       return 'Tài khoản chưa dùng được chế độ này.';
     case AuthFailureKind.otpInvalid:
