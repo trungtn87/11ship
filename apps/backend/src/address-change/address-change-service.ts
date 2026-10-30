@@ -225,6 +225,26 @@ export class AddressChangeService {
           throw new AppError('ORDER_NOT_CONFIRMED');
         }
 
+        const allDeliveries = await this.deliveries.listOfOrder(context, orderId);
+        const running = allDeliveries.find((d) => ACTIVE_STATES.includes(d.state));
+        const activeAssignment = running ? await this.deliveries.findActiveAssignment(context, running.deliveryId) : undefined;
+        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(running!.state)
+          ? activeAssignment.driverId
+          : null;
+
+        // Check decider permission FIRST before accessing or resolving request data
+        if (currentDriverId !== null) {
+          const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
+          if (driver.driverId !== currentDriverId) {
+            throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
+          }
+        } else {
+          const { shop } = await this.actors.shopWriter(context, principal);
+          if (order.shopId !== shop.shopId) {
+            throw new AppError('ORDER_NOT_FOUND');
+          }
+        }
+
         const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
@@ -247,8 +267,6 @@ export class AddressChangeService {
           };
         }
 
-        const allDeliveries = await this.deliveries.listOfOrder(context, orderId);
-        const running = allDeliveries.find((d) => ACTIVE_STATES.includes(d.state));
         if (running !== undefined && (running.pickedUpAtMs !== null || ['picked_up', 'delivering', 'completed', 'failed'].includes(running.state))) {
           const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'EXPIRED', null, 'Hàng đã được lấy', req.version);
           if (!resolved) {
@@ -260,23 +278,6 @@ export class AddressChangeService {
             replayGuard: { user_id: principal.userId },
             payload: { address_change_request: addressChangeView(updated, nowMs) },
           };
-        }
-
-        const activeAssignment = running ? await this.deliveries.findActiveAssignment(context, running.deliveryId) : undefined;
-        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(running!.state)
-          ? activeAssignment.driverId
-          : null;
-
-        if (currentDriverId !== null) {
-          const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
-          if (driver.driverId !== currentDriverId) {
-            throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
-          }
-        } else {
-          const { shop } = await this.actors.shopWriter(context, principal);
-          if (order.shopId !== shop.shopId) {
-            throw new AppError('ORDER_NOT_FOUND');
-          }
         }
 
         if (!input.accept) {
@@ -316,14 +317,14 @@ export class AddressChangeService {
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
 
-        // Note: Do NOT alter fee_estimate_vnd! The fee payer's agreed fee remains intact.
-        // Distance: updated when new coords are provided; set to null for text-only (no coords), not retaining old distance.
+        // Update Order: recipient, address, coordinates, new distance, and new fee (M14/M06)
         await context.query(
           `UPDATE app.orders
            SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
                fee_estimate_distance_m = $6,
+               fee_estimate_vnd = COALESCE($7, fee_estimate_vnd),
                version = version + 1, updated_at = clock_timestamp()
-           WHERE order_id = $7`,
+           WHERE order_id = $8`,
           [
             req.newRecipientName,
             req.newRecipientPhone,
@@ -331,6 +332,7 @@ export class AddressChangeService {
             req.newLat,
             req.newLng,
             req.newDistanceM,
+            req.newFeeVnd,
             orderId,
           ],
         );
@@ -341,8 +343,9 @@ export class AddressChangeService {
              SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                  route_distance_m = $7,
+                 fee_vnd = COALESCE($8, fee_vnd),
                  version = version + 1, updated_at = clock_timestamp()
-             WHERE delivery_id = $8`,
+             WHERE delivery_id = $9`,
             [
               req.newRecipientName,
               req.newRecipientPhone,
@@ -351,6 +354,7 @@ export class AddressChangeService {
               req.newLat,
               req.newLng,
               req.newDistanceM,
+              req.newFeeVnd,
               running.deliveryId,
             ],
           );
@@ -535,8 +539,9 @@ export class AddressChangeService {
              SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                  route_distance_m = $7,
+                 fee_vnd = COALESCE($8, fee_vnd),
                  version = version + 1, updated_at = clock_timestamp()
-             WHERE delivery_id = $8`,
+             WHERE delivery_id = $9`,
             [
               input.recipientName,
               input.recipientPhone,
@@ -545,6 +550,7 @@ export class AddressChangeService {
               input.lat,
               input.lng,
               newDistanceM,
+              newFeeVnd,
               deliveryId,
             ],
           );
@@ -682,6 +688,17 @@ export class AddressChangeService {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
 
+        // Check decider permission FIRST before accessing or resolving request data
+        const activeAssignment = await this.deliveries.findActiveAssignment(context, deliveryId);
+        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(delivery.state)
+          ? activeAssignment.driverId
+          : null;
+
+        const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
+        if (currentDriverId === null || driver.driverId !== currentDriverId) {
+          throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
+        }
+
         const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
@@ -717,16 +734,6 @@ export class AddressChangeService {
           };
         }
 
-        const activeAssignment = await this.deliveries.findActiveAssignment(context, deliveryId);
-        const currentDriverId = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(delivery.state)
-          ? activeAssignment.driverId
-          : null;
-
-        const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
-        if (currentDriverId === null || driver.driverId !== currentDriverId) {
-          throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
-        }
-
         if (!input.accept) {
           const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
           if (!resolved) {
@@ -759,15 +766,15 @@ export class AddressChangeService {
         }
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
-        // Note: Do NOT alter fee_vnd! The fee payer's agreed fee remains intact.
-        // Distance: updated if new coordinates route was calculated; cleared to null if text only (no coords).
+        // Cập nhật đồng bộ địa chỉ, khoảng cách VÀ PHÍ sau khi được duyệt (M14/M06)
         await context.query(
           `UPDATE app.deliveries
            SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                route_distance_m = $7,
+               fee_vnd = COALESCE($8, fee_vnd),
                version = version + 1, updated_at = clock_timestamp()
-           WHERE delivery_id = $8`,
+           WHERE delivery_id = $9`,
           [
             req.newRecipientName,
             req.newRecipientPhone,
@@ -776,6 +783,7 @@ export class AddressChangeService {
             req.newLat,
             req.newLng,
             req.newDistanceM,
+            req.newFeeVnd,
             deliveryId,
           ],
         );

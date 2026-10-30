@@ -59,9 +59,22 @@ class AddressChangeBanner extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              'Địa chỉ mới: ${request.newRecipient.addressText}$feeText',
+              'Địa chỉ mới: ${request.newRecipient.addressText}',
               style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
             ),
+            if (request.newFeeVnd != null && request.originalFeeVnd != null) ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                'Phí giao hàng: ${_formatMoney(request.originalFeeVnd!)} ➔ ${_formatMoney(request.newFeeVnd!)}$feeText',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: N11Colors.black),
+              ),
+            ] else if (request.originalFeeVnd != null) ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                'Phí giao hàng: ${_formatMoney(request.originalFeeVnd!)} (giữ nguyên cước)',
+                style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
+              ),
+            ],
             if (request.note != null && request.note!.isNotEmpty) ...<Widget>[
               const SizedBox(height: 2),
               Text(

@@ -202,7 +202,7 @@ export class OrderViews {
       call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))),
       cancel: running && (latest === undefined || !['delivering', 'picked_up', 'completed'].includes(latest.state)),
       close_not_completed: running && latest?.state === 'failed' && (await this.#goodsSettled(context, latest)),
-      decide_address_change: activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && activeAddressChange.targetActor === 'SHOP' && nowMs < activeAddressChange.expiresAtMs,
+      decide_address_change: running && (latest === undefined || !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(latest.state)) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
     };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));

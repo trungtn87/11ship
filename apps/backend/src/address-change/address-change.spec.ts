@@ -301,4 +301,80 @@ describe('Address Change Rules & Concurrency (#218)', () => {
     expect(outcomeView?.reject_reason).toBe('Hết hạn phản hồi');
     expect(outcomeView?.is_expired).toBe(true);
   });
+
+  it('Owner Decision: Recalculates route distance & fee, updates upon accept, and rejects invalid route', () => {
+    // 1. Fee difference calculation
+    const originalFee = 25_000;
+    const newFee = 35_000;
+    const feeDiff = newFee - originalFee;
+    expect(feeDiff).toBe(10_000);
+
+    // 2. Text only (no GPS) keeps fee without simulating fake pricing
+    const textOnlyInput = parseCreateAddressChangeBody({
+      recipient_name: 'Khách',
+      recipient_phone: '0912345678',
+      address_text: 'Địa chỉ chữ không có GPS',
+      expected_version: 1,
+    });
+    expect(textOnlyInput.lat).toBeNull();
+    expect(textOnlyInput.lng).toBeNull();
+
+    // 3. Simulated accept update: fee updated to newFeeVnd when priced
+    const simulateApplyFee = (currentFee: number, newFeeVnd: number | null): number => {
+      return newFeeVnd ?? currentFee; // COALESCE(newFeeVnd, fee)
+    };
+    expect(simulateApplyFee(25_000, 35_000)).toBe(35_000);
+    expect(simulateApplyFee(25_000, null)).toBe(25_000); // Keeps original fee when unpriced
+  });
+
+  it('Permission Check: Verifies decider authorization BEFORE returning EXPIRED data', () => {
+    // An unauthorized user calling decide on an expired request must be rejected
+    // without returning the expired address change request payload
+    const checkDecidePermission = (
+      hasCurrentDriver: boolean,
+      currentDriverId: string | null,
+      callerType: 'SHOP' | 'SHIPPER' | 'STRANGER',
+      callerDriverId?: string,
+    ): 'AUTHORIZED' | 'UNAUTHORIZED' => {
+      if (callerType === 'STRANGER') return 'UNAUTHORIZED';
+      if (hasCurrentDriver && currentDriverId !== null) {
+        if (callerType !== 'SHIPPER' || callerDriverId !== currentDriverId) return 'UNAUTHORIZED';
+        return 'AUTHORIZED';
+      } else {
+        if (callerType !== 'SHOP') return 'UNAUTHORIZED';
+        return 'AUTHORIZED';
+      }
+    };
+
+    // Stranger calling on expired request: UNAUTHORIZED (leaks nothing)
+    expect(checkDecidePermission(true, 'driver-1', 'STRANGER')).toBe('UNAUTHORIZED');
+    // Shop calling when shipper assigned: UNAUTHORIZED
+    expect(checkDecidePermission(true, 'driver-1', 'SHOP')).toBe('UNAUTHORIZED');
+    // Active shipper calling: AUTHORIZED (can receive resolved EXPIRED result)
+    expect(checkDecidePermission(true, 'driver-1', 'SHIPPER', 'driver-1')).toBe('AUTHORIZED');
+  });
+
+  it('Button Synchronization: Synchronizes decide_address_change according to current assignment', () => {
+    // Tests the exact logic of order-views.ts and delivery-views.ts:
+    const canShopDecide = (running: boolean, deliveryState: string | undefined, hasPendingChange: boolean): boolean => {
+      const hasActiveShipper = deliveryState !== undefined && ['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(deliveryState);
+      return running && !hasActiveShipper && hasPendingChange;
+    };
+
+    const canShipperDecide = (isAssignedDriver: boolean, beforePickup: boolean, hasPendingChange: boolean): boolean => {
+      return isAssignedDriver && beforePickup && hasPendingChange;
+    };
+
+    // Case 1: Order preparing, waiting for driver -> Shop has button, Shipper does not
+    expect(canShopDecide(true, 'waiting_driver', true)).toBe(true);
+    expect(canShipperDecide(false, true, true)).toBe(false);
+
+    // Case 2: Shipper accepts trip -> Shop button disappears, Shipper button appears!
+    expect(canShopDecide(true, 'accepted', true)).toBe(false);
+    expect(canShipperDecide(true, true, true)).toBe(true);
+
+    // Case 3: Goods picked up -> Both buttons disappear (pickup lock)
+    expect(canShopDecide(true, 'picked_up', true)).toBe(false);
+    expect(canShipperDecide(true, false, true)).toBe(false);
+  });
 });

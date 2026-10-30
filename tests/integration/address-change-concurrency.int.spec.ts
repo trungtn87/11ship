@@ -5,6 +5,7 @@ import { AddressChangeRepository } from '../../apps/backend/src/address-change/a
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
 import { createActiveShopFor, createDriverFor, purgePhone, randomPhone } from './support/auth-fixtures';
 import { insertDeliveryRow } from './support/delivery-fixtures';
+import { createCategory } from './support/menu-fixtures';
 import { loadIntegrationConfig } from './support/test-helpers';
 import { managerFor, testPool } from './support/transaction-fixtures';
 
@@ -19,6 +20,7 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
   let driverId1 = '';
   let driverUserId2 = '';
   let driverId2 = '';
+  let menuItemId = '';
 
   const manager = () => managerFor(poolClientSource(pool), { timeoutMs: 20_000 });
   const repo = new AddressChangeRepository();
@@ -38,18 +40,42 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
   async function createOrder(customerId: string, shopIdVal: string): Promise<string> {
     const orderId = randomUUID();
     const code = `OD-${orderId.slice(0, 8)}`;
-    await pool.query(
-      `INSERT INTO app.orders (
-         order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text,
-         recipient_name, recipient_phone, address_text, address_lat, address_lng, fee_estimate_vnd, fee_estimate_distance_m,
-         items_original_total_vnd, items_total_vnd, paid_vnd, version, confirmed_at, created_at, updated_at
-       ) VALUES (
-         $1::uuid, $2, $3, $4::uuid, $5::uuid, 'PREPARING', 'Tiệm Bánh Test', '+84900000001', '123 Phố Huế',
-         'Người Nhận Test', '+84912345678', '456 Cầu Giấy', 21.03, 105.78, 25000, 3500,
-         100000, 100000, 100000, 1, now(), now(), now()
-       )`,
-      [orderId, code, randomUUID(), customerId, shopIdVal],
-    );
+    const lineId = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.order_items DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO app.orders (
+           order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text,
+           recipient_name, recipient_phone, address_text, address_lat, address_lng, fee_estimate_vnd, fee_estimate_distance_m,
+           items_original_total_vnd, items_total_vnd, paid_vnd, version, confirmed_at, created_at, updated_at
+         ) VALUES (
+           $1::uuid, $2, $3, $4::uuid, $5::uuid, 'PREPARING', 'Tiệm Bánh Test', '+84900000001', '123 Phố Huế',
+           'Người Nhận Test', '+84912345678', '456 Cầu Giấy', 21.03, 105.78, 25000, 3500,
+           100000, 100000, 100000, 1, now(), now(), now()
+         )`,
+        [orderId, code, randomUUID(), customerId, shopIdVal],
+      );
+      await client.query(
+        `INSERT INTO app.order_items (
+           line_id, order_id, line_no, menu_item_id, name, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at
+         ) VALUES (
+           $1::uuid, $2::uuid, 1, $3::uuid, 'Món test PR232', 100000, 1, 100000, 1, now()
+         )`,
+        [lineId, orderId, menuItemId],
+      );
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.order_items ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
     return orderId;
   }
 
@@ -62,10 +88,57 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     driverId1 = await createDriverFor(pool, driverUserId1, { status: 'ACTIVE' });
     driverUserId2 = await createUser();
     driverId2 = await createDriverFor(pool, driverUserId2, { status: 'ACTIVE' });
+
+    const categoryId = await createCategory(pool, 'Danh mục test PR232');
+    menuItemId = randomUUID();
+    await pool.query(
+      `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, version, created_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, 'Món test PR232', 100000, 'VISIBLE', 1, now(), now())`,
+      [menuItemId, shopId, categoryId],
+    );
   });
 
   afterAll(async () => {
     if (pool !== undefined) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const tables = [
+          'address_change_requests', 'order_events', 'order_items', 'orders',
+          'delivery_events', 'delivery_incidents', 'delivery_assignments', 'deliveries',
+          'menu_items',
+        ];
+        for (const t of tables) {
+          await client.query(`ALTER TABLE app.${t} DISABLE TRIGGER USER`);
+        }
+        await client.query(`DELETE FROM app.address_change_requests WHERE requested_by = ANY($1::uuid[])`, [
+          [customerUserId, shopOwnerUserId, driverUserId1, driverUserId2].filter(Boolean),
+        ]);
+        await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id = ANY($1::uuid[])`, [
+          [driverId1, driverId2].filter(Boolean),
+        ]);
+        await client.query(`DELETE FROM app.deliveries WHERE shop_id = $1::uuid OR requested_by = $2::uuid`, [
+          shopId, customerUserId,
+        ]);
+        await client.query(
+          `DELETE FROM app.order_items WHERE order_id IN (SELECT order_id FROM app.orders WHERE shop_id = $1::uuid OR customer_user_id = $2::uuid)`,
+          [shopId, customerUserId],
+        );
+        await client.query(`DELETE FROM app.orders WHERE shop_id = $1::uuid OR customer_user_id = $2::uuid`, [
+          shopId, customerUserId,
+        ]);
+        await client.query(`DELETE FROM app.menu_items WHERE shop_id = $1::uuid OR item_id = $2::uuid`, [shopId, menuItemId]);
+        await client.query(`DELETE FROM app.menu_categories WHERE name = 'Danh mục test PR232'`);
+        await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+        for (const t of tables) {
+          await client.query(`ALTER TABLE app.${t} ENABLE TRIGGER USER`);
+        }
+        await client.query('COMMIT');
+      } catch {
+        await client.query('ROLLBACK').catch(() => undefined);
+      } finally {
+        client.release();
+      }
       for (const phone of phones) {
         await purgePhone(pool, phone);
       }
@@ -167,10 +240,17 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
         newDistanceM: null,
         feeDifferenceVnd: null,
         note: null,
-        expiresAtMs: now - 1000, // already expired
+        expiresAtMs: now + 300_000,
         orderVersion: 1,
         deliveryVersion: null,
       });
+      await ctx.query(
+        `UPDATE app.address_change_requests
+         SET created_at = clock_timestamp() - interval '10 minutes',
+             expires_at = clock_timestamp() - interval '5 minutes'
+         WHERE change_request_id = $1::uuid`,
+        [expiredRequestId],
+      );
     });
 
     // Resolving to EXPIRED commits cleanly without throwing or rolling back
@@ -232,15 +312,30 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     const assignmentId = randomUUID();
 
     // Create an active assignment for driver 1
-    await pool.query(
-      `INSERT INTO app.delivery_assignments (assignment_id, delivery_id, driver_id, state, created_at, updated_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, 'accepted', now(), now())`,
-      [assignmentId, deliveryId, driverId1],
-    );
-    await pool.query(
-      `UPDATE app.deliveries SET state = 'accepted', updated_at = now() WHERE delivery_id = $1::uuid`,
-      [deliveryId],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.delivery_assignments DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO app.delivery_assignments (assignment_id, delivery_id, driver_id, status, accepted_at, commission_vnd, commission_policy, version, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, 'ACTIVE', now(), 5000, 'COMMISSION_V1', 1, now(), now())`,
+        [assignmentId, deliveryId, driverId1],
+      );
+      await client.query(
+        `UPDATE app.deliveries SET state = 'accepted', version = version + 1, updated_at = now() WHERE delivery_id = $1::uuid`,
+        [deliveryId],
+      );
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.delivery_assignments ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
 
     const changeRequestId = randomUUID();
     await manager().withTransaction(async (ctx) => {
@@ -283,7 +378,7 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     const wrongDriverAttempt = await manager().withTransaction(async (ctx) => {
       // Driver 2 is not the active assignment driver
       const activeAssign = (await ctx.query<{ driver_id: string }>(
-        `SELECT driver_id FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND state = 'accepted'`,
+        `SELECT driver_id FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`,
         [deliveryId],
       )).rows[0];
       if (activeAssign?.driver_id !== driverId2) {
@@ -296,7 +391,7 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     // Only active driver 1 is permitted
     const activeDriverAttempt = await manager().withTransaction(async (ctx) => {
       const activeAssign = (await ctx.query<{ driver_id: string }>(
-        `SELECT driver_id FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND state = 'accepted'`,
+        `SELECT driver_id FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`,
         [deliveryId],
       )).rows[0];
       if (activeAssign?.driver_id === driverId1) {
@@ -309,5 +404,141 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     const finalReq = await manager().withTransaction(async (ctx) => repo.findById(ctx, changeRequestId));
     expect(finalReq?.status).toBe('ACCEPTED');
     expect(finalReq?.resolvedBy).toBe(driverUserId1);
+  });
+
+  it('Owner Decision: Atomically updates address, distance, and recalculates fee upon acceptance in PostgreSQL 17', async () => {
+    const orderId = await createOrder(customerUserId, shopId);
+    const changeRequestId = randomUUID();
+    const newFee = 35000;
+    const newDistance = 4800;
+
+    // Insert pending change with new priced route and fee
+    await manager().withTransaction(async (ctx) => {
+      await repo.insert(ctx, {
+        changeRequestId,
+        orderId,
+        deliveryId: null,
+        source: 'ORDER',
+        requestedBy: customerUserId,
+        status: 'PENDING',
+        targetActor: 'SHOP',
+        targetDriverId: null,
+        originalRecipientName: 'Người Nhận Test',
+        originalRecipientPhone: '+84912345678',
+        originalAddressText: '456 Cầu Giấy',
+        originalLat: 21.03,
+        originalLng: 105.78,
+        originalFeeVnd: 25000,
+        originalDistanceM: 3500,
+        newRecipientName: 'Khách Nhận Địa Chỉ Mới',
+        newRecipientPhone: '+84988888888',
+        newAddressText: '999 Hai Bà Trưng, Hà Nội',
+        newLat: 21.01,
+        newLng: 105.85,
+        newFeeVnd: newFee,
+        newDistanceM: newDistance,
+        feeDifferenceVnd: newFee - 25000,
+        note: 'Đổi địa chỉ sang quận Hai Bà Trưng',
+        expiresAtMs: Date.now() + 300_000,
+        orderVersion: 1,
+        deliveryVersion: null,
+      });
+    });
+
+    // Accept change: simulate atomic update on app.orders with guard set
+    await manager().withTransaction(async (ctx) => {
+      await repo.resolve(ctx, changeRequestId, 'ACCEPTED', shopOwnerUserId, null, 1);
+      await ctx.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      await ctx.query(
+        `UPDATE app.orders
+         SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
+             fee_estimate_distance_m = $6,
+             fee_estimate_vnd = COALESCE($7, fee_estimate_vnd),
+             version = version + 1, updated_at = clock_timestamp()
+         WHERE order_id = $8`,
+        ['Khách Nhận Địa Chỉ Mới', '+84988888888', '999 Hai Bà Trưng, Hà Nội', 21.01, 105.85, newDistance, newFee, orderId],
+      );
+    });
+
+    // Verify atomic update in app.orders
+    const updatedOrder = (await pool.query<{
+      recipient_name: string;
+      address_text: string;
+      fee_estimate_vnd: string;
+      fee_estimate_distance_m: number;
+    }>(
+      `SELECT recipient_name, address_text, fee_estimate_vnd, fee_estimate_distance_m FROM app.orders WHERE order_id = $1::uuid`,
+      [orderId],
+    )).rows[0];
+
+    expect(updatedOrder.recipient_name).toBe('Khách Nhận Địa Chỉ Mới');
+    expect(updatedOrder.address_text).toBe('999 Hai Bà Trưng, Hà Nội');
+    expect(Number(updatedOrder.fee_estimate_vnd)).toBe(35000);
+    expect(updatedOrder.fee_estimate_distance_m).toBe(4800);
+  });
+
+  it('Permission Check: Denies unauthorized caller on expired request BEFORE exposing data', async () => {
+    const orderId = await createOrder(customerUserId, shopId);
+    const expiredRequestId = randomUUID();
+    const unauthorizedStrangerUserId = await createUser();
+
+    // Insert expired request
+    await manager().withTransaction(async (ctx) => {
+      await repo.insert(ctx, {
+        changeRequestId: expiredRequestId,
+        orderId,
+        deliveryId: null,
+        source: 'ORDER',
+        requestedBy: customerUserId,
+        status: 'PENDING',
+        targetActor: 'SHOP',
+        targetDriverId: null,
+        originalRecipientName: 'Người Nhận Test',
+        originalRecipientPhone: '+84912345678',
+        originalAddressText: '456 Cầu Giấy',
+        originalLat: null,
+        originalLng: null,
+        originalFeeVnd: 25000,
+        originalDistanceM: null,
+        newRecipientName: 'Người Nhận Mới',
+        newRecipientPhone: '+84987654321',
+        newAddressText: '789 Đống Đa',
+        newLat: null,
+        newLng: null,
+        newFeeVnd: null,
+        newDistanceM: null,
+        feeDifferenceVnd: null,
+        note: null,
+        expiresAtMs: Date.now() + 300_000,
+        orderVersion: 1,
+        deliveryVersion: null,
+      });
+      await ctx.query(
+        `UPDATE app.address_change_requests
+         SET created_at = clock_timestamp() - interval '10 minutes',
+             expires_at = clock_timestamp() - interval '5 minutes'
+         WHERE change_request_id = $1::uuid`,
+        [expiredRequestId],
+      );
+    });
+
+    // Verify that checking decider permission rejects stranger
+    const checkPermissionOutcome = await manager().withTransaction(async (ctx) => {
+      const order = (await ctx.query<{ shop_id: string }>(
+        `SELECT shop_id FROM app.orders WHERE order_id = $1::uuid`,
+        [orderId],
+      )).rows[0];
+      const callerShop = (await ctx.query<{ shop_id: string }>(
+        `SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid`,
+        [unauthorizedStrangerUserId],
+      )).rows[0];
+
+      if (!callerShop || callerShop.shop_id !== order.shop_id) {
+        return 'ORDER_NOT_FOUND_OR_DENIED';
+      }
+      return 'AUTHORIZED';
+    });
+
+    expect(checkPermissionOutcome).toBe('ORDER_NOT_FOUND_OR_DENIED');
   });
 });

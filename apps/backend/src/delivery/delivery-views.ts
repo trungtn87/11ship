@@ -249,7 +249,7 @@ export class DeliveryViews {
         // The shop answers a fee proposal only when it is the payer or stands in for a payer without an app (DIRECT).
         decide_fee: feeQuestionOpen && decider === 'SHOP',
         wait_customer_fee: feeQuestionOpen && decider === 'CUSTOMER',
-        decide_address_change: activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && activeAddressChange.targetActor === 'SHOP' && nowMs < activeAddressChange.expiresAtMs,
+        decide_address_change: !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(d.state) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
       },
     };
     if (detail) {
@@ -429,7 +429,7 @@ export class DeliveryViews {
         complete: running && d.state === 'delivering',
         // Kept as false so an older app never offers it: after pickup the Shipper only completes, or calls the shop.
         fail: false,
-        decide_address_change: active && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && activeAddressChange.targetActor === 'SHIPPER' && activeAddressChange.targetDriverId === assignment.driverId && nowMs < activeAddressChange.expiresAtMs,
+        decide_address_change: active && before && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
       },
     };
   }
