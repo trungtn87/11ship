@@ -57,7 +57,7 @@ describe('M07 customer delivery validation (Phần A, B, C)', () => {
     expect(parsed.dropoffLat).toBeNull();
     expect(parsed.dropoffLng).toBeNull();
     expect(parsed.codVnd).toBe(0);
-    expect(parsed.feePayer).toBe('RECIPIENT');
+    expect(parsed.feePayer).toBe('SENDER');
   });
 
   it('allows creation with full GPS coordinates', () => {
@@ -83,14 +83,16 @@ describe('M07 customer delivery validation (Phần A, B, C)', () => {
     const parsed = parseCustomerCreateBody({
       ...validBase,
       cod_vnd: 500000,
-      fee_payer: 'SENDER',
+      fee_payer: 'RECIPIENT',
     });
     expect(parsed.codVnd).toBe(500000);
-    expect(parsed.feePayer).toBe('SENDER');
+    expect(parsed.feePayer).toBe('RECIPIENT');
 
     expect(() => parseCustomerCreateBody({ ...validBase, cod_vnd: -1000 })).toThrow();
     expect(() => parseCustomerCreateBody({ ...validBase, cod_vnd: 10000001 })).toThrow();
     expect(() => parseCustomerCreateBody({ ...validBase, fee_payer: 'INVALID' })).toThrow();
+    expect(() => parseCustomerCreateBody({ ...validBase, fee_payer: 'CUSTOMER' })).toThrow();
+    expect(() => parseCustomerCreateBody({ ...validBase, fee_payer: 'SHOP' })).toThrow();
   });
 
   it('validates toggle location body', () => {

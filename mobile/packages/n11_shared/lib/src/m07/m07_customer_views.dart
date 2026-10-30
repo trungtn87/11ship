@@ -41,7 +41,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   final TextEditingController _codAmount = TextEditingController(text: '0');
   bool _enableCod = false;
 
-  String _feePayer = 'RECIPIENT'; // 'RECIPIENT' or 'SENDER'
+  String _feePayer = 'SENDER'; // 'SENDER' or 'RECIPIENT'
 
   bool _customFee = false;
   final TextEditingController _feeAmount = TextEditingController();
@@ -67,7 +67,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   bool get _hasGps => _pickupLat != null && _pickupLng != null && _dropoffLat != null && _dropoffLng != null;
 
   int get _codVnd => _enableCod ? (parseAgreedFee(_codAmount.text) ?? 0) : 0;
-  int? get _proposedFee => _customFee ? parseAgreedFee(_feeAmount.text) : null;
+  int? get _proposedFee => (_customFee || !_hasGps) ? parseAgreedFee(_feeAmount.text) : null;
 
   String get _recipientTotalSummary {
     final int cod = _codVnd;
@@ -148,8 +148,12 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
       setState(() => _problem = 'Tiền thu hộ (COD) phải là số nguyên từ 0 đến 10.000.000đ.');
       return;
     }
-    if (_customFee && _proposedFee == null) {
-      setState(() => _problem = 'Mức phí đề xuất phải là số nguyên từ 0 đến 10.000.000đ.');
+    if (!_hasGps && (_proposedFee == null || _proposedFee! <= 0)) {
+      setState(() => _problem = 'Thiếu định vị GPS: Vui lòng nhập mức phí đề xuất để gọi shipper.');
+      return;
+    }
+    if (_customFee && (_proposedFee == null || _proposedFee! <= 0)) {
+      setState(() => _problem = 'Mức phí đề xuất phải là số nguyên từ 1 đến 10.000.000đ.');
       return;
     }
 
@@ -194,8 +198,8 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
       codVnd: _codVnd,
       feePayer: _feePayer,
       note: _feeNote.text.trim().isEmpty ? null : _feeNote.text.trim(),
-      agreedFee: _customFee && _proposedFee != null
-          ? AgreedFeeInput(reasonCode: 'OTHER', reasonNote: _feeNote.text.trim().isEmpty ? null : _feeNote.text.trim(), amountVnd: _proposedFee!)
+      agreedFee: (_customFee || !_hasGps) && _proposedFee != null && _proposedFee! > 0
+          ? AgreedFeeInput(reasonCode: 'OTHER', reasonNote: _feeNote.text.trim().isEmpty ? 'Khách đề xuất phí' : _feeNote.text.trim(), amountVnd: _proposedFee!)
           : null,
     );
 
@@ -358,32 +362,44 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                       type: MaterialType.transparency,
                       child: Column(
                         children: <Widget>[
-                          RadioListTile<String>(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Người nhận trả phí giao'),
-                            value: 'RECIPIENT',
-                            groupValue: _feePayer,
-                            onChanged: (String? v) => setState(() => _feePayer = v!),
+                          InkWell(
+                            onTap: () => setState(() => _feePayer = 'SENDER'),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                children: <Widget>[
+                                  Icon(_feePayer == 'SENDER' ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: _feePayer == 'SENDER' ? Theme.of(context).primaryColor : Colors.grey, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('Người gửi trả phí giao (mặc định)')),
+                                ],
+                              ),
+                            ),
                           ),
-                          RadioListTile<String>(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Người gửi trả phí giao'),
-                            value: 'SENDER',
-                            groupValue: _feePayer,
-                            onChanged: (String? v) => setState(() => _feePayer = v!),
+                          InkWell(
+                            onTap: () => setState(() => _feePayer = 'RECIPIENT'),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                children: <Widget>[
+                                  Icon(_feePayer == 'RECIPIENT' ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: _feePayer == 'RECIPIENT' ? Theme.of(context).primaryColor : Colors.grey, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('Người nhận trả phí giao')),
+                                ],
+                              ),
+                            ),
                           ),
                           const Divider(),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('Đề xuất mức phí giao', style: N11Text.bodyStrong),
-                            subtitle: const Text('Nhập mức phí bạn mong muốn để shipper xem xét', style: N11Text.caption),
-                            value: _customFee,
-                            onChanged: (bool v) => setState(() => _customFee = v),
+                            subtitle: Text(_hasGps ? 'Nhập mức phí bạn mong muốn để shipper xem xét' : 'Thiếu GPS: Nhập mức phí đề xuất để shipper nhận chuyến', style: N11Text.caption),
+                            value: _customFee || !_hasGps,
+                            onChanged: _hasGps ? (bool v) => setState(() => _customFee = v) : null,
                           ),
                         ],
                       ),
                     ),
-                    if (_customFee) ...<Widget>[
+                    if (_customFee || !_hasGps) ...<Widget>[
                       const SizedBox(height: N11Space.gap2),
                       N11Field(
                         fieldKey: const Key('m07-c-fee-amount'),
@@ -750,7 +766,11 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                                   icon: const Icon(Icons.copy, size: 20),
                                   tooltip: 'Sao chép liên kết',
                                   onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: _trackingLink!.trackingUrl));
+                                    final String raw = _trackingLink!.trackingUrl;
+                                    final String fullUrl = raw.startsWith('http')
+                                        ? raw
+                                        : 'https://11ship.app${raw.startsWith("/") ? "" : "/"}$raw';
+                                    Clipboard.setData(ClipboardData(text: fullUrl));
                                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép liên kết theo dõi')));
                                   },
                                 ),

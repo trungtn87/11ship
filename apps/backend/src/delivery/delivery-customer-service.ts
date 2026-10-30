@@ -15,8 +15,8 @@ import { DeliveryCancel } from './delivery-cancel';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
 import { DeliveryHandback } from './delivery-handback';
 import { DeliveryRecorder } from './delivery-recorder';
-import { DeliveryRepository, DeliveryRow, NewDelivery } from './delivery-repository';
-import { creatorMayCancelAfterPickup, dropoffAreaOf, locationValid, newDeliveryCode } from './delivery-rules';
+import { DeliveryRepository, NewDelivery } from './delivery-repository';
+import { dropoffAreaOf, locationValid, newDeliveryCode } from './delivery-rules';
 import { CreateCustomerDeliveryInput, ReasonInput, VersionInput } from './delivery-validation';
 import { DeliveryViews } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
@@ -127,15 +127,25 @@ export class DeliveryCustomerService {
         replay: this.#replay(principal),
       },
       async (context) => {
-        let distanceM = route?.distanceM ?? null;
+        const distanceM = route?.distanceM ?? null;
         let standardFeeVnd: number | null = null;
-        const feeMode = input.agreedFee !== null ? 'AGREED' : (hasBothPins ? 'STANDARD' : 'AGREED');
+        let feeMode: 'STANDARD' | 'AGREED' = input.agreedFee !== null ? 'AGREED' : 'STANDARD';
 
-        if (input.agreedFee === null && hasBothPins && distanceM !== null) {
+        if (input.agreedFee === null) {
+          if (!hasBothPins || distanceM === null) {
+            throw new AppError('FEE_REQUIRED');
+          }
           const quote = await this.agreements.estimate(context, distanceM);
           if (quote.status === 'PRICED') {
             standardFeeVnd = quote.feeVnd;
+          } else {
+            throw new AppError(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE');
           }
+        } else {
+          if (input.agreedFee.amountVnd <= 0) {
+            throw new AppError('DELIVERY_INPUT_INVALID');
+          }
+          feeMode = 'AGREED';
         }
 
         const deliveryId = randomUUID();
@@ -192,11 +202,14 @@ export class DeliveryCustomerService {
         if (feeMode === 'STANDARD' && standardFeeVnd !== null) {
           await this.agreements.createStandard(context, agreementInput);
         } else {
+          if (!input.agreedFee || input.agreedFee.amountVnd <= 0) {
+            throw new AppError('FEE_REQUIRED');
+          }
           await this.agreements.createAgreed(context, {
             ...agreementInput,
-            reasonCode: input.agreedFee?.reasonCode ?? 'OTHER',
-            reasonNote: input.agreedFee?.reasonNote ?? 'Khách gọi shipper',
-            proposedFeeVnd: input.agreedFee?.amountVnd ?? 0,
+            reasonCode: input.agreedFee.reasonCode,
+            reasonNote: input.agreedFee.reasonNote ?? 'Khách gọi shipper',
+            proposedFeeVnd: input.agreedFee.amountVnd,
           });
         }
 
@@ -316,7 +329,7 @@ export class DeliveryCustomerService {
         let outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
-          requestId: randomUUID(),
+          requestId: `${requestId}:shop_accept`,
           nowMs,
           action: { type: 'SHOP_ACCEPT_COUNTER' },
           actorUserId: principal.userId,
@@ -327,7 +340,7 @@ export class DeliveryCustomerService {
           outcome = await this.agreements.act(context, {
             agreementId: agreement.agreementId,
             expectedVersion: outcome.agreement.version,
-            requestId: randomUUID(),
+            requestId: `${requestId}:confirm`,
             nowMs: await freshClockMs(context),
             action: { type: 'CUSTOMER_CONFIRM', approve: true },
             actorUserId: principal.userId,
@@ -382,7 +395,7 @@ export class DeliveryCustomerService {
         const outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
-          requestId: randomUUID(),
+          requestId: `${requestId}:shop_reject`,
           nowMs,
           action: { type: 'SHOP_REJECT_COUNTER' },
           actorUserId: principal.userId,
@@ -404,7 +417,7 @@ export class DeliveryCustomerService {
 
   // ---- tracking link management ----------------------------------------------------------------------------------------------
 
-  async createTrackingLink(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
+  async createTrackingLink(principal: AuthPrincipal, deliveryId: string, baseUrl?: string): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
       const delivery = await this.deliveries.findOfCustomer(context, deliveryId, principal.userId);
       if (delivery === undefined) {
@@ -427,10 +440,12 @@ export class DeliveryCustomerService {
         shareLocation: false,
       });
 
+      const trackingUrl = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/track/${token}` : `/track/${token}`;
+
       return {
         tracking_id: trackingId,
         token,
-        tracking_url: `/track/${token}`,
+        tracking_url: trackingUrl,
         share_location: false,
       };
     });

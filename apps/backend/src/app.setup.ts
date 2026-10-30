@@ -119,6 +119,13 @@ export function configureApp(app: INestApplication): void {
   // Without this hook GET works, but the guard hashes an empty body for POST and refuses its valid proof.
   app.use(`/${GLOBAL_PREFIX}/notifications`, clientAuthTransportMiddleware);
   app.use(`/${GLOBAL_PREFIX}/notifications`, captureRawBody);
+  // PR #231: Public tracking routes /track/:token and /public/tracking/:token reach the v1 controller
+  app.use((req: { url?: string }, _res: unknown, next: () => void) => {
+    if (typeof req.url === 'string' && (req.url.startsWith('/track/') || req.url.startsWith('/public/tracking/'))) {
+      req.url = `/${GLOBAL_PREFIX}${req.url}`;
+    }
+    next();
+  });
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost), logger));
 }

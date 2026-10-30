@@ -662,8 +662,10 @@ void main() {
       // Toggle COD
       await tap(tester, find.text('Thu hộ tiền hàng (COD)'));
       await tester.enterText(key('m07-c-cod-amount'), '200000');
-      // Toggle Custom fee
-      await tap(tester, find.text('Đề xuất mức phí giao'));
+      // Set recipient pays fee
+      await tester.ensureVisible(find.text('Người nhận trả phí giao'));
+      await tap(tester, find.text('Người nhận trả phí giao'));
+      // Custom fee
       await tester.enterText(key('m07-c-fee-amount'), '25000');
       await settle(tester);
       // Recipient total summary should show COD + fee

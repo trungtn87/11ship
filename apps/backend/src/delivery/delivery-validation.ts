@@ -65,6 +65,7 @@ export function shaped(value: unknown, required: readonly string[], optional: re
   return value as Record<string, unknown>;
 }
 
+export const MAX_COD_VND = 10_000_000;
 const MAX_FEE_VND = 10_000_000;
 const MAX_MONEY_VND = 9_007_199_254_740_991;
 
@@ -320,10 +321,10 @@ export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryIn
   if (hasDropoffLat !== hasDropoffLng) return reject();
 
   const goodsValueVnd = b.goods_value_vnd !== undefined ? whole(b.goods_value_vnd, 0, MAX_MONEY_VND) : 0;
-  const codVnd = b.cod_vnd !== undefined ? whole(b.cod_vnd, 0, MAX_FEE_VND) : 0;
+  const codVnd = b.cod_vnd !== undefined ? whole(b.cod_vnd, 0, MAX_COD_VND) : 0;
 
-  const feePayer = ((b.fee_payer as FeePayer) ?? 'RECIPIENT');
-  if (feePayer !== 'SENDER' && feePayer !== 'RECIPIENT' && feePayer !== 'CUSTOMER' && feePayer !== 'SHOP') {
+  const feePayer = (b.fee_payer as FeePayer) ?? 'SENDER';
+  if (feePayer !== 'SENDER' && feePayer !== 'RECIPIENT') {
     return reject();
   }
 
@@ -331,7 +332,7 @@ export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryIn
   if (b.agreed_fee !== undefined && b.agreed_fee !== null) {
     const f = shaped(b.agreed_fee, ['amount_vnd'], ['reason_code', 'reason_note']);
     const reasonCode = (f.reason_code as AgreementReason) ?? 'CUSTOMER_DIRECT';
-    agreedFee = { reasonCode, reasonNote: optionalText(f.reason_note, 200), amountVnd: whole(f.amount_vnd, 0, MAX_FEE_VND) };
+    agreedFee = { reasonCode, reasonNote: optionalText(f.reason_note, 200), amountVnd: whole(f.amount_vnd, 1, MAX_FEE_VND) };
   }
 
   return {

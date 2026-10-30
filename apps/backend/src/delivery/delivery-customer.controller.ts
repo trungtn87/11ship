@@ -69,7 +69,12 @@ export class DeliveryCustomerController {
   @Post('deliveries/:delivery_id/tracking-link')
   @HttpCode(201)
   async createTrackingLink(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest) {
-    return { data: await this.customer.createTrackingLink(this.#principal(request), parseDeliveryId(id)) };
+    const hostHeader = request.headers['x-forwarded-host'] || request.headers.host;
+    const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+    const protoHeader = request.headers['x-forwarded-proto'];
+    const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || 'https';
+    const baseUrl = host ? `${proto}://${host}` : undefined;
+    return { data: await this.customer.createTrackingLink(this.#principal(request), parseDeliveryId(id), baseUrl) };
   }
 
   @Get('deliveries/:delivery_id/tracking-link')
