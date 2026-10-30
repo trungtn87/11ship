@@ -39,6 +39,8 @@ export interface ArtifactStream {
   readonly fileName: string;
 }
 
+const DEPLOY_START_REPLAY_MS = 30 * 60_000;
+
 /**
  * Everything that is reported TO M13 rather than read from it: the independent probe, the backup job, the deploy pipeline (each with its own hashed machine
  * credential, one scope each), the apps' log batches and version reports (the client session), and the release files devices download. Nothing here changes an
@@ -172,6 +174,10 @@ export class OpsIngestService {
     return this.transactions.withTransaction(async (context) => {
       if (b.action === 'start') {
         const latest = await this.releases.latestDeploy(context, b.component);
+        // A CI retry of the same start (same component and target, still RUNNING, recent) returns the open record instead of a duplicate.
+        if (latest !== undefined && latest.status === 'RUNNING' && latest.toVersion === b.toVersion && Date.now() - latest.startedAtMs <= DEPLOY_START_REPLAY_MS) {
+          return { deploy_id: latest.deployId, status: latest.status };
+        }
         const release = await context.query<{ release_id: string }>(`SELECT release_id FROM app.ops_releases WHERE component = $1 AND version_name = $2`, [b.component, b.toVersion]);
         const row = await this.releases.insertDeploy(context, { deployId: randomUUID(), component: b.component, fromVersion: b.fromVersion ?? (latest?.status === 'SUCCEEDED' ? latest.toVersion : null), toVersion: b.toVersion, releaseId: release.rows[0]?.release_id ?? null, hasDbMigration: b.hasDbMigration, note: b.note });
         await this.repo.insertEvent(context, { category: 'TECHNICAL', level: 'INFO', source: 'DEPLOY', environment: this.#environment, code: 'DEPLOY_STARTED', kind: 'DEPLOY', message: `Bắt đầu triển khai ${b.component} ${b.toVersion}`, detail: { deploy_id: row.deployId, has_db_migration: b.hasDbMigration } }, randomUUID());

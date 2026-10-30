@@ -11,9 +11,9 @@ describe('M13 settings registry (defaults of the approved design)', () => {
     expect(d['gateway.unplug_warn_seconds']).toBe(300);
     expect(d['gateway.send_fail_count']).toBe(3);
     expect(d['gateway.queue_slow_seconds']).toBe(60);
-    expect(d['server.disk_warn_percent']).toBe(80);
-    expect(d['server.disk_critical_percent']).toBe(90);
-    expect(d['server.cpu_percent']).toBe(90);
+    expect(d['server.disk_warn_percent']).toBe(85);
+    expect(d['server.disk_critical_percent']).toBe(95);
+    expect(d['server.cpu_percent']).toBe(85);
     expect(d['server.sustain_seconds']).toBe(300);
     expect(d['server.https_warn_days']).toBe(14);
     expect(d['server.https_critical_days']).toBe(3);
@@ -45,7 +45,7 @@ describe('M13 settings registry (defaults of the approved design)', () => {
   it('stores only differences, and a stored out-of-bounds or unknown key never wins over the default', () => {
     const merged = resolveSettings({ 'gateway.contact_warn_seconds': 120, 'server.cpu_percent': 5, ghost: 1 });
     expect(merged['gateway.contact_warn_seconds']).toBe(120);
-    expect(merged['server.cpu_percent']).toBe(90);
+    expect(merged['server.cpu_percent']).toBe(85);
     expect(overridesOf(merged)).toEqual({ 'gateway.contact_warn_seconds': 120 });
     expect(overridesOf(d)).toEqual({});
   });

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../flows/location.dart';
+import '../m13/m13_ops.dart' show OpsClient;
 import 'discovery_models.dart';
 
 // Issue #190, section 6: the distance on a shop card is the ROAD distance from the customer's CURRENT position to the shop's PICKUP point, asked of
@@ -128,6 +129,7 @@ class RouteDistanceController extends ChangeNotifier {
         answer = await api.routeDistances(fix.latitude, fix.longitude, <String>[for (final ShopCardData s in batch) s.shopId]);
       } on Object {
         answer = const <String, int?>{};
+        OpsClient.reportRouteError('ROUTE_DISTANCE_FAILED', message: 'Road distances for the shop cards could not be calculated');
       }
       if (epoch != _epoch || _disposed) return;
       final DateTime now = _clock();

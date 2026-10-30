@@ -25,6 +25,7 @@ import {
   OpsLevel,
   OpsMaintenance,
   OpsOverview,
+  OpsProbe,
   OpsRead,
   OpsSource,
   OpsWrite,
@@ -35,11 +36,21 @@ import {
   SOURCE_FILTERS,
   STATE_LABEL,
   STATUS_LABEL,
+  VPS_RANGES,
+  VPS_RANGE_LABEL,
+  VPS_WINDOW_MS,
+  VpsPage,
+  VpsProcess,
+  VpsRange,
   WRITE_MESSAGE,
+  PROBE_STATUS_TEXT,
+  formatBytes,
+  formatUptime,
+  splitSegments,
 } from '../core/ops.js';
 import { Route } from '../core/routes.js';
 import { openDialog } from './dialog.js';
-import { formatDateTime, h, primary, secondary } from './dom.js';
+import { formatDateTime, h, primary, secondary, svg } from './dom.js';
 import { icon } from './icons.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
 
@@ -238,6 +249,185 @@ function maintenanceList(items: readonly OpsMaintenance[], cancel?: (m: OpsMaint
   );
 }
 
+/** The independent probe, with the state said honestly: the same block on the overview and on the configuration page. */
+function probeBlock(p: OpsProbe): HTMLElement {
+  const tone: Tone = p.status === 'ACTIVE' ? 'ok' : p.status === 'STALE' ? 'lock' : p.status === 'WAITING_FIRST_REPORT' ? 'wait' : 'neutral';
+  return h(
+    'section',
+    { class: 'detail-block', 'data-probe-status': p.status },
+    h('h2', { class: 'subtitle' }, 'Giám sát ngoài VPS'),
+    h('p', {}, badge(PROBE_STATUS_TEXT[p.status], tone)),
+    h('p', { class: 'hint' }, p.note),
+    definition([
+      ['Khóa PROBE đang hoạt động', String(p.activeKeyCount)],
+      ['Báo cáo gần nhất', when(p.lastReportAt)],
+      ['Khóa dùng lần cuối', when(p.lastKeyUsedAt)],
+      ['Sự cố gần nhất do probe ghi', when(p.lastOutageAt)],
+      ['Hướng dẫn cài đặt', p.runbookPath === '' ? '—' : p.runbookPath],
+    ]),
+    h('p', { class: 'hint' }, p.webhookNote),
+  );
+}
+
+// ---- Giám sát VPS ----
+
+const pctText = (v: number | null): string => (v === null ? '—' : `${v.toFixed(1)}%`);
+const msText = (v: number | null): string => (v === null ? '—' : `${Math.round(v)} ms`);
+const SERVICE_STATUS: Record<'OK' | 'WARN' | 'CRITICAL' | 'UNKNOWN', [string, Tone]> = { OK: ['Hoạt động', 'ok'], WARN: ['Cảnh báo', 'wait'], CRITICAL: ['Không phản hồi', 'lock'], UNKNOWN: ['Chưa có dữ liệu', 'neutral'] };
+
+function vpsCard(v: NonNullable<OpsOverview['vps']>, go: () => void): HTMLElement {
+  const open = secondary('Mở giám sát VPS');
+  open.classList.add('btn-inline');
+  open.addEventListener('click', go);
+  return h(
+    'section',
+    { class: 'detail-block', 'data-vps-card': v.collectorState },
+    h('h2', { class: 'subtitle' }, 'Tài nguyên VPS'),
+    v.collectorStale ? h('p', { class: 'message message-warning', role: 'status' }, v.collectorState === 'NO_DATA' ? 'Chưa có mẫu nào từ bộ thu thập.' : 'Mất tín hiệu bộ thu thập > 3 phút. Chưa thể kết luận VPS ngừng hoạt động.') : undefined,
+    definition([
+      ['CPU', pctText(v.cpuPercent)],
+      ['RAM', pctText(v.memoryPercent)],
+      ['Ổ đĩa chính', pctText(v.diskPercent)],
+      ['Thời gian chạy', formatUptime(v.uptimeSeconds)],
+      ['Kết nối PostgreSQL', v.dbConnections === null ? '—' : String(v.dbConnections)],
+      ['Dung lượng database', formatBytes(v.dbSizeBytes)],
+      ['Mẫu gần nhất', when(v.lastSampleAt)],
+    ]),
+    h('div', { class: 'detail-actions' }, open),
+  );
+}
+
+const CHARTS: ReadonlyArray<{ key: string; title: string; unit: string; max?: number }> = [
+  { key: 'cpu_percent', title: 'CPU', unit: '%', max: 100 },
+  { key: 'memory_percent', title: 'RAM', unit: '%', max: 100 },
+  { key: 'swap_percent', title: 'Swap', unit: '%', max: 100 },
+  { key: 'load_1m', title: 'Tải trung bình 1 phút', unit: '' },
+  { key: 'net_rx_bps', title: 'Mạng nhận', unit: 'B/s' },
+  { key: 'net_tx_bps', title: 'Mạng gửi', unit: 'B/s' },
+  { key: 'api_latency_ms', title: 'Độ trễ Backend 11Ship', unit: 'ms' },
+  { key: 'db_latency_ms', title: 'Độ trễ PostgreSQL', unit: 'ms' },
+  { key: 'db_connections', title: 'Kết nối PostgreSQL', unit: '' },
+];
+
+/** One line chart. Runs of samples are separate paths; a hole (no sample for over twice the expected step) is a hatched band and the line stops there. */
+function lineChart(page: VpsPage, key: string, title: string, unit: string, fixedMax: number | undefined): HTMLElement {
+  const points = page.series[key] ?? [];
+  const W = 600;
+  const H = 120;
+  const to = Date.parse(page.updatedAt);
+  const from = to - VPS_WINDOW_MS[page.range];
+  const x = (iso: string | number): number => ((typeof iso === 'number' ? iso : Date.parse(iso)) - from) / (to - from) * W;
+  const peak = Math.max(1, ...points.map((p) => p.value));
+  const top = fixedMax ?? peak * 1.1;
+  const y = (v: number): number => H - 4 - (Math.min(v, top) / top) * (H - 8);
+  const frame = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'ops-chart', role: 'img', 'aria-label': `${title}, ${VPS_RANGE_LABEL[page.range]}`, preserveAspectRatio: 'none' });
+  for (const gap of page.gaps) {
+    const left = Math.max(0, x(gap.from));
+    const right = Math.min(W, x(gap.to));
+    if (right > left) frame.append(svg('rect', { x: left.toFixed(1), y: '0', width: (right - left).toFixed(1), height: String(H), class: 'ops-chart-gap' }));
+  }
+  for (const run of splitSegments(points, page.expectedStepSeconds)) {
+    if (run.length === 1) {
+      frame.append(svg('circle', { cx: x((run[0] as { at: string }).at).toFixed(1), cy: y((run[0] as { value: number }).value).toFixed(1), r: '2', class: 'ops-chart-dot' }));
+    } else {
+      frame.append(svg('path', { d: run.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.at).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' '), class: 'ops-chart-line', fill: 'none' }));
+    }
+  }
+  const last = points[points.length - 1];
+  const fmt = (v: number): string => (unit === 'B/s' ? `${formatBytes(v)}/s` : unit === '%' ? `${v.toFixed(1)}%` : `${Math.round(v * 10) / 10}${unit === '' ? '' : ` ${unit}`}`);
+  return h(
+    'figure',
+    { class: 'ops-chart-box', 'data-chart': key },
+    h('figcaption', { class: 'ops-tile-name' }, title, last === undefined ? ' · chưa có mẫu' : ` · gần nhất ${fmt(last.value)} · cao nhất ${fmt(peak)}`),
+    frame,
+  );
+}
+
+function processTable(caption: string, rows: readonly VpsProcess[]): HTMLElement {
+  return tableCard(
+    caption,
+    [{ label: 'PID' }, { label: 'Tiến trình' }, { label: 'CPU' }, { label: 'RAM (RSS)' }, { label: '% RAM' }],
+    rows.map((p) => h('tr', {}, cell('PID', String(p.pid)), cell('Tiến trình', p.name), cell('CPU', pctText(p.cpuPercent)), cell('RAM (RSS)', formatBytes(p.rssBytes)), cell('% RAM', pctText(p.memoryPercent)))),
+    rows.length === 0 ? emptyPanel('Chưa đọc được tiến trình', 'Máy chủ này không cho đọc /proc hoặc chưa có mẫu.') : undefined,
+  );
+}
+
+export class OpsVpsView extends Page {
+  #range: VpsRange = '1h';
+  readonly #rangeBar = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Khung thời gian' });
+
+  constructor(root: HTMLElement, host: OpsHost) {
+    super(root, host, 'ops-vps', 'Giám sát VPS', undefined);
+    this.body.before(this.#rangeBar);
+  }
+
+  async load(): Promise<void> {
+    const token = (this.latest += 1);
+    this.loading();
+    const read = await this.host.source.vps(this.#range);
+    if (!this.current(token) || !this.check(read, () => void this.load())) return;
+    this.draw(read.data);
+  }
+
+  private drawRangeBar(): void {
+    this.#rangeBar.replaceChildren(
+      ...VPS_RANGES.map((r) => {
+        const b = h('button', { type: 'button', role: 'tab', class: `tab${this.#range === r ? ' tab-active' : ''}`, 'aria-selected': this.#range === r ? 'true' : 'false', 'data-range': r }, VPS_RANGE_LABEL[r]);
+        b.addEventListener('click', () => {
+          if (this.#range === r) return;
+          this.#range = r;
+          void this.load();
+        });
+        return b;
+      }),
+    );
+  }
+
+  private draw(p: VpsPage): void {
+    this.drawRangeBar();
+    const host = p.host;
+    const tile = (name: string, value: string, hint?: string): HTMLElement => h('div', { class: 'ops-tile ops-tile-plain' }, h('div', { class: 'ops-tile-head' }, h('span', { class: 'ops-tile-name' }, name)), h('p', { class: 'ops-tile-value' }, value), hint === undefined ? undefined : h('p', { class: 'hint' }, hint));
+    const tiles =
+      host === null
+        ? [h('p', { class: 'hint' }, 'Chưa có số đo máy chủ.')]
+        : [
+            tile('Thời gian chạy', formatUptime(host.uptimeSeconds)),
+            tile('CPU', pctText(host.cpuPercent), `${host.cpuCores} lõi · tải 1/5/15 phút: ${host.loadAvg.join(' / ')}`),
+            tile('RAM', host.memory === null ? '—' : pctText(host.memory.usedPercent), host.memory === null ? undefined : `Đã dùng ${formatBytes(host.memory.usedBytes)} · khả dụng ${formatBytes(host.memory.availableBytes)} / ${formatBytes(host.memory.totalBytes)}`),
+            tile('Swap', host.swap === null ? '—' : pctText(host.swap.usedPercent), host.swap === null ? undefined : `${formatBytes(host.swap.usedBytes)} / ${formatBytes(host.swap.totalBytes)}`),
+            ...host.disks.map((d) => tile(`Ổ đĩa ${d.label}`, pctText(d.usedPercent), `Đã dùng ${formatBytes(d.usedBytes)} · còn ${formatBytes(d.freeBytes)} / ${formatBytes(d.totalBytes)}${host.io === null ? '' : ` · I/O từ khi khởi động: đọc ${formatBytes(host.io.readBytes)}, ghi ${formatBytes(host.io.writeBytes)}`}`)),
+            tile('Mạng', host.network === null ? '—' : `↓ ${host.network.rxBytesPerSec === null ? '—' : `${formatBytes(host.network.rxBytesPerSec)}/s`} · ↑ ${host.network.txBytesPerSec === null ? '—' : `${formatBytes(host.network.txBytesPerSec)}/s`}`, host.network === null ? undefined : `Tổng nhận ${formatBytes(host.network.rxBytesTotal)} · tổng gửi ${formatBytes(host.network.txBytesTotal)}`),
+          ];
+    const [bLabel, bTone] = SERVICE_STATUS[p.backend.status];
+    const [dLabel, dTone] = SERVICE_STATUS[p.postgres.status];
+    const services = h(
+      'div',
+      { class: 'ops-grid ops-grid-2' },
+      h('section', { class: 'detail-block', 'data-service': 'backend' }, h('h2', { class: 'subtitle' }, 'Dịch vụ Backend 11Ship'), h('p', {}, badge(bLabel, bTone)), definition([['PID', p.backend.pid === null ? '—' : String(p.backend.pid)], ['Thời gian chạy', formatUptime(p.backend.uptimeSeconds)], ['RAM (RSS)', formatBytes(p.backend.rssBytes)], ['Heap đang dùng', formatBytes(p.backend.heapUsedBytes)], ['CPU tiến trình', pctText(p.backend.cpuPercent)], ['Độ trễ tự kiểm tra', msText(p.backend.selfHealthLatencyMs)]])),
+      h('section', { class: 'detail-block', 'data-service': 'postgres' }, h('h2', { class: 'subtitle' }, 'Dịch vụ PostgreSQL'), h('p', {}, badge(dLabel, dTone)), definition([['Độ trễ (SELECT 1)', msText(p.postgres.latencyMs)], ['Kết nối đang hoạt động', p.postgres.activeConnections === null ? '—' : String(p.postgres.activeConnections)], ['Dung lượng database', formatBytes(p.postgres.databaseSizeBytes)]])),
+    );
+    const diskKeys = Object.keys(p.series).filter((k) => k.startsWith('disk.'));
+    const charts = [...CHARTS.map((c) => lineChart(p, c.key, c.title, c.unit, c.max)), ...diskKeys.map((k) => lineChart(p, k, `Ổ đĩa ${k.slice(5)}`, '%', 100))];
+    const gapNote =
+      p.gapCount === 0
+        ? h('p', { class: 'hint' }, `Không thiếu mẫu trong ${VPS_RANGE_LABEL[p.range]} (mỗi điểm cách nhau khoảng ${p.expectedStepSeconds} giây).`)
+        : h('p', { class: 'message message-warning', role: 'status' }, `Thiếu mẫu: ${p.gapCount} khoảng trống (dải gạch trên biểu đồ). Đường vẽ bị ngắt tại đó, không nối giả.`);
+    this.body.replaceChildren(
+      updatedBar(p.updatedAt, () => void this.load()),
+      p.collector.stale ? h('p', { class: 'message message-warning', role: 'status', 'data-collector': p.collector.state }, p.collector.message) : h('p', { class: 'hint', 'data-collector': p.collector.state }, `${p.collector.message} Mẫu gần nhất: ${when(p.collector.lastSampleAt)}.`),
+      h('div', { class: 'ops-grid' }, ...tiles),
+      services,
+      h('h2', { class: 'subtitle' }, `Lịch sử ${VPS_RANGE_LABEL[p.range]}`),
+      gapNote,
+      h('div', { class: 'ops-grid ops-grid-2' }, ...charts),
+      h('h2', { class: 'subtitle' }, 'Top tiến trình'),
+      h('p', { class: 'hint' }, 'Chỉ đọc. Chỉ hiện tên tiến trình, CPU và RAM; không đọc dòng lệnh hay biến môi trường nên không lộ mật khẩu hay chuỗi kết nối. Trang này chỉ để xem, không điều khiển máy chủ.'),
+      processTable('Top 5 theo CPU', p.processesByCpu),
+      processTable('Top 5 theo RAM', p.processesByMemory),
+    );
+  }
+}
+
 // ---- Tổng quan ------------------------------------------------------------------------------------------------------------------------
 
 export class SysOpsOverviewView extends Page {
@@ -276,14 +466,7 @@ export class SysOpsOverviewView extends Page {
       e.preventDefault();
       this.host.go({ name: 'ops-incidents' });
     });
-    const probe = h(
-      'section',
-      { class: 'detail-block' },
-      h('h2', { class: 'subtitle' }, 'Giám sát ngoài VPS'),
-      h('p', {}, badge(o.probe.label, o.probe.activated ? 'ok' : 'neutral')),
-      h('p', { class: 'hint' }, o.probe.note),
-      o.probe.lastReportAt === null ? undefined : h('p', { class: 'hint' }, `Báo cáo gần nhất: ${formatDateTime(o.probe.lastReportAt)}`),
-    );
+    const probe = probeBlock(o.probe);
     const discord = h(
       'section',
       { class: 'detail-block' },
@@ -308,7 +491,7 @@ export class SysOpsOverviewView extends Page {
       summary,
       incidents,
       h('p', {}, viewAll),
-      h('div', { class: 'ops-grid ops-grid-2' }, probe, discord, update),
+      h('div', { class: 'ops-grid ops-grid-2' }, o.vps === null ? h('span') : vpsCard(o.vps, () => this.host.go({ name: 'ops-vps' })), probe, discord, update),
     );
   }
 
@@ -785,7 +968,7 @@ export class OpsReleasesView extends Page {
     const comps = data.components.filter((c) => ANDROID.includes(c.component));
     const selected = comps.find((c) => c.component === this.#selected) ?? comps[0];
     const rows = comps.map((c) => {
-      const tr = h('tr', { class: c === selected ? 'row-selected' : '' }, cell('Thành phần', c.label), cell('Đang chạy', c.running === null ? 'Chưa có báo cáo từ thiết bị' : `${c.running.versionName} (${c.running.reporters} thiết bị)`), cell('Bản phát hành', c.published === null ? 'Chưa phát hành' : c.published.versionName), cell('Trạng thái', this.#statusCell(c)));
+      const tr = h('tr', { class: c === selected ? 'row-selected' : '' }, cell('Thành phần', c.label), cell('Thiết bị đã báo đang chạy (60 ngày qua)', c.running === null ? 'Chưa có thiết bị nào báo phiên bản' : `${c.running.versionName} (${c.running.reporters} thiết bị)`), cell('APK đã phát hành trên máy chủ (PUBLISHED)', c.published === null ? 'Chưa phát hành' : c.published.versionName), cell('Trạng thái', this.#statusCell(c)));
       tr.addEventListener('click', () => {
         this.#selected = c.component;
         this.#draw();
@@ -818,7 +1001,7 @@ export class OpsReleasesView extends Page {
             this.#downloadControl(p),
           ),
     );
-    return h('div', {}, tableCard('Danh sách phiên bản Android', [{ label: 'Thành phần' }, { label: 'Đang chạy' }, { label: 'Bản phát hành' }, { label: 'Trạng thái' }], rows), detail, h('p', { class: 'hint' }, data.androidNote), h('div', { class: 'message message-warning', role: 'status' }, h('strong', {}, 'Gateway: '), data.gatewayRule));
+    return h('div', {}, tableCard('Danh sách phiên bản Android', [{ label: 'Thành phần' }, { label: 'Thiết bị đã báo đang chạy (60 ngày qua)' }, { label: 'APK đã phát hành trên máy chủ (PUBLISHED)' }, { label: 'Trạng thái' }], rows), detail, h('p', { class: 'hint' }, data.androidNote), h('div', { class: 'message message-warning', role: 'status' }, h('strong', {}, 'Gateway: '), data.gatewayRule));
   }
 
   #downloadControl(p: ReleaseRow): HTMLElement {
@@ -835,7 +1018,6 @@ export class OpsReleasesView extends Page {
       [{ label: 'Thành phần' }, { label: 'Đang chạy' }, { label: 'Bản phát hành' }, { label: 'Trạng thái' }],
       comps.map((c) => h('tr', {}, cell('Thành phần', c.label), cell('Đang chạy', c.running === null ? 'Chưa có báo cáo từ dịch vụ' : c.running.versionName), cell('Bản phát hành', c.published === null ? 'Chưa phát hành' : c.published.versionName), cell('Trạng thái', this.#statusCell(c)))),
     );
-    const deploy = h('button', { type: 'button', class: 'btn btn-secondary btn-inline', disabled: true, 'aria-disabled': 'true' }, icon('lock', 18), 'Triển khai (SYSTEM)');
     const last = data.deploys[0];
     return h(
       'div',
@@ -845,8 +1027,7 @@ export class OpsReleasesView extends Page {
         'section',
         { class: 'detail-block' },
         h('h2', { class: 'subtitle' }, 'Triển khai server'),
-        h('p', {}, deploy),
-        data.deployControl.available ? undefined : h('div', { class: 'message message-warning', role: 'status' }, h('strong', {}, 'Chưa dùng được vì: '), h('ul', { class: 'plain-list' }, ...data.deployControl.missing.map((m) => h('li', {}, m)))),
+        h('p', { class: 'hint' }, 'Triển khai chạy từ pipeline GitHub Actions; Web Admin chỉ ghi nhận kết quả pipeline báo về và không có nút triển khai.'),
         last === undefined ? h('p', { class: 'hint' }, 'Chưa có báo cáo triển khai nào.') : h('p', {}, h('strong', {}, 'Kết quả triển khai gần nhất: '), `${last.componentLabel} ${last.toVersion} · ${deployStatusText(last)} · ${formatDateTime(last.startedAt)}`),
         h('p', { class: 'hint' }, 'Quay lại bản ứng dụng trước và quay lại cơ sở dữ liệu là hai việc khác nhau: thay đổi cơ sở dữ liệu cần đánh giá riêng, không có khôi phục tự động.'),
       ),
@@ -863,7 +1044,7 @@ export class OpsReleasesView extends Page {
     );
     const releases = tableCard(
       'Các bản phát hành',
-      [{ label: 'Thành phần' }, { label: 'Phiên bản' }, { label: 'Ngày' }, { label: 'Trạng thái' }, { label: 'Thiết bị đang chạy' }, ...(system ? [{ label: 'Thao tác', end: true }] : [])],
+      [{ label: 'Thành phần' }, { label: 'Phiên bản' }, { label: 'Ngày' }, { label: 'Trạng thái' }, { label: 'Thiết bị đã báo đang chạy (60 ngày qua)' }, ...(system ? [{ label: 'Thao tác', end: true }] : [])],
       data.releases.map((r) => this.#releaseRow(r, system)),
       data.releases.length === 0 ? emptyPanel('Chưa có bản phát hành nào', system ? 'Đăng ký bản đầu tiên bên dưới.' : 'SYSTEM sẽ đăng ký bản phát hành.') : undefined,
     );
@@ -895,8 +1076,8 @@ export class OpsReleasesView extends Page {
       cell('Thành phần', r.componentLabel),
       cell('Phiên bản', `${r.versionName}${r.versionCode === null ? '' : ` (${r.versionCode})`}`, r.hasDbMigration ? h('div', { class: 'hint' }, 'Có thay đổi cơ sở dữ liệu') : undefined),
       cell('Ngày', when(r.releasedAt)),
-      cell('Trạng thái', badge(r.status === 'PUBLISHED' ? 'Đã phát hành' : r.status === 'DRAFT' ? 'Bản nháp' : 'Đã thu hồi', r.status === 'PUBLISHED' ? 'ok' : 'neutral')),
-      cell('Thiết bị đang chạy', r.reportersRunning === null ? '—' : r.reportersRunning === 0 ? 'Chưa có báo cáo' : String(r.reportersRunning)),
+      cell('Trạng thái', badge(r.status === 'PUBLISHED' ? 'Đã phát hành trên máy chủ' : r.status === 'DRAFT' ? 'Bản nháp' : 'Đã thu hồi', r.status === 'PUBLISHED' ? 'ok' : 'neutral')),
+      cell('Thiết bị đã báo đang chạy (60 ngày qua)', r.reportersRunning === null ? '—' : r.reportersRunning === 0 ? 'Chưa có thiết bị báo' : String(r.reportersRunning)),
       ...(system ? [h('td', { 'data-label': 'Thao tác', class: 'cell-end' }, ...actions)] : []),
     );
   }
@@ -1069,6 +1250,7 @@ export class OpsConfigView extends Page {
       dc === null
         ? h('span')
         : h('section', { class: 'detail-block' }, h('h2', { class: 'subtitle' }, 'Kênh cảnh báo Discord'), h('p', { class: 'hint' }, `Webhook: ${dc.webhookConfigured ? `đã cấu hình${dc.webhookUpdatedAt === null ? '' : ` (đổi lúc ${formatDateTime(dc.webhookUpdatedAt)})`}` : 'chưa cấu hình'}. Giá trị không bao giờ hiển thị lại. Không có cấu hình thì hệ thống không gửi Discord.`), h('label', { class: 'check-row', for: 'cfg-discord-enabled' }, enabled, ' Bật gửi cảnh báo qua Discord'), labelled('Mức gửi tối thiểu', severity), labelled('Webhook Discord', webhook, 'Dùng một kênh chung trước. Chỉ nhận địa chỉ discord.com/api/webhooks/…'), h('label', { class: 'check-row', for: 'cfg-webhook-clear' }, clear, ' Xóa webhook đã lưu'), h('div', { class: 'detail-actions' }, test)),
+      c.probe === null ? h('span') : probeBlock(c.probe),
       h('div', { class: 'detail-actions' }, save),
       maintenance,
       access ?? h('span'),

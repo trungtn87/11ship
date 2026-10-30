@@ -3696,3 +3696,35 @@ select {
     max-width: 100%;
   }
 }
+
+/* M13 Giám sát VPS (#247): line charts. A hole in the samples is a hatched band and the line stops there (nothing is drawn across missing data). */
+.ops-chart-box {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--white);
+  padding: 12px;
+}
+
+.ops-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+  margin-top: 8px;
+  background: var(--neutral-bg);
+}
+
+.ops-chart-line {
+  stroke: var(--ok);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.ops-chart-dot {
+  fill: var(--ok);
+}
+
+.ops-chart-gap {
+  fill: var(--warning-line);
+  opacity: 0.25;
+}

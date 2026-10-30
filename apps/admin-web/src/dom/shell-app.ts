@@ -78,7 +78,7 @@ import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js'
 import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
 import { NOT_WIRED_OPS, OpsLevel, OpsSource } from '../core/ops.js';
-import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, SysOpsOverviewView, OpsReleasesView, openOpsAccessDialog } from './ops-view.js';
+import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, SysOpsOverviewView, OpsReleasesView, OpsVpsView, openOpsAccessDialog } from './ops-view.js';
 import { ErrorLogView } from './monitoring-errors-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
@@ -368,8 +368,10 @@ export class ShellApp implements ShellHost {
   #opsPage(content: HTMLElement, route: Route): void {
     const host = this.#opsHost();
     const view =
-      route.name === 'ops-incident'
-        ? new OpsIncidentDetailView(content, host, route.ref)
+      route.name === 'ops-vps'
+        ? new OpsVpsView(content, host)
+        : route.name === 'ops-incident'
+          ? new OpsIncidentDetailView(content, host, route.ref)
         : route.name === 'ops-incidents'
           ? new OpsIncidentsView(content, host)
           : route.name === 'ops-gateway'
@@ -544,6 +546,7 @@ export class ShellApp implements ShellHost {
         this.#notificationPage(content);
         return;
       case 'ops':
+      case 'ops-vps':
       case 'ops-incidents':
       case 'ops-incident':
       case 'ops-gateway':

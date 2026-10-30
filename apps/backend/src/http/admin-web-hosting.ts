@@ -82,7 +82,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   new RegExp(`^/finance/(?:topups|withdrawals)/${UUID}$`),
   /^\/system\/parameters\/wallet$/,
   // M13 Vận hành hệ thống: six screens and an incident by its code (SC-13) or id.
-  /^\/system-ops(?:\/(?:incidents|gateway|logs|releases|config))?$/,
+  /^\/system-ops(?:\/(?:vps|incidents|gateway|logs|releases|config))?$/,
   new RegExp(`^/system-ops/incidents/(?:SC-\\d{1,9}|${UUID})$`, 'i'),
 ]);
 
