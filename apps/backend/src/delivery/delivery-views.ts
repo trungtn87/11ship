@@ -13,6 +13,8 @@ import { FEE_EXPIRED_REASON, FEE_NOT_AGREED_REASON } from './delivery-handback';
 import { creatorMayCancelAfterPickup, dropoffAreaOf, feeStatusOf, freshnessOf, locationValid, mayRecall, searchExpired, shipperMayRelease, shopMayCancel } from './delivery-rules';
 import { ShipperLocationRepository } from './shipper-location';
 import { buildDeliveryStory, StoryDelivery } from '../orders/order-story';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
+import { addressChangeView } from '../address-change/address-change-views';
 import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
 
 // The JSON each reader gets. The server decides which fields are filled; a field the caller may not see is null (or absent), so a screen cannot
@@ -109,6 +111,7 @@ export class DeliveryViews {
     private readonly users: UserRepository,
     private readonly locations: ShipperLocationRepository,
     private readonly agreements: ShippingFeeAgreementService,
+    private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
   async shipperOf(context: TransactionContext, driverId: string): Promise<ShipperIdentity | undefined> {
@@ -206,6 +209,14 @@ export class DeliveryViews {
     }
     const decider = feeDeciderOf(d);
     const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     const view: JsonObject = {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -230,6 +241,7 @@ export class DeliveryViews {
       search: this.#search(d, nowMs),
       note: d.note,
       dropoff_note: d.dropoffNote,
+      address_change_request: addressChangeView(latestAddressChange, nowMs),
       assignment: assignmentView,
       location,
       result: this.#result(d, incident),
@@ -243,6 +255,7 @@ export class DeliveryViews {
         // The shop answers a fee proposal only when it is the payer or stands in for a payer without an app (DIRECT).
         decide_fee: feeQuestionOpen && decider === 'SHOP',
         wait_customer_fee: feeQuestionOpen && decider === 'CUSTOMER',
+        decide_address_change: !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(d.state) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
       },
     };
     if (detail) {
@@ -312,6 +325,14 @@ export class DeliveryViews {
     const decider = feeDeciderOf(d);
     const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
     const feeView = this.#fee(d, agreement);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     if (feeQuestionOpen && decider === 'CUSTOMER') {
       feeView.status = 'AWAITING_CUSTOMER';
     }
@@ -337,12 +358,15 @@ export class DeliveryViews {
       goods: { description: d.goodsDescription, value_vnd: d.goodsValueVnd, paid_vnd: d.paidVnd, cod_vnd: d.codVnd ?? 0 },
       note: d.note,
       dropoff_note: d.dropoffNote,
+      address_change_request: addressChangeView(latestAddressChange, nowMs),
       recipient: { name: d.recipientName, phone: d.recipientPhone, address_text: d.dropoffAddressText, lat: d.dropoffLat, lng: d.dropoffLng },
       can: {
         cancel: shopMayCancel(d.state) || creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
         cancel_after_pickup: creatorMayCancelAfterPickup(d.state, d.source, 'CUSTOMER'),
         decide_fee: feeQuestionOpen && decider === 'CUSTOMER',
         wait_shipper_fee: feeQuestionOpen && decider !== 'CUSTOMER',
+        request_address_change: d.source === 'CUSTOMER' && ['waiting_driver', 'accepted', 'location_confirmed'].includes(d.state) && d.pickedUpAtMs === null && (activeAddressChange === undefined || nowMs >= activeAddressChange.expiresAtMs),
+        cancel_address_change: activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
       },
       // The points of the call as they were when it was made (snapshots): the map draws these; they say nothing about where anybody is NOW.
       pickup: { shop_name: d.shopName, phone: d.shopPhone, address_text: d.pickupAddressText, lat: d.pickupLat, lng: d.pickupLng },
@@ -361,6 +385,14 @@ export class DeliveryViews {
     const active = assignment.status === 'ACTIVE';
     const running = active && RUNNING_STATES.includes(d.state);
     const before = d.state === 'accepted' || d.state === 'location_confirmed';
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     return {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -402,6 +434,7 @@ export class DeliveryViews {
       location: null,
       result: active ? null : { outcome: assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled', at: iso(assignment.endedAtMs), reason: humanDeliveryReason(assignment.endReason), goods_condition: incident?.goodsCondition ?? null },
       incident: incident !== undefined && incident.assignmentId === assignment.assignmentId ? this.#incident(incident) : null,
+      address_change_request: addressChangeView(latestAddressChange, nowMs),
       can: {
         release: active && shipperMayRelease(d.state),
         // Asked only when the fee really is empty and the Shipper is the one who may fill it (a never-priced call); never because a point or an amount is "null".
@@ -414,6 +447,7 @@ export class DeliveryViews {
         complete: running && d.state === 'delivering',
         // Kept as false so an older app never offers it: after pickup the Shipper only completes, or calls the shop.
         fail: false,
+        decide_address_change: active && before && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
       },
     };
   }

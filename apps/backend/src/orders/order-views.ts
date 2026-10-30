@@ -12,6 +12,8 @@ import { buildOrderStory, StoryAudience, StoryOrderEvent } from './order-story';
 import { humanDeliveryReason } from '../delivery/delivery-reason-text';
 import { publicContactOf } from '../shop-setup/shop-public-contact';
 import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
+import { addressChangeView } from '../address-change/address-change-views';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
 // number or null (never 0 for "unknown"); times are ISO strings; `server_now` carries the SERVER clock so nothing depends on the phone clock. The fee and the
@@ -82,6 +84,7 @@ export class OrderViews {
     private readonly deliveries: DeliveryRepository,
     private readonly deliveryViews: DeliveryViews,
     private readonly shops: ShopAvailabilityReader,
+    private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
   /** The skeleton shared by every reader. */
@@ -163,8 +166,19 @@ export class OrderViews {
     view.shop = { ...(view.shop as JsonObject), contact: contact === undefined ? null : { phone: contact.phone, zalo_url: contact.zaloUrl, messenger_url: contact.messengerUrl } };
     view.delivery = latest === undefined ? null : await this.deliveryViews.forCustomer(context, latest, nowMs);
     view.delivery_count = all.length;
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
+    if (activeAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByDeliveryId(context, latest.deliveryId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByDeliveryId(context, latest.deliveryId, 1))[0];
+    }
+    view.address_change_request = addressChangeView(latestAddressChange, nowMs);
+    const canRequestAddressChange = o.status === 'PREPARING' && (latest === undefined || (!['picked_up', 'delivering', 'completed', 'failed'].includes(latest.state) && latest.pickedUpAtMs === null)) && (activeAddressChange === undefined || nowMs >= activeAddressChange.expiresAtMs);
+    const canCancelAddressChange = activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs;
     // After pickup the customer (who created an ORDER) may cancel; the Shipper is told to call the shop and the goods stay with them until the shop settles them.
-    view.can = { cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true };
+    view.can = { cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true, request_address_change: canRequestAddressChange, cancel_address_change: canCancelAddressChange };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');
@@ -182,15 +196,25 @@ export class OrderViews {
     view.delivery = latest === undefined ? null : await this.deliveryViews.forShop(context, latest, nowMs, detail);
     view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: humanDeliveryReason(d.endReason) }));
     view.schedule_conflict = await this.#scheduleConflict(context, o, nowMs);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
+    if (activeAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByDeliveryId(context, latest.deliveryId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByDeliveryId(context, latest.deliveryId, 1))[0];
+    }
+    view.address_change_request = addressChangeView(latestAddressChange, nowMs);
     const running = o.status === 'PREPARING';
     view.can = {
       edit: o.status === 'PENDING_CONFIRMATION',
       confirm: o.status === 'PENDING_CONFIRMATION' && o.itemsTotalVnd > 0,
       reject: o.status === 'PENDING_CONFIRMATION',
       record_payment: running && !activeDelivery,
-      call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))),
+      call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))) && !(activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs),
       cancel: running && (latest === undefined || !['delivering', 'picked_up', 'completed'].includes(latest.state)),
       close_not_completed: running && latest?.state === 'failed' && (await this.#goodsSettled(context, latest)),
+      decide_address_change: running && (latest === undefined || !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(latest.state)) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
     };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));

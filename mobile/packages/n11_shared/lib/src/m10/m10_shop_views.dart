@@ -1,3 +1,5 @@
+import '../address_change/address_change_widgets.dart';
+import '../guidance/order_incident_guidance.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -385,6 +387,19 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     }
   }
 
+  Future<void> _decideAddressChange(OrderView o, bool accept, String? reason) async {
+    await act('address-change-decide-$accept', (String key) async {
+      await source.decideAddressChange(
+        o.orderId,
+        accept: accept,
+        reason: reason,
+        expectedVersion: o.addressChange?.version ?? 1,
+        key: key,
+      );
+      await _fetcher.reload();
+    }, onConflict: _fetcher.reload);
+  }
+
   Future<void> _edit(OrderView o) async {
     final List<LineEdit>? changes = await showModalBottomSheet<List<LineEdit>>(context: context, isScrollControlled: true, backgroundColor: N11Colors.white, builder: (BuildContext sheet) => _EditSheet(order: o));
     if (changes != null && changes.isNotEmpty) {
@@ -456,6 +471,13 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
           ],
         ),
       ),
+      if (o.addressChange != null)
+        AddressChangeBanner(
+          request: o.addressChange!,
+          canDecide: o.allowed('decide_address_change'),
+          onAccept: busy ? null : () => _decideAddressChange(o, true, null),
+          onReject: busy ? null : (String reason) => _decideAddressChange(o, false, reason),
+        ),
       if (o.scheduleConflict) const N11Banner(key: Key('order-schedule-conflict'), kind: BannerKind.warn, title: 'Giờ hẹn nằm ngoài giờ hoạt động mới', text: 'Quán đã đổi lịch sau khi nhận đơn. Đơn vẫn giữ nguyên, không tự hủy — hãy liên hệ khách để xử lý.'),
       if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã sửa, bạn phải ghi lý do.'),
       if (o.display == DisplayStatus.searchStopped) const N11Banner(key: Key('order-search-stopped'), kind: BannerKind.warn, title: 'Chưa tìm được shipper', text: 'Đơn món vẫn còn. Bạn có thể gọi lại shipper hoặc hủy đơn món.'),
@@ -474,6 +496,18 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
         ]),
       ),
       if (d != null) _deliverySection(o, d),
+      OrderIncidentGuidance(
+        role: 'SHOP',
+        orderStatus: o.status,
+        deliveryState: d?.state.name,
+        hasShipper: d?.assignment != null,
+        customerPhone: o.recipient.phone,
+        shipperPhone: d?.assignment?.shipperPhone,
+        onCallCustomer: () => orderPhoneDialer.dial(o.recipient.phone),
+        onCallShipper: d?.assignment?.shipperPhone != null ? () => orderPhoneDialer.dial(d!.assignment!.shipperPhone!) : null,
+        incident: d?.incident,
+        isAfterPickup: d != null && ['delivering', 'completed', 'failed'].contains(d.state.name),
+      ),
       OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: live, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
       OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),
       OrderSection(id: 'other', title: 'Thông tin khác', summary: 'Đặt lúc ${m10When(o.createdAt)}', builder: (BuildContext _) => _otherInfo(o, d)),

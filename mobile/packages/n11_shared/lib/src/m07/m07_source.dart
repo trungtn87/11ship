@@ -186,6 +186,13 @@ abstract class ShipperDeliverySource {
   Future<DeliveryView> confirmFee(String id, {required int feeVnd, required int expectedVersion, required String key});
   Future<DeliveryView> pickup(String id, {required int expectedVersion, required String key});
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key});
+  Future<DeliveryView> decideAddressChange(
+    String id, {
+    required bool accept,
+    String? reason,
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
 }
 
 class TrackingLinkResult {
@@ -295,4 +302,20 @@ abstract class CustomerDeliverySource {
   Future<TrackingLinkStatus> getTrackingLinkStatus(String id);
   Future<TrackingLinkStatus> toggleTrackingLocation(String id, {required bool shareLocation});
   Future<void> revokeTrackingLink(String id);
+  Future<DeliveryView> requestAddressChange(
+    String id, {
+    required String recipientName,
+    required String recipientPhone,
+    required String addressText,
+    double? lat,
+    double? lng,
+    String? note,
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
+  Future<DeliveryView> cancelAddressChange(
+    String id, {
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
 }
