@@ -138,7 +138,7 @@ export function parseComplaintQuery(query: unknown): AdminComplaintQuery {
   };
 }
 
-export const COMPLAINT_ACTIONS = ['receive', 'assign', 'note', 'request-info', 'conclude', 'close', 'decide-reconsideration', 'adjust-result', 'adjust-commission'] as const;
+export const COMPLAINT_ACTIONS = ['receive', 'assign', 'note', 'request-info', 'conclude', 'close', 'decide-reconsideration', 'adjust-result', 'adjust-commission', 'retry-commission'] as const;
 export type ComplaintAction = (typeof COMPLAINT_ACTIONS)[number];
 export const parseComplaintAction = (value: unknown): ComplaintAction => (typeof value === 'string' && (COMPLAINT_ACTIONS as readonly string[]).includes(value) ? (value as ComplaintAction) : invalid());
 
@@ -167,6 +167,7 @@ export function parseComplaintActionBody(action: ComplaintAction, body: unknown)
     'decide-reconsideration': ['decision', 'reason'],
     'adjust-result': ['corrected_result', 'reason', 'history_reviewed'],
     'adjust-commission': ['direction', 'amount_vnd', 'reason', 'history_reviewed'],
+    'retry-commission': ['reason'],
   };
   onlyKeys(source, ['expected_version', ...extras[action]]);
   const input = {
@@ -229,6 +230,10 @@ export function parseComplaintActionBody(action: ComplaintAction, body: unknown)
       input.amountVnd = source.amount_vnd as number;
       input.body = text(source.reason, 1, NOTE_MAX_CODEPOINTS);
       input.historyReviewed = historyFlag(source.history_reviewed);
+      break;
+    case 'retry-commission':
+      // Nothing about the money is sent: direction, amount and Shipper are the ones already recorded on the adjustment.
+      input.body = text(source.reason, 1, NOTE_MAX_CODEPOINTS);
       break;
     case 'receive':
       break;

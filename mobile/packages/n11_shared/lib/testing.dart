@@ -136,7 +136,7 @@ ApiResponse json(int status, Object? body, {Map<String, String> headers = const 
 
 ApiResponse apiError(int status, String code) => json(status, <String, Object?>{'error': <String, Object?>{'code': code, 'message': 'x', 'request_id': 'r', 'details': <String, Object?>{}}});
 
-Map<String, Object?> identityJson({String name = 'Nguyễn Văn An', int version = 1, String phone = '+84901234567', String active = 'CUSTOMER'}) => <String, Object?>{
+Map<String, Object?> identityJson({String name = 'Nguyễn Văn An', int version = 1, String phone = '+84901234567', String active = 'CUSTOMER', String phoneVerification = 'VERIFIED'}) => <String, Object?>{
       'user_id': '11111111-1111-4111-8111-111111111111',
       'phone_normalized': phone,
       'available_roles': <String>['CUSTOMER'],
@@ -146,6 +146,7 @@ Map<String, Object?> identityJson({String name = 'Nguyễn Văn An', int version
       'onboarding': <String, Object?>{'shop': 'NOT_STARTED', 'driver': 'NOT_STARTED'},
       'onboarding_required': false,
       'role_selection_required': false,
+      'phone_verification_status': phoneVerification,
       'session': <String, Object?>{'expires_at': '2026-10-20T00:00:00.000Z'},
     };
 

@@ -37,9 +37,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   // Server (section 5)
   def('server.api_failures', 'server', 'API: số lần lỗi liên tiếp mở sự cố', 3, 2, 20, 'count'),
   def('server.db_failures', 'server', 'Database: số lần lỗi liên tiếp mở sự cố', 3, 2, 20, 'count'),
-  def('server.disk_warn_percent', 'server', 'Đĩa: cảnh báo', 80, 50, 95, 'percent'),
-  def('server.disk_critical_percent', 'server', 'Đĩa: nghiêm trọng', 90, 60, 99, 'percent'),
-  def('server.cpu_percent', 'server', 'CPU: ngưỡng liên tục', 90, 50, 100, 'percent'),
+  def('server.disk_warn_percent', 'server', 'Đĩa: cảnh báo', 85, 50, 95, 'percent'),
+  def('server.disk_critical_percent', 'server', 'Đĩa: nghiêm trọng', 95, 60, 99, 'percent'),
+  def('server.cpu_percent', 'server', 'CPU: ngưỡng liên tục', 85, 50, 100, 'percent'),
   def('server.memory_percent', 'server', 'RAM: ngưỡng liên tục', 90, 50, 100, 'percent'),
   def('server.sustain_seconds', 'server', 'CPU/RAM: thời gian vượt ngưỡng liên tục', 300, 60, 3600, 'seconds'),
   def('server.worker_stale_seconds', 'server', 'Worker: không có nhịp quá', 180, 60, 3600, 'seconds'),

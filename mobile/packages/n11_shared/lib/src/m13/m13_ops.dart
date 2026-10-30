@@ -33,6 +33,9 @@ class OpsClient {
   final ClientLogQueue queue;
   final Duration flushInterval;
 
+  /// The running client of this app, for the static [report] gate (null before [start] and after [dispose]).
+  static OpsClient? _current;
+
   Timer? _timer;
   Timer? _busyTimer;
   String? _reportedFor;
@@ -43,6 +46,7 @@ class OpsClient {
 
   /// Starts the periodic work: the update check, the version report and the queue delivery. Safe to call once at start.
   void start() {
+    _current = this;
     session.addListener(_onSession);
     WidgetsBinding.instance.addObserver(_lifecycle);
     unawaited(queue.load());
@@ -53,6 +57,9 @@ class OpsClient {
   }
 
   void dispose() {
+    if (identical(_current, this)) {
+      _current = null;
+    }
     _timer?.cancel();
     _busyTimer?.cancel();
     WidgetsBinding.instance.removeObserver(_lifecycle);
@@ -77,6 +84,38 @@ class OpsClient {
     if (queued) {
       unawaited(flush());
     }
+  }
+
+  /// The one safe way for any code of the app to report a non-crash error ([kind] is one of [clientLogKinds]). It goes through the running client's queue,
+  /// so it is redacted, de-duplicated within the recent window and bounded like every other entry. Without a running client (no server address, before start,
+  /// in a test) it does nothing; it never throws and never waits.
+  static void report({required String kind, required String code, String? message, String? deliveryCode}) {
+    final OpsClient? client = _current;
+    if (client == null || !clientLogKinds.contains(kind)) {
+      return;
+    }
+    try {
+      unawaited(client.record(kind: kind, code: normalizeLogCode(code), message: message, deliveryCode: deliveryCode).catchError((Object _) {}));
+    } on Object {
+      // Reporting must never be the reason something else fails.
+    }
+  }
+
+  /// A failed write (POST / PATCH / PUT / DELETE) that the server answered with an error or an answer the app could not understand. The code names the endpoint
+  /// WITHOUT identifiers; the message never carries a body, a query or an id.
+  static void reportActionFailure(String method, String path, {required String reason}) {
+    report(kind: 'ACTION_ERROR', code: opsActionCode(method, path), message: '${method.toUpperCase()} ${_stablePath(path)}: $reason');
+  }
+
+  /// A route / distance calculation that failed. [code] names the failing step; the position that was asked about is never included.
+  static void reportRouteError(String code, {String? message}) {
+    report(kind: 'ROUTE_ERROR', code: code, message: message);
+  }
+
+  /// Test seam: replaces the client the static gate reports to.
+  @visibleForTesting
+  static void attachForTest(OpsClient? client) {
+    _current = client;
   }
 
   void recordCrash(Object error, StackTrace? stack) {
@@ -199,4 +238,23 @@ OpsClient? createOpsClient(ClientApp app, SessionController session, AppConfig c
   );
   final ClientLogQueue queue = ClientLogQueue(store: FileLogQueueStore(() async => '${await platform.dataDirectory()}/ops-log-queue.json'));
   return OpsClient(app: app, config: config, session: session, updates: updates, queue: queue);
+}
+
+final RegExp _uuidSegment = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+final RegExp _numberSegment = RegExp(r'^[0-9]+$');
+
+/// The fixed path of a request: no query, no version prefix, and every identifier replaced by `:id`.
+String _stablePath(String path) {
+  final List<String> parts = <String>[
+    for (final String segment in path.split('?').first.split('/'))
+      if (segment.isNotEmpty && segment != 'v1') (_uuidSegment.hasMatch(segment) || _numberSegment.hasMatch(segment)) ? ':id' : segment,
+  ];
+  return '/${parts.join('/')}';
+}
+
+/// A code in the server's vocabulary for a failed write: the method and the last two fixed parts of the endpoint, for example POST_ME_DELIVERIES_CANCEL.
+String opsActionCode(String method, String path) {
+  final List<String> fixed = _stablePath(path).split('/').where((String s) => s.isNotEmpty && s != ':id').toList();
+  final List<String> tail = fixed.length > 2 ? fixed.sublist(fixed.length - 2) : fixed;
+  return normalizeLogCode('${method.toUpperCase()}_${tail.join('_')}');
 }

@@ -138,6 +138,8 @@ export interface ThreadLine {
 }
 
 export interface AdjustmentRecord {
+  /** The adjustment's own id: a retry of the waiting money acts on THIS record, never on a new one. */
+  readonly id: string;
   readonly kind: 'DELIVERY_RESULT' | 'COMMISSION';
   readonly originalState: string;
   readonly originalAssignmentStatus: string | null;
@@ -150,6 +152,8 @@ export interface AdjustmentRecord {
   readonly successorCount: number;
   readonly reason: string;
   readonly createdAt: string;
+  /** The latest time the record changed: for money waiting for finance, the latest attempt. */
+  readonly updatedAt: string;
 }
 
 export interface DeliveryHistoryLine {
@@ -170,7 +174,7 @@ export interface RelatedDelivery {
   readonly timeline: readonly DeliveryHistoryLine[];
 }
 
-export const COMPLAINT_ACTIONS = ['receive', 'assign', 'note', 'request-info', 'conclude', 'close', 'decide-reconsideration', 'adjust-result', 'adjust-commission'] as const;
+export const COMPLAINT_ACTIONS = ['receive', 'assign', 'note', 'request-info', 'conclude', 'close', 'decide-reconsideration', 'adjust-result', 'adjust-commission', 'retry-commission'] as const;
 export type ComplaintActionName = (typeof COMPLAINT_ACTIONS)[number];
 
 export interface ComplaintDetail {

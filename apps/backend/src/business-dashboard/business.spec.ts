@@ -45,8 +45,8 @@ describe('Business Dashboard money and privacy boundaries',()=>{
     expect(parseBusinessPushConfig({BUSINESS_PUSH_PRIVATE_KEY:e.getPrivateKey().toString('base64url'),BUSINESS_PUSH_PUBLIC_KEY:e.getPublicKey().toString('base64url'),BUSINESS_PUSH_SUBJECT:'mailto:ops@example.com'}).ok).toBe(true);
   });
   it('serves the installed PWA deep links and exact assets without extending the API fallback',()=>{
-    for(const path of ['/business/','/business/chat','/business/finance','/business/notifications'])expect(publicAdminAsset(path)).toBe('business.html');
+    for(const path of ['/business/','/business/chat','/business/finance','/business/notifications','/business/reset','/business/reset/'])expect(publicAdminAsset(path)).toBe('business.html');
     expect(publicAdminAsset('/business.webmanifest')).toBe('business.webmanifest');expect(publicAdminAsset('/business-sw.js')).toBe('business-sw.js');
-    for(const path of ['/business/secret','/business/../.env','/v1/admin/business/reports','/business-sw.js/x'])expect(publicAdminAsset(path)).toBeUndefined();
+    for(const path of ['/business/secret','/business/reset/x','/business/reset.html','/business/../.env','/v1/admin/business/reports','/business-sw.js/x'])expect(publicAdminAsset(path)).toBeUndefined();
   });
 });

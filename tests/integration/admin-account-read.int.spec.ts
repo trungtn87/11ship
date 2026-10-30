@@ -259,7 +259,7 @@ describe('admin account read (API + one real browser smoke)', () => {
     const detail = await get(`/users/${multi.id}`, systemLogin());
     expect(detail.status).toBe(200);
     const data = adminData(detail);
-    expect(Object.keys(data).sort()).toEqual(['account_status', 'allowed_actions', 'created_at', 'display_name', 'lifecycle', 'phone_masked', 'phone_verified', 'profiles', 'roles_visible', 'updated_at', 'user_id', 'version']);
+    expect(Object.keys(data).sort()).toEqual(['account_status', 'allowed_actions', 'consent', 'created_at', 'display_name', 'lifecycle', 'phone_masked', 'phone_verified', 'profiles', 'roles_visible', 'updated_at', 'user_id', 'version']);
     expect(data.allowed_actions).toEqual([]);
     expect(data.profiles).toEqual({ customer: { full_name: NAMES.multiCustomer }, driver: { status: 'PENDING' } });
     expect(detail.text).not.toContain(multi.phone.normalized);
