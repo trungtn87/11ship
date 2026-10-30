@@ -243,7 +243,7 @@ function serveStatic(pathname, request, response, distRoot) {
     response.end('Not found');
     return;
   }
-  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(relative)) relative = '/business.html';
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications|reset)?)?\/?$/.test(relative)) relative = '/business.html';
   const candidate = normalize(join(distRoot, relative));
   let file;
   try {
