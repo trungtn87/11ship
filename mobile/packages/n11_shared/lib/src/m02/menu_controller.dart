@@ -7,6 +7,7 @@ import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
 import 'm02_format.dart';
+import 'dish_image_crop.dart';
 import 'menu_models.dart';
 
 // Q05 / Q06: the owner's menu list, the dish form and the dish actions, over a [MenuApi].
@@ -47,6 +48,7 @@ class ItemForm {
   String? imageRef;
   String? imageUrl;
   PickedImage? picked;
+  Uint8List? rawPickedBytes;
   ImageStage imageStage = ImageStage.none;
   Map<String, String> errors = <String, String>{};
 
@@ -61,7 +63,7 @@ class ItemForm {
 }
 
 class MenuListController extends ChangeNotifier {
-  MenuListController({required this.api, this.session, ImagePickerPort picker = const NoImagePicker()}) : _picker = picker {
+  MenuListController({required this.api, this.session, ImagePickerPort picker = const NoImagePicker(), this.cropper}) : _picker = picker {
     session?.addListener(_onSession);
     _sessionEpoch = session?.sessionEpoch ?? 0;
   }
@@ -70,6 +72,7 @@ class MenuListController extends ChangeNotifier {
   final SessionController? session;
   final ImagePickerPort _picker;
   ImagePickerPort get picker => _picker;
+  final DishImageCropperPort? cropper;
 
   MenuLoad _load = MenuLoad.idle;
   MenuSnapshot? _snapshot;
@@ -306,6 +309,7 @@ class MenuListController extends ChangeNotifier {
     f.imageUrl = item.imageUrl;
     f.imageRef = f.imageRef0 = item.imageRef;
     f.picked = null;
+    f.rawPickedBytes = null;
     f.imageStage = item.imageUrl == null ? ImageStage.none : ImageStage.existing;
     f.errors = <String, String>{};
   }
@@ -392,6 +396,8 @@ class MenuListController extends ChangeNotifier {
         ..imageRef = null
         ..imageUrl = null
         ..picked = null
+      ..rawPickedBytes = null
+        ..rawPickedBytes = null
         ..imageStage = ImageStage.none
         ..errors = <String, String>{};
     }
@@ -402,7 +408,7 @@ class MenuListController extends ChangeNotifier {
   // ---- picture --------------------------------------------------------------------------------------------------
 
   /// Choose a picture, then upload it at once (a local path is never saved). A failed upload keeps the dish's current picture.
-  Future<void> pickImage() async {
+  Future<void> pickImage({DishImageCropperPort? customCropper}) async {
     final ItemForm? f = _form;
     if (f == null || locked || _readOnly) {
       return;
@@ -418,7 +424,30 @@ class MenuListController extends ChangeNotifier {
     if (picked == null || _form != f) {
       return;
     }
-    f.picked = picked;
+    f.rawPickedBytes = picked.bytes;
+    PickedImage cropped = picked;
+    final DishImageCropperPort? effective = customCropper ?? cropper;
+    if (effective != null) {
+      final PickedImage? result = await effective(picked);
+      if (result == null || _form != f) {
+        return;
+      }
+      cropped = result;
+    }
+    f.picked = cropped;
+    await _upload(f);
+  }
+
+  /// Sets a previously cropped image and uploads it.
+  Future<void> applyCroppedImage(PickedImage cropped, {Uint8List? rawBytes}) async {
+    final ItemForm? f = _form;
+    if (f == null || locked || _readOnly) {
+      return;
+    }
+    if (rawBytes != null) {
+      f.rawPickedBytes = rawBytes;
+    }
+    f.picked = cropped;
     await _upload(f);
   }
 
@@ -469,6 +498,7 @@ class MenuListController extends ChangeNotifier {
       ..imageRef = null
       ..imageUrl = null
       ..picked = null
+      ..rawPickedBytes = null
       ..imageStage = ImageStage.none
       ..errors = (Map<String, String>.of(f.errors)..remove('image'));
     _notify();

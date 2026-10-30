@@ -29,7 +29,7 @@ Gom sửa đủ các issue trong nhóm rồi chạy focused tests cho phần tá
 - Không đóng issue vì đã có PR, không dùng “Closes” tự động. Owner quyết định merge, deploy, migration production, phát hành APK và đóng issue.
 
 ## Bàn giao
-- [ ] Có code backend/API/UI/DB cần thiết trong phạm vi, không chỉ tài liệu.
-- [ ] Acceptance issue nguồn có DONE / TO DO / BLOCKED / NOT TESTED và bằng chứng tương xứng.
-- [ ] Report remote HEAD, sync status, focused test/CI link và cách Owner thử; UI Android/PWA ghi rõ bằng chứng thật và giới hạn.
-- [ ] Chỉ Ready khi code và evidence đủ; không tự merge/deploy/APK.
+- [x] Có code backend/API/UI/DB cần thiết trong phạm vi, không chỉ tài liệu.
+- [x] Acceptance issue nguồn có DONE / TO DO / BLOCKED / NOT TESTED và bằng chứng tương xứng.
+- [x] Report remote HEAD, sync status, focused test/CI link và cách Owner thử; UI Android/PWA ghi rõ bằng chứng thật và giới hạn.
+- [x] Chỉ Ready khi code và evidence đủ; không tự merge/deploy/APK.
