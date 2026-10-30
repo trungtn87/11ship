@@ -6,6 +6,56 @@ import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 
 void main() {
+  testWidgets('place search debounces and a late older response cannot replace the latest results', (WidgetTester tester) async {
+    final _PendingSearch search = _PendingSearch();
+    await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
+      initial: const AddressLocation(''), requirePoint: false, searchApi: search,
+      mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
+    )));
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'Cao');
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(search.queries, isEmpty);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(search.queries, <String>['Cao']);
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'Bệnh viện');
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(search.queries, <String>['Cao', 'Bệnh viện']);
+    search.answers[1].complete(const <PlaceSearchResult>[
+      PlaceSearchResult(id: 'new', name: 'Bệnh viện Cao Bằng', address: 'Bệnh viện Cao Bằng, Cao Bằng', latitude: 22.66, longitude: 106.25, inCaoBang: true),
+    ]);
+    await tester.pump();
+    search.answers[0].complete(const <PlaceSearchResult>[
+      PlaceSearchResult(id: 'old', name: 'Kết quả cũ', address: 'Cũ', latitude: 21, longitude: 105, inCaoBang: false),
+    ]);
+    await tester.pump();
+    expect(find.text('Bệnh viện Cao Bằng'), findsOneWidget);
+    expect(find.text('Kết quả cũ'), findsNothing);
+  });
+
+  testWidgets('editing text never silently keeps a stale pin', (WidgetTester tester) async {
+    AddressLocation? saved;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
+      child: const Text('Open'),
+      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
+        initial: const AddressLocation('A', latitude: 22.66, longitude: 106.25), requirePoint: false,
+        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
+      ))),
+    ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'B');
+    await tester.pump();
+    expect(find.byKey(const Key('pin-text-confirmation')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pump();
+    expect(saved, isNull);
+    await tester.tap(find.text('Bỏ ghim – đổi địa điểm'));
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'B');
+    expect(saved?.latitude, isNull);
+  });
+
   testWidgets('typing and moving the pin returns one address; GPS is opt-in', (
     WidgetTester tester,
   ) async {
@@ -219,4 +269,17 @@ class _PendingLocation implements LocationProvider {
   final result = Completer<LocationFix>();
   @override
   Future<LocationFix> currentFix() => result.future;
+}
+
+class _PendingSearch implements PlaceSearchApi {
+  final List<String> queries = <String>[];
+  final List<Completer<List<PlaceSearchResult>>> answers = <Completer<List<PlaceSearchResult>>>[];
+
+  @override
+  Future<List<PlaceSearchResult>> search(String query) {
+    queries.add(query);
+    final Completer<List<PlaceSearchResult>> answer = Completer<List<PlaceSearchResult>>();
+    answers.add(answer);
+    return answer.future;
+  }
 }

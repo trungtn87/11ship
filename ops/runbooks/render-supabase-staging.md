@@ -144,6 +144,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | delivery_assignments | SELECT, INSERT, UPDATE (M07: one Shipper's hold on a delivery; ACTIVE at most once per delivery; never deleted) |
 | delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
 | delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
+| delivery_tracking_links | SELECT, INSERT, UPDATE (#221: public tracking links; updated on revoke/re-issue; never deleted) |
 | shop_public_ids | SELECT (public shop number; immutable after creation, new rows allocated by a SECURITY DEFINER trigger) |
 | shop_display_counters | SELECT (per-shop serial; only the database allocation function may change it) |
 | shop_display_numbers | SELECT (public order and direct-delivery aliases; populated through a trigger, never rewritten) |
@@ -206,6 +207,8 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | business_push_jobs | SELECT, INSERT, UPDATE |
 | business_finance_messages | SELECT, INSERT |
 | business_bank_receipts | SELECT, INSERT |
+| shop_finance_policy | SELECT, UPDATE |
+| shop_entitlement_grants | SELECT, INSERT |
 
 **Permanent account deletion (Owner decision 2026-10-14).** The runtime role has no `DELETE` on any account table. The only way an account is removed is the function `app.purge_app_user(uuid)` (created by the migration, `SECURITY DEFINER`, owned by the migration role, refuses an administration account and an account with a shop or driver profile). `PUBLIC` has no `EXECUTE` on it; after the migrations run, grant it to the runtime role with `ops/selfhosted/03-runtime-function-grants.sql` (one statement: `GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;`). Without that grant a permanent delete answers 503 and nothing is deleted.
 

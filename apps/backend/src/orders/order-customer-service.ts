@@ -1,3 +1,4 @@
+import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { CUSTOMER_ROLE } from '../auth/auth-constants';
@@ -6,12 +7,13 @@ import { UserRepository } from '../auth/user-repository';
 import { ClientActor, ClientSessionAuthority } from '../client-auth/client-session-authority';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { CustomersService } from '../customers/customers-service';
-import { M14RouteClient, RouteLeg } from '../delivery/m14-route-client';
+import { M14RouteClient, RouteResult } from '../delivery/m14-route-client';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { MenuRepository, MenuItemRow } from '../menu/menu-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
+import { MAX_FEE_VND } from '../shipping-policy/shipping-fee-policy';
 import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-reader';
 import { ShopRepository } from '../shop/shop-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -38,6 +40,11 @@ interface PreparedCheckout {
   readonly pickup: { readonly lat: number; readonly lng: number } | null;
   readonly point: { readonly lat: number; readonly lng: number } | null;
 }
+
+type CheckedAddress = { text: string; lat: number | null; lng: number | null; sourceId: string | null };
+
+type QuoteReason = 'PICKUP_PIN_MISSING' | 'DROPOFF_PIN_MISSING' | 'ROUTE_UNAVAILABLE' | 'ROUTE_TIMEOUT' | 'POLICY_NOT_CONFIGURED' | 'OUT_OF_PRICE_RANGE';
+interface CheckoutQuote { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: QuoteReason | null; readonly policyVersion: number | null; readonly snapshot: string; readonly quotedAtMs: number }
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
@@ -130,6 +137,7 @@ export class OrderCustomerService {
       });
     }
     return {
+      next_refresh_ms: snapshot === undefined ? null : businessHoursRefreshMs(snapshot.hours, snapshot.availability.evaluatedAt),
       shop: { shop_id: shopId, name: snapshot?.name ?? null, online: gate?.acceptsOrders === true, reason: snapshot === undefined || gate === undefined ? 'SHOP_NOT_FOUND' : snapshot.status === 'ACTIVE' ? gate.availability.reason : 'SHOP_DISABLED' },
       lines: out,
       note,
@@ -196,8 +204,8 @@ export class OrderCustomerService {
     });
   }
 
-  async #route(prepared: PreparedCheckout): Promise<RouteLeg | undefined> {
-    return prepared.pickup === null || prepared.point === null ? undefined : this.routes.route(prepared.pickup, prepared.point);
+  async #route(prepared: PreparedCheckout): Promise<RouteResult | null> {
+    return prepared.pickup === null || prepared.point === null ? null : this.routes.routeResult(prepared.pickup, prepared.point);
   }
 
   /**
@@ -209,32 +217,60 @@ export class OrderCustomerService {
     const leg = await this.#route(prepared);
     return this.transactions.withTransaction(async (context) => {
       const actor = await this.#customer(context, principal, 'share');
-      const checked = await this.#check(context, actor, input, null);
-      const estimate = await this.#estimate(context, checked.shop, prepared, leg);
+      const checked = await this.#check(context, actor, input, null, false);
+      const estimate = await this.#estimate(context, checked.shop, checked.address, prepared, leg);
       const lines = checked.lines.map((l) => ({ item_id: l.itemId, name: l.name, note: l.note, quantity: l.quantity, unit_price_vnd: l.priceVnd, issue: l.issue }));
       const total = totalOf(checked.lines.filter((l) => l.priceVnd !== null).map((l) => ({ unitPriceVnd: l.priceVnd as number, quantity: l.quantity })));
+      const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
       return {
+        next_refresh_ms: checked.shop === undefined ? null : businessHoursRefreshMs(checked.shop.hours, checked.shop.availability.evaluatedAt),
         ok: checked.blockers.length === 0 && checked.lines.every((l) => l.issue === null),
         blockers: checked.blockers,
         shop: { shop_id: input.shopId, name: checked.shop?.name ?? null, online: checked.shop?.status === 'ACTIVE' && checked.shop.availability.online },
         lines,
         items_total_vnd: total,
-        fee: { status: estimate.feeVnd === null ? 'UNKNOWN' : 'ESTIMATE', estimate_vnd: estimate.feeVnd, distance_m: estimate.distanceM },
-        expected_total_vnd: estimate.feeVnd === null ? null : total + estimate.feeVnd,
+        fee: this.#quoteView(estimate),
+        tip_vnd: input.tipVnd,
+        expected_total_vnd: proposedFee === null ? null : total + proposedFee,
         server_now: iso(await freshClockMs(context)),
       };
     });
   }
 
-  async #estimate(context: TransactionContext, shop: ShopSnapshot | undefined, prepared: PreparedCheckout, leg: RouteLeg | undefined): Promise<{ feeVnd: number | null; distanceM: number | null }> {
-    // A missing or stale route uses the M06 entry tier only as a provisional reference.
-    // Preserve null distance: this is neither a measured distance nor the fee agreed with a shipper.
-    if (leg === undefined || shop?.pickupLat == null || shop.pickupLng == null || prepared.pickup === null || prepared.pickup.lat !== shop.pickupLat || prepared.pickup.lng !== shop.pickupLng) {
-      const base = await this.agreements.estimate(context, 0);
-      return { feeVnd: base.status === 'PRICED' ? base.feeVnd : null, distanceM: null };
+  async #estimate(context: TransactionContext, shop: ShopSnapshot | undefined, address: CheckedAddress | null, prepared: PreparedCheckout, route: RouteResult | null): Promise<CheckoutQuote> {
+    const quotedAtMs = await freshClockMs(context);
+    const currentPickup = shop?.pickupLat != null && shop.pickupLng != null ? { lat: shop.pickupLat, lng: shop.pickupLng } : null;
+    const currentPoint = address?.lat != null && address.lng != null ? { lat: address.lat, lng: address.lng } : null;
+    const snapshot = `${currentPickup?.lat ?? 'x'},${currentPickup?.lng ?? 'x'}>${currentPoint?.lat ?? 'x'},${currentPoint?.lng ?? 'x'}`;
+    const unavailable = (reason: QuoteReason | null, distanceM: number | null = null, policyVersion: number | null = null): CheckoutQuote => ({ status: 'UNAVAILABLE', distanceM, feeVnd: null, reason, policyVersion, snapshot, quotedAtMs });
+    if (currentPickup === null) return unavailable('PICKUP_PIN_MISSING');
+    if (currentPoint === null) return unavailable('DROPOFF_PIN_MISSING');
+    // The route belongs only to the coordinates captured before its HTTP call.
+    // A concurrent edit makes this preview neutral and makes place() reject it;
+    // the old leg must never be priced or persisted against the new snapshot.
+    if (!this.#samePoint(prepared.pickup, currentPickup) || !this.#samePoint(prepared.point, currentPoint)) return unavailable(null);
+    if (route === null || route.status === 'UNAVAILABLE') return unavailable(route?.reason === 'ROUTE_TIMEOUT' ? 'ROUTE_TIMEOUT' : 'ROUTE_UNAVAILABLE');
+    const quote = await this.agreements.estimate(context, route.leg.distanceM);
+    if (quote.status === 'PRICED') return { status: 'PRICED', feeVnd: quote.feeVnd, distanceM: route.leg.distanceM, reason: null, policyVersion: quote.policyVersionNo, snapshot, quotedAtMs };
+    return unavailable(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE', route.leg.distanceM);
+  }
+
+  #samePoint(left: { readonly lat: number; readonly lng: number } | null, right: { readonly lat: number; readonly lng: number } | null): boolean {
+    return left !== null && right !== null && left.lat === right.lat && left.lng === right.lng;
+  }
+
+  #quoteView(q: CheckoutQuote): JsonObject {
+    return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, quoted_at: iso(q.quotedAtMs) };
+  }
+
+  #proposedFee(baseFeeVnd: number | null, tipVnd: number): number | null {
+    if (baseFeeVnd === null) {
+      if (tipVnd !== 0) throw new AppError('ORDER_INPUT_INVALID');
+      return null;
     }
-    const quote = await this.agreements.estimate(context, leg.distanceM);
-    return quote.status === 'PRICED' ? { feeVnd: quote.feeVnd, distanceM: leg.distanceM } : { feeVnd: null, distanceM: leg.distanceM };
+    const total = baseFeeVnd + tipVnd;
+    if (!Number.isSafeInteger(total) || total > MAX_FEE_VND) throw new AppError('ORDER_INPUT_INVALID');
+    return total;
   }
 
   /**
@@ -246,7 +282,8 @@ export class OrderCustomerService {
     actor: ClientActor,
     input: CheckoutInput,
     expected: ReadonlyMap<string, number> | null,
-  ): Promise<{ shop: ShopSnapshot | undefined; lines: ResolvedLine[]; blockers: string[]; address: { text: string; lat: number | null; lng: number | null; sourceId: string | null } | null }> {
+    lockAddress: boolean,
+  ): Promise<{ shop: ShopSnapshot | undefined; lines: ResolvedLine[]; blockers: string[]; address: CheckedAddress | null }> {
     const blockers: string[] = [];
     const nowMs = await freshClockMs(context);
     const shop = await this.shopReader.snapshotOfShop(context, input.shopId);
@@ -278,9 +315,11 @@ export class OrderCustomerService {
       const seen = expected?.get(line.itemId);
       return { itemId: line.itemId, name: dish.name, note: line.note, quantity: line.quantity, priceVnd: dish.priceVnd, issue: seen !== undefined && seen !== dish.priceVnd ? 'ITEM_PRICE_CHANGED' : null };
     });
-    let address: { text: string; lat: number | null; lng: number | null; sourceId: string | null } | null = null;
+    let address: CheckedAddress | null = null;
     if (input.address.addressId !== null) {
-      const found = await this.customers.findAddressForOrder(context, actor.userId, input.address.addressId);
+      const found = lockAddress
+        ? await this.customers.lockAddressForOrder(context, actor.userId, input.address.addressId)
+        : await this.customers.findAddressForOrder(context, actor.userId, input.address.addressId);
       if (found === undefined) {
         blockers.push('ADDRESS_NOT_FOUND');
       } else {
@@ -313,7 +352,10 @@ export class OrderCustomerService {
           shop_id: input.shopId,
           lines: input.lines.map((l) => ({ item_id: l.itemId, quantity: l.quantity, note: l.note, price: l.expectedPriceVnd })),
           items_total_vnd: input.expectedItemsTotalVnd,
+          tip_vnd: input.tipVnd,
+          expected_quote: input.expectedQuote,
           note: input.note,
+          delivery_note: input.deliveryNote,
           recipient_name: input.recipientName,
           recipient_phone: input.recipientPhone,
           address_id: input.address.addressId,
@@ -341,7 +383,7 @@ export class OrderCustomerService {
             expected.set(line.itemId, line.expectedPriceVnd);
           }
         }
-        const checked = await this.#check(context, actor, input, expected);
+        const checked = await this.#check(context, actor, input, expected, true);
         if (checked.lines.some((l) => l.issue !== null)) {
           throw new AppError('ORDER_CART_CHANGED');
         }
@@ -354,12 +396,30 @@ export class OrderCustomerService {
         if (checked.address === null) {
           throw new AppError('ORDER_ADDRESS_INVALID');
         }
+        if (input.expectedQuote === null || !input.expectedQuote.complete) {
+          // Existing Orders are returned above before this guard, preserving a
+          // lost-response retry from an older client. A new Order must prove
+          // which priced or explicitly unavailable quote the customer saw.
+          throw new AppError('ORDER_QUOTE_REQUIRED');
+        }
         const priced = checked.lines.map((l) => ({ ...l, priceVnd: l.priceVnd as number }));
         const total = totalOf(priced.map((l) => ({ unitPriceVnd: l.priceVnd, quantity: l.quantity })));
         if (total !== input.expectedItemsTotalVnd) {
           throw new AppError('ORDER_CART_CHANGED');
         }
-        const estimate = await this.#estimate(context, shop, prepared, leg);
+        const currentPickup = shop.pickupLat != null && shop.pickupLng != null ? { lat: shop.pickupLat, lng: shop.pickupLng } : null;
+        const currentPoint = checked.address.lat != null && checked.address.lng != null ? { lat: checked.address.lat, lng: checked.address.lng } : null;
+        if (
+          ((prepared.pickup !== null || currentPickup !== null) && !this.#samePoint(prepared.pickup, currentPickup)) ||
+          ((prepared.point !== null || currentPoint !== null) && !this.#samePoint(prepared.point, currentPoint))
+        ) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
+        const estimate = await this.#estimate(context, shop, checked.address, prepared, leg);
+        if (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.reason !== estimate.reason || input.expectedQuote.policyVersion !== estimate.policyVersion || input.expectedQuote.snapshot !== estimate.snapshot) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
+        const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
         const items: NewItem[] = priced.map((l, index) => ({ lineId: randomUUID(), lineNo: index + 1, menuItemId: l.itemId, name: l.name as string, note: l.note, unitPriceVnd: l.priceVnd, quantity: l.quantity }));
         const orderId = randomUUID();
         let inserted = false;
@@ -382,9 +442,10 @@ export class OrderCustomerService {
               addressLng: checked.address.lng,
               sourceAddressId: checked.address.sourceId,
               note: input.note,
+              deliveryNote: input.deliveryNote,
               scheduledForMs: input.scheduledForMs,
               itemsTotalVnd: total,
-              feeEstimateVnd: estimate.feeVnd,
+              feeEstimateVnd: proposedFee,
               feeEstimateDistanceM: estimate.distanceM,
             },
             items,
@@ -393,7 +454,7 @@ export class OrderCustomerService {
         if (!inserted) {
           throw new TechnicalError('internal', 'Could not allocate an order code');
         }
-        const order = await this.#reread(context, orderId);
+        let order = await this.#reread(context, orderId);
         // The cart of this shop has become this Order.
         const cart = await this.orders.findCart(context, actor.userId);
         if (cart?.shopId === input.shopId) {
@@ -406,9 +467,17 @@ export class OrderCustomerService {
           actorId: actor.userId,
           operation: ORDER_OPERATIONS.place,
           requestId,
-          details: { items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })), items_total_vnd: total },
+          details: {
+            items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })),
+            items_total_vnd: total,
+            quote_fee_vnd: estimate.feeVnd,
+            quote_reason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
+          },
           metadata: { scheduled: input.scheduledForMs !== null },
         });
+        // The canonical unavailable reason is part of the immutable placed event.
+        // Re-project it for the create response; old events without the key stay neutral.
+        order = await this.#reread(context, orderId);
         return { status: 201, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, order, true) };
       },
     );

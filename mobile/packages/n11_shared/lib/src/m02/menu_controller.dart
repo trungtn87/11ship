@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:characters/characters.dart';
 
 import '../account/api_client.dart';
 import '../account/models.dart';
@@ -39,6 +40,8 @@ class ItemForm {
   bool baseHidden;
 
   String name = '';
+  String description = '';
+  String description0 = '';
   String priceDigits = '';
   String? categoryId;
   String? imageRef;
@@ -54,7 +57,7 @@ class ItemForm {
   String? imageRef0;
 
   bool get isNew => itemId == null;
-  bool get dirty => name.trim() != name0.trim() || priceDigits != priceDigits0 || categoryId != categoryId0 || imageRef != imageRef0;
+  bool get dirty => description != description0 || name.trim() != name0.trim() || priceDigits != priceDigits0 || categoryId != categoryId0 || imageRef != imageRef0;
 }
 
 class MenuListController extends ChangeNotifier {
@@ -296,6 +299,7 @@ class MenuListController extends ChangeNotifier {
   void _fillFrom(ItemForm f, MenuItem item) {
     f.baseVersion = item.version;
     f.baseHidden = item.hidden;
+    f.description = f.description0 = item.description ?? '';
     f.name = f.name0 = item.name;
     f.priceDigits = f.priceDigits0 = item.priceVnd.toString();
     f.categoryId = f.categoryId0 = item.categoryId;
@@ -342,6 +346,13 @@ class MenuListController extends ChangeNotifier {
     }
   }
 
+  void setDescription(String value) {
+    if (_form != null && !locked && !_readOnly) {
+      _form!.description = value.replaceAll(RegExp(r'\r\n?'), '\n');
+      edited();
+    }
+  }
+
   void setPrice(String value) {
     if (_form != null && !locked && !_readOnly) {
       _form!.priceDigits = value.replaceAll(RegExp(r'\D'), '');
@@ -374,6 +385,7 @@ class MenuListController extends ChangeNotifier {
       _fillFrom(f, item);
     } else {
       f
+        ..description = ''
         ..name = ''
         ..priceDigits = ''
         ..categoryId = f.categoryId0
@@ -466,6 +478,7 @@ class MenuListController extends ChangeNotifier {
 
   Map<String, String> validate(ItemForm f) {
     final Map<String, String> errors = <String, String>{};
+    if (f.description.characters.length > 300) errors['description'] = 'Mô tả tối đa 300 ký tự.';
     if (f.name.trim().isEmpty) {
       errors['name'] = 'Nhập tên món.';
     }
@@ -493,6 +506,7 @@ class MenuListController extends ChangeNotifier {
     }
     final MenuItemInput input = MenuItemInput(
       name: f.name.trim(),
+      description: f.description,
       priceVnd: int.parse(f.priceDigits),
       categoryId: f.categoryId!,
       imageRef: f.imageRef,

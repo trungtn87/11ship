@@ -60,7 +60,7 @@ export interface NewComplaint {
   readonly orderId: string | null;
   readonly deliveryId: string | null;
   readonly reviewId: string | null;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly driverId: string | null;
   readonly relatedCode: string;
   readonly shopName: string;

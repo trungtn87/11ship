@@ -1,3 +1,4 @@
+import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
 import { shopLogoFingerprint } from '../shop/shop-logo';
 import { Injectable } from '@nestjs/common';
 import { AuditWriter } from '../audit/audit-writer';
@@ -313,6 +314,7 @@ function toView(snapshot: ShopSnapshot, availability: ShopAvailability): Record<
     version: snapshot.version,
     timezone: AVAILABILITY_TIME_ZONE,
     hours: snapshot.hours.map(toWire),
+    next_refresh_ms: businessHoursRefreshMs(snapshot.hours, availability.evaluatedAt),
     availability: {
       online: availability.online,
       reason: availability.reason,

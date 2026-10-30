@@ -489,7 +489,7 @@ class FakeMenuApi implements MenuApi {
   @override
   Future<MenuItem> create(MenuItemInput input, {required String key}) async {
     final MenuItem? made = await _once(key, 'create', () {
-      final MenuItem created = MenuItem(id: 'i${nextId++}', name: input.name, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: false, version: 1);
+      final MenuItem created = MenuItem(id: 'i${nextId++}', name: input.name, description: input.description, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: false, version: 1);
       items = <MenuItem>[...items, created];
       return created;
     });
@@ -499,7 +499,7 @@ class FakeMenuApi implements MenuApi {
   @override
   Future<MenuItem> update(String id, MenuItemInput input, {required int expectedVersion, required String key}) async {
     final MenuItem? made = await _onceChecked(key, 'update', id, expectedVersion, (MenuItem c) {
-      final MenuItem next = MenuItem(id: id, name: input.name, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: c.hidden, version: c.version + 1);
+      final MenuItem next = MenuItem(id: id, name: input.name, description: input.description, priceVnd: input.priceVnd, categoryId: input.categoryId, imageRef: input.imageRef, imageUrl: _urlOf(input.imageRef), hidden: c.hidden, version: c.version + 1);
       _replace(next);
       return next;
     });
@@ -509,7 +509,7 @@ class FakeMenuApi implements MenuApi {
   @override
   Future<MenuItem> setHidden(String id, bool hidden, {required int expectedVersion, required String key}) async {
     final MenuItem? made = await _onceChecked(key, hidden ? 'hide' : 'show', id, expectedVersion, (MenuItem c) {
-      final MenuItem next = MenuItem(id: id, name: c.name, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden, version: c.version + 1);
+      final MenuItem next = MenuItem(id: id, name: c.name, description: c.description, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden, version: c.version + 1);
       _replace(next);
       return next;
     });
@@ -548,7 +548,7 @@ class FakeMenuApi implements MenuApi {
   /// Another phone edits a dish: its version moves on.
   void editElsewhere(String id, {String? name, bool? hidden}) {
     final MenuItem c = items.firstWhere((MenuItem i) => i.id == id);
-    _replace(MenuItem(id: id, name: name ?? c.name, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden ?? c.hidden, version: c.version + 1));
+    _replace(MenuItem(id: id, name: name ?? c.name, description: c.description, priceVnd: c.priceVnd, categoryId: c.categoryId, imageRef: c.imageRef, imageUrl: c.imageUrl, hidden: hidden ?? c.hidden, version: c.version + 1));
   }
 
   void deleteElsewhere(String id) {

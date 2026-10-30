@@ -1,0 +1,186 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { classifySync, permittedAction } from '../../scripts/ai-governance/sync-guard.mjs';
+import { snapshot } from '../../scripts/ai-governance/monitor-local.mjs';
+
+const executable = resolve(fileURLToPath(new URL('../../scripts/ai-governance/sync-guard.mjs', import.meta.url)));
+function run(program, args, cwd) {
+  const r = spawnSync(program, args, { cwd, encoding: 'utf8', timeout: 20000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  assert.equal(r.status, 0, program + ' ' + args.join(' ') + '\n' + (r.stderr || ''));
+  return (r.stdout || '').trim();
+}
+const git = (cwd, ...args) => run('git', args, cwd);
+function setup(t) {
+  const dir = mkdtempSync(join(tmpdir(), '11ship-sync-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bare = join(dir, 'remote.git'), local = join(dir, 'local'), peer = join(dir, 'peer');
+  git(dir, 'init', '--bare', bare);
+  git(dir, 'clone', bare, local);
+  git(local, 'config', 'user.name', 'Sync Test');
+  git(local, 'config', 'user.email', 'sync@test.invalid');
+  git(local, 'checkout', '-b', 'feature/task');
+  writeFileSync(join(local, 'data.txt'), 'initial\n');
+  git(local, 'add', 'data.txt');
+  git(local, 'commit', '-m', 'initial');
+  git(local, 'push', '-u', 'origin', 'feature/task');
+  git(dir, 'clone', '-b', 'feature/task', bare, peer);
+  git(peer, 'config', 'user.name', 'Peer Test');
+  git(peer, 'config', 'user.email', 'peer@test.invalid');
+  return { dir, bare, local, peer };
+}
+function guard(repo, phase, ...args) {
+  const res = run(process.execPath, [executable, '--repo', repo, '--phase', phase, ...args], repo);
+  return JSON.parse(res);
+}
+function commit(repo, text) {
+  writeFileSync(join(repo, 'data.txt'), text);
+  git(repo, 'add', 'data.txt');
+  git(repo, 'commit', '-m', 'change');
+}
+
+test('pure status classifier and permitted actions never force on divergence', () => {
+  assert.equal(classifySync(0, 0, true), 'SYNCED');
+  assert.equal(classifySync(2, 0, true), 'LOCAL_AHEAD');
+  assert.equal(classifySync(0, 3, true), 'REMOTE_AHEAD');
+  assert.equal(classifySync(2, 3, true), 'DIVERGED');
+  assert.equal(classifySync(0, 0, false), 'LOCAL_UNVERIFIED');
+  assert.equal(permittedAction({ phase: 'preflight', branch: 'feature/task', state: 'REMOTE_AHEAD', dirty: false, remoteVerified: true }), 'FAST_FORWARD');
+  assert.equal(permittedAction({ phase: 'postflight', branch: 'main', state: 'LOCAL_AHEAD', dirty: false, remoteVerified: true }), 'REPORT_ONLY');
+  assert.equal(permittedAction({ phase: 'preflight', branch: 'feature/task', state: 'DIVERGED', dirty: false, remoteVerified: true }), 'REPORT_ONLY');
+  assert.equal(permittedAction({ phase: 'preflight', branch: 'feature/task', state: 'REMOTE_AHEAD', dirty: true, remoteVerified: true }), 'REPORT_ONLY');
+});
+test('Claude local preflight fetches and fast-forwards safely after Codex remote push', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'codex change\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  const result = guard(local, 'preflight');
+  assert.equal(result.action, 'FAST_FORWARD');
+  assert.equal(result.actionResult, 'SUCCESS');
+  assert.equal(result.localSha, git(peer, 'rev-parse', 'HEAD'));
+  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8').replace(/\r\n/g, '\n'), 'codex change\n');
+});
+test('Claude postflight pushes committed work to Github branch and verifies remote SHA', t => {
+  const { local, peer } = setup(t);
+  commit(local, 'claude change\n');
+  const result = guard(local, 'postflight');
+  assert.equal(result.action, 'PUSH_FAST_FORWARD');
+  assert.equal(result.actionResult, 'SUCCESS');
+  assert.equal(result.remoteHeadVerified, true);
+  assert.equal(result.remoteSha, git(local, 'rev-parse', 'HEAD'));
+  git(peer, 'fetch', 'origin');
+  assert.equal(git(peer, 'rev-parse', 'origin/feature/task'), result.remoteSha);
+});
+test('diverged local and remote are preserved without merges or force pushes', t => {
+  const { local, peer } = setup(t);
+  commit(local, 'claude local-only change\n');
+  const localSha = git(local, 'rev-parse', 'HEAD');
+  commit(peer, 'codex remote change\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  const pre = guard(local, 'preflight');
+  const post = guard(local, 'postflight');
+  assert.equal(pre.state, 'DIVERGED');
+  assert.equal(pre.action, 'REPORT_ONLY');
+  assert.equal(post.action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), localSha);
+  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8'), 'claude local-only change\n');
+  assert.equal(post.safeToContinueIndependentWork, true);
+  assert.ok(post.blockedOperations.length);
+});
+test('dirty local worktree stays untouched when remote is ahead', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'remote file\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  writeFileSync(join(local, 'untracked.local'), 'DO NOT DELETE\n');
+  const result = guard(local, 'preflight');
+  assert.equal(result.state, 'REMOTE_AHEAD');
+  assert.equal(result.dirty, true);
+  assert.equal(result.action, 'REPORT_ONLY');
+  assert.equal(readFileSync(join(local, 'untracked.local'), 'utf8'), 'DO NOT DELETE\n');
+});
+test('offline cached equality is unverified and never reported as synced', t => {
+  const { local } = setup(t);
+  const offline = guard(local, 'postflight', '--offline');
+  assert.equal(offline.fetchVerified, false);
+  assert.equal(offline.state, 'LOCAL_UNVERIFIED');
+  assert.equal(offline.remoteSha, null);
+  assert.equal(offline.cachedRemoteSha, git(local, 'rev-parse', 'HEAD'));
+  assert.equal(offline.countsVerified, false);
+  assert.deepEqual([offline.ahead, offline.behind], [0, 0]);
+  assert.equal(offline.action, 'REPORT_ONLY');
+});
+
+test('real fetch failure with a matching cached ref remains unverified', t => {
+  const { dir, local } = setup(t);
+  git(local, 'remote', 'set-url', 'origin', join(dir, 'missing-remote.git'));
+  const failed = guard(local, 'postflight');
+  assert.equal(failed.fetchVerified, false);
+  assert.equal(failed.state, 'LOCAL_UNVERIFIED');
+  assert.equal(failed.remoteSha, null);
+  assert.equal(failed.cachedRemoteSha, git(local, 'rev-parse', 'HEAD'));
+  assert.deepEqual([failed.ahead, failed.behind], [0, 0]);
+  assert.equal(failed.countsVerified, false);
+  assert.equal(failed.action, 'REPORT_ONLY');
+});
+
+test('offline cached ahead/behind snapshots are never treated as verified or mutated', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'cached remote ahead\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  git(local, 'fetch', 'origin');
+  const before = git(local, 'rev-parse', 'HEAD');
+  const behind = guard(local, 'preflight', '--offline');
+  assert.equal(behind.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([behind.ahead, behind.behind], [0, 1]);
+  assert.equal(behind.countsVerified, false);
+  assert.equal(behind.action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), before);
+
+  commit(local, 'local diverges from cached remote\n');
+  const diverged = guard(local, 'postflight', '--offline');
+  assert.equal(diverged.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([diverged.ahead, diverged.behind], [1, 1]);
+  assert.equal(diverged.action, 'REPORT_ONLY');
+});
+
+test('offline unpublished work and read-only observe cannot mutate', t => {
+  const { local } = setup(t);
+  commit(local, 'unpublished\n');
+  const offline = guard(local, 'postflight', '--offline');
+  assert.equal(offline.fetchVerified, false);
+  assert.equal(offline.action, 'REPORT_ONLY');
+  assert.equal(offline.state, 'LOCAL_UNVERIFIED');
+  assert.deepEqual([offline.ahead, offline.behind], [1, 0]);
+  assert.equal(offline.countsVerified, false);
+  const observe = guard(local, 'observe');
+  assert.equal(observe.action, 'REPORT_ONLY');
+  assert.equal(observe.state, 'LOCAL_AHEAD');
+});
+
+test('deleted remote branch cannot be silently recreated by automated postflight', t => {
+  const { local, peer } = setup(t);
+  commit(local, 'do not resurrect branch\n');
+  git(peer, 'push', 'origin', '--delete', 'feature/task');
+  const report = guard(local, 'postflight');
+  assert.equal(report.state, 'LOCAL_UNVERIFIED');
+  assert.equal(report.action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD').length, 40);
+  assert.equal(git(local, 'show', 'HEAD:data.txt'), 'do not resurrect branch');
+});
+
+test('periodic observer only fetches/reads and never changes an active worktree', t => {
+  const { local, peer } = setup(t);
+  commit(peer, 'remote change for observer\n');
+  git(peer, 'push', 'origin', 'feature/task');
+  const before = git(local, 'rev-parse', 'HEAD');
+  const result = snapshot(local);
+  assert.equal(result.reports.length, 1);
+  assert.equal(result.reports[0].state, 'REMOTE_AHEAD');
+  assert.equal(result.reports[0].action, 'REPORT_ONLY');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), before);
+  assert.equal(readFileSync(join(local, 'data.txt'), 'utf8'), 'initial\n');
+});

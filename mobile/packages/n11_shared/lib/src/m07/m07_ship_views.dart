@@ -31,10 +31,22 @@ const String kReleaseExplain = 'Bạn sẽ không còn giữ đơn này. Hệ th
 typedef M07LocationSlot = Widget Function(BuildContext context);
 
 /// The pop-up where a Shipper types the fee they want instead (before taking the delivery, or after taking it and before the pickup). Null when they go back.
-Future<int?> askFeeProposal(BuildContext context) => showDialog<int>(context: context, builder: (BuildContext dialogContext) => const _FeeProposalDialog());
+Future<int?> askFeeProposal(BuildContext context, {int? currentFeeVnd, int? proposedFeeVnd, String? deciderText}) =>
+    showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => _FeeProposalDialog(
+        currentFeeVnd: currentFeeVnd,
+        proposedFeeVnd: proposedFeeVnd,
+        deciderText: deciderText,
+      ),
+    );
 
 class _FeeProposalDialog extends StatefulWidget {
-  const _FeeProposalDialog();
+  const _FeeProposalDialog({this.currentFeeVnd, this.proposedFeeVnd, this.deciderText});
+
+  final int? currentFeeVnd;
+  final int? proposedFeeVnd;
+  final String? deciderText;
 
   @override
   State<_FeeProposalDialog> createState() => _FeeProposalDialogState();
@@ -53,15 +65,53 @@ class _FeeProposalDialogState extends State<_FeeProposalDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final String subtitle = widget.proposedFeeVnd != null && widget.currentFeeVnd != null
+        ? 'Phí hiện tại: ${m07Vnd(widget.currentFeeVnd)} · Đang đề xuất: ${m07Vnd(widget.proposedFeeVnd)}'
+        : widget.proposedFeeVnd != null
+            ? 'Phí đang đề xuất: ${m07Vnd(widget.proposedFeeVnd)}'
+            : widget.currentFeeVnd != null
+                ? 'Phí hiện tại: ${m07Vnd(widget.currentFeeVnd)}'
+                : 'Gửi đề xuất phí tới ${widget.deciderText ?? 'người trả phí'}';
+
     return Form(
       key: _form,
       child: AlertDialog(
         key: const Key('m07-counter-dialog'),
-        title: const Text('Đề xuất mức phí khác', style: N11Text.h2),
-        content: N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-counter-amount'), label: 'Mức phí bạn đề xuất (đ)', controller: _amount, keyboard: TextInputType.number, maxLength: 10),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Text('Đề xuất mức phí', style: N11Text.h2),
+            const SizedBox(height: 4),
+            Text(subtitle, style: N11Text.caption),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(height: 8),
+                N11Field(
+                  validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null,
+                  fieldKey: const Key('m07-counter-amount'),
+                  label: 'Mức phí bạn đề xuất (đ)',
+                  controller: _amount,
+                  keyboard: TextInputType.number,
+                  maxLength: 10,
+                ),
+              ],
+            ),
+          ),
+        ),
         actions: <Widget>[
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Quay lại')),
-          TextButton(
+          FilledButton(
             key: const Key('m07-counter-send'),
             onPressed: () {
               if (_form.currentState!.validate()) {
@@ -129,7 +179,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
   }
 
   Future<void> _counter(OfferView o) async {
-    final int? value = await askFeeProposal(context);
+    final int? value = await askFeeProposal(context, proposedFeeVnd: o.agreement?.proposedVnd, currentFeeVnd: o.feeVnd, deciderText: o.deciderText);
     if (value == null || !mounted) {
       return;
     }
@@ -210,7 +260,15 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
 
 /// S01: one offer. Only what the rules allow before accepting.
 class OfferCard extends StatelessWidget {
-  const OfferCard({super.key, required this.offer, required this.busy, required this.onAccept, required this.onAgree, required this.onSkip, required this.onCounter});
+  const OfferCard({
+    super.key,
+    required this.offer,
+    required this.busy,
+    required this.onAccept,
+    required this.onAgree,
+    required this.onSkip,
+    required this.onCounter,
+  });
 
   final OfferView offer;
   final bool busy;
@@ -231,18 +289,52 @@ class OfferCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(children: <Widget>[Expanded(child: Text(offer.code, style: N11Text.bodyStrong)), N11Chip('Còn ${m07Countdown(offer.remaining)}', kind: ChipKind.warn)]),
+          Wrap(
+            spacing: N11Space.gap2,
+            runSpacing: N11Space.gap2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              Text(offer.code, style: N11Text.bodyStrong),
+              N11Chip('Còn ${m07Countdown(offer.remaining)}', kind: ChipKind.warn),
+            ],
+          ),
           const SizedBox(height: N11Space.gap2),
+          Text(offer.shopName, style: N11Text.h2),
+          const SizedBox(height: N11Space.gap3),
+          Container(
+            padding: const EdgeInsets.all(N11Space.gap3),
+            decoration: BoxDecoration(color: N11Colors.yellowSoft, borderRadius: BorderRadius.circular(kRadiusControl)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text('Phí giao', style: N11Text.caption),
+                const SizedBox(height: N11Space.gap1),
+                Text(offer.feeVnd == null ? kFeeUnknown : m07Vnd(offer.feeVnd), style: N11Text.h2),
+              ],
+            ),
+          ),
+          const SizedBox(height: N11Space.gap3),
           KeyValueRows(<(String, String)>[
-            ('Quán', offer.shopName),
             if (offer.shopAreaText != null) ('Khu vực lấy hàng', offer.shopAreaText!),
             ('Cách quán', m07Km(offer.distanceToShopM)),
-            ('Khu vực giao', offer.dropoffAreaText ?? '—'),
-            ('Tiền hàng', m07Vnd(offer.goodsValueVnd)),
-            ('Phí giao', offer.feeVnd == null ? kFeeUnknown : m07Vnd(offer.feeVnd)),
-            ('Người trả phí', offer.feePayer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship'),
-          ]),
-          if (!offer.destinationKnown) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim điểm giao. Đơn này chỉ shipper chưa có đơn khác nhận được.')),
+            if (offer.codVnd != null && offer.codVnd! > 0)
+              ('Thu hộ (COD)', m07Vnd(offer.codVnd!))
+            else if (offer.source != 'CUSTOMER')
+              ('Tiền hàng', m07Vnd(offer.goodsValueVnd)),
+            if (offer.recipientPaysVnd != null)
+              ('Người nhận trả', m07Vnd(offer.recipientPaysVnd!)),
+            ('Người trả phí', switch (offer.feePayer) {
+              'RECIPIENT' => 'Người nhận trả ship',
+              'SENDER' => 'Người gửi trả ship',
+              'SHOP' => 'Quán trả ship',
+              _ => 'Khách trả ship',
+            }),
+          ], responsive: true),
+          if (!offer.destinationKnown)
+            const Padding(
+              padding: EdgeInsets.only(top: N11Space.gap2),
+              child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim điểm giao. Đơn này chỉ shipper chưa có đơn khác nhận được.'),
+            ),
           if (a != null) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
             Container(
@@ -253,8 +345,18 @@ class OfferCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text('Phí đề xuất ${m07Vnd(a.proposedVnd)}', style: N11Text.bodyStrong),
-                  Text(a.reasonNote == null || a.reasonNote!.isEmpty ? 'Lý do: ${feeReasonLabel(a.reasonCode)}' : 'Lý do: ${feeReasonLabel(a.reasonCode)} · ${a.reasonNote}', style: N11Text.caption),
-                  if (a.state == 'COUNTERED') Text('Bạn đã đề xuất ${m07Vnd(a.counterVnd)}, đang chờ ${offer.deciderText} (người trả phí) trả lời.', key: const Key('m07-offer-waiting'), style: N11Text.caption),
+                  Text(
+                    a.reasonNote == null || a.reasonNote!.isEmpty
+                        ? 'Lý do: ${feeReasonLabel(a.reasonCode)}'
+                        : 'Lý do: ${feeReasonLabel(a.reasonCode)} · ${a.reasonNote}',
+                    style: N11Text.caption,
+                  ),
+                  if (a.state == 'COUNTERED')
+                    Text(
+                      'Bạn đã đề xuất ${m07Vnd(a.counterVnd)}, đang chờ ${offer.deciderText} (người trả phí) trả lời.',
+                      key: const Key('m07-offer-waiting'),
+                      style: N11Text.caption,
+                    ),
                 ],
               ),
             ),
@@ -266,8 +368,13 @@ class OfferCard extends StatelessWidget {
                   runSpacing: N11Space.gap2,
                   children: <Widget>[
                     N11Button(key: const Key('m07-fee-agree'), label: 'Đồng ý', compact: true, onPressed: busy ? null : onAgree),
-                    N11Button(key: const Key('m07-fee-counter'), label: 'Đề xuất mức khác', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : onCounter),
-                    N11Button(key: const Key('m07-fee-skip'), label: 'Bỏ qua', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : onSkip),
+                    N11Button(
+                      key: const Key('m07-fee-counter'),
+                      label: 'Đề xuất mức khác',
+                      compact: true,
+                      kind: ButtonKind.secondary,
+                      onPressed: busy ? null : onCounter,
+                    ),
                   ],
                 ),
               ),
@@ -275,17 +382,33 @@ class OfferCard extends StatelessWidget {
           if (n != null)
             Padding(
               padding: const EdgeInsets.only(top: N11Space.gap2),
-              child: ReasonNote('Bạn đã đề xuất ${m07Vnd(n.offeredVnd)} (phí hiện tại ${m07Vnd(n.currentVnd)}), đang chờ ${n.deciderText} (người trả phí) trả lời.', key: const Key('m07-offer-waiting')),
+              child: ReasonNote(
+                'Bạn đã đề xuất ${m07Vnd(n.offeredVnd)} (phí hiện tại ${m07Vnd(n.currentVnd)}), đang chờ ${n.deciderText} (người trả phí) trả lời.',
+                key: const Key('m07-offer-waiting'),
+              ),
             )
           else if (offer.canCounter && a?.state != 'PROPOSED')
             // A fee that is already settled (the fee table's, or an agreed one): the Shipper may still ask for another before taking it.
             Padding(
               padding: const EdgeInsets.only(top: N11Space.gap2),
-              child: N11Button(key: const Key('m07-fee-counter'), label: 'Đề xuất mức phí khác', compact: true, kind: ButtonKind.secondary, onPressed: busy ? null : onCounter),
+              child: N11Button(
+                key: const Key('m07-fee-counter'),
+                label: 'Đề xuất mức phí khác',
+                compact: true,
+                kind: ButtonKind.secondary,
+                onPressed: busy ? null : onCounter,
+              ),
             ),
           if (!offer.eligible && offer.reasons.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: ReasonNote(m06ReasonText(offer.reasons.first))),
-          if (pendingFee) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: ReasonNote('Phí chưa chốt nên chưa nhận đơn được. Hãy đồng ý mức phí hoặc đề xuất mức khác.')),
+            Padding(
+              padding: const EdgeInsets.only(top: N11Space.gap2),
+              child: ReasonNote(m06ReasonText(offer.reasons.first)),
+            ),
+          if (pendingFee)
+            const Padding(
+              padding: EdgeInsets.only(top: N11Space.gap2),
+              child: ReasonNote('Phí chưa chốt nên chưa nhận đơn được. Hãy đồng ý mức phí hoặc đề xuất mức khác.'),
+            ),
           const SizedBox(height: N11Space.gap3),
           N11Button(key: Key('m07-accept-${offer.deliveryId}'), label: 'Nhận đơn', onPressed: busy || !canAccept ? null : onAccept),
         ],
@@ -320,10 +443,10 @@ class _MineCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(children: <Widget>[Expanded(child: Text(delivery.code, style: N11Text.bodyStrong)), N11Chip(chip.label, kind: chip.kind)]),
+            Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[Text(delivery.code, style: N11Text.bodyStrong), N11Chip(chip.label, kind: chip.kind)]),
             const SizedBox(height: N11Space.gap2),
             Text('${delivery.pickup.shopName} → ${delivery.recipient.name}', style: N11Text.body),
-            Text('Phí giao: ${m07Vnd(delivery.fee.amountVnd)}', style: N11Text.caption),
+            Text('Phí giao: ${m07Vnd(delivery.fee.amountVnd)}', style: N11Text.bodyStrong),
             if (missing) const Padding(padding: EdgeInsets.only(top: N11Space.gap2), child: N11Chip('Cần nhập phí đã thỏa thuận', kind: ChipKind.warn)),
           ],
         ),
@@ -427,7 +550,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
 
   /// Before the pickup (also after taking the delivery) the Shipper may ask for another fee; the payer answers, and the pickup waits for the answer.
   Future<void> _propose(DeliveryView d) async {
-    final int? value = await askFeeProposal(context);
+    final int? value = await askFeeProposal(context, currentFeeVnd: d.fee.amountVnd, deciderText: d.fee.payer == 'CUSTOMER' || d.fee.payer == 'RECIPIENT' ? 'khách' : 'quán');
     if (value == null || !mounted) {
       return;
     }
@@ -474,12 +597,12 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (d.recipient.hasPoint) M07MapPin(lat: d.recipient.lat!, lng: d.recipient.lng!, label: 'Giao', color: 0xFFC0392B),
     ];
     final List<Widget> body = <Widget>[
-      Row(children: <Widget>[Expanded(child: Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title)), N11Chip(chip.label, kind: chip.kind)]),
+      Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
-        SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins))),
+        OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins)))),
       if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),
@@ -510,7 +633,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       _contactCard(
         'Người nhận',
         d.recipient.name,
-        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—')],
+        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—'), if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) ('Hướng dẫn tìm đường', d.dropoffNote!)],
         key: 'm07-recipient-card',
         show: active,
         phone: d.recipient.phone,
@@ -541,7 +664,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
         summary: [name, dialNumberText(phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
         initiallyExpanded: true,
         trailing: QuickCall(phone: phone, who: who),
-        builder: (BuildContext _) => KeyValueRows(rows),
+        builder: (BuildContext _) => KeyValueRows(rows, responsive: true),
       ),
     );
   }
@@ -586,7 +709,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
         actions.add(N11Button(key: const Key('m07-propose-fee'), label: 'Đề xuất mức phí khác', icon: Icons.edit_outlined, kind: ButtonKind.secondary, onPressed: busy ? null : () => _propose(d)));
       }
       if (d.allows('release')) {
-        actions.add(DangerButton(key: const Key('m07-release'), label: 'Hủy nhận đơn', onPressed: busy ? null : () => _release(d)));
+        actions.add(DangerButton(key: const Key('m07-release'), label: 'Hủy nhận đơn', outlined: false, onPressed: busy ? null : () => _release(d)));
       }
     }
     if (actions.isEmpty) {
@@ -649,7 +772,7 @@ class _ConfirmFeeScreenState extends State<ConfirmFeeScreen> with M07Actions<Con
       'Phí giao',
       widget.source.isSample,
       <Widget>[
-        N11Card(child: KeyValueRows(<(String, String)>[('Người nhận', d.recipient.name), ('Địa chỉ', d.recipient.addressText ?? '—'), ('Người trả phí', d.fee.payerText)])),
+        N11Card(child: KeyValueRows(<(String, String)>[('Người nhận', d.recipient.name), ('Địa chỉ', d.recipient.addressText ?? '—'), ('Người trả phí', d.fee.payerText)], responsive: true)),
         N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-agreed-fee'), label: 'Phí thỏa thuận (đ)', controller: _fee, keyboard: TextInputType.number, maxLength: 10, hint: 'Phí bạn và bên trả phí đã thống nhất. Sau khi nhận hàng sẽ bị khóa.'),
         if (_problem != null) N11Banner(key: const Key('m07-fee-problem'), kind: BannerKind.error, title: 'Chưa xác nhận được', text: _problem),
         actionBanner(),

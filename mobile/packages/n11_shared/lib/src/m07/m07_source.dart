@@ -1,3 +1,4 @@
+import '../account/session_controller.dart' show SessionController;
 import '../m10/order_chat_models.dart' show OrderChatApi;
 import 'm07_models.dart';
 
@@ -185,4 +186,113 @@ abstract class ShipperDeliverySource {
   Future<DeliveryView> confirmFee(String id, {required int feeVnd, required int expectedVersion, required String key});
   Future<DeliveryView> pickup(String id, {required int expectedVersion, required String key});
   Future<DeliveryView> complete(String id, {required int expectedVersion, required String key});
+}
+
+class TrackingLinkResult {
+  const TrackingLinkResult({required this.trackingId, required this.token, required this.trackingUrl, required this.shareLocation});
+
+  factory TrackingLinkResult.fromJson(Object? raw) {
+    final Map<String, Object?> m = raw is Map<String, Object?> ? raw : throw const FormatException('object');
+    return TrackingLinkResult(
+      trackingId: m['tracking_id'] as String,
+      token: m['token'] as String,
+      trackingUrl: m['tracking_url'] as String,
+      shareLocation: m['share_location'] as bool? ?? false,
+    );
+  }
+
+  final String trackingId;
+  final String token;
+  final String trackingUrl;
+  final bool shareLocation;
+}
+
+class TrackingLinkStatus {
+  const TrackingLinkStatus({required this.hasActiveLink, required this.shareLocation});
+
+  factory TrackingLinkStatus.fromJson(Object? raw) {
+    final Map<String, Object?> m = raw is Map<String, Object?> ? raw : throw const FormatException('object');
+    return TrackingLinkStatus(
+      hasActiveLink: m['has_active_link'] as bool? ?? false,
+      shareLocation: m['share_location'] as bool? ?? false,
+    );
+  }
+
+  final bool hasActiveLink;
+  final bool shareLocation;
+}
+
+class AgreedFeeInput {
+  const AgreedFeeInput({
+    required this.amountVnd,
+    this.reasonCode = 'CUSTOMER_INITIATED',
+    this.reasonNote,
+  });
+
+  final int amountVnd;
+  final String reasonCode;
+  final String? reasonNote;
+}
+
+class NewCustomerDeliveryInput {
+  const NewCustomerDeliveryInput({
+    this.senderName = 'Khách gửi hàng',
+    required this.senderPhone,
+    required this.pickupAddressText,
+    this.pickupLat,
+    this.pickupLng,
+    required this.recipientName,
+    required this.recipientPhone,
+    required this.dropoffAddressText,
+    this.dropoffLat,
+    this.dropoffLng,
+    required this.goodsDescription,
+    this.goodsValueVnd = 0,
+    this.codVnd = 0,
+    this.feePayer = 'RECIPIENT',
+    this.note,
+    this.agreedFee,
+  });
+
+  final String senderName;
+  final String senderPhone;
+  final String pickupAddressText;
+  final double? pickupLat;
+  final double? pickupLng;
+  final String recipientName;
+  final String recipientPhone;
+  final String dropoffAddressText;
+  final double? dropoffLat;
+  final double? dropoffLng;
+  final String goodsDescription;
+  final int goodsValueVnd;
+  final int codVnd;
+  final String feePayer;
+  final String? note;
+  final AgreedFeeInput? agreedFee;
+}
+
+/// The customer side (11Food): call a shipper directly, track, cancel, decide fee, and share tracking link.
+abstract class CustomerDeliverySource {
+  const CustomerDeliverySource();
+
+  /// The chat of a customer delivery; null in a build whose source has none.
+  OrderChatApi? get chat => null;
+
+  /// The active user session if available.
+  SessionController? get session => null;
+
+  bool get isSample;
+
+  Future<List<DeliveryView>> list({required bool history});
+  Future<DeliveryView> get(String id);
+  Future<DeliveryView> create(NewCustomerDeliveryInput input, {required String key});
+  Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key});
+  Future<DeliveryView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key});
+  Future<DeliveryView> counterAccept(String id, {required int expectedVersion, required String key});
+  Future<DeliveryView> counterReject(String id, {required int expectedVersion, required String key});
+  Future<TrackingLinkResult> createTrackingLink(String id);
+  Future<TrackingLinkStatus> getTrackingLinkStatus(String id);
+  Future<TrackingLinkStatus> toggleTrackingLocation(String id, {required bool shareLocation});
+  Future<void> revokeTrackingLink(String id);
 }

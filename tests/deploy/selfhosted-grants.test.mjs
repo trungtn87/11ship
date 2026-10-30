@@ -14,7 +14,7 @@ const read = (relative) => readFileSync(root(relative), 'utf8');
 const KINDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 
 function runbookMatrix() {
-  const lines = read('ops/runbooks/render-supabase-staging.md').split('\n');
+  const lines = read('ops/runbooks/render-supabase-staging.md').replace(/\r\n/g, '\n').split('\n');
   const start = lines.findIndex((line) => line.startsWith('| Table | Privileges'));
   assert.ok(start >= 0, 'runbook grants table not found');
   const matrix = new Map();
@@ -174,7 +174,7 @@ describe('ops/selfhosted configuration files', () => {
 
   test('make-pki.sh names localhost only (no IP address), refuses to overwrite, and never prints key material', () => {
     const script = read('ops/selfhosted/make-pki.sh');
-    assert.match(script, /subjectAltName = DNS:localhost\n/);
+    assert.match(script, /subjectAltName = DNS:localhost\r?\n/);
     assert.doesNotMatch(script, /IP:/);
     assert.match(script, /already exists/);
     assert.doesNotMatch(script, /cat\s+\S*\.key|echo\s+.*\.key"?\s*\)/);

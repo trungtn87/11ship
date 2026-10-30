@@ -17,6 +17,8 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
       }
       final NavigatorState navigator = Navigator.of(context);
       switch (target.type) {
+        case TargetType.financeRequest:
+          if (target.id != null) await navigator.push(n11Route(FinanceRequestsScreen(session: flows.session, shopPayments: false, requestId: target.id)));
         case TargetType.delivery:
           final ShipperDeliverySource? source = flows.shipperDeliveries;
           if (source != null && target.id != null) {
@@ -79,7 +81,7 @@ Widget _unknownFigure({required String label, required String note}) {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(label, style: N11Text.lead),
+        Row(children: <Widget>[const Icon(Icons.insights_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text(label, style: N11Text.h2))]),
         const SizedBox(height: N11Space.gap2),
         const Text('—', style: N11Text.title),
         const SizedBox(height: N11Space.gap2),
@@ -117,10 +119,11 @@ class _OrdersBodyState extends State<OrdersBody> {
   @override
   Widget build(BuildContext context) {
     return vstack(<Widget>[
-      Row(
+      Wrap(
+        spacing: N11Space.gap3,
+        runSpacing: N11Space.gap2,
         children: <Widget>[
           N11Button(key: const Key('orders-active'), label: 'Đang giao', compact: true, kind: _view == OrdersView.active ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = OrdersView.active)),
-          const SizedBox(width: N11Space.gap3),
           N11Button(key: const Key('orders-history'), label: 'Lịch sử', compact: true, kind: _view == OrdersView.history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = OrdersView.history)),
         ],
       ),

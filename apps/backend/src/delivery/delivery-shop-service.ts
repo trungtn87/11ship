@@ -44,6 +44,7 @@ export interface OrderCallSpec {
   readonly paidVnd: number;
   readonly feePayer: 'CUSTOMER' | 'SHOP';
   readonly note: string | null;
+  readonly dropoffNote: string | null;
   readonly agreedFee: { reasonCode: import('../shipping-policy/shipping-fee-agreement').AgreementReason; reasonNote: string | null; amountVnd: number } | null;
   readonly route: RouteLeg | undefined;
   readonly routeFrom: Pickup | undefined;
@@ -147,7 +148,7 @@ export class DeliveryShopService {
           goodsDescription: input.goodsDescription,
           goodsValueVnd: input.goodsValueVnd,
           paidVnd: input.paidVnd,
-          feePayer: input.feePayer,
+          feePayer: input.feePayer === 'SHOP' ? 'SHOP' : 'CUSTOMER',
           note: input.note,
           agreedFee: input.agreedFee,
           feeBand: input.feeBand,
@@ -211,7 +212,7 @@ export class DeliveryShopService {
         const bands = previous.feeMode === 'STANDARD' && previous.feeVnd !== null && previous.routeDistanceM === null ? await this.agreements.bands(context) : null;
         const sameBand = bands?.bands.find((band) => band.feeVnd === previous.feeVnd);
         const created = await this.#createDelivery(context, caller, {
-          source: previous.source,
+          source: previous.source === 'ORDER' ? 'ORDER' : 'DIRECT',
           orderId: previous.orderId,
           previousDeliveryId: previous.deliveryId,
           recipientName: previous.recipientName,
@@ -222,7 +223,7 @@ export class DeliveryShopService {
           goodsDescription: previous.goodsDescription,
           goodsValueVnd: previous.goodsValueVnd,
           paidVnd: previous.paidVnd,
-          feePayer: previous.feePayer,
+          feePayer: previous.feePayer === 'SHOP' ? 'SHOP' : 'CUSTOMER',
           note: previous.note,
           agreedFee:
             agreement !== undefined && agreement.feeMode === 'AGREED' && agreement.reasonCode !== null && agreement.proposedFeeVnd !== null
@@ -241,16 +242,21 @@ export class DeliveryShopService {
 
   /** Asks M14 for the road distance shop -> drop-off, outside any transaction. Undefined when there is no drop-off position, no pickup position or no route. */
   async routeFor(principal: AuthPrincipal, lat: number | null, lng: number | null): Promise<{ leg: RouteLeg; from: Pickup } | undefined> {
+    const result = await this.routeForQuote(principal, lat, lng);
+    return result.route;
+  }
+
+  async routeForQuote(principal: AuthPrincipal, lat: number | null, lng: number | null): Promise<{ route?: { leg: RouteLeg; from: Pickup }; reason?: 'PICKUP_PIN_MISSING' | 'DROPOFF_PIN_MISSING' | 'ROUTE_UNAVAILABLE' | 'ROUTE_TIMEOUT' }> {
     if (lat === null || lng === null) {
-      return undefined;
+      return { reason: 'DROPOFF_PIN_MISSING' };
     }
     const shop = await this.transactions.withTransaction((context) => this.actors.shopReader(context, principal));
     if (shop.shop.pickupLat === null || shop.shop.pickupLng === null) {
-      return undefined;
+      return { reason: 'PICKUP_PIN_MISSING' };
     }
     const from = { lat: shop.shop.pickupLat, lng: shop.shop.pickupLng };
-    const leg = await this.routes.route(from, { lat, lng });
-    return leg === undefined ? undefined : { leg, from };
+    const result = await this.routes.routeResult(from, { lat, lng });
+    return result.status === 'ROUTE' ? { route: { leg: result.leg, from } } : { reason: result.reason === 'ROUTE_TIMEOUT' ? 'ROUTE_TIMEOUT' : 'ROUTE_UNAVAILABLE' };
   }
 
   async #createDelivery(
@@ -270,6 +276,7 @@ export class DeliveryShopService {
       paidVnd: number;
       feePayer: 'CUSTOMER' | 'SHOP';
       note: string | null;
+      dropoffNote?: string | null;
       agreedFee: { reasonCode: import('../shipping-policy/shipping-fee-agreement').AgreementReason; reasonNote: string | null; amountVnd: number } | null;
       /** One of the three bands of the fee table, chosen by the shop for an address without a map point (an estimate, not a measured distance). */
       feeBand: number | null;
@@ -301,8 +308,18 @@ export class DeliveryShopService {
         distanceM = spec.estimatedDistanceM ?? null;
       }
     }
-    if (spec.agreedFee === null && (await this.agreements.estimate(context, distanceM)).status !== 'PRICED') {
+    // A direct delivery without a map point can still be created from an
+    // explicitly selected fee band. Without a route, band, or agreed fee the
+    // actionable M07 contract remains FEE_REQUIRED; ROUTE_UNAVAILABLE is
+    // reserved for a route request that actually failed.
+    if (distanceM === null && spec.agreedFee === null) {
       throw new AppError('FEE_REQUIRED');
+    }
+    if (spec.agreedFee === null) {
+      const quote = await this.agreements.estimate(context, distanceM);
+      if (quote.status !== 'PRICED') {
+        throw new AppError(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE');
+      }
     }
     const feeMode = spec.agreedFee !== null ? 'AGREED' : 'STANDARD';
     const deliveryId = randomUUID();
@@ -328,7 +345,9 @@ export class DeliveryShopService {
       goodsDescription: spec.goodsDescription,
       goodsValueVnd: spec.goodsValueVnd,
       paidVnd: spec.paidVnd,
+      codVnd: 0,
       note: spec.note,
+      dropoffNote: spec.dropoffNote ?? null,
       feeMode,
       feePayer: spec.feePayer,
       feeVnd: null,

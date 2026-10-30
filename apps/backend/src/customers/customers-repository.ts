@@ -19,6 +19,7 @@ export interface AddressRow {
   readonly id: string;
   readonly customerId: string;
   readonly label: AddressLabel;
+  readonly displayName: string | null;
   readonly recipientName: string | null;
   readonly contactPhone: string;
   readonly addressDescription: string;
@@ -26,6 +27,8 @@ export interface AddressRow {
   readonly longitude: number | null;
   readonly deliveryNote: string | null;
   readonly isDefault: boolean;
+  readonly isPickupDefault: boolean;
+  readonly isDeliveryDefault: boolean;
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -35,6 +38,7 @@ interface RawAddress {
   id: string;
   customer_id: string;
   label: AddressLabel;
+  display_name: string | null;
   recipient_name: string | null;
   contact_phone: string;
   address_description: string;
@@ -42,6 +46,8 @@ interface RawAddress {
   longitude: number | null;
   delivery_note: string | null;
   is_default: boolean;
+  is_pickup_default: boolean;
+  is_delivery_default: boolean;
   version: string;
   created_at: string;
   updated_at: string;
@@ -49,8 +55,8 @@ interface RawAddress {
 
 // Timestamps are formatted by the database (UTC, millisecond precision) so that no driver type parser decides the wire format.
 const ISO = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
-const ADDRESS_COLUMNS = `id::text AS id, customer_id::text AS customer_id, label, recipient_name, contact_phone, address_description,
-       latitude, longitude, delivery_note, is_default, version::text AS version,
+const ADDRESS_COLUMNS = `id::text AS id, customer_id::text AS customer_id, label, display_name, recipient_name, contact_phone, address_description,
+       latitude, longitude, delivery_note, is_default, is_pickup_default, is_delivery_default, version::text AS version,
        to_char(created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at,
        to_char(updated_at AT TIME ZONE 'UTC', ${ISO}) AS updated_at`;
 
@@ -63,6 +69,7 @@ function addressOf(row: RawAddress): AddressRow {
     id: row.id,
     customerId: row.customer_id,
     label: row.label,
+    displayName: row.display_name,
     recipientName: row.recipient_name,
     contactPhone: row.contact_phone,
     addressDescription: row.address_description,
@@ -70,6 +77,8 @@ function addressOf(row: RawAddress): AddressRow {
     longitude: row.longitude,
     deliveryNote: row.delivery_note,
     isDefault: row.is_default,
+    isPickupDefault: row.is_pickup_default,
+    isDeliveryDefault: row.is_delivery_default,
     version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -142,13 +151,26 @@ export class CustomersRepository {
     return row === undefined ? undefined : addressOf(row);
   }
 
+  /** The checkout snapshot, locked against edits/deletion until the Order transaction commits. */
+  async lockActiveAddressOfUserShared(context: TransactionContext, userId: string, addressId: string): Promise<AddressRow | undefined> {
+    const result = await context.query<RawAddress>(
+      `SELECT ${ADDRESS_COLUMNS}
+         FROM app.customer_addresses
+        WHERE id = $2::uuid AND is_active AND customer_id = (SELECT id FROM app.customers WHERE user_id = $1::uuid)
+          FOR SHARE`,
+      [userId, addressId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : addressOf(row);
+  }
+
   /** Active addresses, default first, then the most recently updated. */
   async listActive(context: TransactionContext, customerId: string): Promise<AddressRow[]> {
     const result = await context.query<RawAddress>(
       `SELECT ${ADDRESS_COLUMNS}
          FROM app.customer_addresses
         WHERE customer_id = $1::uuid AND is_active
-        ORDER BY is_default DESC, updated_at DESC, id`,
+        ORDER BY is_delivery_default DESC, is_pickup_default DESC, updated_at DESC, id`,
       [customerId],
     );
     return result.rows.map(addressOf);
@@ -180,24 +202,28 @@ export class CustomersRepository {
     addressId: string,
     customerId: string,
     fields: AddressFields,
-    isDefault: boolean,
+    pickupDefault: boolean,
+    deliveryDefault: boolean,
   ): Promise<AddressRow> {
     const result = await context.query<RawAddress>(
       `INSERT INTO app.customer_addresses
-         (id, customer_id, label, recipient_name, contact_phone, address_description, latitude, longitude, delivery_note, is_default)
-       VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::float8, $8::float8, $9, $10::boolean)
+         (id, customer_id, label, display_name, recipient_name, contact_phone, address_description, latitude, longitude, delivery_note,
+          is_default, is_pickup_default, is_delivery_default)
+       VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::float8, $9::float8, $10, $11::boolean, $12::boolean, $11::boolean)
        RETURNING ${ADDRESS_COLUMNS}`,
       [
         addressId,
         customerId,
         fields.label,
+        fields.displayName,
         fields.recipientName,
         fields.contactPhone,
         fields.addressDescription,
         fields.latitude,
         fields.longitude,
         fields.deliveryNote,
-        isDefault,
+        deliveryDefault,
+        pickupDefault,
       ],
     );
     return addressOf(this.#one(result.rows));
@@ -217,16 +243,17 @@ export class CustomersRepository {
   ): Promise<AddressRow | undefined> {
     const result = await context.query<RawAddress>(
       `UPDATE app.customer_addresses
-          SET label = $3, recipient_name = $4, contact_phone = $5, address_description = $6,
-              latitude = $7::float8, longitude = $8::float8, delivery_note = $9,
+          SET label = $3, display_name = $4, recipient_name = $5, contact_phone = $6, address_description = $7,
+              latitude = $8::float8, longitude = $9::float8, delivery_note = $10,
               version = version + 1,
               updated_at = GREATEST(created_at, clock_timestamp())
-        WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active AND version = $10::bigint
+        WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active AND version = $11::bigint
         RETURNING ${ADDRESS_COLUMNS}`,
       [
         addressId,
         customerId,
         fields.label,
+        fields.displayName,
         fields.recipientName,
         fields.contactPhone,
         fields.addressDescription,
@@ -241,8 +268,10 @@ export class CustomersRepository {
   }
 
   /** Takes the default away from the customer's active default address, if there is one. Content version and updated_at stay. */
-  async clearDefault(context: TransactionContext, customerId: string): Promise<void> {
-    await context.query(`UPDATE app.customer_addresses SET is_default = false WHERE customer_id = $1::uuid AND is_default AND is_active`, [customerId]);
+  async clearDefault(context: TransactionContext, customerId: string, kind: 'pickup' | 'delivery'): Promise<void> {
+    const column = kind === 'pickup' ? 'is_pickup_default' : 'is_delivery_default';
+    const legacy = kind === 'delivery' ? ', is_default = false' : '';
+    await context.query(`UPDATE app.customer_addresses SET ${column} = false${legacy} WHERE customer_id = $1::uuid AND ${column} AND is_active`, [customerId]);
   }
 
   /**
@@ -250,9 +279,11 @@ export class CustomersRepository {
    * Only the flag changes: a default switch is not an edit of the address, so version and updated_at stay (the "most recently
    * updated" rule of a delete is about the content of an address).
    */
-  async markDefault(context: TransactionContext, customerId: string, addressId: string): Promise<void> {
+  async markDefault(context: TransactionContext, customerId: string, addressId: string, kind: 'pickup' | 'delivery'): Promise<void> {
+    const column = kind === 'pickup' ? 'is_pickup_default' : 'is_delivery_default';
+    const legacy = kind === 'delivery' ? ', is_default = true' : '';
     const result = await context.query(
-      `UPDATE app.customer_addresses SET is_default = true WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active`,
+      `UPDATE app.customer_addresses SET ${column} = true${legacy} WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active`,
       [addressId, customerId],
     );
     if (result.rowCount !== 1) {
@@ -261,11 +292,21 @@ export class CustomersRepository {
     }
   }
 
+  async clearAddressDefault(context: TransactionContext, customerId: string, addressId: string, kind: 'pickup' | 'delivery'): Promise<void> {
+    const column = kind === 'pickup' ? 'is_pickup_default' : 'is_delivery_default';
+    const legacy = kind === 'delivery' ? ', is_default = false' : '';
+    await context.query(
+      `UPDATE app.customer_addresses SET ${column} = false${legacy} WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active`,
+      [addressId, customerId],
+    );
+  }
+
   /** Soft delete: inactive and never default. Returns the id when a row changed. */
   async softDelete(context: TransactionContext, customerId: string, addressId: string): Promise<boolean> {
     const result = await context.query(
       `UPDATE app.customer_addresses
-          SET is_active = false, is_default = false, version = version + 1, updated_at = GREATEST(created_at, clock_timestamp())
+          SET is_active = false, is_default = false, is_pickup_default = false, is_delivery_default = false,
+              version = version + 1, updated_at = GREATEST(created_at, clock_timestamp())
         WHERE id = $1::uuid AND customer_id = $2::uuid AND is_active`,
       [addressId, customerId],
     );

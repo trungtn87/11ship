@@ -187,8 +187,20 @@ export class DeliveryShipperService {
           throw new AppError('DELIVERY_SEARCH_EXPIRED');
         }
         let current = delivery;
-        const agreement = await this.agreements.readByDelivery(context, deliveryId);
+        let agreement = await this.agreements.readByDelivery(context, deliveryId);
         if (agreement !== undefined) {
+          if (agreement.feeMode === 'AGREED' && agreement.status === 'PROPOSED') {
+            const agreeOutcome = await this.agreements.act(context, {
+              agreementId: agreement.agreementId,
+              expectedVersion: agreement.version,
+              requestId: randomUUID(),
+              nowMs,
+              action: { type: 'DRIVER_ACCEPT', driverId },
+            });
+            if (agreeOutcome.kind === 'ok' || agreeOutcome.kind === 'replayed') {
+              agreement = agreeOutcome.agreement;
+            }
+          }
           if (!feeAllowsAssignment(agreement, driverId)) {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
@@ -622,7 +634,7 @@ export class DeliveryShipperService {
 
   /** The original ETA of the hand-over (Shipper -> shop -> drop-off, plus service times), from M14, stored once on the assignment. Null if any leg is unknown. */
   async #originalEta(delivery: DeliveryRow, location: { lat: number; lng: number } | undefined, nowMs: number, pickupServiceSeconds: number, handoffServiceSeconds: number): Promise<number | null> {
-    if (location === undefined || delivery.dropoffLat === null || delivery.dropoffLng === null) {
+    if (location === undefined || delivery.dropoffLat === null || delivery.dropoffLng === null || delivery.pickupLat === null || delivery.pickupLng === null) {
       return null;
     }
     const shop = { lat: delivery.pickupLat, lng: delivery.pickupLng };

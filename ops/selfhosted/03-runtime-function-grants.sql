@@ -29,3 +29,4 @@ GRANT EXECUTE ON FUNCTION app.shop_display_delivery(uuid) TO ship11_app;
 
 -- Business finance message ordering, without direct sequence access.
 GRANT EXECUTE ON FUNCTION app.next_business_message_sequence() TO ship11_app;
+GRANT EXECUTE ON FUNCTION app.next_shop_entitlement_sequence() TO ship11_app;

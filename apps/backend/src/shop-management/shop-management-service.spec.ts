@@ -401,10 +401,11 @@ describe('ShopManagementService.read', () => {
     const view = await r.service.read(ACTOR);
     expect(Object.keys(view).sort()).toEqual(
       [
-        'address_text', 'availability', 'contact_phone', 'facebook', 'hours', 'name', 'pickup_lat', 'pickup_lng',
+        'address_text', 'availability', 'contact_phone', 'facebook', 'hours', 'name', 'next_refresh_ms', 'pickup_lat', 'pickup_lng',
         'service_area_id', 'shop_id', 'status', 'timezone', 'version', 'zalo',
       ].sort(),
     );
+    expect(view.next_refresh_ms).toBe(7 * 3600000);
     expect(view.availability).toEqual({ online: false, reason: 'OUTSIDE_BUSINESS_HOURS', evaluated_at: snapshot.availability.evaluatedAt });
     expect(JSON.stringify(view)).not.toMatch(/accepting/i);
     expect(r.events).toEqual(['actor.authorize.shared', 'snapshot']);

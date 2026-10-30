@@ -102,8 +102,11 @@ describe('admin order chat (real browser)', () => {
   };
   async function confirmedOrder(): Promise<Json> {
     const lines = [{ item_id: pho.itemId, quantity: 2, unit_price_vnd: pho.price }];
+    const draft = { shop_id: shop.shopId, lines, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: { address_text: '12 Phố Huế, Hà Nội', lat: 21.0, lng: 105.82 } };
+    const preview = good(await call(customer.token, 'POST', '/customers/me/orders/preview', { ...draft, lines: lines.map(({ item_id, quantity }) => ({ item_id, quantity })) }));
+    const fee = preview.fee as Json;
     const placed = good(
-      await call(customer.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), shop_id: shop.shopId, lines, items_total_vnd: 90_000, recipient_name: 'Người nhận', recipient_phone: '0912345678', address: { address_text: '12 Phố Huế, Hà Nội', lat: 21.0, lng: 105.82 } }),
+      await call(customer.token, 'POST', '/customers/me/orders', { client_ref: randomUUID(), ...draft, items_total_vnd: 90_000, expected_quote: { status: fee.status, distance_m: fee.distance_m, fee_vnd: fee.fee_vnd, reason: fee.reason, policy_version: fee.policy_version, snapshot: fee.snapshot } }),
       201,
     );
     return good(await call(shop.token, 'POST', `/shop/me/orders/${String(placed.order_id)}/confirm`, { expected_version: placed.version }));

@@ -24,7 +24,7 @@ import { ChatMessageRow, OrderChatRepository } from './order-chat-repository';
 import { encodeCursor, PageQuery, SendInput } from './order-chat-validation';
 
 /** Which door the caller came through. The identifier in the path is the order (customer, shop) or the delivery (shop's direct call, Shipper). */
-export type ChatDoor = 'CUSTOMER_ORDER' | 'SHOP_ORDER' | 'SHOP_DIRECT' | 'SHIPPER_DELIVERY';
+export type ChatDoor = 'CUSTOMER_ORDER' | 'CUSTOMER_DIRECT' | 'SHOP_ORDER' | 'SHOP_DIRECT' | 'SHIPPER_DELIVERY';
 
 /** What the Administration's current permission rows give this account on a conversation. */
 export interface AdminAccess {
@@ -90,7 +90,7 @@ export class OrderChatService {
   // ---- who is asking ---------------------------------------------------------------------------------------------------------
 
   async #caller(context: TransactionContext, principal: AuthPrincipal, door: ChatDoor): Promise<Caller> {
-    if (door === 'CUSTOMER_ORDER') {
+    if (door === 'CUSTOMER_ORDER' || door === 'CUSTOMER_DIRECT') {
       const actor = await this.authority.lock(context, principal, 'share');
       if (actor.app !== 'FOOD' || !(await this.users.hasRole(context, actor.userId, CUSTOMER_ROLE))) {
         throw new AppError('ROLE_NOT_AVAILABLE');
@@ -110,6 +110,9 @@ export class OrderChatService {
     switch (door) {
       case 'CUSTOMER_ORDER':
         seat = await this.participants.customerSeat(context, caller.userId, id);
+        break;
+      case 'CUSTOMER_DIRECT':
+        seat = await this.participants.customerDirectSeat(context, caller.userId, id);
         break;
       case 'SHOP_ORDER':
         seat = await this.participants.shopOrderSeat(context, caller.shopId as string, id);

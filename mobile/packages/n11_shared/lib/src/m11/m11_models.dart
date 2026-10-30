@@ -247,6 +247,27 @@ class ShopDeliveryReviewState {
   }
 }
 
+/// The customer's side of one customer delivery (no order): may they rate the Shipper, and what they already rated.
+class CustomerDeliveryReviewState {
+  const CustomerDeliveryReviewState({required this.deliveryCode, required this.shipper, required this.canReview, required this.review});
+
+  final String deliveryCode;
+  final RatedShipper? shipper;
+  final bool canReview;
+  final OwnReview? review;
+
+  factory CustomerDeliveryReviewState.fromJson(Object? json) {
+    final Map<String, Object?> m = _obj(json);
+    final Map<String, Object?> s = m['shipper'] == null ? <String, Object?>{} : _obj(m['shipper']);
+    return CustomerDeliveryReviewState(
+      deliveryCode: _str(_obj(m['delivery'])['code']),
+      shipper: m['shipper'] == null ? null : RatedShipper.fromJson(m['shipper']),
+      canReview: _bool(s['can_review'] ?? m['can_review'] ?? false),
+      review: s['review'] == null ? (m['review'] == null ? null : OwnReview.fromJson(m['review'])) : OwnReview.fromJson(s['review']),
+    );
+  }
+}
+
 /// The customer's side of one order: the shop and the Shipper they may rate.
 class CustomerOrderReviewState {
   const CustomerOrderReviewState({required this.orderCode, required this.orderCompleted, required this.shopName, required this.canReviewShop, required this.shopReview, required this.shipper, required this.canReviewShipper, required this.shipperReview});

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../account/models.dart';
 import 'menu_models.dart';
+import 'availability_refresh.dart';
 
 // K01 / K02: what a customer sees of one shop. The shop id comes from the entry point that opens the screen; there is no search here.
 // Network trouble is not the same as "shop not available": data that was loaded stays on screen, marked as not up to date.
@@ -11,6 +12,10 @@ enum PublicLoad { idle, loading, ready, notFound, unavailable, failed, notConnec
 class PublicShopController extends ChangeNotifier {
   PublicShopController({required this.api, required this.shopId});
 
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: load, invalidate: () {
+    _stale = true;
+    _notify();
+  });
   final PublicShopApi api;
   final String shopId;
 
@@ -39,9 +44,13 @@ class PublicShopController extends ChangeNotifier {
       _view = await api.load(shopId);
       _state = PublicLoad.ready;
       _stale = false;
+      freshness.arm(_view!.nextRefreshMs);
     } on FeatureNotConnected {
+      _stale = _view != null;
+      freshness.failed();
       _state = _view == null ? PublicLoad.notConnected : _state;
     } on AuthFailure catch (failure) {
+      freshness.failed();
       if (failure.code == 'SHOP_NOT_FOUND') {
         _view = null;
         _state = PublicLoad.notFound;
@@ -62,6 +71,7 @@ class PublicShopController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    freshness.dispose();
     super.dispose();
   }
 

@@ -11,8 +11,7 @@ final LocationFix here = LocationFix(latitude: 10.0123, longitude: 106.0456, acc
 
 ShopCardData card(String id, {double? lat = 10.02, double? lng = 106.05}) => ShopCardData(shopId: id, name: 'Quán $id', address: 'x', reason: 'ONLINE', latitude: lat, longitude: lng);
 
-FakeShopEntry entry(String id, {double? lat = 10.02, double? lng = 106.05}) =>
-    FakeShopEntry(id, 'Quán $id', latitude: lat, longitude: lng, dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Bún riêu', 40000, 'c1')]);
+FakeShopEntry entry(String id, {double? lat = 10.02, double? lng = 106.05}) => FakeShopEntry(id, 'Quán $id', latitude: lat, longitude: lng, dishes: const <FakeDishEntry>[FakeDishEntry('d1', 'Bún riêu', 40000, 'c1')]);
 
 void phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(390 * 3, 800 * 3);
@@ -50,7 +49,7 @@ void main() {
       expect(routes.of(card('c', lat: null, lng: null), here).kind, RouteDistanceKind.unavailable);
       expect(api.routeRequests.single.shopIds, <String>['a', 'b']); // the shop without a point was never asked
       expect(distanceLine(card('a'), RouteDistance.unavailable, here), startsWith('Chưa xác định quãng đường'));
-      expect(distanceLine(card('a'), RouteDistance.unavailable, here), contains('đường chim bay'));
+      expect(distanceLine(card('a'), RouteDistance.unavailable, here), isNot(contains('đường chim bay')));
       // Asking again inside the back-off window makes no request; after it, one.
       await routes.want(<ShopCardData>[card('a'), card('b')], here);
       expect(api.routeRequests, hasLength(1));
@@ -180,13 +179,13 @@ void main() {
       expect(api.routeRequests, isEmpty);
     });
 
-    testWidgets('routing down: the card says it does not know the road and shows the straight line only labelled "đường chim bay"; nothing crashes', (WidgetTester tester) async {
+    testWidgets('routing down: the card says it does not know the road and never shows a straight-line fallback', (WidgetTester tester) async {
       phone(tester);
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..routeOffline = true;
       await pumpHome(tester, api);
       final String text = tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data!;
       expect(text, startsWith('Chưa xác định quãng đường'));
-      expect(text, contains('đường chim bay'));
+      expect(text, isNot(contains('đường chim bay')));
       expect(text, isNot(contains('đường đi')));
       expect(tester.takeException(), isNull);
     });
@@ -213,7 +212,9 @@ void main() {
       final RecordedRequest sent = transport.requests.single;
       expect(sent.body, contains('"origin":{"lat":22.6,"lng":106.2}'));
       expect(sent.body, contains('"shop_ids":["a","b","c","d"]'));
-      transport.routes['POST /v1/discovery/route-distances'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'distances': 'x'}});
+      transport.routes['POST /v1/discovery/route-distances'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
+            'data': <String, Object?>{'distances': 'x'}
+          });
       await expectLater(api.routeDistances(22.6, 106.2, <String>['a']), throwsA(isA<AuthFailure>().having((AuthFailure f) => f.kind, 'kind', AuthFailureKind.badResponse)));
       transport.routes['POST /v1/discovery/route-distances'] = (String m, String p, Map<String, String> h, String b) async => apiError(400, 'BAD_REQUEST');
       await expectLater(api.routeDistances(22.6, 106.2, <String>['a']), throwsA(isA<AuthFailure>()));

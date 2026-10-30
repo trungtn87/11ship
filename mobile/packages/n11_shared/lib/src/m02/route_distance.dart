@@ -13,7 +13,7 @@ import 'discovery_models.dart';
 //    answers unusable, and an answer that arrives after that is dropped.
 //  - At most [maxPerRequest] shops per request and ONE request at a time; answers are cached for [ttl]; a failed request is not retried before
 //    [failureBackoff]. So rebuilding, scrolling or a fast-moving position never turns into a request storm.
-//  - Haversine is kept ONLY as a labelled reference when the road is unknown ("đường chim bay"); it is never presented as a route.
+//  - No straight-line fallback is displayed when routing is unavailable.
 
 enum RouteDistanceKind { noPosition, loading, route, unavailable }
 
