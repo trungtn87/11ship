@@ -60,6 +60,15 @@ describe('admin web Feedback - parsers', () => {
     expect([...(parsed?.can ?? [])]).toEqual(['note', 'conclude']);
   });
 
+  it('reads a waiting commission adjustment with its id, reason and last attempt, and offers the retry', () => {
+    const adjustment = { adjustment_id: ID, kind: 'COMMISSION', original_state: 'completed', original_assignment_status: 'COMPLETED', corrected_result: null, direction: 'CHARGE_TO_SHIPPER', amount_vnd: 5000, status: 'PENDING_FINANCE', pending_reason: 'INSUFFICIENT_BALANCE', history_reviewed: false, successor_delivery_ids: [], reason: 'Thu thêm', created_at: AT, updated_at: AT };
+    const parsed = parseComplaintDetail(complaintDetail({ adjustments: [adjustment], can: ['note', 'retry-commission'], finance: { allowed: true, integrated: true } }));
+    expect(parsed?.adjustments[0]).toMatchObject({ id: ID, kind: 'COMMISSION', status: 'PENDING_FINANCE', pendingReason: 'INSUFFICIENT_BALANCE', amountVnd: 5000, updatedAt: AT });
+    expect(parsed?.can.has('retry-commission')).toBe(true);
+    expect(parseComplaintDetail(complaintDetail({ adjustments: [{ ...adjustment, updated_at: 'x' }] }))).toBeUndefined();
+    expect(parseComplaintDetail(complaintDetail({ adjustments: [{ ...adjustment, adjustment_id: undefined }] }))).toBeUndefined();
+  });
+
   it('refuses anything that is not exactly the documented shape (never half-shown data)', () => {
     for (const bad of [{ stars: 'x' }, { kind: 'OTHER' }, { visibility: 'GONE' }, { review_id: 'x' }, { created_at: 'yesterday' }, { shop: null }]) {
       expect(parseReviewRow(review(bad))).toBeUndefined();
@@ -119,6 +128,10 @@ describe('admin web Feedback - source', () => {
     expect((await run({ ...base, name: 'decide-reconsideration', decision: 'REOPEN', body: 'ok' }))?.body).toEqual({ expected_version: 3, decision: 'REOPEN', reason: 'ok' });
     expect((await run({ ...base, name: 'adjust-result', correctedResult: 'NOT_DELIVERED', body: 'lý do', historyReviewed: true }))?.body).toEqual({ expected_version: 3, corrected_result: 'NOT_DELIVERED', reason: 'lý do', history_reviewed: true });
     expect((await run({ ...base, name: 'adjust-commission', direction: 'REFUND_TO_SHIPPER', amountVnd: 1000, body: 'hoàn' }))?.body).toEqual({ expected_version: 3, direction: 'REFUND_TO_SHIPPER', amount_vnd: 1000, reason: 'hoàn', history_reviewed: false });
+    // A retry re-sends nothing about the money: only the note, to the SAME adjustment on the server.
+    const retried = await run({ ...base, name: 'retry-commission', body: 'đã nạp', direction: 'CHARGE_TO_SHIPPER', amountVnd: 5 });
+    expect(retried?.body).toEqual({ expected_version: 3, reason: 'đã nạp' });
+    expect(retried).toMatchObject({ method: 'POST', path: `/admin/complaints/${ID}/actions/retry-commission`, idempotencyKey: 'k' });
   });
 
   it('classifies the action outcomes: conflict, refused, forbidden, unknown (answer lost or 5xx), not wired, expired session', async () => {
