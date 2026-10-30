@@ -1147,6 +1147,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             if (_message != null) N11Banner(key: const Key('profile-message'), kind: _messageOk ? BannerKind.success : BannerKind.error, title: _message!),
             N11Field(requiredInput: true, fieldKey: const Key('profile-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !session.busy && !_loading, onChanged: () => setState(() {})),
             Text('Số điện thoại: ${session.identity?.maskedPhone ?? ''}', key: const Key('profile-phone'), style: N11Text.caption),
+            if (session.identity?.phoneUnverified ?? false)
+              const N11Banner(
+                key: Key('profile-phone-unverified'),
+                kind: BannerKind.info,
+                title: 'Số điện thoại chưa được xác minh bằng mã SMS',
+                text: 'Tài khoản được tạo khi chưa yêu cầu mã xác minh. Một số chức năng có thể cần số điện thoại đã xác minh.',
+              ),
             N11Button(
               key: const Key('profile-save'), validate: true,
               label: session.busy ? 'Đang lưu…' : 'Lưu',

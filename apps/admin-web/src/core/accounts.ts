@@ -105,6 +105,14 @@ export interface UserLifecycle {
   readonly deleteBlockedReason: LifecycleBlock;
 }
 
+/** What the account accepted (M01-POLICY-01). `acceptedCurrent` is null when the server has no pair configured. */
+export interface UserConsent {
+  readonly current: { readonly termsVersion: string; readonly privacyVersion: string } | null;
+  readonly acceptedCurrent: boolean | null;
+  /** Newest first. */
+  readonly history: readonly { readonly termsVersion: string; readonly privacyVersion: string; readonly acceptedAt: string; readonly clientApp: string }[];
+}
+
 export interface UserDetail extends UserRow {
   /** Row version, sent back with a lock/unlock so a stale view cannot overwrite a newer change. */
   readonly version: number;
@@ -120,6 +128,8 @@ export interface UserDetail extends UserRow {
   /** Whether the phone number was proven by an OTP (an account registered while SYSTEM had the registration OTP off is not). */
   readonly phoneVerified: boolean;
   readonly lifecycle: UserLifecycle;
+  /** Absent when the server did not send it (an older server): the page then shows nothing about consent. */
+  readonly consent?: UserConsent;
 }
 
 export type UserDetailState =

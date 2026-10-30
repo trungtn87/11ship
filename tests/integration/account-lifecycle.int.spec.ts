@@ -382,6 +382,30 @@ describe('account lifecycle, scopes and system settings', () => {
       expect((await loginClient(user.phone, NEW_PASSWORD)).status).toBe(200);
     });
 
+    it('case 3b (M01-POLICY-01) — the admin detail shows which consent pair the account accepted and when, and matches it with the pair in force: an older pair never counts as the current one', async () => {
+      const user = await seedUser();
+      const noConsent = adminData(await detail(user.id));
+      expect(noConsent.consent).toEqual({ current: { terms_version: TERMS, privacy_version: PRIVACY }, accepted_current: false, history: [] });
+
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await postSettings(sys(), settingsBody(0, false, true));
+      const created = await registerClient(registerBody(phone));
+      expect(created.status).toBe(201);
+      const registered = adminData(await detail(String(dataOf(created).user_id)));
+      expect(registered.consent).toMatchObject({ accepted_current: true, history: [{ terms_version: TERMS, privacy_version: PRIVACY, client_app: 'FOOD' }] });
+      const first = (registered.consent as { history: { accepted_at: string }[] }).history[0];
+      expect(Number.isNaN(Date.parse(String(first?.accepted_at)))).toBe(false);
+
+      // A pair accepted before the texts changed: kept, listed, and not equal to the one in force.
+      await app.pool.query(
+        "INSERT INTO app.user_consents (id, user_id, terms_version, privacy_version, accepted_at, client_app) VALUES ($1::uuid, $2::uuid, 'terms-old-v0', 'privacy-old-v0', clock_timestamp() - interval '30 days', 'SHIP')",
+        [randomUUID(), user.id],
+      );
+      const old = adminData(await detail(user.id));
+      expect(old.consent).toMatchObject({ accepted_current: false, history: [{ terms_version: 'terms-old-v0', privacy_version: 'privacy-old-v0', client_app: 'SHIP' }] });
+    });
+
     it('case 4b (M01-OTP-TEST-01) — an account made while the registration OTP was off stays PHONE_UNVERIFIED: turning the OTP back on, logging in or resetting the password never verifies it', async () => {
       await postSettings(sys(), settingsBody(0, false, true));
       const phone = randomPhone();
