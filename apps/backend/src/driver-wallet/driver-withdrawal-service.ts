@@ -98,7 +98,7 @@ export class DriverWithdrawalService {
           const obligations = await this.settlement.obligations(context, driver.driverId);
           if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
           if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
-          if ((await this.activity.activeWork(context, driver.userId)).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+          if ((await this.activity.activeWork(context, driver.userId, ['WALLET'])).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
           const pending = await this.reads.pendingTopupCount(context, wallet.walletId);
           if (pending > 0 || wallet.heldVnd !== 0n) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
           if (BigInt(amountVnd) !== wallet.balanceVnd) throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');

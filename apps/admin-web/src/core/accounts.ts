@@ -87,7 +87,8 @@ export const RELATED_DATA_LABEL: Readonly<Record<string, string>> = {
   DELIVERIES: 'Giao hàng',
   WALLET: 'Ví và lịch sử giao dịch',
   REVIEWS: 'Đánh giá',
-  DISPUTES: 'Tranh chấp',
+  DISPUTES: 'Khiếu nại',
+  LINKED_RECORDS: 'Dữ liệu khác gắn với tài khoản',
 };
 
 export interface UserLifecycle {
@@ -102,6 +103,14 @@ export interface UserLifecycle {
   readonly deleteEffect: 'DELETE_PERMANENTLY' | 'LOCK';
   readonly lockBlockedReason: LifecycleBlock;
   readonly deleteBlockedReason: LifecycleBlock;
+}
+
+/** What the account accepted (M01-POLICY-01). `acceptedCurrent` is null when the server has no pair configured. */
+export interface UserConsent {
+  readonly current: { readonly termsVersion: string; readonly privacyVersion: string } | null;
+  readonly acceptedCurrent: boolean | null;
+  /** Newest first. */
+  readonly history: readonly { readonly termsVersion: string; readonly privacyVersion: string; readonly acceptedAt: string; readonly clientApp: string }[];
 }
 
 export interface UserDetail extends UserRow {
@@ -119,6 +128,8 @@ export interface UserDetail extends UserRow {
   /** Whether the phone number was proven by an OTP (an account registered while SYSTEM had the registration OTP off is not). */
   readonly phoneVerified: boolean;
   readonly lifecycle: UserLifecycle;
+  /** Absent when the server did not send it (an older server): the page then shows nothing about consent. */
+  readonly consent?: UserConsent;
 }
 
 export type UserDetailState =
@@ -191,6 +202,8 @@ export type LockResult =
   | { readonly kind: 'deleted' }
   /** USER_ACCOUNT_HAS_ACTIVE_WORK: orders or deliveries are still being processed, so the account cannot be locked. Nothing was changed. */
   | { readonly kind: 'has-active-work' }
+  /** USER_ACCOUNT_ACTIVITY_UNVERIFIED: the server could not verify the orders, deliveries and records of the account. Nothing was changed. */
+  | { readonly kind: 'unverified' }
   /** USER_ACCOUNT_VERSION_CONFLICT or USER_ACCOUNT_ALREADY_IN_STATE: the account is not what the page showed. Nothing was changed. */
   | { readonly kind: 'conflict' }
   /** USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: the gate is closed. Nothing was changed. */
@@ -225,7 +238,8 @@ export const LOCK_MESSAGE = {
   rateLimited: 'Thao tác quá nhanh. Vui lòng thử lại sau ít phút.',
   rejected: 'Yêu cầu không hợp lệ. Hãy kiểm tra lại lý do và thử lại.',
   notWired: 'Khóa và mở khóa chưa được nối với máy chủ.',
-  activeWork: 'Không thể khóa hoặc xóa lúc này vì tài khoản còn đơn hàng hoặc đơn giao hàng đang xử lý. Hãy chờ các đơn hoàn thành hoặc bị hủy rồi thử lại. Không có thay đổi nào được ghi.',
+  activeWork: 'Không thể khóa hoặc xóa lúc này vì tài khoản còn đơn hàng, đơn giao hàng hoặc khoản tiền đang xử lý (xem mục "Đang xử lý" của tài khoản). Hãy chờ các mục này hoàn tất hoặc bị hủy rồi thử lại. Không có thay đổi nào được ghi.',
+  unverified: 'Chưa kiểm tra được đơn hàng, đơn giao hàng và dữ liệu liên quan của tài khoản này nên hệ thống không khóa hoặc xóa. Không có thay đổi nào được ghi. Hãy thử lại sau; nếu vẫn lỗi, báo kỹ thuật.',
 } as const;
 
 /** A page of a list: a normal list state, or "the cursor no longer fits" (filter or rights changed): start again from page 1. */

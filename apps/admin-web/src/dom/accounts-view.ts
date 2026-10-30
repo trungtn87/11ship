@@ -252,6 +252,21 @@ function profileBlocks(user: UserDetail): HTMLElement[] {
   return blocks;
 }
 
+/** Which terms/privacy pair the account accepted, when, and whether it is the one in force now (nothing when the server did not send it). */
+function consentRows(user: UserDetail): readonly (readonly [string, string])[] {
+  const consent = user.consent;
+  if (consent === undefined) {
+    return [];
+  }
+  const latest = consent.history[0];
+  const accepted = latest === undefined ? 'Chưa có bản ghi đồng ý' : `${latest.termsVersion} / ${latest.privacyVersion} — ${formatDateTimeVn(latest.acceptedAt)} (${latest.clientApp})`;
+  const match = consent.acceptedCurrent === null ? 'Chưa cấu hình phiên bản hiện hành' : consent.acceptedCurrent ? 'Khớp phiên bản hiện hành' : 'Chưa đồng ý phiên bản hiện hành';
+  return [
+    ['Điều khoản đã đồng ý', accepted],
+    ['Đối chiếu phiên bản', consent.history.length > 1 ? `${match}; ${consent.history.length} lần đồng ý` : match],
+  ];
+}
+
 const dataLabel = (name: string): string => RELATED_DATA_LABEL[name] ?? name;
 
 function relatedDataText(user: UserDetail): string {
@@ -341,6 +356,7 @@ export function renderUserDetail(screen: UserDetailScreen, hooks: UserDetailHook
             ['Xác minh số điện thoại', user.phoneVerified ? 'Đã xác minh' : 'Chưa xác minh'],
             ...(user.lifecycle.lockReason === null ? [] : ([['Lý do khóa', LOCK_REASON_LABEL[user.lifecycle.lockReason]]] as const)),
             ...(user.lifecycle.lockedAt === null ? [] : ([['Khóa từ', formatDateTimeVn(user.lifecycle.lockedAt)]] as const)),
+            ...consentRows(user),
             ['Dữ liệu liên quan', relatedDataText(user)],
             ...(user.lifecycle.activeWork.length === 0 ? [] : ([['Đang xử lý', user.lifecycle.activeWork.map(dataLabel).join(', ')]] as const)),
             ['Ngày tạo', formatDateTimeVn(user.createdAt)],

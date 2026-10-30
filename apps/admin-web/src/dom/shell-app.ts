@@ -851,6 +851,9 @@ export class ShellApp implements ShellHost {
       case 'has-active-work':
         ui.phase('failed', LOCK_MESSAGE.activeWork);
         return;
+      case 'unverified':
+        ui.phase('failed', LOCK_MESSAGE.unverified);
+        return;
       case 'conflict':
         ui.phase('conflict');
         return;

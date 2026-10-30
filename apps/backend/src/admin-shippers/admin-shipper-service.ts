@@ -303,7 +303,7 @@ export class AdminShipperService {
           throw new AppError('DRIVER_STATE_CONFLICT');
         }
         // Deliveries in progress must be finished first, and the wallet settled with the Shipper: the balance is never lost.
-        if ((await this.activity.activeWork(context, driver.userId)).length > 0) {
+        if ((await this.activity.activeWork(context, driver.userId, ['WALLET'])).length > 0) {
           throw new AppError('DRIVER_HAS_ACTIVE_WORK');
         }
         if (!(await this.wallet.settlementForClosure(context, driver.driverId)).settled) {

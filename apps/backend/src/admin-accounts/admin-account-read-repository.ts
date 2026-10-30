@@ -47,6 +47,14 @@ export interface UserSummaryRow {
   readonly displayName: string | null;
 }
 
+/** One recorded acceptance of a (terms, privacy) pair (app.user_consents is append-only; the time is the database time). */
+export interface ConsentHistoryRow {
+  readonly termsVersion: string;
+  readonly privacyVersion: string;
+  readonly acceptedAtMs: number;
+  readonly clientApp: string;
+}
+
 export interface UserDetailRow extends UserSummaryRow {
   readonly updatedAtMs: number;
   readonly version: number;
@@ -261,6 +269,16 @@ export class AdminAccountReadRepository {
       shop: scope.shop && row.shop_name !== null ? { name: row.shop_name, status: row.shop_status ?? '' } : undefined,
       driver: scope.driver && row.driver_status !== null ? { status: row.driver_status } : undefined,
     };
+  }
+
+  /** The acceptances of the account, newest first (M01-POLICY-01: which version was accepted, when, in which app). At most 20 rows. */
+  async consentHistory(context: TransactionContext, userId: string): Promise<ConsentHistoryRow[]> {
+    const result = await context.query<{ terms_version: string; privacy_version: string; accepted_ms: string; client_app: string }>(
+      `SELECT terms_version, privacy_version, ${epochMs('accepted_at')} AS accepted_ms, client_app
+         FROM app.user_consents WHERE user_id = $1::uuid ORDER BY accepted_at DESC, id LIMIT 20`,
+      [userId],
+    );
+    return result.rows.map((row) => ({ termsVersion: row.terms_version, privacyVersion: row.privacy_version, acceptedAtMs: toSafeInteger(row.accepted_ms), clientApp: row.client_app }));
   }
 
   /** Activated ADMINs only (membership + profile). Never SYSTEM, never an invitation. */
