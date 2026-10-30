@@ -18,6 +18,8 @@
 //
 // accepting_orders is deliberately absent from the column list: availability never reads the legacy column.
 
+import { pinInAreaSql } from './service-area-repository';
+
 export const AVAILABILITY_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 
 /** The only clock expression production uses. */
@@ -76,6 +78,8 @@ SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook
        s.service_area_id, s.status, s.version,
        a.status AS area_status,
        ${hasPickupPointSql('s')} AS has_pickup_point,
+       -- Issue #252: the pin lies inside the circle configured for the area (true while the area has no geometry: not provable, legacy-compatible).
+       ${pinInAreaSql('s', 'a')} AS pickup_in_area,
        to_char(date_trunc('milliseconds', s.activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at,
        s.setup_request_note,
        to_char(date_trunc('milliseconds', s.setup_request_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS setup_request_at,
