@@ -356,19 +356,19 @@ describe('Address Change Rules & Concurrency (#218)', () => {
     expect((deliveryRes.payload.address_change_request as Record<string, unknown>).status).toBe('ACCEPTED');
   });
 
-  it('Synchronous ORDER and DELIVERY Update: Shipper decide applies to both entities', () => {
+  it('Synchronous ORDER and DELIVERY Update: Shipper decide preserves agreed fee while updating address and distance', () => {
     // When a delivery linked to an order is accepted by a shipper:
     const simulateShipperDecideAccept = (
       order: { recipient: string; address: string; fee: number; distance: number; version: number },
       delivery: { recipient: string; address: string; fee: number; distance: number; version: number },
       req: { newRecipient: string; newAddress: string; newFee: number; newDistance: number },
     ) => {
-      // Both updated in the same transaction
+      // Both updated in the same transaction; fee remains unchanged per Owner decision
       const updatedOrder = {
         ...order,
         recipient: req.newRecipient,
         address: req.newAddress,
-        fee: req.newFee,
+        fee: order.fee, // Preserved!
         distance: req.newDistance,
         version: order.version + 1,
       };
@@ -376,7 +376,7 @@ describe('Address Change Rules & Concurrency (#218)', () => {
         ...delivery,
         recipient: req.newRecipient,
         address: req.newAddress,
-        fee: req.newFee,
+        fee: delivery.fee, // Preserved!
         distance: req.newDistance,
         version: delivery.version + 1,
       };
@@ -389,11 +389,54 @@ describe('Address Change Rules & Concurrency (#218)', () => {
 
     const result = simulateShipperDecideAccept(initialOrder, initialDelivery, request);
     expect(result.order.recipient).toBe('B');
-    expect(result.order.fee).toBe(30000);
+    expect(result.order.fee).toBe(20000); // Fee intact
+    expect(result.order.distance).toBe(3500);
     expect(result.order.version).toBe(2);
     expect(result.delivery.recipient).toBe('B');
-    expect(result.delivery.fee).toBe(30000);
+    expect(result.delivery.fee).toBe(20000); // Fee intact
+    expect(result.delivery.distance).toBe(3500);
     expect(result.delivery.version).toBe(2);
+  });
+
+  it('Fee Protection: Shop decide updates fee for STANDARD mode, but preserves fee for AGREED mode', () => {
+    const decideFeeLogic = (
+      isShipperDeciding: boolean,
+      feeMode: 'STANDARD' | 'AGREED',
+      newFeeVnd: number | null,
+      currentFee: number,
+    ): number => {
+      if (isShipperDeciding) return currentFee; // Shipper never updates fee automatically
+      if (feeMode === 'AGREED') return currentFee; // AGREED fee stays untouched
+      return newFeeVnd ?? currentFee;
+    };
+
+    // Case 1: Shipper deciding -> fee preserved regardless of mode
+    expect(decideFeeLogic(true, 'STANDARD', 35000, 25000)).toBe(25000);
+    // Case 2: Shop deciding, mode AGREED -> fee preserved
+    expect(decideFeeLogic(false, 'AGREED', 35000, 25000)).toBe(25000);
+    // Case 3: Shop deciding, mode STANDARD -> fee updated to new quote
+    expect(decideFeeLogic(false, 'STANDARD', 35000, 25000)).toBe(35000);
+  });
+
+  it('Call Shipper Guard: Shop cannot call shipper while address change request is PENDING', () => {
+    const canCallShipper = (
+      orderStatus: string,
+      deliveryState: string | null,
+      hasPendingChange: boolean,
+      isExpired: boolean,
+    ): boolean => {
+      const baseAllowed = orderStatus === 'PREPARING' && (deliveryState === null || deliveryState === 'search_stopped');
+      if (!baseAllowed) return false;
+      if (hasPendingChange && !isExpired) return false; // Blocked until resolved
+      return true;
+    };
+
+    // Case 1: Valid preparing order, no pending address change -> can call shipper
+    expect(canCallShipper('PREPARING', null, false, false)).toBe(true);
+    // Case 2: Valid preparing order, pending address change not expired -> BLOCKED
+    expect(canCallShipper('PREPARING', null, true, false)).toBe(false);
+    // Case 3: Valid preparing order, pending address change expired -> can call (will auto-expire)
+    expect(canCallShipper('PREPARING', null, true, true)).toBe(true);
   });
 
   it('Permission Check: Verifies decider authorization BEFORE returning EXPIRED data', () => {

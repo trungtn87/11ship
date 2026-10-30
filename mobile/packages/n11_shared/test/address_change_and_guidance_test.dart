@@ -126,7 +126,37 @@ void main() {
       expect(find.text('Yêu cầu đổi địa chỉ bị từ chối'), findsOneWidget);
       expect(find.text('Quá xa không giao được'), findsOneWidget);
     });
-    testWidgets('renders AddressChangeRequestSheet with location picker support', (WidgetTester tester) async {
+
+    testWidgets('renders banner with shipper notice that current fee is kept', (WidgetTester tester) async {
+      final AddressChangeView shipperTarget = AddressChangeView.fromJson(<String, Object?>{
+        'change_request_id': 'req-3',
+        'status': 'PENDING',
+        'is_expired': false,
+        'time_remaining_seconds': 120,
+        'source': 'ORDER',
+        'target_actor': 'SHIPPER',
+        'original_recipient': <String, Object?>{'name': 'A', 'phone': '090', 'address_text': 'Old'},
+        'new_recipient': <String, Object?>{'name': 'B', 'phone': '091', 'address_text': 'New'},
+        'original_fee_vnd': 25000,
+        'new_fee_vnd': 35000,
+        'version': 1,
+        'expires_at': DateTime.now().add(const Duration(minutes: 5)).toIso8601String(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AddressChangeBanner(request: shipperTarget),
+          ),
+        ),
+      );
+
+      expect(find.textContaining('Chờ Shipper duyệt'), findsOneWidget);
+      expect(find.textContaining('giữ nguyên cước hiện tại; nếu cần điều chỉnh phí sẽ qua đề xuất phí riêng'), findsOneWidget);
+    });
+
+    testWidgets('renders AddressChangeRequestSheet with location picker support and text-only clear pin', (WidgetTester tester) async {
       String? submittedName;
       String? submittedAddress;
       double? submittedLat;
@@ -156,13 +186,19 @@ void main() {
       expect(find.textContaining('Tọa độ: 20.9900, 105.8400'), findsOneWidget);
       expect(find.text('Sửa vị trí'), findsOneWidget);
 
+      // Test clearing pin to submit text-only address (#218)
+      await tester.tap(find.byTooltip('Bỏ ghim tọa độ'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Địa chỉ chữ (chưa ghim tọa độ, giữ nguyên cước phí hiện tại)'), findsOneWidget);
+
       await tester.tap(find.text('Gửi yêu cầu đổi địa chỉ'));
       await tester.pumpAndSettle();
 
       expect(submittedName, 'Lê Văn C');
       expect(submittedAddress, '789 Giải Phóng');
-      expect(submittedLat, 20.99);
-      expect(submittedLng, 105.84);
+      expect(submittedLat, isNull);
+      expect(submittedLng, isNull);
     });
   });
 

@@ -62,7 +62,15 @@ class AddressChangeBanner extends StatelessWidget {
               'Địa chỉ mới: ${request.newRecipient.addressText}',
               style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
             ),
-            if (request.newFeeVnd != null && request.originalFeeVnd != null) ...<Widget>[
+            if (request.targetActor == 'SHIPPER') ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                request.originalFeeVnd != null
+                    ? 'Phí giao hàng: ${_formatMoney(request.originalFeeVnd!)} (giữ nguyên cước hiện tại; nếu cần điều chỉnh phí sẽ qua đề xuất phí riêng)'
+                    : 'Phí giao hàng: Giữ nguyên cước hiện tại; nếu cần điều chỉnh phí sẽ qua đề xuất phí riêng',
+                style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
+              ),
+            ] else if (request.newFeeVnd != null && request.originalFeeVnd != null) ...<Widget>[
               const SizedBox(height: 2),
               Text(
                 'Phí giao hàng: ${_formatMoney(request.originalFeeVnd!)} ➔ ${_formatMoney(request.newFeeVnd!)}$feeText',
@@ -314,10 +322,6 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
       setState(() => _error = 'Vui lòng nhập địa chỉ nhận hàng mới');
       return;
     }
-    if (_lat == null || _lng == null) {
-      setState(() => _error = 'Vui lòng chọn vị trí trên bản đồ để tính lại cước phí');
-      return;
-    }
 
     setState(() {
       _submitting = true;
@@ -414,10 +418,21 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
                     child: Text(
                       _lat != null && _lng != null
                           ? 'Tọa độ: ${_lat!.toStringAsFixed(4)}, ${_lng!.toStringAsFixed(4)}'
-                          : 'Bắt buộc chọn vị trí trên bản đồ để tính lại cước phí',
+                          : 'Địa chỉ chữ (chưa ghim tọa độ, giữ nguyên cước phí hiện tại)',
                       style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
                     ),
                   ),
+                  if (_lat != null && _lng != null)
+                    IconButton(
+                      icon: const Icon(Icons.clear, size: 16, color: N11Colors.ink3),
+                      tooltip: 'Bỏ ghim tọa độ',
+                      onPressed: () {
+                        setState(() {
+                          _lat = null;
+                          _lng = null;
+                        });
+                      },
+                    ),
                   TextButton.icon(
                     icon: const Icon(Icons.place_outlined, size: 16),
                     label: Text(_lat != null && _lng != null ? 'Sửa vị trí' : 'Chọn vị trí trên bản đồ'),
@@ -426,7 +441,7 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
                         MaterialPageRoute<AddressLocation>(
                           builder: (_) => AddressLocationPicker(
                             initial: AddressLocation(_addressCtrl.text, latitude: _lat, longitude: _lng),
-                            requirePoint: true,
+                            requirePoint: false,
                           ),
                         ),
                       );

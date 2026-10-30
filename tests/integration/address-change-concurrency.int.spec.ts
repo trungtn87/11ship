@@ -643,7 +643,8 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
       });
     });
 
-    // Shipper accepts via delivery decide: atomic update to both app.deliveries and app.orders
+    // Shipper accepts via delivery decide: atomic update to both app.deliveries and app.orders,
+    // preserving existing fee (25000) while updating address, coords and distance (5500) per Item 1
     await manager().withTransaction(async (ctx) => {
       // 1. Lock in consistent order: order -> delivery -> address_change_requests
       await ctx.query(`SELECT 1 FROM app.orders WHERE order_id = $1::uuid FOR UPDATE`, [orderId]);
@@ -653,46 +654,93 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
       // 2. Resolve request
       await repo.resolve(ctx, req.changeRequestId, 'ACCEPTED', driverUserId1, null, req.version);
 
-      // 3. Set guard config and update deliveries
+      // 3. Set guard config and update deliveries without changing fee_vnd
       await ctx.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
       await ctx.query(
         `UPDATE app.deliveries
          SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
-             dropoff_lat = $4, dropoff_lng = $5, route_distance_m = $6, fee_vnd = $7,
+             dropoff_lat = $4, dropoff_lng = $5, route_distance_m = $6,
              version = version + 1, updated_at = clock_timestamp()
-         WHERE delivery_id = $8`,
-        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, req.newFeeVnd, deliveryId],
+         WHERE delivery_id = $7`,
+        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, deliveryId],
       );
 
-      // 4. Simultaneously update orders
+      // 4. Simultaneously update orders without changing fee_estimate_vnd
       await ctx.query(
         `UPDATE app.orders
          SET recipient_name = $1, recipient_phone = $2, address_text = $3,
              address_lat = $4, address_lng = $5, fee_estimate_distance_m = $6,
-             fee_estimate_vnd = $7, version = version + 1, updated_at = clock_timestamp()
-         WHERE order_id = $8`,
-        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, req.newFeeVnd, orderId],
+             version = version + 1, updated_at = clock_timestamp()
+         WHERE order_id = $7`,
+        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, orderId],
       );
     });
 
-    // Verify app.deliveries
+    // Verify app.deliveries: fee is preserved (25000), distance updated (5500)
     const delivery = (await pool.query<{ recipient_name: string; dropoff_address_text: string; fee_vnd: string; route_distance_m: number }>(
       `SELECT recipient_name, dropoff_address_text, fee_vnd, route_distance_m FROM app.deliveries WHERE delivery_id = $1::uuid`,
       [deliveryId],
     )).rows[0];
     expect(delivery.recipient_name).toBe('Người Nhận Đồng Bộ');
     expect(delivery.dropoff_address_text).toBe('888 Kim Mã, Ba Đình, Hà Nội');
-    expect(Number(delivery.fee_vnd)).toBe(42000);
+    expect(Number(delivery.fee_vnd)).toBe(25000);
     expect(delivery.route_distance_m).toBe(5500);
 
-    // Verify app.orders
+    // Verify app.orders: fee is preserved (25000), distance updated (5500)
     const order = (await pool.query<{ recipient_name: string; address_text: string; fee_estimate_vnd: string; fee_estimate_distance_m: number }>(
       `SELECT recipient_name, address_text, fee_estimate_vnd, fee_estimate_distance_m FROM app.orders WHERE order_id = $1::uuid`,
       [orderId],
     )).rows[0];
     expect(order.recipient_name).toBe('Người Nhận Đồng Bộ');
     expect(order.address_text).toBe('888 Kim Mã, Ba Đình, Hà Nội');
-    expect(Number(order.fee_estimate_vnd)).toBe(42000);
+    expect(Number(order.fee_estimate_vnd)).toBe(25000);
     expect(order.fee_estimate_distance_m).toBe(5500);
+  });
+
+  it('Orphan Prevention: expirePendingForDelivery cleanly auto-expires PENDING requests upon assignment change or cancel', async () => {
+    const orderId = await createOrder(customerUserId, shopId);
+    const changeRequestId = randomUUID();
+
+    await manager().withTransaction(async (ctx) => {
+      await repo.insert(ctx, {
+        changeRequestId,
+        orderId,
+        deliveryId: null,
+        source: 'ORDER',
+        requestedBy: customerUserId,
+        status: 'PENDING',
+        targetActor: 'SHOP',
+        targetDriverId: null,
+        originalRecipientName: 'Người Nhận Test',
+        originalRecipientPhone: '+84912345678',
+        originalAddressText: '456 Cầu Giấy',
+        originalLat: null,
+        originalLng: null,
+        originalFeeVnd: 25000,
+        originalDistanceM: null,
+        newRecipientName: 'Người Nhận Chờ Hủy',
+        newRecipientPhone: '+84987654321',
+        newAddressText: '789 Đống Đa',
+        newLat: null,
+        newLng: null,
+        newFeeVnd: null,
+        newDistanceM: null,
+        feeDifferenceVnd: null,
+        note: null,
+        expiresAtMs: Date.now() + 300_000,
+        orderVersion: 1,
+        deliveryVersion: null,
+      });
+    });
+
+    // Auto-expire when status changes (e.g. shipper accepts or cancel occurs)
+    const count = await manager().withTransaction(async (ctx) => {
+      return repo.expirePendingForDelivery(ctx, null, orderId, 'Shipper mới nhận đơn');
+    });
+    expect(count).toBe(1);
+
+    const expired = await manager().withTransaction(async (ctx) => repo.findById(ctx, changeRequestId));
+    expect(expired?.status).toBe('EXPIRED');
+    expect(expired?.rejectReason).toBe('Shipper mới nhận đơn');
   });
 });

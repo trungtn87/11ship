@@ -25,6 +25,13 @@ import { AddressChangeRepository, AddressChangeRequestRow, NewAddressChangeReque
 import { CancelAddressChangeInput, CreateAddressChangeInput, DecideAddressChangeInput } from './address-change-validation';
 import { addressChangeView } from './address-change-views';
 
+function coordsEqual(lat1: number | null, lng1: number | null, lat2: number | null, lng2: number | null): boolean {
+  if (lat1 === null || lng1 === null || lat2 === null || lng2 === null) {
+    return false;
+  }
+  return Math.abs(lat1 - lat2) < 0.00001 && Math.abs(lng1 - lng2) < 0.00001;
+}
+
 @Injectable()
 export class AddressChangeService {
   constructor(
@@ -106,32 +113,55 @@ export class AddressChangeService {
           }
         }
 
+        const originalFeeVnd = running?.feeVnd ?? order.feeEstimateVnd;
+        const originalDistanceM = running?.routeDistanceM ?? order.feeEstimateDistanceM;
+
+        let newLat: number | null = null;
+        let newLng: number | null = null;
+        let newDistanceM: number | null = null;
+        let newFeeVnd: number | null = null;
+        let feeDifferenceVnd: number | null = null;
+
         if (input.lat === null || input.lng === null) {
-          throw new AppError('DROPOFF_PIN_MISSING');
-        }
+          // Text-only address change: keeps existing fee, distance set to null
+          newLat = null;
+          newLng = null;
+          newDistanceM = null;
+          newFeeVnd = null;
+          feeDifferenceVnd = null;
+        } else if (coordsEqual(input.lat, input.lng, order.addressLat, order.addressLng)) {
+          // Same coordinates: keep existing distance and fee
+          newLat = input.lat;
+          newLng = input.lng;
+          newDistanceM = originalDistanceM;
+          newFeeVnd = originalFeeVnd;
+          feeDifferenceVnd = 0;
+        } else {
+          // Changed coordinates: recalculate route and fee
+          const pickupLat = running?.pickupLat ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLat ?? null;
+          const pickupLng = running?.pickupLng ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLng ?? null;
+          if (pickupLat === null || pickupLng === null) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
 
-        const pickupLat = running?.pickupLat ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLat ?? null;
-        const pickupLng = running?.pickupLng ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLng ?? null;
-        if (pickupLat === null || pickupLng === null) {
-          throw new AppError('ROUTE_UNAVAILABLE');
+          const route = await this.routes.route({ lat: pickupLat, lng: pickupLng }, { lat: input.lat, lng: input.lng });
+          if (!route || route.distanceM === null || route.distanceM === undefined) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
+          newDistanceM = route.distanceM;
+          const quote = await this.agreements.estimate(context, route.distanceM);
+          if (quote.status === 'UNPRICED') {
+            throw new AppError(
+              quote.reason === 'POLICY_NOT_CONFIGURED'
+                ? 'POLICY_NOT_CONFIGURED'
+                : quote.reason === 'OUT_OF_PRICE_RANGE'
+                  ? 'OUT_OF_PRICE_RANGE'
+                  : 'ROUTE_UNAVAILABLE',
+            );
+          }
+          newFeeVnd = quote.feeVnd;
+          feeDifferenceVnd = newFeeVnd !== null && originalFeeVnd !== null ? newFeeVnd - originalFeeVnd : null;
         }
-
-        const route = await this.routes.route({ lat: pickupLat, lng: pickupLng }, { lat: input.lat, lng: input.lng });
-        if (!route || route.distanceM === null || route.distanceM === undefined) {
-          throw new AppError('ROUTE_UNAVAILABLE');
-        }
-        const newDistanceM = route.distanceM;
-        const quote = await this.agreements.estimate(context, route.distanceM);
-        if (quote.status === 'UNPRICED') {
-          throw new AppError(
-            quote.reason === 'POLICY_NOT_CONFIGURED'
-              ? 'POLICY_NOT_CONFIGURED'
-              : quote.reason === 'OUT_OF_PRICE_RANGE'
-                ? 'OUT_OF_PRICE_RANGE'
-                : 'ROUTE_UNAVAILABLE',
-          );
-        }
-        const newFeeVnd = quote.feeVnd;
 
         let targetActor: AddressChangeTargetActor = 'SHOP';
         let targetDriverId: string | null = null;
@@ -143,8 +173,6 @@ export class AddressChangeService {
           }
         }
 
-        const originalFeeVnd = running?.feeVnd ?? order.feeEstimateVnd;
-        const feeDifferenceVnd = newFeeVnd !== null && originalFeeVnd !== null ? newFeeVnd - originalFeeVnd : null;
         const changeRequestId = randomUUID();
         const expiresAtMs = nowMs + ADDRESS_CHANGE_EXPIRY_MS;
 
@@ -163,12 +191,12 @@ export class AddressChangeService {
           originalLat: order.addressLat,
           originalLng: order.addressLng,
           originalFeeVnd,
-          originalDistanceM: running?.routeDistanceM ?? order.feeEstimateDistanceM,
+          originalDistanceM,
           newRecipientName: input.recipientName,
           newRecipientPhone: input.recipientPhone,
           newAddressText: input.addressText,
-          newLat: input.lat,
-          newLng: input.lng,
+          newLat,
+          newLng,
           newFeeVnd,
           newDistanceM,
           feeDifferenceVnd,
@@ -260,7 +288,10 @@ export class AddressChangeService {
           }
         }
 
-        const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
+        let req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
+        if (req === undefined && running !== undefined) {
+          req = await this.addressChangeRepo.lockActiveByDeliveryId(context, running.deliveryId);
+        }
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -347,7 +378,19 @@ export class AddressChangeService {
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
 
-        // Update Order: recipient, address, coordinates, new distance, and new fee (M14/M06)
+        // Quy tắc phí: Khi shipper duyệt, GIỮ NGUYÊN mức phí đã chốt hiện tại.
+        // Khi quán duyệt (chưa có shipper nhận), chỉ cập nhật newFeeVnd nếu không phải feeMode AGREED và có báo giá mới.
+        const isShipperDeciding = currentDriverId !== null;
+        let feeToApply: number | null = null;
+        if (!isShipperDeciding) {
+          const agreement = running ? await this.agreements.readByDelivery(context, running.deliveryId) : undefined;
+          const isAgreed = agreement?.feeMode === 'AGREED';
+          if (!isAgreed && req.newFeeVnd !== null && req.newDistanceM !== null) {
+            feeToApply = req.newFeeVnd;
+          }
+        }
+
+        // Update Order: recipient, address, coordinates, new distance, and fee (if applicable)
         await context.query(
           `UPDATE app.orders
            SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
@@ -362,7 +405,7 @@ export class AddressChangeService {
             req.newLat,
             req.newLng,
             req.newDistanceM,
-            req.newFeeVnd,
+            feeToApply,
             orderId,
           ],
         );
@@ -384,7 +427,7 @@ export class AddressChangeService {
               req.newLat,
               req.newLng,
               req.newDistanceM,
-              req.newFeeVnd,
+              feeToApply,
               running.deliveryId,
             ],
           );
@@ -444,7 +487,14 @@ export class AddressChangeService {
           throw new AppError('ORDER_NOT_FOUND');
         }
 
-        const req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
+        let req = await this.addressChangeRepo.lockActiveByOrderId(context, orderId);
+        if (req === undefined) {
+          const allDeliveries = await this.deliveries.listOfOrder(context, orderId);
+          const running = allDeliveries.find((d) => ACTIVE_STATES.includes(d.state));
+          if (running !== undefined) {
+            req = await this.addressChangeRepo.lockActiveByDeliveryId(context, running.deliveryId);
+          }
+        }
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -551,28 +601,51 @@ export class AddressChangeService {
           }
         }
 
+        const originalFeeVnd = delivery.feeVnd;
+        const originalDistanceM = delivery.routeDistanceM;
+
+        let newLat: number | null = null;
+        let newLng: number | null = null;
+        let newDistanceM: number | null = null;
+        let newFeeVnd: number | null = null;
+        let feeDifferenceVnd: number | null = null;
+
         if (input.lat === null || input.lng === null) {
-          throw new AppError('DROPOFF_PIN_MISSING');
+          // Text-only address change: keeps existing fee, distance set to null
+          newLat = null;
+          newLng = null;
+          newDistanceM = null;
+          newFeeVnd = null;
+          feeDifferenceVnd = null;
+        } else if (coordsEqual(input.lat, input.lng, delivery.dropoffLat, delivery.dropoffLng)) {
+          // Same coordinates: keep existing distance and fee
+          newLat = input.lat;
+          newLng = input.lng;
+          newDistanceM = originalDistanceM;
+          newFeeVnd = originalFeeVnd;
+          feeDifferenceVnd = 0;
+        } else {
+          if (delivery.pickupLat === null || delivery.pickupLng === null) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
+          const route = await this.routes.route({ lat: delivery.pickupLat, lng: delivery.pickupLng }, { lat: input.lat, lng: input.lng });
+          if (!route || route.distanceM === null || route.distanceM === undefined) {
+            throw new AppError('ROUTE_UNAVAILABLE');
+          }
+          newDistanceM = route.distanceM;
+          const quote = await this.agreements.estimate(context, route.distanceM);
+          if (quote.status === 'UNPRICED') {
+            throw new AppError(
+              quote.reason === 'POLICY_NOT_CONFIGURED'
+                ? 'POLICY_NOT_CONFIGURED'
+                : quote.reason === 'OUT_OF_PRICE_RANGE'
+                  ? 'OUT_OF_PRICE_RANGE'
+                  : 'ROUTE_UNAVAILABLE',
+            );
+          }
+          newFeeVnd = quote.feeVnd;
+          feeDifferenceVnd = newFeeVnd !== null && originalFeeVnd !== null ? newFeeVnd - originalFeeVnd : null;
         }
-        if (delivery.pickupLat === null || delivery.pickupLng === null) {
-          throw new AppError('ROUTE_UNAVAILABLE');
-        }
-        const route = await this.routes.route({ lat: delivery.pickupLat, lng: delivery.pickupLng }, { lat: input.lat, lng: input.lng });
-        if (!route || route.distanceM === null || route.distanceM === undefined) {
-          throw new AppError('ROUTE_UNAVAILABLE');
-        }
-        const newDistanceM = route.distanceM;
-        const quote = await this.agreements.estimate(context, route.distanceM);
-        if (quote.status === 'UNPRICED') {
-          throw new AppError(
-            quote.reason === 'POLICY_NOT_CONFIGURED'
-              ? 'POLICY_NOT_CONFIGURED'
-              : quote.reason === 'OUT_OF_PRICE_RANGE'
-                ? 'OUT_OF_PRICE_RANGE'
-                : 'ROUTE_UNAVAILABLE',
-          );
-        }
-        const newFeeVnd = quote.feeVnd;
 
         const activeAssignment = await this.deliveries.findActiveAssignment(context, deliveryId);
         const hasShipper = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(delivery.state);
@@ -582,6 +655,10 @@ export class AddressChangeService {
 
         if (!hasShipper) {
           // If no shipper has accepted yet (waiting_driver), creator applies update directly!
+          const agreement = await this.agreements.readByDelivery(context, deliveryId);
+          const isAgreed = agreement?.feeMode === 'AGREED';
+          const feeToApply = !isAgreed && newFeeVnd !== null && newDistanceM !== null ? newFeeVnd : null;
+
           await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
           await context.query(
             `UPDATE app.deliveries
@@ -596,10 +673,10 @@ export class AddressChangeService {
               input.recipientPhone,
               input.addressText,
               dropoffAreaOf(input.addressText),
-              input.lat,
-              input.lng,
+              newLat,
+              newLng,
               newDistanceM,
-              newFeeVnd,
+              feeToApply,
               deliveryId,
             ],
           );
@@ -634,11 +711,11 @@ export class AddressChangeService {
             newRecipientName: input.recipientName,
             newRecipientPhone: input.recipientPhone,
             newAddressText: input.addressText,
-            newLat: input.lat,
-            newLng: input.lng,
+            newLat,
+            newLng,
             newFeeVnd,
             newDistanceM,
-            feeDifferenceVnd: newFeeVnd !== null && delivery.feeVnd !== null ? newFeeVnd - delivery.feeVnd : null,
+            feeDifferenceVnd,
             note: input.note,
             expiresAtMs,
             orderVersion: null,
@@ -662,7 +739,6 @@ export class AddressChangeService {
         }
 
         // Shipper holds the delivery -> target SHIPPER
-        const feeDifferenceVnd = newFeeVnd !== null && delivery.feeVnd !== null ? newFeeVnd - delivery.feeVnd : null;
         const newReq: NewAddressChangeRequest = {
           changeRequestId,
           orderId: null,
@@ -682,8 +758,8 @@ export class AddressChangeService {
           newRecipientName: input.recipientName,
           newRecipientPhone: input.recipientPhone,
           newAddressText: input.addressText,
-          newLat: input.lat,
-          newLng: input.lng,
+          newLat,
+          newLng,
           newFeeVnd,
           newDistanceM,
           feeDifferenceVnd,
@@ -767,7 +843,10 @@ export class AddressChangeService {
           throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
         }
 
-        const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
+        let req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
+        if (req === undefined && delivery.orderId !== null) {
+          req = await this.addressChangeRepo.lockActiveByOrderId(context, delivery.orderId);
+        }
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }
@@ -872,15 +951,14 @@ export class AddressChangeService {
         }
 
         await context.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
-        // Cập nhật đồng bộ địa chỉ, khoảng cách VÀ PHÍ sau khi được duyệt (M14/M06)
+        // Khi Shipper duyệt: Cập nhật địa chỉ, tọa độ, khoảng cách mới nhưng GIỮ NGUYÊN mức cước hiện tại (M07 propose_fee nếu cần)
         await context.query(
           `UPDATE app.deliveries
            SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                route_distance_m = $7,
-               fee_vnd = COALESCE($8, fee_vnd),
                version = version + 1, updated_at = clock_timestamp()
-           WHERE delivery_id = $9`,
+           WHERE delivery_id = $8`,
           [
             req.newRecipientName,
             req.newRecipientPhone,
@@ -889,7 +967,6 @@ export class AddressChangeService {
             req.newLat,
             req.newLng,
             req.newDistanceM,
-            req.newFeeVnd,
             deliveryId,
           ],
         );
@@ -899,9 +976,8 @@ export class AddressChangeService {
             `UPDATE app.orders
              SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
                  fee_estimate_distance_m = $6,
-                 fee_estimate_vnd = COALESCE($7, fee_estimate_vnd),
                  version = version + 1, updated_at = clock_timestamp()
-             WHERE order_id = $8`,
+             WHERE order_id = $7`,
             [
               req.newRecipientName,
               req.newRecipientPhone,
@@ -909,7 +985,6 @@ export class AddressChangeService {
               req.newLat,
               req.newLng,
               req.newDistanceM,
-              req.newFeeVnd,
               linkedOrderId,
             ],
           );
@@ -983,7 +1058,10 @@ export class AddressChangeService {
           throw new AppError('DELIVERY_NOT_FOUND');
         }
 
-        const req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
+        let req = await this.addressChangeRepo.lockActiveByDeliveryId(context, deliveryId);
+        if (req === undefined && delivery.orderId !== null) {
+          req = await this.addressChangeRepo.lockActiveByOrderId(context, delivery.orderId);
+        }
         if (req === undefined) {
           throw new AppError('ADDRESS_CHANGE_NOT_FOUND');
         }

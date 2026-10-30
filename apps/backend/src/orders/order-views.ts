@@ -166,8 +166,14 @@ export class OrderViews {
     view.shop = { ...(view.shop as JsonObject), contact: contact === undefined ? null : { phone: contact.phone, zalo_url: contact.zaloUrl, messenger_url: contact.messengerUrl } };
     view.delivery = latest === undefined ? null : await this.deliveryViews.forCustomer(context, latest, nowMs);
     view.delivery_count = all.length;
-    const activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
-    const latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
+    if (activeAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByDeliveryId(context, latest.deliveryId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByDeliveryId(context, latest.deliveryId, 1))[0];
+    }
     view.address_change_request = addressChangeView(latestAddressChange, nowMs);
     const canRequestAddressChange = o.status === 'PREPARING' && (latest === undefined || (!['picked_up', 'delivering', 'completed', 'failed'].includes(latest.state) && latest.pickedUpAtMs === null)) && (activeAddressChange === undefined || nowMs >= activeAddressChange.expiresAtMs);
     const canCancelAddressChange = activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs;
@@ -190,8 +196,14 @@ export class OrderViews {
     view.delivery = latest === undefined ? null : await this.deliveryViews.forShop(context, latest, nowMs, detail);
     view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: humanDeliveryReason(d.endReason) }));
     view.schedule_conflict = await this.#scheduleConflict(context, o, nowMs);
-    const activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
-    const latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByOrderId(context, o.orderId) : undefined;
+    if (activeAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByDeliveryId(context, latest.deliveryId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByOrderId(context, o.orderId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && latest !== undefined && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByDeliveryId(context, latest.deliveryId, 1))[0];
+    }
     view.address_change_request = addressChangeView(latestAddressChange, nowMs);
     const running = o.status === 'PREPARING';
     view.can = {
@@ -199,7 +211,7 @@ export class OrderViews {
       confirm: o.status === 'PENDING_CONFIRMATION' && o.itemsTotalVnd > 0,
       reject: o.status === 'PENDING_CONFIRMATION',
       record_payment: running && !activeDelivery,
-      call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))),
+      call_shipper: mayCallShipper(o.status, latest?.state ?? null) && (latest === undefined || latest.state !== 'failed' || (await this.#goodsSettled(context, latest))) && !(activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs),
       cancel: running && (latest === undefined || !['delivering', 'picked_up', 'completed'].includes(latest.state)),
       close_not_completed: running && latest?.state === 'failed' && (await this.#goodsSettled(context, latest)),
       decide_address_change: running && (latest === undefined || !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(latest.state)) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,

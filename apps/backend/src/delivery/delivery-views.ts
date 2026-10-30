@@ -209,8 +209,14 @@ export class DeliveryViews {
     }
     const decider = feeDeciderOf(d);
     const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
-    const activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
-    const latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     const view: JsonObject = {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -319,8 +325,14 @@ export class DeliveryViews {
     const decider = feeDeciderOf(d);
     const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
     const feeView = this.#fee(d, agreement);
-    const activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
-    const latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     if (feeQuestionOpen && decider === 'CUSTOMER') {
       feeView.status = 'AWAITING_CUSTOMER';
     }
@@ -373,8 +385,14 @@ export class DeliveryViews {
     const active = assignment.status === 'ACTIVE';
     const running = active && RUNNING_STATES.includes(d.state);
     const before = d.state === 'accepted' || d.state === 'location_confirmed';
-    const activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
-    const latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
+    if (activeAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      activeAddressChange = await this.addressChanges.findActiveByOrderId(context, d.orderId);
+    }
+    let latestAddressChange = activeAddressChange ?? (this.addressChanges ? (await this.addressChanges.listByDeliveryId(context, d.deliveryId, 1))[0] : undefined);
+    if (latestAddressChange === undefined && d.orderId !== null && this.addressChanges) {
+      latestAddressChange = (await this.addressChanges.listByOrderId(context, d.orderId, 1))[0];
+    }
     return {
       delivery_id: d.deliveryId,
       code: d.code,

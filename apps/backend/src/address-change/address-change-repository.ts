@@ -254,7 +254,7 @@ export class AddressChangeRepository {
 
   async expirePendingForDelivery(
     context: TransactionContext,
-    deliveryId: string,
+    deliveryId: string | null,
     orderId: string | null,
     reason = 'Hàng đã được lấy',
   ): Promise<number> {
@@ -265,7 +265,7 @@ export class AddressChangeRepository {
            resolved_at = clock_timestamp(),
            version = version + 1,
            updated_at = clock_timestamp()
-       WHERE (delivery_id = $2::uuid OR ($3::uuid IS NOT NULL AND order_id = $3::uuid))
+       WHERE (($2::uuid IS NOT NULL AND delivery_id = $2::uuid) OR ($3::uuid IS NOT NULL AND order_id = $3::uuid))
          AND status = 'PENDING'`,
       [reason, deliveryId, orderId],
     );
