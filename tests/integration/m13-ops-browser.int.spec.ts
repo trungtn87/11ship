@@ -12,11 +12,12 @@ import { Phone, randomPhone } from './support/auth-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 
 // M13 "Vận hành hệ thống" on the Administration web in a REAL Chrome against the real front, backend and PostgreSQL (test database only):
-// the six screens for SYSTEM, the default-deny of an ADMIN, the read-only view of an ADMIN with VIEW, the empty states, and one real action.
+// the seven screens for SYSTEM, the default-deny of an ADMIN, the read-only view of an ADMIN with VIEW, the empty states, and one real action.
 
 const tag = randomBytes(2).toString('hex').toUpperCase();
 const SCREENS: ReadonlyArray<readonly [string, string, string]> = [
   ['/system-ops', 'ops-overview-title', 'Tổng quan vận hành'],
+  ['/system-ops/vps', 'ops-vps-title', 'Giám sát VPS'],
   ['/system-ops/incidents', 'ops-incidents-title', 'Sự cố'],
   ['/system-ops/gateway', 'ops-gateway-title', 'SMS Gateway'],
   ['/system-ops/logs', 'ops-logs-title', 'Nhật ký'],
@@ -117,7 +118,7 @@ describe('M13 operations screens (real browser)', () => {
     }
   });
 
-  it('SYSTEM: the menu leads to all six screens; each opens, and with nothing recorded says so instead of showing green', async () => {
+  it('SYSTEM: the menu leads to all seven screens; each opens, and with nothing recorded says so instead of showing green', async () => {
     await wipe();
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1280, 900, false);
@@ -135,13 +136,17 @@ describe('M13 operations screens (real browser)', () => {
       await page.goto(`${origin}/system-ops`);
       await page.waitFor(`document.getElementById('ops-overview-title') && document.body.innerText.includes('Chưa có')`);
       expect(await bodyText(page)).not.toContain('Bình thường');
+      // G20-A: with no sample the VPS page says so plainly and shows nothing healthy-looking.
+      await page.goto(`${origin}/system-ops/vps`);
+      await page.waitFor(`document.body.innerText.includes('Chưa có mẫu nào từ bộ thu thập')`);
+      expect(await bodyText(page)).not.toContain('Bình thường');
       await page.goto(`${origin}/system-ops/incidents`);
       await page.waitFor(`document.body.innerText.includes('Không có sự cố')`);
       await page.goto(`${origin}/system-ops/gateway`);
       await page.waitFor(`document.body.innerText.includes('Chưa ghép Gateway nào') || document.body.innerText.includes('Đăng ký / Quên mật khẩu')`);
       expect(await bodyText(page)).not.toMatch(/Số dư SIM:?\s*[0-9]/);
       await page.goto(`${origin}/system-ops/releases`);
-      await page.waitFor(`document.body.innerText.includes('Chưa có báo cáo từ thiết bị') && document.body.innerText.includes('Chưa phát hành')`);
+      await page.waitFor(`document.body.innerText.includes('Chưa có thiết bị nào báo phiên bản') && document.body.innerText.includes('Chưa phát hành')`);
       await page.goto(`${origin}/system-ops/config`);
       await page.waitFor(`document.getElementById('cfg-webhook')`);
       // The webhook is a password-type field, never shown back.
@@ -203,6 +208,54 @@ describe('M13 operations screens (real browser)', () => {
       await page.goto(`${origin}/system-ops/releases`);
       await page.waitFor(`document.getElementById('ops-releases-title') && document.body.innerText.includes('Chưa phát hành')`);
       expect(await hasButton(page, 'Đăng ký bản nháp')).toBe(false);
+    } finally {
+      await page.close();
+    }
+  }, 240_000);
+  it('G20: the VPS page draws the host, Backend and PostgreSQL apart, charts that stop at a hole in the samples, the processes, and the versions page has no Deploy button', async () => {
+    await wipe();
+    const snapshot = {
+      sampled_at: new Date().toISOString(),
+      host: { uptime_seconds: 90_000, cpu_percent: 12.5, cpu_cores: 2, load_avg: [0.1, 0.2, 0.3], memory: { total_bytes: 2_000_000_000, available_bytes: 1_000_000_000, used_bytes: 1_000_000_000, used_percent: 50 }, swap: { swap_total_bytes: 1000, swap_used_bytes: 100, swap_percent: 10 }, disks: [{ label: 'root', path: '/', total_bytes: 10_000_000_000, free_bytes: 4_000_000_000, used_bytes: 6_000_000_000, used_percent: 60 }], io: { io_read_bytes: 1000, io_write_bytes: 2000 }, network: { rx_bytes_total: 5000, tx_bytes_total: 6000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200 } },
+      backend: { pid: 4242, uptime_seconds: 600, rss_bytes: 100_000_000, heap_used_bytes: 50_000_000, cpu_percent: 1.5, self_health_latency_ms: 7 },
+      postgres: { latency_ms: 3, active_connections: 6, database_size_bytes: 123_456_789 },
+      processes_by_cpu: [{ pid: 4242, name: 'node', cpu_percent: 9.5, rss_bytes: 100_000_000, memory_percent: 5 }],
+      processes_by_memory: [{ pid: 77, name: 'postgres', cpu_percent: 1, rss_bytes: 300_000_000, memory_percent: 15 }],
+    };
+    await app.pool.query(
+      `INSERT INTO app.ops_checks (check_key, source, state, observed_at, since_at, consecutive_failures, consecutive_successes, value, evidence_code, stale_after_seconds)
+       VALUES ('vps', 'SERVER', 'OK', now(), now(), 0, 1, $1::jsonb, 'VPS_SNAPSHOT', 180), ('api', 'API', 'OK', now(), now(), 0, 1, '{}'::jsonb, 'API_OK', 300), ('database', 'DATABASE', 'OK', now(), now(), 0, 1, '{}'::jsonb, 'DB_OK', 300)`,
+      [JSON.stringify({ ...snapshot, sampled_at: snapshot.sampled_at })],
+    );
+    await app.pool.query(
+      `INSERT INTO app.ops_metrics (metric_key, observed_at, value)
+       SELECT 'cpu_percent', now() - (g * interval '1 minute'), 20 + g FROM generate_series(1, 10) g
+       UNION ALL SELECT 'cpu_percent', now() - (g * interval '1 minute'), 30 FROM generate_series(40, 50) g`,
+    );
+    const page: Page = await (browser as Browser).newPage();
+    await page.viewport(1280, 900, false);
+    try {
+      await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
+      await page.goto(`${origin}/system-ops/vps`);
+      await page.waitFor(`document.querySelector('[data-chart="cpu_percent"] path')`);
+      const text = await bodyText(page);
+      for (const wanted of ['Dịch vụ Backend 11Ship', 'Dịch vụ PostgreSQL', 'Top 5 theo CPU', 'Top 5 theo RAM', 'postgres', '1 ngày 1 giờ', 'Thiếu mẫu']) expect(text).toContain(wanted);
+      expect(text).not.toContain('Mất tín hiệu bộ thu thập');
+      // Two runs of samples with a 30-minute hole between them: two separate lines, never one line across the hole.
+      expect(await page.evaluate<number>(`document.querySelectorAll('[data-chart="cpu_percent"] path.ops-chart-line').length`)).toBe(2);
+      expect(await page.evaluate<boolean>(`!!document.querySelector('[data-chart="cpu_percent"] rect.ops-chart-gap')`)).toBe(true);
+      expect(await press(page, '24 giờ')).toBe(true);
+      await page.waitFor(`document.querySelector('[data-range="24h"].tab-active') && document.body.innerText.includes('Lịch sử 24 giờ')`);
+      // The read-only page has no control that touches the server.
+      expect(await hasButton(page, 'Khởi động lại')).toBe(false);
+      await page.goto(`${origin}/system-ops`);
+      await page.waitFor(`document.querySelector('[data-vps-card]')`);
+      await page.goto(`${origin}/system-ops/releases`);
+      await page.waitFor(`[...document.querySelectorAll('button')].some((b) => (b.textContent ?? '').trim() === 'Server')`);
+      expect(await press(page, 'Server')).toBe(true);
+      await page.waitFor(`document.body.innerText.includes('Triển khai server')`);
+      expect(await hasButton(page, 'Triển khai (SYSTEM)')).toBe(false);
+      expect(await bodyText(page)).toContain('không có nút triển khai');
     } finally {
       await page.close();
     }

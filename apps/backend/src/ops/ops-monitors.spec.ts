@@ -83,10 +83,10 @@ describe('M13 gateway rules (design section 3)', () => {
 });
 
 describe('M13 server rules (design section 5)', () => {
-  it('disk: 80% warns, 90% critical, missing is no data', () => {
-    expect(evaluateDisk('root', 79.9, s).state).toBe('OK');
-    expect(evaluateDisk('root', 80, s).state).toBe('WARNING');
-    expect(evaluateDisk('root', 90, s).state).toBe('CRITICAL');
+  it('disk: 85% warns, 95% critical, missing is no data', () => {
+    expect(evaluateDisk('root', 84.9, s).state).toBe('OK');
+    expect(evaluateDisk('root', 85, s).state).toBe('WARNING');
+    expect(evaluateDisk('root', 95, s).state).toBe('CRITICAL');
     expect(evaluateDisk('root', null, s).state).toBe('UNKNOWN');
   });
 

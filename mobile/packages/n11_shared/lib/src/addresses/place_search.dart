@@ -1,6 +1,7 @@
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../m13/m13_ops.dart' show OpsClient;
 
 class PlaceSearchResult {
   const PlaceSearchResult({required this.id, required this.name, required this.address, required this.latitude, required this.longitude, required this.inCaoBang});
@@ -22,6 +23,20 @@ class HttpPlaceSearchApi implements PlaceSearchApi {
 
   @override
   Future<List<PlaceSearchResult>> search(String query) async {
+    try {
+      return await _search(query);
+    } on Object catch (error) {
+      // The typed text is never part of the report: only that the place search failed and why (a server / network failure, not a refusal of the person).
+      if (error is AuthFailure && (error.kind == AuthFailureKind.serverUnavailable || error.kind == AuthFailureKind.badResponse)) {
+        OpsClient.report(kind: 'MAP_ERROR', code: 'PLACE_SEARCH_${error.kind.name.toUpperCase()}', message: 'Place search failed');
+      } else if (error is! AuthFailure) {
+        OpsClient.report(kind: 'MAP_ERROR', code: 'PLACE_SEARCH_UNREADABLE', message: 'Place search answer could not be read');
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<PlaceSearchResult>> _search(String query) async {
     final ApiResponse response = await session.protectedCall('GET', '/v1/customers/me/places?query=${Uri.encodeQueryComponent(query)}');
     if (response.status != 200) throw failureOf(response);
     final Object? raw = response.data;

@@ -152,6 +152,10 @@ class ShipOnline extends ChangeNotifier {
     // not this app's guess.
     final bool quiet = intent && reporter.sharing && reporter.lastUpload != null && !reporter.serverHasPosition;
     if (quiet) {
+      // The position went stale while the shipper is meant to be sharing: once per episode (the shared queue also de-duplicates), without the position itself.
+      if (_staleTimer == null) {
+        OpsClient.report(kind: 'GPS_STALE', code: 'GPS_STALE_NO_SERVER_POSITION', message: 'Shared position is no longer accepted by the server');
+      }
       _staleTimer ??= Timer(const Duration(seconds: 25), () { _staleTimer = null; unawaited(_reload()); });
     }
   }

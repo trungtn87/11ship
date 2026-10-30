@@ -28,15 +28,24 @@ import {
   OpsLevel,
   OpsMaintenance,
   OpsOverview,
+  OpsProbe,
   OpsRead,
   OpsSource,
   OpsWrite,
+  PROBE_STATUSES,
   QueueJob,
   ReleaseDraft,
   ReleaseRow,
   ReleasesPage,
   SettingRow,
   TimelineEntry,
+  VPS_RANGES,
+  VpsHost,
+  VpsPage,
+  VpsPoint,
+  VpsProcess,
+  VpsRange,
+  VpsSummary,
 } from './ops.js';
 
 /** The transport's base: this client's paths start with /admin. */
@@ -125,6 +134,25 @@ function parseMaintenance(value: unknown): OpsMaintenance | undefined {
   return { id: r.maintenance_id as string, scopeLabels: r.scope_labels.filter((x): x is string => typeof x === 'string'), reason: str(r.reason) ?? '', startsAt: starts, endsAt: ends, state: st };
 }
 
+export function parseProbe(value: unknown): OpsProbe | undefined {
+  const r = record(value);
+  const status = typeof r?.status === 'string' && (PROBE_STATUSES as readonly string[]).includes(r.status) ? (r.status as OpsProbe['status']) : undefined;
+  const report = nIso(r?.last_report_at);
+  const keyUse = nIso(r?.last_key_used_at);
+  const outage = nIso(r?.last_outage_at);
+  if (r === undefined || status === undefined || report === undefined || keyUse === undefined || outage === undefined || typeof r.activated !== 'boolean') return undefined;
+  return { status, activated: r.activated, label: str(r.label) ?? '', note: str(r.note) ?? '', activeKeyCount: whole(r.active_key_count) ? r.active_key_count : 0, lastReportAt: report, lastKeyUsedAt: keyUse, lastOutageAt: outage, runbookPath: str(r.runbook_path) ?? '', webhookNote: str(r.webhook_note) ?? '' };
+}
+
+function parseVpsSummary(value: unknown): VpsSummary | null | undefined {
+  if (value === null || value === undefined) return null;
+  const r = record(value);
+  const st = r?.collector_state;
+  const sample = nIso(r?.last_sample_at);
+  if (r === undefined || !(st === 'ACTIVE' || st === 'STALE' || st === 'NO_DATA') || typeof r.collector_stale !== 'boolean' || sample === undefined) return undefined;
+  return { collectorStale: r.collector_stale, collectorState: st, lastSampleAt: sample, cpuPercent: nNum(r.cpu_percent), memoryPercent: nNum(r.memory_percent), diskPercent: nNum(r.disk_percent), uptimeSeconds: nNum(r.uptime_seconds), dbConnections: nNum(r.db_connections), dbSizeBytes: nNum(r.db_size_bytes) };
+}
+
 export function parseOverview(d: Record<string, unknown>): OpsOverview | undefined {
   const updated = iso(d.updated_at);
   const components = list(d.components, (x): OpsComponent | undefined => {
@@ -135,12 +163,13 @@ export function parseOverview(d: Record<string, unknown>): OpsOverview | undefin
   });
   const inc = record(d.incidents);
   const items = inc === undefined ? undefined : list(inc.items, parseIncident);
-  const probe = record(d.external_probe);
+  const probe = parseProbe(d.external_probe);
+  const vps = parseVpsSummary(d.vps);
   const discord = record(d.discord);
   const maintenance = list(d.maintenance_active, parseMaintenance);
   const viewer = record(d.viewer);
   const lvl = level(viewer?.level);
-  if (updated === undefined || components === undefined || inc === undefined || items === undefined || !whole(inc.open) || !whole(inc.critical) || !whole(inc.unacknowledged) || probe === undefined || typeof probe.activated !== 'boolean' || discord === undefined || maintenance === undefined || lvl === undefined) {
+  if (updated === undefined || components === undefined || inc === undefined || items === undefined || !whole(inc.open) || !whole(inc.critical) || !whole(inc.unacknowledged) || probe === undefined || vps === undefined || discord === undefined || maintenance === undefined || lvl === undefined) {
     return undefined;
   }
   const lastUpdate = d.last_update === null || d.last_update === undefined ? null : parseDeploy(d.last_update);
@@ -153,7 +182,8 @@ export function parseOverview(d: Record<string, unknown>): OpsOverview | undefin
     critical: inc.critical,
     unacknowledged: inc.unacknowledged,
     incidents: items,
-    probe: { activated: probe.activated, label: str(probe.label) ?? '', lastReportAt: nIso(probe.last_report_at) ?? null, note: str(probe.note) ?? '' },
+    probe,
+    vps,
     discord: { enabled: discord.enabled === true, configured: discord.configured === true, pending: whole(discord.pending) ? discord.pending : 0, failed7d: whole(discord.failed_7d) ? discord.failed_7d : 0, lastSentAt: nIso(discord.last_sent_at) ?? null },
     maintenance,
     lastUpdate,
@@ -353,7 +383,8 @@ export function parseConfig(d: Record<string, unknown>): OpsConfigPage | undefin
     const l = level(r?.level);
     return r === undefined || str(r.user_id) === undefined || l === undefined || !whole(r.version) ? undefined : { userId: r.user_id as string, label: nStr(r.label), level: l, version: r.version };
   });
-  if (access === undefined) return undefined;
+  const probe = d.external_probe === null || d.external_probe === undefined ? null : parseProbe(d.external_probe);
+  if (access === undefined || probe === undefined) return undefined;
   return {
     updatedAt: updated,
     version: cfg.version,
@@ -362,6 +393,96 @@ export function parseConfig(d: Record<string, unknown>): OpsConfigPage | undefin
     discord: dc === undefined || (sev !== 'WARNING' && sev !== 'CRITICAL') ? null : { enabled: dc.enabled === true, minSeverity: sev, webhookConfigured: dc.webhook_configured === true, webhookMasked: nStr(dc.webhook_masked), webhookUpdatedAt: nIso(dc.webhook_updated_at) ?? null },
     maintenance,
     access,
+    probe,
+    level: lvl,
+  };
+}
+
+const hostNum = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+
+function parseProcess(x: unknown): VpsProcess | undefined {
+  const r = record(x);
+  if (r === undefined || !whole(r.pid) || str(r.name) === undefined || !whole(r.rss_bytes) || hostNum(r.memory_percent) === null) return undefined;
+  return { pid: r.pid, name: r.name as string, cpuPercent: hostNum(r.cpu_percent), rssBytes: r.rss_bytes, memoryPercent: r.memory_percent as number };
+}
+
+function parseVpsHost(value: unknown): VpsHost | null | undefined {
+  if (value === null || value === undefined) return null;
+  const r = record(value);
+  const load = Array.isArray(r?.load_avg) && r.load_avg.length === 3 && r.load_avg.every((n) => typeof n === 'number' && Number.isFinite(n)) ? (r.load_avg as [number, number, number]) : undefined;
+  if (r === undefined || !whole(r.uptime_seconds) || !whole(r.cpu_cores) || load === undefined) return undefined;
+  const mem = record(r.memory);
+  const swap = record(r.swap);
+  const io = record(r.io);
+  const net = record(r.network);
+  const disks = list(r.disks, (x) => {
+    const d = record(x);
+    return d === undefined || str(d.label) === undefined || hostNum(d.total_bytes) === null || hostNum(d.free_bytes) === null || hostNum(d.used_bytes) === null || hostNum(d.used_percent) === null
+      ? undefined
+      : { label: d.label as string, path: str(d.path) ?? '', totalBytes: d.total_bytes as number, freeBytes: d.free_bytes as number, usedBytes: d.used_bytes as number, usedPercent: d.used_percent as number };
+  });
+  if (disks === undefined) return undefined;
+  return {
+    uptimeSeconds: r.uptime_seconds,
+    cpuPercent: nNum(r.cpu_percent),
+    cpuCores: r.cpu_cores,
+    loadAvg: load,
+    memory: mem === undefined ? null : { totalBytes: nNum(mem.total_bytes) ?? 0, availableBytes: nNum(mem.available_bytes) ?? 0, usedBytes: nNum(mem.used_bytes) ?? 0, usedPercent: nNum(mem.used_percent) ?? 0 },
+    swap: swap === undefined ? null : { totalBytes: nNum(swap.swap_total_bytes) ?? 0, usedBytes: nNum(swap.swap_used_bytes) ?? 0, usedPercent: nNum(swap.swap_percent) ?? 0 },
+    disks,
+    io: io === undefined ? null : { readBytes: nNum(io.io_read_bytes) ?? 0, writeBytes: nNum(io.io_write_bytes) ?? 0 },
+    network: net === undefined ? null : { rxBytesTotal: nNum(net.rx_bytes_total) ?? 0, txBytesTotal: nNum(net.tx_bytes_total) ?? 0, rxBytesPerSec: nNum(net.rx_bytes_per_sec), txBytesPerSec: nNum(net.tx_bytes_per_sec) },
+  };
+}
+
+const vpsStatus = (v: unknown): 'OK' | 'WARN' | 'CRITICAL' | 'UNKNOWN' => (v === 'OK' || v === 'WARN' || v === 'CRITICAL' ? v : 'UNKNOWN');
+
+export function parseVps(d: Record<string, unknown>): VpsPage | undefined {
+  const updated = iso(d.updated_at);
+  const range = typeof d.range === 'string' && (VPS_RANGES as readonly string[]).includes(d.range) ? (d.range as VpsRange) : undefined;
+  const collector = record(d.collector);
+  const cs = collector?.state;
+  const sample = nIso(collector?.last_sample_at);
+  const host = parseVpsHost(d.host);
+  const gaps = list(d.gaps, (x) => {
+    const g = record(x);
+    const from = iso(g?.from);
+    const to = iso(g?.to);
+    return from === undefined || to === undefined ? undefined : { from, to };
+  });
+  const byCpu = list(d.processes_by_cpu, parseProcess);
+  const byMemory = list(d.processes_by_memory, parseProcess);
+  const seriesRaw = record(d.series);
+  const backend = record(d.backend);
+  const pg = record(d.postgres);
+  const viewer = record(d.viewer);
+  const lvl = level(viewer?.level);
+  if (updated === undefined || range === undefined || collector === undefined || !(cs === 'ACTIVE' || cs === 'STALE' || cs === 'NO_DATA') || typeof collector.collector_stale !== 'boolean' || sample === undefined || host === undefined || gaps === undefined || byCpu === undefined || byMemory === undefined || seriesRaw === undefined || backend === undefined || pg === undefined || lvl === undefined || !whole(d.expected_step_seconds) || !whole(d.gap_count)) {
+    return undefined;
+  }
+  const series: Record<string, readonly VpsPoint[]> = {};
+  for (const [key, raw] of Object.entries(seriesRaw)) {
+    const points = list(raw, (x): VpsPoint | undefined => {
+      const p = record(x);
+      const at = iso(p?.at);
+      return at === undefined || typeof p?.value !== 'number' || !Number.isFinite(p.value) ? undefined : { at, value: p.value };
+    });
+    if (points === undefined) return undefined;
+    series[key] = points;
+  }
+  return {
+    updatedAt: updated,
+    range,
+    expectedStepSeconds: d.expected_step_seconds,
+    gapCount: d.gap_count,
+    gaps,
+    collector: { state: cs, stale: collector.collector_stale, lastSampleAt: sample, message: str(collector.message) ?? '' },
+    host,
+    backend: { status: vpsStatus(backend.status), pid: nNum(backend.pid), uptimeSeconds: nNum(backend.uptime_seconds), rssBytes: nNum(backend.rss_bytes), heapUsedBytes: nNum(backend.heap_used_bytes), cpuPercent: nNum(backend.cpu_percent), selfHealthLatencyMs: nNum(backend.self_health_latency_ms) },
+    postgres: { status: vpsStatus(pg.status), latencyMs: nNum(pg.latency_ms), activeConnections: nNum(pg.active_connections), databaseSizeBytes: nNum(pg.database_size_bytes) },
+    processesByCpu: byCpu,
+    processesByMemory: byMemory,
+    series,
     level: lvl,
   };
 }
@@ -382,6 +503,9 @@ export class AdminOpsApi extends ApiClient {
   }
   overview(): Promise<ApiResult<OpsOverview>> {
     return this.call({ method: 'GET', path: '/admin/ops/overview' }, parseOverview);
+  }
+  vps(range: VpsRange): Promise<ApiResult<VpsPage>> {
+    return this.call({ method: 'GET', path: `/admin/ops/vps${qs({ range })}` }, parseVps);
   }
   incidents(q: IncidentQuery): Promise<ApiResult<{ rows: readonly OpsIncident[]; total: number }>> {
     const path = `/admin/ops/incidents${qs({ status: q.status === 'ALL' ? undefined : q.status, severity: q.severity, source: q.source, assignee: q.assignee, from: q.from, to: q.to, q: q.search.trim(), limit: String(OPS_PAGE_SIZE), offset: offset(q.page) })}`;
@@ -509,6 +633,9 @@ export function createOpsSource(api: AdminOpsApi, session?: CsrfPort): OpsSource
     },
     async overview() {
       return readOf(await api.overview());
+    },
+    async vps(range) {
+      return readOf(await api.vps(range));
     },
     async incidents(q) {
       return readOf(await api.incidents(q));

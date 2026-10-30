@@ -226,3 +226,26 @@
   - `mobile/packages/n11_shared/lib/src/m10/m10_http.dart`
   - `mobile/ship/lib/ship_online.dart`
   - `mobile/packages/n11_shared/test/m13_test.dart`
+
+---
+
+## 6. Trạng thái triển khai (Claude Code, 2026-10-31)
+
+| Gói | Trạng thái | Ghi chú |
+| :--- | :--- | :--- |
+| G20-A | Xong (code + test) | `GET /v1/admin/ops/vps`, `ops-vps.ts`, probe `/proc` chỉ đọc (không đọc `cmdline`/`environ`), trang `/system-ops/vps`, thẻ VPS ở Tổng quan, ngưỡng mặc định CPU 85 / đĩa 85-95, `collector_stale` > 180 s |
+| G20-B | Xong | 4 trạng thái `external_probe` ở Tổng quan và Cấu hình, kèm ghi chú webhook chỉ nằm ở máy probe |
+| G20-C | Xong phần repo/CI | Bỏ nút Deploy mờ, tách nhãn APK; `deploy-start` idempotent 30 phút; `deploy-vps.yml` nối `ops-report.mjs` (không có secret thì chỉ ghi Step Summary) |
+| G20-D | Xong | `OpsClient.report/reportActionFailure/reportRouteError` + 5 điểm nối: ACTION_ERROR, MAP_ERROR, ROUTE_ERROR, GPS_STALE, PUSH_ERROR |
+| G20-Ops | **Chưa làm (cần hạ tầng/Owner)** | Máy probe ngoài VPS + webhook riêng, khóa `PROBE`/`DEPLOY`, secret `OPS_DEPLOY_INGEST_TOKEN`, deploy VPS, APK build mới và thử trên máy thật |
+
+### Chênh lệch so với thiết kế (quyết định kỹ thuật, cần ChatGPT/Owner biết)
+
+1. **`VERSION_NAME` giữ 32 ký tự, workflow gửi 12 ký tự đầu của SHA.** Cột `app.ops_deploys.from_version/to_version`, `ops_releases.version_name` và `ops_version_reports.version_name` là `varchar(32)` (kèm CHECK regex `{0,31}`). Nhận SHA đầy đủ 40 ký tự cần migration mở rộng cột, tức là migration lên VPS cần Owner cho phép. Chưa làm; SHA đầy đủ vẫn nằm trong `note` của báo cáo deploy.
+2. **Không có ring buffer 120 mẫu trong RAM.** Mẫu mới nhất lưu trong `app.ops_checks` (khóa `vps`) để mọi tiến trình đọc được cùng một số; lịch sử lấy từ `app.ops_metrics` (1 phút/mẫu) và `app.ops_metrics_hourly` (30 ngày), gộp bucket ngay trong SQL.
+3. **Tên file test khác thiết kế**: repo dùng `*.spec.ts` (unit) và `tests/integration/m13-*.int.spec.ts`, không có `ops-m13.test.ts` / `apps/admin-web/test/ops.test.ts`.
+4. **GPS_STALE** nối vào nhánh "vị trí chia sẻ không còn được máy chủ giữ" của `ShipOnline._onReporter` (repo không có `LocationProblem.staleOrStopped`).
+5. Hai danh sách route phía server phải thêm `/system-ops/vps`: `apps/backend/src/http/admin-web-hosting.ts` và `scripts/admin-web-dev.mjs` (trình duyệt thật phát hiện, trước đó trả "Not found").
+
+### Cách Owner nghiệm thu sau khi deploy
+Web Admin → Vận hành hệ thống → **Giám sát VPS**: có số CPU/RAM/đĩa/mạng, Backend và PostgreSQL tách riêng, biểu đồ 1h/24h/7d/30d (dải gạch = thiếu mẫu). **Tổng quan** và **Cấu hình** hiện đúng một trong 4 trạng thái probe. **Phiên bản & cập nhật** không còn nút Deploy.

@@ -404,6 +404,41 @@ export class OpsRepository {
     return result.rows.map((r) => ({ hourMs: num(r.hour_ms), avg: Number(r.avg_value), max: Number(r.max_value), samples: r.samples }));
   }
 
+  /** Connections of THIS database and its size: the only PostgreSQL facts the VPS page shows (never a connection string). */
+  async databaseStats(context: TransactionContext): Promise<{ activeConnections: number; sizeBytes: number }> {
+    const result = await context.query<{ connections: number; size_bytes: string }>(
+      `SELECT (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database()) AS connections, pg_database_size(current_database())::bigint::text AS size_bytes`,
+    );
+    const row = result.rows[0];
+    return { activeConnections: row === undefined ? 0 : Number(row.connections), sizeBytes: row === undefined ? 0 : num(row.size_bytes) };
+  }
+
+  /**
+   * Averages per time bucket for several metrics at once (bucket starts are aligned to the epoch, so the same instant always falls in the same bucket).
+   * `hourly` reads the rolled-up table; otherwise the raw detail rows.
+   */
+  async bucketedMetrics(context: TransactionContext, keys: readonly string[], sinceMs: number, bucketSeconds: number, source: 'raw' | 'hourly'): Promise<{ key: string; bucketMs: number; avg: number; max: number }[]> {
+    const table = source === 'raw' ? 'app.ops_metrics' : 'app.ops_metrics_hourly';
+    const at = source === 'raw' ? 'observed_at' : 'hour_at';
+    const avg = source === 'raw' ? 'avg(value)' : 'sum(avg_value * samples) / NULLIF(sum(samples), 0)';
+    const max = source === 'raw' ? 'max(value)' : 'max(max_value)';
+    const result = await context.query<{ metric_key: string; bucket_ms: string; avg_value: number; max_value: number }>(
+      `SELECT metric_key, (floor(extract(epoch FROM ${at}) / $3::double precision) * $3::double precision * 1000)::bigint::text AS bucket_ms, ${avg} AS avg_value, ${max} AS max_value
+         FROM ${table} WHERE metric_key = ANY($1::text[]) AND ${at} >= ${fromMs('$2')}
+        GROUP BY metric_key, 2 ORDER BY 2 ASC`,
+      [[...keys], sinceMs, bucketSeconds],
+    );
+    return result.rows.map((r) => ({ key: r.metric_key, bucketMs: num(r.bucket_ms), avg: Number(r.avg_value), max: Number(r.max_value) }));
+  }
+
+  /** When the independent probe last opened an outage of the public API (null = never). */
+  async lastProbeOutageMs(context: TransactionContext): Promise<number | null> {
+    const result = await context.query<{ at_ms: string | null }>(
+      `SELECT (extract(epoch FROM max(first_seen_at)) * 1000)::bigint::text AS at_ms FROM app.ops_incidents WHERE source = 'EXTERNAL_PROBE' AND check_key = 'public_api'`,
+    );
+    return numOrNull(result.rows[0]?.at_ms);
+  }
+
   // ---- log ----
 
   /** Appends one log line. Everything free-form is redacted HERE, so a producer that forgets cannot leak. */
