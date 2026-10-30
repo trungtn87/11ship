@@ -361,6 +361,22 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
     expect((await reject(recorderLogin, closed.requestId)).status).toBe(200);
   });
 
+  it('6b. a request made before CLOSING is still decided by the Admin: CONFIRMED credits exactly one TOPUP_CREDIT into the balance to hand back, REJECTED credits nothing, and the duplicate or stale decision does nothing', async () => {
+    const confirmed = await newShipper(100_000, 'CLOSING');
+    const key = randomUUID();
+    const first = await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 }), key);
+    expect(first.status).toBe(200);
+    expect(adminData(first)).toMatchObject({ state: 'CONFIRMED', actual_amount_vnd: 80_000 });
+    expect((await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 }), key)).status).toBe(200); // replay
+    expect(code(await confirm(recorderLogin, confirmed.requestId, confirmBody({ actual_amount_vnd: 80_000 })))).toMatchObject({ status: 409 }); // a second decision
+    expect((await walletOf(confirmed.walletId)).balance).toBe('80000');
+    expect((await ledgerOf(confirmed.walletId)).length).toBe(1);
+    const rejected = await newShipper(100_000, 'CLOSING');
+    expect((await reject(recorderLogin, rejected.requestId)).status).toBe(200);
+    expect((await walletOf(rejected.walletId)).balance).toBe('0');
+    expect(await ledgerOf(rejected.walletId)).toEqual([]);
+  });
+
   it('7. reject records the reason code only, moves no money and is idempotent', async () => {
     const s = await newShipper();
     const key = randomUUID();

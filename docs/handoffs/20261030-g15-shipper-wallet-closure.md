@@ -30,7 +30,7 @@ Gom sửa đủ các issue trong nhóm rồi chạy focused tests cho phần tá
 - Không đóng issue vì đã có PR, không dùng “Closes” tự động. Owner quyết định merge, deploy, migration production, phát hành APK và đóng issue.
 
 ## Bàn giao
-- [ ] Có code backend/API/UI/DB cần thiết trong phạm vi, không chỉ tài liệu.
-- [ ] Acceptance issue nguồn có DONE / TO DO / BLOCKED / NOT TESTED và bằng chứng tương xứng.
-- [ ] Report remote HEAD, sync status, focused test/CI link và cách Owner thử; UI Android/PWA ghi rõ bằng chứng thật và giới hạn.
-- [ ] Chỉ Ready khi code và evidence đủ; không tự merge/deploy/APK.
+- [x] Có code backend/API/UI/DB cần thiết trong phạm vi, không chỉ tài liệu (backend rút CLOSING-only, SUSPENDED→CLOSING + migration tiến `1797292800000`, chặn nạp CLOSING, mã chuyển khoản `NAP…`, 11Ship wallet/activity, Admin Web).
+- [x] Acceptance issue nguồn có DONE / TO DO / BLOCKED / NOT TESTED và bằng chứng tương xứng — ma trận trong khối `11ship-agent-report:v1` ở mô tả PR #269.
+- [ ] Report remote HEAD, sync status, focused test/CI link và cách Owner thử; UI Android/PWA ghi rõ bằng chứng thật và giới hạn — cập nhật sau khi CI chạy xong trên code cuối.
+- [ ] Chỉ Ready khi code và evidence đủ; không tự merge/deploy/APK. (Chờ CI tích hợp PostgreSQL; BLOCKED còn lại: quy tắc xử lý tiền đến sau CLOSED/không có request — cần quyết định Owner.)

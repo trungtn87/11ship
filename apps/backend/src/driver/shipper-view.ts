@@ -17,7 +17,8 @@ export type ReadinessBlock =
   | 'BANK_MISSING'
   | 'BANK_NOT_VERIFIED'
   | 'WALLET_NOT_AVAILABLE'
-  | 'BALANCE_TOO_LOW';
+  | 'BALANCE_TOO_LOW'
+  | 'FUNDING_TOO_LOW';
 
 export interface Readiness {
   readonly profileApproved: boolean;
@@ -80,7 +81,9 @@ export class ShipperViewBuilder {
       reviewed_at: iso(driver.reviewedAtMs),
       accepting_deliveries: driver.acceptingDeliveries,
       version: driver.version,
-      can_edit_profile: inReview && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED'),
+      can_edit_profile: driver.status === 'ACTIVE' || (inReview && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED')),
+      // A closure may be asked from ACTIVE and from SUSPENDED (the balance is returned without unlocking). Everything else is decided again by the server on the command.
+      can_request_closure: driver.status === 'ACTIVE' || driver.status === 'SUSPENDED',
       can_submit: inReview && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED'),
       bank:
         bank === undefined
@@ -103,7 +106,7 @@ export class ShipperViewBuilder {
       },
       closure:
         driver.status === 'CLOSING'
-          ? { requested_at: iso(driver.closureRequestedAtMs), note: driver.closureNote, can_cancel: true }
+          ? { requested_at: iso(driver.closureRequestedAtMs), note: driver.closureNote, can_cancel: true, from_status: driver.statusBeforeClosing }
           : null,
     };
   }

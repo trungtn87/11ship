@@ -147,8 +147,13 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     expect(response.status).toBe(201);
     const data = dataOf(response);
     expect(data).toMatchObject({ amount_requested_vnd: 150_000, state: 'PENDING', version: 1, resolved_at: null });
-    expect(Object.keys(data).sort()).toEqual(['amount_requested_vnd', 'created_at', 'request_id', 'resolved_at', 'state', 'version']);
+    expect(Object.keys(data).sort()).toEqual(['amount_requested_vnd', 'created_at', 'request_id', 'resolved_at', 'state', 'transfer_code', 'version']);
     const id = String(data.request_id);
+    // The transfer content tied to THIS request: derived from its id, stable on every read, no phone or name in it.
+    expect(data.transfer_code).toBe(`NAP${id.replace(/-/g, '').slice(0, 10).toUpperCase()}`);
+    expect(String(data.transfer_code)).toMatch(/^NAP[0-9A-F]{10}$/);
+    expect(dataOf(await get(s.token, `/topup-requests/${id}`)).transfer_code).toBe(data.transfer_code);
+    expect(String(data.transfer_code)).not.toContain(s.phone.local);
     const row = (await pool.query('SELECT state, version::text, amount_requested_vnd::text, created_by_user_id::text, resolved_at, resolved_by_user_id FROM app.wallet_topup_requests WHERE request_id = $1::uuid', [id])).rows[0];
     expect(row).toMatchObject({ state: 'PENDING', version: '1', amount_requested_vnd: '150000', created_by_user_id: s.userId, resolved_at: null, resolved_by_user_id: null });
     expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0' });
@@ -267,6 +272,45 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
       expect([driverId, await requestRows(driverId)]).toEqual([driverId, 0]);
     }
     expect(await walletOf(s.driverId)).toMatchObject({ balance_vnd: '0', held_vnd: '0', version: '1' });
+  });
+
+  it('6b. once the closure is asked no NEW request is taken: refused under the driver lock (also when it races the move to CLOSING), a request made before still replays and can be cancelled, nothing moves', async () => {
+    const s = await newShipper();
+    const key = randomUUID();
+    const before = await create(s.token, { amount_vnd: 100_000 }, key);
+    expect(before.status).toBe(201);
+    const earlierId = String(dataOf(before).request_id);
+    const close = `UPDATE app.drivers SET status = 'CLOSING', status_before_closing = 'ACTIVE', accepting_deliveries = false, closure_requested_at = now(), version = version + 1, updated_at = now() WHERE driver_id = $1::uuid`;
+    await pool.query(close, [s.driverId]);
+    expect(errorCode(await create(s.token, { amount_vnd: 100_000 }))).toBe('TOPUP_NOT_ALLOWED_WHEN_CLOSING');
+    expect(errorCode(await create(s.token, { amount_vnd: 250_000 }, randomUUID()))).toBe('TOPUP_NOT_ALLOWED_WHEN_CLOSING');
+    expect(await requestRows(s.driverId)).toBe(1);
+    // The answer of a request committed before CLOSING is still the same answer, and it can still be cancelled (the held-back money question is the Admin's).
+    const replay = await create(s.token, { amount_vnd: 100_000 }, key);
+    expect(replay.status).toBe(201);
+    expect(dataOf(replay).request_id).toBe(earlierId);
+    expect((await get(s.token, '/topup-requests')).status).toBe(200);
+    expect((await get(s.token, `/topup-requests/${earlierId}`)).status).toBe(200);
+    expect(await requestRows(s.driverId)).toBe(1);
+    await expectNoMoney(s.driverId);
+
+    // A create that arrives while the move to CLOSING is not yet committed waits for the driver row and then sees CLOSING: no request commits after it.
+    const racer = await newShipper();
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(close, [racer.driverId]);
+      const waiting = create(racer.token, { amount_vnd: 100_000 });
+      for (let attempt = 0; attempt < 50 && (await lockWaiters()) === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await holder.query('COMMIT');
+      expect(errorCode(await waiting)).toBe('TOPUP_NOT_ALLOWED_WHEN_CLOSING');
+    } finally {
+      holder.release();
+    }
+    expect(await requestRows(racer.driverId)).toBe(0);
+    await expectNoMoney(racer.driverId);
   });
 
   it('7. ownership: another Shipper cannot read or cancel a request, and an unknown or malformed id reads the same as another\'s', async () => {
