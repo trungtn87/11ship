@@ -102,8 +102,9 @@ export class AdminServiceAreaRepository {
   async impact(context: TransactionContext, area: AreaRecord, proposed: Coverage | null): Promise<AreaImpact> {
     const next = proposed ?? area.coverage;
     const cur = area.coverage;
-    const outsideNext = next === null ? 'false' : `s.pickup_lat IS NOT NULL AND NOT ${pinInCircleSql('s', '$3::double precision', '$4::double precision', '$5::integer')}`;
-    const outsideCur = cur === null ? 'false' : `s.pickup_lat IS NOT NULL AND NOT ${pinInCircleSql('s', '$6::double precision', '$7::double precision', '$8::integer')}`;
+    // Every parameter is referenced whatever the circles are (PostgreSQL cannot type an unused one); a missing circle simply proves nothing (never "outside").
+    const outsideNext = `($5::integer IS NOT NULL AND s.pickup_lat IS NOT NULL AND NOT ${pinInCircleSql('s', '$3::double precision', '$4::double precision', '$5::integer')})`;
+    const outsideCur = `($8::integer IS NOT NULL AND s.pickup_lat IS NOT NULL AND NOT ${pinInCircleSql('s', '$6::double precision', '$7::double precision', '$8::integer')})`;
     const result = await context.query<{ total: string; pub: string; out_cur: string; out_next: string; newly: string; orders: string; deliveries: string }>(
       `SELECT (SELECT count(*) FROM app.shops s WHERE s.service_area_id = $1::uuid) AS total,
               (SELECT count(*) FROM app.shops s WHERE s.service_area_id = $1::uuid AND ${PUBLIC_SHOP}) AS pub,

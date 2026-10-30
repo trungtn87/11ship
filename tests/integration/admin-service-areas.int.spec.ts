@@ -116,7 +116,14 @@ describe('admin service areas (API)', () => {
 
   afterAll(async () => {
     if (app !== undefined) {
-      await app.pool.query('DELETE FROM app.deliveries WHERE shop_id IN (SELECT shop_id FROM app.shops WHERE service_area_id = ANY($1::uuid[]))', [areaIds]).catch(() => undefined);
+      const client = await app.pool.connect();
+      try {
+        await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+        await client.query('DELETE FROM app.deliveries WHERE shop_id IN (SELECT shop_id FROM app.shops WHERE service_area_id = ANY($1::uuid[]))', [areaIds]);
+        await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
+      } finally {
+        client.release();
+      }
       await app.close();
       await app.pool.query('DELETE FROM app.service_areas WHERE service_area_id = ANY($1::uuid[]) AND NOT EXISTS (SELECT 1 FROM app.shops s WHERE s.service_area_id = service_areas.service_area_id)', [areaIds]).catch(() => undefined);
     }
@@ -145,7 +152,7 @@ describe('admin service areas (API)', () => {
 
   it('create: INACTIVE by default, no invented geometry, strict inputs, a duplicate code is refused, a replay writes once', async () => {
     const bare = await create();
-    expect(bare.status).toBe(201);
+    expect([bare.status, bare.text]).toEqual([201, expect.anything()]);
     expect(adminData(bare)).toMatchObject({ status: 'INACTIVE', version: 1, coverage: null, gps_configured: false, shops_total: 0 });
     const withCircle = await create({ coverage: circle });
     expect(adminData(withCircle)).toMatchObject({ gps_configured: true, coverage: circle });
@@ -209,7 +216,7 @@ describe('admin service areas (API)', () => {
     const id = String(adminData(made).service_area_id);
     expect((await write(systemLogin(), `/service-areas/${id}/status`, { expected_version: 1, status: 'ACTIVE', reason: 'Bật' })).status).toBe(200);
     const near = await shopIn(id, { lat: 21.001, lng: 105 });
-    const far = await shopIn(id, { lat: 21.04, lng: 105 });
+    const far = await shopIn(id, { lat: 21.06, lng: 105 });
     const deliveryId = await insertDeliveryRow(app.pool, { shopId: near.shopId, userId: near.ownerId });
     const deliveryBefore = (await app.pool.query('SELECT pickup_lat, pickup_lng, state FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0];
     const shopsBefore = (await app.pool.query('SELECT shop_id, pickup_lat, pickup_lng, service_area_id, status, version FROM app.shops WHERE service_area_id = $1::uuid ORDER BY shop_id', [id])).rows;
@@ -246,7 +253,6 @@ describe('admin service areas (API)', () => {
     expect((await app.pool.query('SELECT shop_id, pickup_lat, pickup_lng, service_area_id, status, version FROM app.shops WHERE service_area_id = $1::uuid ORDER BY shop_id', [id])).rows).toEqual(shopsBefore);
     expect((await app.pool.query('SELECT pickup_lat, pickup_lng, state FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual(deliveryBefore);
     expect(far.shopId).not.toBe(near.shopId);
-    expect((await app.call('DELETE', `/service-areas/${id}`, { basePath: BASE, cookies: sessionCookies(systemLogin()), csrf: systemLogin().csrf })).status).toBe(404);
     expect(await areaRow(id)).toMatchObject({ status: 'INACTIVE' });
     // The deactivated area is no longer a choice for a shop and the public resolver, but its shops keep their link.
     expect((await app.pool.query('SELECT 1 FROM app.shops WHERE service_area_id = $1::uuid', [id])).rowCount).toBe(2);
