@@ -281,7 +281,9 @@ export const APP_ERROR_DEFINITIONS = {
   USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
   USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
   // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
-  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders or deliveries being processed' },
+  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
+  // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
+  USER_ACCOUNT_ACTIVITY_UNVERIFIED: { status: 503, message: 'The orders, deliveries and records of the account could not be verified; nothing was changed' },
   USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
 
   // SYSTEM settings (Owner decision 2026-10-14). Fixed messages; nothing the client sent is echoed.

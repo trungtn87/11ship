@@ -208,6 +208,7 @@ describe('admin web account lock - source', () => {
       [409, 'USER_ACCOUNT_ALREADY_IN_STATE', { kind: 'conflict' }],
       [409, 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED', { kind: 'review-required' }],
       [409, 'USER_ACCOUNT_HAS_ACTIVE_WORK', { kind: 'has-active-work' }],
+      [503, 'USER_ACCOUNT_ACTIVITY_UNVERIFIED', { kind: 'unverified' }],
       [404, 'USER_NOT_AVAILABLE', { kind: 'not-found' }],
       [403, 'ADMIN_FORBIDDEN', { kind: 'forbidden' }],
       [401, 'ADMIN_SESSION_INVALID', { kind: 'session-expired' }],

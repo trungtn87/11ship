@@ -421,6 +421,10 @@ export function createAccountsSource(api: AdminAccountsApi, session?: CsrfPort):
       if (result.kind === 'ok') {
         return result.data.result === 'DELETED' ? { kind: 'deleted' } : { kind: 'ok' };
       }
+      // A definitive refusal although it is a 503: the server rolled everything back because it could not verify the account's records.
+      if (result.kind === 'error' && result.code === 'USER_ACCOUNT_ACTIVITY_UNVERIFIED') {
+        return { kind: 'unverified' };
+      }
       // No usable answer, or a server fault (503 TRANSACTION_OUTCOME_UNKNOWN included): the command may have been executed.
       if (result.kind === 'network' || result.status >= 500) {
         return { kind: 'unknown' };

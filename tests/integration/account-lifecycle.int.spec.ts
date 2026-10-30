@@ -611,10 +611,10 @@ describe('account lifecycle, scopes and system settings', () => {
       const registry = app.running.app.get(AccountActivityRegistry, { strict: false });
       const user = await seedUser({ roles: ['CUSTOMER', 'DRIVER'] });
       let processing = 2;
-      registry.register({ name: 'DELIVERIES', relatedData: () => Promise.resolve(true), activeWork: (_context, userId) => Promise.resolve(userId === user.id ? processing : 0) });
+      registry.register({ name: 'TEST_PROCESSING', relatedData: () => Promise.resolve(true), activeWork: (_context, userId) => Promise.resolve(userId === user.id ? processing : 0) });
       try {
         const shown = adminData(await detail(user.id));
-        expect(shown.lifecycle).toMatchObject({ active_work: ['DELIVERIES'], lock_blocked_reason: 'ACTIVE_WORK', delete_blocked_reason: 'ACTIVE_WORK' });
+        expect(shown.lifecycle).toMatchObject({ active_work: ['TEST_PROCESSING'], lock_blocked_reason: 'ACTIVE_WORK', delete_blocked_reason: 'ACTIVE_WORK' });
         const version = Number(shown.version);
         expect(codeOf(await command('lock', user.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
         expect(codeOf(await command('delete', user.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
@@ -631,7 +631,7 @@ describe('account lifecycle, scopes and system settings', () => {
         expect((await command('unlock', user.id, lockBody(version + 1))).status).toBe(200);
         expect(await userRow(user.id)).toMatchObject({ status: 'ACTIVE', lock_reason: null });
       } finally {
-        registry.unregister('DELIVERIES');
+        registry.unregister('TEST_PROCESSING');
       }
     });
 
