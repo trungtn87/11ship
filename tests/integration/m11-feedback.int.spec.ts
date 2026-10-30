@@ -180,6 +180,8 @@ describe('M11.01 ratings', () => {
     }
     const picked = dataOf(await w.asShipper(second, 'POST', `/driver/deliveries/${id}/pickup`, { expected_version: current.version })) as Json;
     expect((await w.asShipper(second, 'POST', `/driver/deliveries/${id}/complete`, { expected_version: picked.version })).status).toBe(200);
+    const endedView = dataOf(await w.asShop('GET', `/shop/me/deliveries/${id}`)) as Json;
+    expect(endedView.assignment).toMatchObject({ assignment_id: expect.any(String), shipper: { name: expect.any(String), phone: null, plate_number: null } });
     expect((await w.asShop('POST', `/shop/me/deliveries/${id}/review`, body(5))).status).toBe(201);
     expect((await w.app.pool.query('SELECT driver_id FROM app.reviews WHERE delivery_id = $1::uuid', [id])).rows[0]?.driver_id).toBe(second.driverId);
     const mine = dataOf(await w.asShipper(first, 'GET', '/driver/reviews')) as Json;

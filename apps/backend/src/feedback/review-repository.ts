@@ -42,7 +42,7 @@ export interface NewReview {
   readonly reviewId: string;
   readonly kind: ReviewKind;
   readonly reviewerUserId: string;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly driverId: string | null;
   readonly orderId: string | null;
   readonly deliveryId: string | null;

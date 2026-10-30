@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../m07/m07_source.dart';
@@ -57,6 +58,7 @@ class _Order {
   String? changeReason;
   int paid = 0;
   int? feeEstimate;
+  bool customerProposedFee = false;
   int? feeFixed;
   String feePayer = 'CUSTOMER';
   DateTime? scheduledFor;
@@ -94,7 +96,19 @@ class SampleOrderStore {
 
   /// The drop-off point the newest Order was sent with (null = no pin), for assertions in tests.
   (double?, double?) get lastPin => _orders.isEmpty ? (null, null) : (_orders.last.lat, _orders.last.lng);
+  String? get lastOrderId => _orders.isEmpty ? null : _orders.last.id;
+  String? get lastOrderClientRef => _orders.isEmpty ? null : _orders.last.clientRef;
+  String? get lastOrderRecipientName => _orders.isEmpty ? null : _orders.last.recipientName;
   int placeAttempts = 0;
+
+  /// A test can pause `place` before completing to verify behavior while POST is pending.
+  Completer<void>? pendingPlaceCompleter;
+
+  /// A test can make the next `place` fail offline BEFORE creating the Order on the server.
+  bool failNextPlaceOffline = false;
+
+  /// A test can make the next `lookup` fail offline to verify behavior when lookup cannot reach server.
+  bool failNextLookupOffline = false;
 
   /// A test can make the NEXT `place` lose its answer after the server stored the Order.
   bool dropNextPlaceAnswer = false;
@@ -160,7 +174,7 @@ class SampleOrderStore {
         'items_total_vnd': _items(o),
         'paid_vnd': o.paid,
         'items_remaining_vnd': _items(o) - o.paid,
-        'fee': <String, Object?>{'payer': o.feePayer, 'amount_vnd': o.feeFixed, 'estimate_vnd': o.feeEstimate, 'status': o.feeFixed != null ? 'FINAL' : (o.feeEstimate != null ? 'ESTIMATE' : 'UNKNOWN'), 'distance_m': o.feeEstimate == null ? null : 2500},
+        'fee': <String, Object?>{'payer': o.feePayer, 'amount_vnd': o.feeFixed, 'estimate_vnd': o.feeEstimate, 'status': o.feeFixed != null ? 'FINAL' : (o.feeEstimate != null ? 'ESTIMATE' : 'UNKNOWN'), 'distance_m': o.feeEstimate == null ? null : 2500, 'customer_proposed': o.customerProposedFee},
         'expected_total_vnd': o.feeFixed != null ? _items(o) + (o.feePayer == 'SHOP' ? 0 : o.feeFixed!) : (o.feeEstimate != null && o.deliveryState == null ? _items(o) + o.feeEstimate! : null),
       };
 
@@ -288,7 +302,7 @@ class SampleOrderStore {
   }
 
   /// Seeds one Order in a given state (for the screenshots and the list tests).
-  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true}) {
+  String seed({String status = 'PENDING_CONFIRMATION', String? deliveryState, int? feeCounter, DateTime? scheduledFor, String name = 'Nguyễn Văn An', bool pin = true, int tipVnd = 0, int paidVnd = 0}) {
     final _Order o = _create(<DraftLine>[DraftLine(itemId: kSampleDishes[0].id, name: kSampleDishes[0].name, quantity: 2, priceVnd: 45000), DraftLine(itemId: kSampleDishes[2].id, name: kSampleDishes[2].name, quantity: 1, priceVnd: 5000, note: 'Ít đá')], 'seed-$_next');
     o.status = status;
     o.deliveryState = deliveryState;
@@ -297,6 +311,9 @@ class SampleOrderStore {
     o.recipientName = name;
     o.lat = pin ? 21.0 : null;
     o.lng = pin ? 105.82 : null;
+    o.feeEstimate = 10000 + tipVnd;
+    o.customerProposedFee = tipVnd > 0;
+    o.paid = paidVnd;
     if (deliveryState != null) {
       o.deliveries = 1;
       o.feeFixed = 10000;
@@ -385,12 +402,19 @@ class SampleCustomerOrders extends CustomerOrderSource {
     final int items = lines.fold(0, (int s, PreviewLine l) => s + (l.priceVnd ?? 0) * l.quantity);
     const int fee = 10000;
     final bool priced = draft.address.hasPin;
-    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: priced ? fee : null, feeDistanceM: priced ? 2500 : null, expectedTotalVnd: priced ? items + fee : null, feeStatus: priced ? 'PRICED' : 'UNAVAILABLE', feeReason: priced ? null : 'DROPOFF_PIN_MISSING', quoteSnapshot: priced ? 'sample-pinned' : 'sample-no-pin');
+    return CheckoutPreview(ok: lines.every((PreviewLine l) => l.issue == null), blockers: const <String>[], lines: lines, itemsVnd: items, feeEstimateVnd: priced ? fee : null, feeDistanceM: priced ? 2500 : null, expectedTotalVnd: priced ? items + fee + draft.tipVnd : null, tipVnd: draft.tipVnd, feeStatus: priced ? 'PRICED' : 'UNAVAILABLE', feeReason: priced ? null : 'DROPOFF_PIN_MISSING', quoteSnapshot: priced ? 'sample-pinned' : 'sample-no-pin');
   }
 
   @override
   Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) async {
     store.placeAttempts += 1;
+    if (store.pendingPlaceCompleter != null) {
+      await store.pendingPlaceCompleter!.future;
+    }
+    if (store.failNextPlaceOffline) {
+      store.failNextPlaceOffline = false;
+      throw const M07Failure(M07FailureKind.offline);
+    }
     for (final _Order existing in store._orders) {
       if (existing.clientRef == clientRef) {
         return OrderView.fromJson(store._viewJson(existing, shop: false));
@@ -410,7 +434,8 @@ class SampleCustomerOrders extends CustomerOrderSource {
       ..lng = draft.address.lng
       ..scheduledFor = draft.scheduledFor
       ..note = draft.note
-      ..feeEstimate = 10000;
+      ..feeEstimate = 10000 + draft.tipVnd
+      ..customerProposedFee = draft.tipVnd > 0;
     store._cart = <DraftLine>[];
     store._cartShop = null;
     if (store.dropNextPlaceAnswer) {
@@ -422,6 +447,10 @@ class SampleCustomerOrders extends CustomerOrderSource {
 
   @override
   Future<OrderView?> lookup(String clientRef) async {
+    if (store.failNextLookupOffline) {
+      store.failNextLookupOffline = false;
+      throw const M07Failure(M07FailureKind.offline);
+    }
     for (final _Order o in store._orders) {
       if (o.clientRef == clientRef) {
         return OrderView.fromJson(store._viewJson(o, shop: false));

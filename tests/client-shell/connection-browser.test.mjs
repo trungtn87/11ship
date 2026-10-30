@@ -530,6 +530,8 @@ describe('11Food in a real browser: banner on a normal screen', () => {
 
   it('390px: requests carry no cookie, no Authorization, are not served from cache, and use the contract paths', async () => {
     food.reset();
+    food.health.ready = 'slow';
+    food.health.slowMs = 150;
     await withPage(390, async (page) => {
       await page.goto(`${food.base}/diagnostics`);
       await page.waitFor(diagPhase('ready'), 'ready');

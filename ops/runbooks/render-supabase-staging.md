@@ -144,6 +144,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | delivery_assignments | SELECT, INSERT, UPDATE (M07: one Shipper's hold on a delivery; ACTIVE at most once per delivery; never deleted) |
 | delivery_events | SELECT, INSERT (M07: the append-only history of a delivery) |
 | delivery_incidents | SELECT, INSERT, UPDATE (M07: the goods-custody incident of a failed delivery; closed once; never deleted) |
+| delivery_tracking_links | SELECT, INSERT, UPDATE (#221: public tracking links; updated on revoke/re-issue; never deleted) |
 | shop_public_ids | SELECT (public shop number; immutable after creation, new rows allocated by a SECURITY DEFINER trigger) |
 | shop_display_counters | SELECT (per-shop serial; only the database allocation function may change it) |
 | shop_display_numbers | SELECT (public order and direct-delivery aliases; populated through a trigger, never rewritten) |
