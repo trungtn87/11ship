@@ -115,6 +115,7 @@ describe('M12 — Việc cần xử lý (action queue)', () => {
     expect((driver.items as Json[]).every((item) => !['SHIPPER_REVIEW', 'TOPUP_PENDING', 'SHOP_PAYMENT_PENDING'].includes(item.kind))).toBe(true);
   });
 
+    // seedDelivery stops the search 30 minutes after creation, so created 2.5 h ago means waiting since 2 h ago.
   it('3. a stopped search is ONE file, the same on every read; a search that was called again is not in the queue; viewing the delivery list is not handling', async () => {
     const stopped = await seedDelivery(admin.pool, { shopId, userId: system.account.userId, state: 'search_stopped', createdAtIso: new Date(Date.now() - 2 * HOUR).toISOString() });
     const recalled = await seedDelivery(admin.pool, { shopId, userId: system.account.userId, state: 'search_stopped' });
