@@ -211,12 +211,15 @@ export class DeliveryCustomerService {
           if (!input.agreedFee || input.agreedFee.amountVnd <= 0) {
             throw new AppError('FEE_REQUIRED');
           }
-          await this.agreements.createAgreed(context, {
+          const outcome = await this.agreements.createAgreed(context, {
             ...agreementInput,
             reasonCode: input.agreedFee.reasonCode,
             reasonNote: input.agreedFee.reasonNote ?? 'Khách gọi shipper',
             proposedFeeVnd: input.agreedFee.amountVnd,
           });
+          if (outcome.kind !== 'ok' && outcome.kind !== 'replayed') {
+            throw new AppError('DELIVERY_INPUT_INVALID');
+          }
         }
 
         await this.recorder.record(context, {
@@ -335,7 +338,7 @@ export class DeliveryCustomerService {
         let outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
-          requestId: `${requestId}:shop_accept`,
+          requestId: randomUUID(),
           nowMs,
           action: { type: 'SHOP_ACCEPT_COUNTER' },
           actorUserId: principal.userId,
@@ -346,7 +349,7 @@ export class DeliveryCustomerService {
           outcome = await this.agreements.act(context, {
             agreementId: agreement.agreementId,
             expectedVersion: outcome.agreement.version,
-            requestId: `${requestId}:confirm`,
+            requestId: randomUUID(),
             nowMs: await freshClockMs(context),
             action: { type: 'CUSTOMER_CONFIRM', approve: true },
             actorUserId: principal.userId,
@@ -363,6 +366,15 @@ export class DeliveryCustomerService {
           const patched = await this.deliveries.update(context, delivery.deliveryId, delivery.version, { feeVnd: outcome.agreement.finalFeeVnd });
           if (patched !== undefined) updated = patched;
         }
+
+        await this.recorder.record(context, {
+          delivery: updated,
+          type: 'fee_counter_accepted',
+          actorType: 'CUSTOMER',
+          actorId: principal.userId,
+          operation: OPERATIONS.counterAccept,
+          requestId,
+        });
 
         return {
           status: 200,
@@ -401,7 +413,7 @@ export class DeliveryCustomerService {
         const outcome = await this.agreements.act(context, {
           agreementId: agreement.agreementId,
           expectedVersion: agreement.version,
-          requestId: `${requestId}:shop_reject`,
+          requestId: randomUUID(),
           nowMs,
           action: { type: 'SHOP_REJECT_COUNTER' },
           actorUserId: principal.userId,
@@ -411,6 +423,15 @@ export class DeliveryCustomerService {
         if (outcome.kind !== 'ok' && outcome.kind !== 'replayed') {
           throw new AppError(outcome.kind === 'answer_expired' ? 'FEE_ANSWER_EXPIRED' : 'VERSION_CONFLICT');
         }
+
+        await this.recorder.record(context, {
+          delivery,
+          type: 'fee_counter_rejected',
+          actorType: 'CUSTOMER',
+          actorId: principal.userId,
+          operation: OPERATIONS.counterReject,
+          requestId,
+        });
 
         return {
           status: 200,

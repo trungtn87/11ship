@@ -333,8 +333,11 @@ export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryIn
   let agreedFee: AgreedFeeInput | null = null;
   if (b.agreed_fee !== undefined && b.agreed_fee !== null) {
     const f = shaped(b.agreed_fee, ['amount_vnd'], ['reason_code', 'reason_note']);
-    const reasonCode = (f.reason_code as AgreementReason) ?? 'CUSTOMER_DIRECT';
-    agreedFee = { reasonCode, reasonNote: optionalText(f.reason_note, 200), amountVnd: whole(f.amount_vnd, 1, MAX_FEE_VND) };
+    const reasonCode = (f.reason_code && (AGREEMENT_REASONS as readonly string[]).includes(f.reason_code as string))
+      ? (f.reason_code as AgreementReason)
+      : 'OTHER';
+    const reasonNote = optionalText(f.reason_note, 200) ?? (reasonCode === 'OTHER' ? 'Khách tự thỏa thuận phí' : null);
+    agreedFee = { reasonCode, reasonNote, amountVnd: whole(f.amount_vnd, 1, MAX_FEE_VND) };
   }
 
   return {

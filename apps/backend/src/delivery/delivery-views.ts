@@ -69,6 +69,7 @@ function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
       state: 'COUNTERED',
       current_vnd: agreement.finalFeeVnd,
       offered_vnd: agreement.revisionFeeVnd,
+      counter_vnd: agreement.revisionFeeVnd,
       can_decline: true,
       expires_at: new Date(agreement.answerExpiresAtMs ?? agreement.expiresAtMs).toISOString(),
       search_expires_at: new Date(agreement.expiresAtMs).toISOString(),
@@ -77,10 +78,12 @@ function feeDecisionView(agreement: Agreement | undefined): JsonObject | null {
   if (agreement === undefined || agreement.feeMode !== 'AGREED' || (agreement.status !== 'COUNTERED' && agreement.status !== 'AWAITING_CUSTOMER')) {
     return null;
   }
+  const offeredVnd = agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd;
   return {
     state: agreement.status,
     current_vnd: agreement.proposedFeeVnd,
-    offered_vnd: agreement.status === 'COUNTERED' ? agreement.counterFeeVnd : agreement.pendingFeeVnd,
+    offered_vnd: offeredVnd,
+    counter_vnd: offeredVnd,
     // Only a Shipper's counter-offer can be refused; the shop's own proposal is answered by accepting or by the shop cancelling.
     can_decline: agreement.status === 'COUNTERED' || agreement.pendingSource === 'COUNTER',
     // The time the PAYER has to answer this offer (never later than the search deadline); a shop's own proposal only has the search deadline.
@@ -256,7 +259,12 @@ export class DeliveryViews {
    */
   async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number): Promise<JsonObject> {
     const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
-    const assignment = activeAssignment ?? ((d.state === 'completed' || d.state === 'failed') ? await this.deliveries.findExecutingAssignment(context, d.deliveryId) : undefined);
+    const isRunning = activeAssignment !== undefined && RUNNING_STATES.includes(d.state);
+    const assignment = isRunning
+      ? activeAssignment
+      : (d.source === 'CUSTOMER' && (d.state === 'completed' || d.state === 'failed'))
+        ? await this.deliveries.findExecutingAssignment(context, d.deliveryId)
+        : undefined;
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     let assignmentView: JsonObject | null = null;
@@ -264,7 +272,6 @@ export class DeliveryViews {
     let location: JsonObject | null = null;
     if (assignment !== undefined) {
       const identity = await this.shipperOf(context, assignment.driverId);
-      const isRunning = activeAssignment !== undefined && RUNNING_STATES.includes(d.state);
       shipper = {
         name: identity?.driver.fullName ?? '—',
         phone: isRunning ? identity?.phone ?? null : null,
@@ -282,16 +289,39 @@ export class DeliveryViews {
       if (isRunning && d.pickupLat !== null && d.dropoffLat !== null) {
         location = await this.#location(context, assignment.driverId);
       }
+    } else if (d.source === 'CUSTOMER' && (agreement?.counterBy || agreement?.boundDriverId)) {
+      const pendingDriverId = agreement.counterBy ?? agreement.boundDriverId!;
+      const identity = await this.shipperOf(context, pendingDriverId);
+      if (identity !== undefined) {
+        shipper = {
+          name: identity.driver.fullName ?? '—',
+          phone: identity.phone ?? null,
+          plate_number: identity.driver.plateNumber ?? null,
+          accepted_at: iso(agreement.createdAtMs),
+          picked_up_at: null,
+        };
+        assignmentView = {
+          assignment_id: null,
+          shipper,
+          accepted_at: iso(agreement.createdAtMs),
+          picked_up_at: null,
+          destination_confirmed: false,
+        };
+      }
     }
     const decider = feeDeciderOf(d);
     const feeQuestionOpen = agreement !== undefined && ((agreement.feeMode === 'AGREED' && (agreement.status === 'COUNTERED' || agreement.status === 'AWAITING_CUSTOMER')) || revisionIsPending(agreement));
+    const feeView = this.#fee(d, agreement);
+    if (feeQuestionOpen && decider === 'CUSTOMER') {
+      feeView.status = 'AWAITING_CUSTOMER';
+    }
     return {
       delivery_id: d.deliveryId,
       code: d.code,
       display_code: d.displayCode ?? d.code,
       state: d.state,
       version: d.version,
-      fee: this.#fee(d, agreement),
+      fee: feeView,
       search: this.#search(d, nowMs),
       assignment: assignmentView,
       shipper,

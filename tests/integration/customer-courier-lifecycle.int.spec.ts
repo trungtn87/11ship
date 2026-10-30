@@ -261,6 +261,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const deliveryRes = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Phạm Thị Thử',
       recipient_phone: '0944444444',
+      pickup_address_text: 'Địa chỉ lấy thử race',
       dropoff_address_text: 'Địa chỉ thử race',
       goods_description: 'Bưu kiện',
       agreed_fee: { amount_vnd: 25000 },
@@ -302,6 +303,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Đặng Hoàn Thành',
       recipient_phone: '0955555555',
+      pickup_address_text: '789 Phố Lấy',
       dropoff_address_text: '789 Giải Phóng',
       goods_description: 'Đồng hồ đeo tay',
       cod_vnd: 500_000,
@@ -350,6 +352,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Ngô Thử Hủy',
       recipient_phone: '0966666666',
+      pickup_address_text: 'Cầu Giấy',
       dropoff_address_text: 'Cầu Diễn',
       goods_description: 'Bánh mỳ',
       agreed_fee: { amount_vnd: 20000 },
@@ -370,6 +373,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Bảo Mật',
       recipient_phone: '0977777777',
+      pickup_address_text: 'Điểm lấy bí mật',
       dropoff_address_text: 'Bí mật',
       goods_description: 'Hàng riêng tư',
       agreed_fee: { amount_vnd: 20000 },
@@ -460,6 +464,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Khách Đánh Giá',
       recipient_phone: '0988776655',
+      pickup_address_text: 'Hoàn Kiếm',
       dropoff_address_text: 'Đống Đa',
       goods_description: 'Tài liệu',
       agreed_fee: { amount_vnd: 20000 },
@@ -515,6 +520,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Khách Khiếu Nại',
       recipient_phone: '0977889900',
+      pickup_address_text: 'Ba Đình',
       dropoff_address_text: 'Thanh Xuân',
       goods_description: 'Tranh ảnh dễ vỡ',
       agreed_fee: { amount_vnd: 20000 },
@@ -637,8 +643,8 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
       recipient_name: 'Khách GPS Live',
       recipient_phone: '0911002200',
       pickup_address_text: 'Điểm lấy có GPS',
-      pickup_lat: 21.0285,
-      pickup_lng: 105.8542,
+      pickup_lat: 21.0005,
+      pickup_lng: 105.8005,
       dropoff_address_text: 'Điểm giao có GPS',
       dropoff_lat: 21.0333,
       dropoff_lng: 105.8000,
@@ -666,15 +672,15 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     expect(accepted.status).toBe(200);
 
     // Shipper sends GPS location report
-    await app.call('POST', '/driver/location', {
+    const locRes = await app.call('PUT', '/driver/location', {
       bearer: s.token,
       body: {
         lat: 21.0300,
         lng: 105.8200,
         accuracy_m: 10,
-        recorded_at: new Date().toISOString(),
       },
     });
+    expect(locRes.status).toBe(200);
 
     // Public tracking now returns shipper live location
     const publicTrack = await app.call('GET', `/public/tracking/${token}`);

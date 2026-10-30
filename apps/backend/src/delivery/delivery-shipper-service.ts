@@ -187,8 +187,20 @@ export class DeliveryShipperService {
           throw new AppError('DELIVERY_SEARCH_EXPIRED');
         }
         let current = delivery;
-        const agreement = await this.agreements.readByDelivery(context, deliveryId);
+        let agreement = await this.agreements.readByDelivery(context, deliveryId);
         if (agreement !== undefined) {
+          if (agreement.feeMode === 'AGREED' && agreement.status === 'PROPOSED') {
+            const agreeOutcome = await this.agreements.act(context, {
+              agreementId: agreement.agreementId,
+              expectedVersion: agreement.version,
+              requestId: randomUUID(),
+              nowMs,
+              action: { type: 'DRIVER_ACCEPT', driverId },
+            });
+            if (agreeOutcome.kind === 'ok' || agreeOutcome.kind === 'replayed') {
+              agreement = agreeOutcome.agreement;
+            }
+          }
           if (!feeAllowsAssignment(agreement, driverId)) {
             throw new AppError('FEE_NOT_CONFIRMED');
           }
