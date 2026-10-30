@@ -381,6 +381,43 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(done.status).toBe(200);
       expect((await loginClient(user.phone, NEW_PASSWORD)).status).toBe(200);
     });
+
+    it('case 4b (M01-OTP-TEST-01) — an account made while the registration OTP was off stays PHONE_UNVERIFIED: turning the OTP back on, logging in or resetting the password never verifies it', async () => {
+      await postSettings(sys(), settingsBody(0, false, true));
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const created = await registerClient(registerBody(phone));
+      expect(created.status).toBe(201);
+      const userId = String(dataOf(created).user_id);
+      const unverified = { account_origin: 'PHONE_UNVERIFIED', verified: false };
+      expect(dataOf(await loginClient(phone)).phone_verification_status).toBe('UNVERIFIED');
+
+      // SYSTEM restores the production default (both OTP switches on): the stored truth does not change.
+      await postSettings(sys(), settingsBody(1, true, true));
+      expect(await clientConfig()).toBe('REQUIRED');
+      const afterToggle = await loginClient(phone);
+      expect(afterToggle.status).toBe(200);
+      expect(dataOf(afterToggle).phone_verification_status).toBe('UNVERIFIED');
+      expect(dataOf(await me(tokenOf(afterToggle))).phone_verification_status).toBe('UNVERIFIED');
+      expect(await userRow(userId)).toMatchObject(unverified);
+
+      // A real OTP reset (the SMS gateway is the only channel) changes the password, still not the verification state.
+      const asked = await api(base(), 'POST', '/account-recovery/otp', { body: { phone: phone.local } });
+      expect(asked.status).toBe(200);
+      const sms = await nextSms();
+      const proof = await api(base(), 'POST', `/account-recovery/otp/${String(dataOf(asked).verification_id)}/verify`, { body: { otp: sms?.otp } });
+      const reset = await api(base(), 'POST', '/account-recovery/reset', { headers: { 'idempotency-key': randomUUID() }, body: { verification_token: String(dataOf(proof).verification_token), password: NEW_PASSWORD } });
+      expect(reset.status).toBe(200);
+      const afterReset = await loginClient(phone, NEW_PASSWORD);
+      expect(dataOf(afterReset).phone_verification_status).toBe('UNVERIFIED');
+      expect(await userRow(userId)).toMatchObject(unverified);
+
+      // The registration door is closed again for everybody: no body without a proof creates an account (no bypass for ordinary users).
+      const bypass = randomPhone();
+      app.track(bypass.normalized);
+      expect((await registerClient(registerBody(bypass))).status).toBe(400);
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [bypass.normalized])).toBe(0);
+    });
   });
 
   // =============================================================================================================================

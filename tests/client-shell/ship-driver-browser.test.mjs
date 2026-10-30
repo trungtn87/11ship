@@ -38,6 +38,8 @@ async function startBackend() {
     onboarding: { shop: 'NOT_STARTED', driver: state.driver === null ? 'NOT_STARTED' : state.driver.status === 'PENDING' ? 'PENDING_APPROVAL' : state.driver.status },
     onboarding_required: false,
     role_selection_required: false,
+
+    phone_verification_status: 'VERIFIED',
   });
   const session = () => ({ expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() });
   const send = (response, status, body) => {

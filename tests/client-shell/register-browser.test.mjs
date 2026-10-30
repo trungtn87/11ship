@@ -37,6 +37,8 @@ const identity = () => ({
   onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
   onboarding_required: false,
   role_selection_required: false,
+
+  phone_verification_status: 'VERIFIED',
 });
 
 // ---- the stand-in backend ------------------------------------------------------------------------------------------------
