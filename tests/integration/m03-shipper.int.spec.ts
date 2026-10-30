@@ -306,6 +306,18 @@ describe('M03 — Shipper management', () => {
       expect(await history(s.driverId, 'driver.submitted')).toBe(1);
     });
 
+    it('lets an ACTIVE Shipper correct a mistyped name: the verified bank is reset to unverified (never auto-approved) and the change is in the history; a suspended one cannot', async () => {
+      const s = await approved();
+      expect((await bankRow(s.driverId))?.verification_state).toBe('VERIFIED');
+      const renamed = await put(s, '/driver/me/profile', { expected_version: await versionOf(s), full_name: `Nguyễn Văn Sửa ${tag}`, plate_number: null });
+      expect(renamed.status).toBe(200);
+      expect(dataOf(renamed)).toMatchObject({ status: 'ACTIVE', full_name: `Nguyễn Văn Sửa ${tag}` });
+      expect((await bankRow(s.driverId))?.verification_state).toBe('UNVERIFIED');
+      expect(await history(s.driverId, 'driver.profile_updated')).toBe(1);
+      await command(lockOnly, s.driverId, 'lock', { expected_version: await versionOf(s), reason: 'Kiểm tra' });
+      expect(errorCode(await put(s, '/driver/me/profile', { expected_version: await versionOf(s), full_name: 'Tên Khác', plate_number: null }))).toBe('DRIVER_PROFILE_LOCKED');
+    });
+
     it('does not let the name change while the profile is under review, but the plate can', async () => {
       const s = await submitted();
       const v = await versionOf(s);
@@ -574,6 +586,72 @@ describe('M03 — Shipper management', () => {
       expect(codeOf(await command(reviewer, s.driverId, 'closure/reject', { expected_version: await versionOf(s) }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
       const declined = await command(reviewer, s.driverId, 'closure/reject', { expected_version: await versionOf(s), reason: 'Còn đơn đang giao' });
       expect(adminData(declined)).toMatchObject({ status: 'ACTIVE', closure: null });
+    });
+
+    const suspend = async (s: Awaited<ReturnType<typeof approved>>): Promise<void> => {
+      expect((await command(lockOnly, s.driverId, 'lock', { expected_version: await versionOf(s), reason: 'Khiếu nại giao hàng' })).status).toBe(200);
+    };
+
+    it('a SUSPENDED Shipper can ask to close and get the balance back WITHOUT being unlocked; the suspension reason and time survive, and a cancel returns to SUSPENDED', async () => {
+      const s = await approved();
+      await suspend(s);
+      const before = await row(s.driverId);
+      expect(before.status).toBe('SUSPENDED');
+      const requested = await send(s, '/driver/me/closure-request', { expected_version: await versionOf(s), note: 'Nhận lại tiền' });
+      expect(requested.status).toBe(200);
+      expect(dataOf(requested)).toMatchObject({ status: 'CLOSING', accepting_deliveries: false, suspension_reason: 'Khiếu nại giao hàng', closure: { from_status: 'SUSPENDED', can_cancel: true } });
+      const during = await row(s.driverId);
+      expect([during.status, during.status_before_closing, during.suspension_reason]).toEqual(['CLOSING', 'SUSPENDED', 'Khiếu nại giao hàng']);
+      expect(during.suspended_at).toEqual(before.suspended_at);
+      // Closing is not a way out of the lock: the administrator's unlock does not apply and receiving stays off.
+      expect(codeOf(await command(lockOnly, s.driverId, 'unlock', { expected_version: await versionOf(s) }))).toEqual({ status: 409, code: 'DRIVER_STATE_CONFLICT' });
+      expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_NOT_ACTIVE');
+      const cancelled = await send(s, '/driver/me/closure-cancel', { expected_version: await versionOf(s) });
+      expect(dataOf(cancelled)).toMatchObject({ status: 'SUSPENDED', accepting_deliveries: false, suspension_reason: 'Khiếu nại giao hàng', closure: null });
+      const after = await row(s.driverId);
+      expect([after.status, after.status_before_closing, after.suspension_reason]).toEqual(['SUSPENDED', null, 'Khiếu nại giao hàng']);
+      expect(after.suspended_at).toEqual(before.suspended_at);
+      expect(errorCode(await setAccepting(s, true))).toBe('DRIVER_NOT_ACTIVE');
+      expect(await history(s.driverId, 'driver.closure_requested')).toBe(1);
+      expect(await history(s.driverId, 'driver.closure_cancelled')).toBe(1);
+    });
+
+    it('an administrator who declines the closure of a SUSPENDED Shipper puts it back to SUSPENDED; finishing the closure keeps the suspension record', async () => {
+      const s = await approved();
+      await suspend(s);
+      await send(s, '/driver/me/closure-request', { expected_version: await versionOf(s), note: null });
+      const declined = await command(reviewer, s.driverId, 'closure/reject', { expected_version: await versionOf(s), reason: 'Còn đơn đang giao' });
+      expect(adminData(declined)).toMatchObject({ status: 'SUSPENDED', closure: null, suspension_reason: 'Khiếu nại giao hàng' });
+      expect((await row(s.driverId)).status_before_closing).toBeNull();
+      await send(s, '/driver/me/closure-request', { expected_version: await versionOf(s), note: null });
+      wallet.settled = true;
+      try {
+        const closed = await command(reviewer, s.driverId, 'closure/finalize', { expected_version: await versionOf(s) });
+        expect(adminData(closed)).toMatchObject({ status: 'CLOSED', accepting_deliveries: false });
+      } finally {
+        wallet.settled = false;
+      }
+      const done = await row(s.driverId);
+      expect([done.status, done.status_before_closing, done.suspension_reason]).toEqual(['CLOSED', 'SUSPENDED', 'Khiếu nại giao hàng']);
+    });
+
+    it('a lock and a closure request racing each other end in one consistent state', async () => {
+      const s = await approved();
+      const v = await versionOf(s);
+      const [lock, close] = await Promise.all([
+        command(lockOnly, s.driverId, 'lock', { expected_version: v, reason: 'Khiếu nại giao hàng' }),
+        send(s, '/driver/me/closure-request', { expected_version: v, note: null }),
+      ]);
+      // Same expected version: exactly one wins; the loser is refused, never a half state.
+      expect([lock.status, close.status].sort()).toEqual([200, 409]);
+      const final = await row(s.driverId);
+      expect(['SUSPENDED', 'CLOSING']).toContain(final.status);
+      expect(final.accepting_deliveries).toBe(false);
+      if (final.status === 'SUSPENDED') {
+        expect(final.suspension_reason).toBe('Khiếu nại giao hàng');
+      } else {
+        expect([final.status_before_closing, final.suspension_reason]).toEqual(['ACTIVE', null]);
+      }
     });
   });
 

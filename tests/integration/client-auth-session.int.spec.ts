@@ -46,6 +46,7 @@ const IDENTITY_KEYS = [
   'onboarding',
   'onboarding_required',
   'role_selection_required',
+  'phone_verification_status',
 ];
 const NOT_REPLAYABLE_MESSAGE = 'The authentication result can no longer be replayed';
 

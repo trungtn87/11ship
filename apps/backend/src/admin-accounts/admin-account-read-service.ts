@@ -69,6 +69,8 @@ function permissionView(row: PermissionRow): JsonObject {
 export class AdminAccountReadService {
   readonly #lockTimeoutMs: number;
   readonly #lockGateOpen: boolean;
+  /** The (terms, privacy) pair the server accepts for a registration now, or undefined when none is configured. */
+  readonly #currentConsent: { readonly termsVersion: string; readonly privacyVersion: string } | undefined;
 
   constructor(
     private readonly transactions: TransactionManager,
@@ -81,6 +83,7 @@ export class AdminAccountReadService {
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#lockGateOpen = appConfig.adminUserAccountMutations?.enabled === true;
+    this.#currentConsent = appConfig.clientAuth;
   }
 
   async permissions(sessionToken: string | undefined): Promise<JsonObject> {
@@ -152,6 +155,7 @@ export class AdminAccountReadService {
         version: row.version,
         profiles,
         phone_verified: row.lock.phoneVerified,
+        consent: await this.#consentView(context, userId),
         lifecycle: {
           lock_reason: row.lockReason,
           locked_at: row.lockedAtMs === null ? null : iso(row.lockedAtMs),
@@ -166,6 +170,20 @@ export class AdminAccountReadService {
         allowed_actions: detailAllowedActions({ policy: this.originPolicy, actor: auth, row, gateOpen: this.#lockGateOpen }),
       };
     });
+  }
+
+  /**
+   * Which versions the account accepted and when, and whether it accepted the CURRENT pair (null when no pair is configured). Matching is by
+   * the exact pair: a changed text under a new version is a new pair, so an older acceptance never counts as the new one.
+   */
+  async #consentView(context: TransactionContext, userId: string): Promise<JsonObject> {
+    const history = await this.reader.consentHistory(context, userId);
+    const current = this.#currentConsent;
+    return {
+      current: current === undefined ? null : { terms_version: current.termsVersion, privacy_version: current.privacyVersion },
+      accepted_current: current === undefined ? null : history.some((row) => row.termsVersion === current.termsVersion && row.privacyVersion === current.privacyVersion),
+      history: history.map((row) => ({ terms_version: row.termsVersion, privacy_version: row.privacyVersion, accepted_at: iso(row.acceptedAtMs), client_app: row.clientApp })),
+    };
   }
 
   async listAdministrators(sessionToken: string | undefined, query: AdministratorListQuery): Promise<JsonObject> {

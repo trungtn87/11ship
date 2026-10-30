@@ -39,6 +39,8 @@ const identity = (over = {}) => ({
   onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
   onboarding_required: false,
   role_selection_required: false,
+
+  phone_verification_status: 'VERIFIED',
   ...over,
 });
 const expiresIn = (ms) => new Date(Date.now() + ms).toISOString();

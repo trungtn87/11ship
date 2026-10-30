@@ -27,6 +27,7 @@ class Identity {
     this.shopOnboarding = 'NOT_STARTED',
     this.driverOnboarding = 'NOT_STARTED',
     this.lockedWalletOnly = false,
+    this.phoneVerification = 'VERIFIED',
   });
 
   final String userId;
@@ -47,6 +48,12 @@ class Identity {
   /// The account is locked and only the wallet is left to it (a driver: balance, history, withdrawal). The server says so with
   /// account_status LOCKED and limited_access WALLET_ONLY; absent for every other identity.
   final bool lockedWalletOnly;
+
+  /// VERIFIED / UNVERIFIED / UNVERIFIED_TEST as the server reports it (phone_verification_status). UNVERIFIED = the account was made while
+  /// the registration OTP was off: it stays so until a real proof exists. A reply without the field is read as VERIFIED (older server).
+  final String phoneVerification;
+
+  bool get phoneUnverified => phoneVerification != 'VERIFIED';
 
   static Identity? tryParse(Object? data) {
     if (data is! Map<String, Object?>) {
@@ -88,6 +95,7 @@ class Identity {
       roleSelectionRequired: roleSelection is bool && roleSelection,
       sessionExpiresAt: expires,
       lockedWalletOnly: data['account_status'] == 'LOCKED' && data['limited_access'] == 'WALLET_ONLY',
+      phoneVerification: data['phone_verification_status'] is String ? data['phone_verification_status']! as String : 'VERIFIED',
     );
   }
 

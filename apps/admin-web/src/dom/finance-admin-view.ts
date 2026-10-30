@@ -247,7 +247,7 @@ export class TopupListView {
   }
 
   #draw(state: { kind: 'loading' } | { kind: 'empty' } | { kind: 'rows' } | { kind: 'read'; read: Exclude<FinanceRead<unknown>, { kind: 'ready' }> }): void {
-    const columns: readonly Column[] = [{ label: 'Thời gian' }, { label: 'Mã yêu cầu' }, { label: 'Shipper (ID)' }, { label: 'Tiền đề nghị', end: true }, { label: 'Tiền thực nhận', end: true }, { label: 'Trạng thái' }, { label: '', end: true }];
+    const columns: readonly Column[] = [{ label: 'Thời gian' }, { label: 'Mã yêu cầu' }, { label: 'Nội dung CK' }, { label: 'Shipper (ID)' }, { label: 'Tiền đề nghị', end: true }, { label: 'Tiền thực nhận', end: true }, { label: 'Trạng thái' }, { label: '', end: true }];
     const caption = 'Yêu cầu nạp tiền';
     switch (state.kind) {
       case 'loading':
@@ -273,6 +273,7 @@ export class TopupListView {
             {},
             cell('Thời gian', when(item.createdAt)),
             cell('Mã yêu cầu', h('code', { title: item.requestId }, shortId(item.requestId))),
+            cell('Nội dung CK', item.transferCode === undefined || item.transferCode === null ? '—' : h('code', {}, item.transferCode)),
             cell('Shipper (ID)', h('code', { title: item.driverId }, shortId(item.driverId))),
             cell('Tiền đề nghị', formatVndAmount(item.requestedVnd)),
             cell('Tiền thực nhận', item.actualVnd === null ? '—' : formatVndAmount(item.actualVnd)),
@@ -410,6 +411,7 @@ export class TopupDetailView {
         definition([
           ['Trạng thái', stateBadge(detail.state)],
           ['Shipper (ID)', detail.driverId],
+          ['Nội dung chuyển khoản', detail.transferCode ?? 'Không có (yêu cầu cũ)'],
           ['Tiền đề nghị', formatVndAmount(detail.requestedVnd)],
           ['Tiền thực nhận', detail.actualVnd === null ? '—' : formatVndAmount(detail.actualVnd)],
           ['Tiền về lúc', when(detail.receivedAt)],

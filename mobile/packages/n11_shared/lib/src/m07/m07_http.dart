@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../m13/m13_ops.dart' show OpsClient;
 import '../m10/m10_http.dart' show HttpOrderChatApi;
 import '../m10/order_chat_models.dart' show OrderChatApi;
 import 'm07_models.dart';
@@ -56,7 +57,14 @@ Future<Object?> _call(SessionController session, String method, String path, {Ob
     }
     return response.data;
   } on Object catch (error) {
-    throw _failureOf(error);
+    final M07Failure failure = _failureOf(error);
+    // A write the server answered with an error (or with something the app cannot read) is reported; a lost connection, a refusal such as "already taken" and
+    // an ended session are expected outcomes and are not.
+    final bool serverFault = failure.kind == M07FailureKind.server || (error is AuthFailure && !error.outcomeUnknown && (error.status ?? 0) >= 500);
+    if (method != 'GET' && serverFault) {
+      OpsClient.reportActionFailure(method, path, reason: error is AuthFailure ? 'HTTP ${error.status ?? 0}' : (failure.code ?? 'SERVER'));
+    }
+    throw failure;
   }
 }
 
@@ -64,6 +72,7 @@ DeliveryView _delivery(Object? data) {
   try {
     return DeliveryView.fromJson(data is Map<String, Object?> && data['delivery'] != null ? data['delivery'] : data);
   } on FormatException {
+    OpsClient.report(kind: 'ACTION_ERROR', code: 'DELIVERY_BAD_RESPONSE', message: 'The delivery answer could not be read');
     throw const M07Failure(M07FailureKind.server, code: 'BAD_RESPONSE');
   }
 }

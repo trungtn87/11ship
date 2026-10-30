@@ -143,6 +143,9 @@ export const APP_ERROR_DEFINITIONS = {
   // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
   WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
   WITHDRAWAL_INSUFFICIENT_AVAILABLE: { status: 409, message: 'The available balance is not enough for this withdrawal' },
+  // Owner lock 2026-10-28 (#255): a new withdrawal exists only while the Shipper is CLOSING; a new top-up request does not once the closure is asked (#256).
+  WITHDRAWAL_ONLY_WHEN_CLOSING: { status: 409, message: 'A withdrawal can only be requested while the account is being closed' },
+  TOPUP_NOT_ALLOWED_WHEN_CLOSING: { status: 409, message: 'New top-up requests are not accepted while the account is being closed' },
   WITHDRAWAL_BANK_NOT_VERIFIED: { status: 409, message: 'A verified bank account is needed to withdraw' },
   WITHDRAWAL_NOT_FOUND: { status: 404, message: 'The withdrawal was not found' },
   WITHDRAWAL_STATE_CONFLICT: { status: 409, message: 'The withdrawal is not in a state that allows this action' },
@@ -287,7 +290,9 @@ export const APP_ERROR_DEFINITIONS = {
   USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
   USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
   // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
-  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders or deliveries being processed' },
+  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
+  // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
+  USER_ACCOUNT_ACTIVITY_UNVERIFIED: { status: 503, message: 'The orders, deliveries and records of the account could not be verified; nothing was changed' },
   USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
 
   // SYSTEM settings (Owner decision 2026-10-14). Fixed messages; nothing the client sent is echoed.

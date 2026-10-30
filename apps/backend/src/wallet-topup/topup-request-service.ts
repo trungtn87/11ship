@@ -14,6 +14,7 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { TopupRequestRepository, TopupRequestRow } from '../wallet/topup-request-repository';
 import { WalletService } from '../wallet/wallet-service';
+import { topupTransferCodeOf } from './topup-transfer-code';
 import { encodeCursor, TopupListQuery } from './topup-request-validation';
 
 const SCOPE_TYPE = 'user';
@@ -92,6 +93,11 @@ export class TopupRequestService {
       },
       async (context) => {
         const { actor, driver } = await this.#writer(context, principal);
+        // Owner lock 2026-10-28 (#256): no NEW request once the closure is asked. Decided here, under the driver row lock, so a create racing the move to CLOSING
+        // is serialized with it. Not in #writer: a replay of a request committed before CLOSING must still answer, and a PENDING one can still be cancelled.
+        if (driver.status === 'CLOSING') {
+          throw new AppError('TOPUP_NOT_ALLOWED_WHEN_CLOSING');
+        }
         // The minimum is read from the database at this moment; a request made before a change keeps the amount it was made with.
         const limits = await this.limits.limits(context);
         if (amountVnd < limits.topupMinVnd) {
@@ -233,6 +239,7 @@ function assertUsable(driver: DriverRow | undefined): DriverRow {
 function view(row: TopupRequestRow): JsonObject {
   return {
     request_id: row.requestId,
+    transfer_code: topupTransferCodeOf(row.requestId),
     amount_requested_vnd: Number(row.amountRequestedVnd),
     state: row.state,
     version: row.version,

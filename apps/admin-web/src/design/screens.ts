@@ -140,6 +140,7 @@ function screenIdOf(route: Route): { id: string; variant?: string } {
     case 'shipping-policy':
     // M13 pages show real data only; the preview has no sample for them.
     case 'ops':
+    case 'ops-vps':
     case 'ops-incidents':
     case 'ops-incident':
     case 'ops-gateway':

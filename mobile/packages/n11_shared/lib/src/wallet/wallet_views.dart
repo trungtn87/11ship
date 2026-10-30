@@ -326,6 +326,27 @@ class WalletHomeScreen extends StatefulWidget {
 class _WalletHomeScreenState extends State<WalletHomeScreen> {
   int _rev = 0;
 
+  /// What the server said about the profile with the balance: new top-ups are not taken once the closure is asked (the server refuses them anyway).
+  final ValueNotifier<bool> _topupBlocked = ValueNotifier<bool>(false);
+
+  @override
+  void dispose() {
+    _topupBlocked.dispose();
+    super.dispose();
+  }
+
+  Widget _balance(Wallet wallet) {
+    final bool blocked = wallet.topupBlocked;
+    if (_topupBlocked.value != blocked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _topupBlocked.value = blocked;
+        }
+      });
+    }
+    return _BalanceCard(wallet: wallet);
+  }
+
   Future<void> _refresh() async {
     if (mounted) {
       setState(() => _rev++);
@@ -341,15 +362,19 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
   Widget build(BuildContext context) {
     final WalletSource source = widget.source;
     return _page(source, 'Ví của tôi', <Widget>[
-      WalletLoader<Wallet>(key: ValueKey<String>('wallet-$_rev'), load: source.wallet, builder: (Wallet wallet) => _BalanceCard(wallet: wallet)),
-      Row(
-        children: <Widget>[
-          Expanded(child: N11Button(key: const Key('wallet-topup-button'), label: 'Nạp tiền', icon: Icons.south_west, onPressed: source.canWrite ? () => _open(TopupAmountScreen(source: source, minTopup: widget.minTopup)) : null)),
-          if (source.isSample) const SizedBox(width: N11Space.gap3),
-          if (source.isSample) Expanded(child: N11Button(key: const Key('wallet-withdraw-button'), label: 'Rút tiền', icon: Icons.north_east, kind: ButtonKind.secondary, onPressed: source.canWrite ? () => _open(WithdrawScreen(source: source, minWithdraw: widget.minWithdraw)) : null)),
-        ],
+      WalletLoader<Wallet>(key: ValueKey<String>('wallet-$_rev'), load: source.wallet, builder: _balance),
+      // No withdraw button here: money is paid out only as a whole, while the account is being closed (Hoạt động → Dừng hoạt động).
+      ValueListenableBuilder<bool>(
+        valueListenable: _topupBlocked,
+        builder: (BuildContext context, bool blocked, Widget? _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            N11Button(key: const Key('wallet-topup-button'), label: 'Nạp tiền', icon: Icons.south_west, onPressed: source.canWrite && !blocked ? () => _open(TopupAmountScreen(source: source, minTopup: widget.minTopup)) : null),
+            if (blocked) const ReasonNote('Đang đóng hoạt động, không thể tạo yêu cầu nạp mới. Bạn vẫn xem được số dư, lịch sử và các yêu cầu nạp đã tạo.', key: Key('wallet-topup-closing-note')),
+          ],
+        ),
       ),
-      if (!source.isSample && source.canWrite) const ReasonNote('Để rút toàn bộ số dư, mở Tài khoản → Dừng hoạt động / Rút tiền.'),
+      if (!source.isSample && source.canWrite) const ReasonNote('Để nhận lại toàn bộ số dư, mở Hoạt động → Dừng hoạt động. Rút từng phần không được hỗ trợ.'),
       if (!source.canWrite) ReasonNote('${source.notWiredReason} Nạp và rút tiền chưa dùng được.'),
       LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -463,6 +488,7 @@ class TopupAmountScreen extends StatefulWidget {
 class _TopupAmountScreenState extends State<TopupAmountScreen> {
   final TextEditingController _amount = TextEditingController();
   WalletLoad<BankTransferInfo> _info = WalletLoading<BankTransferInfo>();
+  bool _closing = false;
   String? _error;
 
   @override
@@ -484,8 +510,17 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
     } catch (_) {
       result = WalletFailed<BankTransferInfo>('Không đọc được thông tin chuyển khoản. Vui lòng thử lại.');
     }
+    // A stale screen or route cannot get past the server, but it should not invite a request the server will refuse.
+    bool closing = false;
+    try {
+      final WalletLoad<Wallet> wallet = await widget.source.wallet();
+      closing = wallet is WalletReady<Wallet> && wallet.value.topupBlocked;
+    } catch (_) {}
     if (mounted) {
-      setState(() => _info = result);
+      setState(() {
+        _info = result;
+        _closing = closing;
+      });
     }
   }
 
@@ -509,6 +544,9 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
 
   Future<void> _continue() async {
     final WalletLoad<BankTransferInfo> state = _info;
+    if (_closing) {
+      return;
+    }
     final String? problem = _validate();
     if (problem != null) {
       setState(() => _error = problem);
@@ -544,11 +582,11 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
         hint: _error ?? 'Tối thiểu ${formatWalletVnd(_min)} mỗi lần nạp',
         onChanged: () => setState(() => _error = null),
       ),
-      const Text('Thông tin chuyển khoản', style: N11Text.h2),
-      if (state is WalletReady<BankTransferInfo>) _TransferCard(info: state.value) else walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
-      if (state is WalletReady<BankTransferInfo>)
-        (source.isSample ? const _QrPlaceholder() : const ReasonNote('Mã QR chưa được hỗ trợ ở phiên bản này. Hãy chuyển khoản theo thông tin ở trên rồi bấm "Tôi đã chuyển tiền".', key: Key('topup-no-qr'))),
-      N11Button(key: const Key('topup-continue'), validate: true, label: 'Tôi đã chuyển tiền', onPressed: source.canWrite && state is WalletReady<BankTransferInfo> ? _continue : null),
+      if (_closing) const N11Banner(key: Key('topup-closing-banner'), kind: BannerKind.info, title: 'Đang đóng hoạt động', text: 'Đang đóng hoạt động, không thể tạo yêu cầu nạp mới.'),
+      // Request first: the request is created here and the transfer content (a code tied to it) is shown on its detail screen, where it can always be reopened.
+      if (state is! WalletReady<BankTransferInfo>) walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
+      const ReasonNote('Bấm "Tạo yêu cầu nạp" để nhận mã nội dung chuyển khoản. Tiền chỉ được cộng sau khi Admin đối chiếu giao dịch ngân hàng.', key: Key('topup-request-first-note')),
+      N11Button(key: const Key('topup-continue'), validate: true, label: 'Tạo yêu cầu nạp', onPressed: source.canWrite && !_closing && state is WalletReady<BankTransferInfo> ? _continue : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }
@@ -695,7 +733,6 @@ class _TopupConfirmScreenState extends State<TopupConfirmScreen> {
             _KV('Số tiền nạp', formatWalletVnd(widget.amount), valueKey: const Key('confirm-amount')),
             _KV('Ngân hàng', info.bankName),
             _KV('Số tài khoản nhận', info.accountNumber),
-            if (info.content != null) _KV('Nội dung', info.content!),
           ],
         ),
       ),
@@ -835,6 +872,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
                 ],
               ),
             ),
+            if (r.status == TopupStatus.pending) _PendingTransfer(source: source, request: r),
             if (source is HttpWalletSource) N11Button(label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
             if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
             if (r.canCancel) N11Button(key: const Key('topup-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite ? _cancel : null),
@@ -846,13 +884,45 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   }
 }
 
+/// Where and how to pay a PENDING request: the receiving account and the transfer content tied to this request. The code is the server's, the same on every read,
+/// so the screen restores it after a lost connection or a reopen. Money is credited only when an Admin matches the bank transaction.
+class _PendingTransfer extends StatelessWidget {
+  const _PendingTransfer({required this.source, required this.request});
+
+  final WalletSource source;
+  final TopupRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Text('Thông tin chuyển khoản', style: N11Text.h2),
+        WalletLoader<BankTransferInfo>(
+          key: ValueKey<String>('transfer-${request.code}'),
+          load: source.transferInfo,
+          builder: (BankTransferInfo info) => _TransferCard(
+            info: BankTransferInfo(bankName: info.bankName, accountNumber: info.accountNumber, holder: info.holder, content: request.transferCode ?? info.content),
+          ),
+        ),
+        if (request.transferCode != null) const ReasonNote('Nhập đúng nội dung chuyển khoản ở trên để Admin đối chiếu nhanh. Không ghi số điện thoại hay thông tin cá nhân vào nội dung.', key: Key('topup-transfer-note')),
+        source.isSample ? const _QrPlaceholder() : const ReasonNote('Mã QR chưa được hỗ trợ ở phiên bản này. Hãy chuyển khoản theo thông tin ở trên.', key: Key('topup-no-qr')),
+      ],
+    );
+  }
+}
+
 // ---- M04-S05: Rút tiền -----------------------------------------------------------------------------------------------
 
 class WithdrawScreen extends StatefulWidget {
   const WithdrawScreen({super.key, required this.source, this.minWithdraw, this.closing = false});
 
   final WalletSource source;
+
+  /// Kept for callers that still pass it; the closing withdrawal is always the whole balance, so no minimum applies (Owner lock 2026-10-28).
   final int? minWithdraw;
+
+  /// True only from the closing flow. Anywhere else (a stale route, a direct open) the screen shows why nothing can be requested and offers no form.
   final bool closing;
 
   @override
@@ -860,7 +930,6 @@ class WithdrawScreen extends StatefulWidget {
 }
 
 class _WithdrawScreenState extends State<WithdrawScreen> {
-  final TextEditingController _amount = TextEditingController();
   WalletLoad<Wallet> _wallet = WalletLoading<Wallet>();
   WalletLoad<ReceivingAccount> _account = WalletLoading<ReceivingAccount>();
   bool _busy = false;
@@ -870,12 +939,6 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   void initState() {
     super.initState();
     _fetch();
-  }
-
-  @override
-  void dispose() {
-    _amount.dispose();
-    super.dispose();
   }
 
   Future<void> _fetch() async {
@@ -894,7 +957,6 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     if (mounted) {
       setState(() {
         _wallet = wallet;
-      if (widget.closing && wallet is WalletReady<Wallet>) _amount.text = wallet.value.available.toString();
         _account = account;
       });
     }
@@ -908,37 +970,28 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     _fetch();
   }
 
-  int? get _available {
+  /// The whole balance: a closing withdrawal is never partial. (Held money makes the server refuse it until it is settled.)
+  int? get _total {
     final WalletLoad<Wallet> w = _wallet;
-    return w is WalletReady<Wallet> ? w.value.available : null;
+    return w is WalletReady<Wallet> ? w.value.total : null;
   }
 
-  int get _min => widget.closing ? 1 : (widget.minWithdraw ?? widget.source.minWithdraw);
-
-  /// Live message under the field; null when the amount is empty or acceptable.
-  String? get _problem {
-    final int? value = parseVndInput(_amount.text);
-    final int? available = _available;
-    if (_amount.text.trim().isEmpty) {
-      return null;
-    }
-    if (value == null || value < _min) {
-      return 'Số tiền rút tối thiểu ${formatWalletVnd(_min)}.';
-    }
-    if (available != null && value > available) {
-      return 'Số dư khả dụng không đủ.';
-    }
-    return null;
+  /// The server's status wins over what opened the screen: a profile known not to be CLOSING cannot withdraw even through a stale route.
+  bool get _allowed {
+    final WalletLoad<Wallet> w = _wallet;
+    final String? status = w is WalletReady<Wallet> ? w.value.driverStatus : null;
+    return widget.closing && (status == null || status == 'CLOSING');
   }
 
   bool get _canSubmit {
-    return widget.source.canWrite && _account is WalletReady<ReceivingAccount> && _available != null && !_busy;
+    final int? total = _total;
+    return _allowed && widget.source.canWrite && _account is WalletReady<ReceivingAccount> && total != null && total > 0 && !_busy;
   }
 
   Future<void> _submit() async {
     final WalletWrites? writes = widget.source.writes;
-    final int? value = parseVndInput(_amount.text);
-    if (writes == null || value == null || _problem != null) {
+    final int? total = _total;
+    if (writes == null || total == null || total < 1 || !_allowed) {
       return;
     }
     setState(() {
@@ -946,7 +999,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       _submitError = null;
     });
     try {
-      final WithdrawalRequest created = await writes.createWithdrawal(widget.closing ? _available! : value);
+      final WithdrawalRequest created = await writes.createWithdrawal(total);
       if (!mounted) {
         return;
       }
@@ -966,7 +1019,17 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     final WalletSource source = widget.source;
     final WalletLoad<Wallet> wallet = _wallet;
     final WalletLoad<ReceivingAccount> account = _account;
-    final String? problem = _problem;
+    final int? total = _total;
+    if (wallet is WalletReady<Wallet> && !_allowed) {
+      return _page(source, 'Rút tiền', <Widget>[
+        const N11Banner(
+          key: Key('withdraw-blocked'),
+          kind: BannerKind.info,
+          title: 'Chỉ rút tiền khi dừng hoạt động',
+          text: 'Số dư được hoàn lại toàn bộ khi bạn gửi yêu cầu dừng hoạt động. Mở Hoạt động → Dừng hoạt động để bắt đầu.',
+        ),
+      ]);
+    }
     return _page(source, 'Rút tiền', <Widget>[
       if (wallet is WalletReady<Wallet>)
         Container(
@@ -975,27 +1038,15 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Số dư khả dụng', style: N11Text.label),
-              Text(formatWalletVnd(wallet.value.available), key: const Key('withdraw-available'), style: N11Text.title),
+              const Text('Số tiền sẽ được rút (toàn bộ số dư)', style: N11Text.label),
+              Text(formatWalletVnd(wallet.value.total), key: const Key('withdraw-available'), style: N11Text.title),
+              if (wallet.value.held > 0) const ReasonNote('Còn tiền đang tạm giữ. Chỉ rút được khi khoản tạm giữ đã được xử lý xong.', key: Key('withdraw-held-note')),
+              if (wallet.value.total == 0) const ReasonNote('Số dư bằng 0 nên không cần rút tiền. Bạn có thể chờ Admin hoàn tất đóng hoạt động.', key: Key('withdraw-zero-note')),
             ],
           ),
         )
       else
         walletStateView<Wallet>(wallet, retry: _retry) ?? const SizedBox.shrink(),
-      N11Field(
-        validator: (String value) => value.trim().isEmpty ? 'Nhập số tiền muốn rút.' : _problem,
-        fieldKey: const Key('withdraw-amount'),
-        label: widget.closing ? 'Rút toàn bộ số dư khả dụng' : 'Số tiền muốn rút',
-        enabled: !widget.closing,
-        controller: _amount,
-        keyboard: TextInputType.number,
-        placeholder: '100.000',
-        maxLength: 12,
-        suffix: const Padding(padding: EdgeInsets.only(right: 14), child: Center(widthFactor: 1, child: Text('đ', style: N11Text.bodyStrong))),
-        tone: problem == null ? FieldTone.normal : FieldTone.error,
-        hint: problem ?? 'Tối thiểu ${formatWalletVnd(_min)} mỗi lần rút',
-        onChanged: () => setState(() {}),
-      ),
       const Text('Tài khoản nhận tiền', style: N11Text.h2),
       if (account is WalletReady<ReceivingAccount>)
         N11Card(
@@ -1021,7 +1072,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       else
         walletStateView<ReceivingAccount>(account, retry: _retry, keyPrefix: 'account', emptyIcon: Icons.account_balance_outlined, emptyTitle: 'Chưa có tài khoản nhận tiền', emptyText: 'Thêm tài khoản ngân hàng trong hồ sơ shipper trước khi rút tiền.') ?? const SizedBox.shrink(),
       if (_submitError != null) N11Banner(key: const Key('withdraw-submit-error'), kind: BannerKind.error, title: 'Chưa gửi được', text: _submitError),
-      N11Button(key: const Key('withdraw-submit'), validate: true, label: 'Yêu cầu rút tiền', loading: _busy, onPressed: _canSubmit ? _submit : null),
+      N11Button(key: const Key('withdraw-submit'), label: total == null ? 'Yêu cầu rút tiền' : 'Rút toàn bộ ${formatWalletVnd(total)}', loading: _busy, onPressed: _canSubmit ? _submit : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
     ]);
   }

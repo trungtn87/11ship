@@ -62,6 +62,7 @@ export type Route =
   | { readonly name: 'wallet-params' }
   // M13 "Vận hành hệ thống": overview, incidents (list and one), SMS Gateway, log, versions & updates, configuration & maintenance.
   | { readonly name: 'ops' }
+  | { readonly name: 'ops-vps' }
   | { readonly name: 'ops-incidents' }
   | { readonly name: 'ops-incident'; readonly ref: string }
   | { readonly name: 'ops-gateway' }
@@ -259,6 +260,8 @@ function parseOpsRoute(path: string): Route | undefined {
   switch (path) {
     case '/system-ops':
       return { name: 'ops' };
+    case '/system-ops/vps':
+      return { name: 'ops-vps' };
     case '/system-ops/incidents':
       return { name: 'ops-incidents' };
     case '/system-ops/gateway':
@@ -436,6 +439,8 @@ export function formatRoute(route: Route): string {
       return '/system/parameters/wallet';
     case 'ops':
       return '/system-ops';
+    case 'ops-vps':
+      return '/system-ops/vps';
     case 'ops-incidents':
       return '/system-ops/incidents';
     case 'ops-incident':
