@@ -326,7 +326,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#276](https://github.com/trungtn87/11ship/pull/276) (Nhóm 22) Sửa đơn chờ xác nhận và quán chốt tiền món (#238,… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `9271978` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#277](https://github.com/trungtn87/11ship/pull/277) (Nhóm 23) Mini Business: truy cập các tab và xử lý ngoại lệ… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `2b29c39` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#278](https://github.com/trungtn87/11ship/pull/278) (Nhóm 24) Phân tích vận hành và gắn cờ hành vi bất thường (… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `dcb1152` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#279](https://github.com/trungtn87/11ship/pull/279) (Nhóm 25) Căn chỉnh ảnh món đúng khung thực đơn (#245) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `bf55974` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#279](https://github.com/trungtn87/11ship/pull/279) (Nhóm 25) Căn chỉnh ảnh món đúng khung thực đơn (#245) | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `bf55974` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
