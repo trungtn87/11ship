@@ -86,7 +86,7 @@ export function parseTopup(value: unknown): TopupItem | undefined {
   ) {
     return undefined;
   }
-  return { requestId, driverId, requestedVnd: raw.amount_requested_vnd, actualVnd: actual, state: raw.state as TopupState, version: raw.version, createdAt, resolvedAt, receivedAt };
+  return { requestId, driverId, requestedVnd: raw.amount_requested_vnd, actualVnd: actual, state: raw.state as TopupState, version: raw.version, createdAt, resolvedAt, receivedAt, ...(typeof raw.transfer_code === 'string' && /^NAP[0-9A-F]{10}$/.test(raw.transfer_code) ? { transferCode: raw.transfer_code } : {}) };
 }
 
 export function parseTopupPage(data: Record<string, unknown>): TopupPage | undefined {

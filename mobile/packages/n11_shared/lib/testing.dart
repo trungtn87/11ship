@@ -771,9 +771,11 @@ class FakeDriverServer {
           profile!['accepting_deliveries'] = on;
         });
     transport.routes['POST /v1/driver/me/closure-request'] = (String m, String p, Map<String, String> h, String b) async => _command(p, b, (Map<String, Object?> body) {
-          if (profile!['status'] != 'ACTIVE') {
+          // Like the server: a SUSPENDED Shipper may close to get the balance back; the suspension reason stays and the status returns on cancel.
+          if (profile!['status'] != 'ACTIVE' && profile!['status'] != 'SUSPENDED') {
             throw StateError('DRIVER_STATE_CONFLICT');
           }
+          closureFrom = profile!['status'] as String;
           profile!['status'] = 'CLOSING';
           profile!['accepting_deliveries'] = false;
           closureNote = body['note'] as String?;
@@ -782,7 +784,7 @@ class FakeDriverServer {
           if (profile!['status'] != 'CLOSING') {
             throw StateError('DRIVER_STATE_CONFLICT');
           }
-          profile!['status'] = 'ACTIVE';
+          profile!['status'] = closureFrom;
           closureNote = null;
         });
   }
@@ -794,6 +796,7 @@ class FakeDriverServer {
   Map<String, Object?>? bank;
   bool walletReady = false;
   String? closureNote;
+  String closureFrom = 'ACTIVE';
 
   /// 11Ship: when on, the profile carries `presence` and switching on needs [locationReady] (a position reported and still fresh), like the server.
   bool sendPresence = false;
@@ -829,7 +832,7 @@ class FakeDriverServer {
     final String review = stored['review_state']! as String;
     final bool bankVerified = bank != null && bank!['verification_state'] == 'VERIFIED';
     final List<String> blocks = <String>[
-      if (status != 'ACTIVE') (status == 'PENDING' ? 'PROFILE_NOT_APPROVED' : 'ACCOUNT_SUSPENDED'),
+      if (status != 'ACTIVE') (status == 'PENDING' ? 'PROFILE_NOT_APPROVED' : (status == 'CLOSING' ? 'CLOSURE_REQUESTED' : 'ACCOUNT_SUSPENDED')),
       if (!walletReady) 'WALLET_NOT_AVAILABLE',
     ];
     final bool editable = status == 'PENDING' && (review == 'DRAFT' || review == 'REJECTED');
@@ -849,7 +852,7 @@ class FakeDriverServer {
         'blocks': blocks,
         'can_accept': status == 'ACTIVE' && walletReady,
       },
-      'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true} : null,
+      'closure': status == 'CLOSING' ? <String, Object?>{'requested_at': '2026-10-17T00:00:00.000Z', 'note': closureNote, 'can_cancel': true, 'from_status': closureFrom} : null,
       if (sendPresence)
         'presence': <String, Object?>{
           'intent_online': stored['accepting_deliveries'] == true,

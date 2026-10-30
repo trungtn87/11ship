@@ -133,7 +133,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   List<Widget> _form(DriverController c) {
     final bool busy = c.busy;
     return <Widget>[
-      const N11Heading('Thông tin shipper', sub: 'Dùng tài khoản 11Ship hiện tại, không cần đăng ký lại. Điền họ tên để tạo hồ sơ; bước sau là tài khoản ngân hàng rồi gửi xét duyệt.'),
+      const N11Heading('Thông tin shipper', sub: 'Dùng tài khoản 11Ship hiện tại, không cần đăng ký lại. Điền họ tên để tạo hồ sơ. Tài khoản ngân hàng chỉ cần khai báo khi bạn dừng hoạt động để nhận lại số dư.'),
       N11Field(requiredInput: true, fieldKey: const Key('driver-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () { c.fullName = _name.text; setState(() {}); }),
       N11Field(fieldKey: const Key('driver-plate'), label: 'Biển số xe', optionalLabel: true, placeholder: '59X1-123.45', controller: _plate, maxLength: 32, enabled: !busy, onChanged: () { c.plateNumber = _plate.text; setState(() {}); }),
       N11Button(
@@ -160,10 +160,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         ],
       ),
       if (_saved != null) N11Banner(key: const Key('driver-saved'), kind: BannerKind.success, title: _saved!),
-      if (profile.status == 'SUSPENDED') N11Banner(key: const Key('driver-suspended'), kind: BannerKind.error, title: 'Tài khoản đang bị tạm khóa', text: profile.suspensionReason == null ? null : 'Lý do: ${profile.suspensionReason}. Đơn đã nhận và số dư ví của bạn không bị ảnh hưởng.'),
-      if (profile.status == 'CLOSING') const N11Banner(key: Key('driver-closing'), kind: BannerKind.warn, title: 'Đang xin ngừng hoạt động', text: 'Bạn đã ngừng nhận đơn mới. Đơn đang giao vẫn cần hoàn tất.'),
+      if (profile.status == 'SUSPENDED') N11Banner(key: const Key('driver-suspended'), kind: BannerKind.error, title: 'Tài khoản đang bị tạm khóa', text: '${profile.suspensionReason == null ? '' : 'Lý do: ${profile.suspensionReason}. '}Đơn đã nhận và số dư ví của bạn không bị ảnh hưởng. Bạn vẫn gửi được yêu cầu dừng hoạt động để nhận lại số dư mà không cần mở khóa.'),
+      if (profile.status == 'CLOSING')
+        N11Banner(
+          key: const Key('driver-closing'),
+          kind: BannerKind.warn,
+          title: profile.closure?.fromSuspended == true ? 'Đang đóng để hoàn tiền' : 'Đang xin ngừng hoạt động',
+          text: profile.closure?.fromSuspended == true ? 'Tài khoản vẫn bị khóa nhận đơn. Đơn đang giao vẫn cần hoàn tất; số dư sẽ được hoàn sau khi Admin xác minh ngân hàng.' : 'Bạn đã ngừng nhận đơn mới. Đơn đang giao vẫn cần hoàn tất.',
+        ),
       if (profile.canEditProfile) ...<Widget>[
-        N11Field(requiredInput: true, fieldKey: const Key('driver-edit-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() => _saved = null)),
+        N11Field(requiredInput: true, fieldKey: const Key('driver-edit-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, hint: profile.status == 'ACTIVE' ? 'Chỉ sửa khi nhập sai. Đổi tên sẽ phải xác minh lại ngân hàng; yêu cầu rút đã lập vẫn giữ người nhận cũ.' : null, onChanged: () => setState(() => _saved = null)),
         N11Field(fieldKey: const Key('driver-edit-plate'), label: 'Biển số xe', optionalLabel: true, placeholder: '59X1-123.45', controller: _plate, maxLength: 32, enabled: !busy, onChanged: () => setState(() => _saved = null)),
         N11Button(
           key: const Key('driver-save-profile'), validate: true,
@@ -381,6 +387,7 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
         final DriverReadiness r = profile.readiness;
         final bool busy = c.busy;
         final bool active = profile.status == 'ACTIVE';
+        final bool suspended = profile.status == 'SUSPENDED';
         // Turning off is always possible; turning on only when the server says every condition holds.
         final bool canToggle = !busy && (profile.acceptingDeliveries || (active && r.canAccept));
         return N11FormScaffold(
@@ -416,20 +423,21 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
               onPressed: () => ShipperOperationalGuidanceSheet.show(context),
             ),
             const SizedBox(height: N11Space.gap3),
-            const N11Heading('Dừng hoạt động / Rút tiền', sub: 'Gửi yêu cầu nếu bạn không muốn làm shipper nữa. Đơn đang giao phải hoàn tất, số dư ví không bị mất.'),
+            const N11Heading('Dừng hoạt động / Rút tiền', sub: 'Chỉ rút tiền khi dừng hoạt động, và rút toàn bộ số dư. Đơn đang giao phải hoàn tất, số dư ví không bị mất.'),
             if (profile.status == 'CLOSING') ...<Widget>[
-              N11Banner(key: const Key('driver-closure-pending'), kind: BannerKind.warn, title: 'Đã gửi yêu cầu ngừng hoạt động', text: profile.closure?.note == null ? 'Bạn đã ngừng nhận đơn mới.' : 'Ghi chú: ${profile.closure!.note}'),
+              N11Banner(key: const Key('driver-closure-pending'), kind: BannerKind.warn, title: 'Đã gửi yêu cầu ngừng hoạt động', text: (profile.closure?.fromSuspended == true ? 'Tài khoản vẫn bị khóa; hủy yêu cầu sẽ quay lại trạng thái khóa. ' : '') + (profile.closure?.note == null ? 'Bạn đã ngừng nhận đơn mới.' : 'Ghi chú: ${profile.closure!.note}')),
               N11Button(key: const Key('closure-bank'), label: profile.bank == null ? 'Nhập ngân hàng nhận hoàn tiền' : 'Thông tin ngân hàng nhận hoàn tiền', kind: ButtonKind.secondary, onPressed: busy ? null : () => Navigator.of(context).push(n11Route(DriverBankScreen(controller: c)))),
               if (!(profile.bank?.verified ?? false)) const ReasonNote('Hoàn tất đơn và giao dịch đang chờ. Ngân hàng chính chủ cần được Admin xác minh trước khi yêu cầu hoàn tiền.'),
               if (widget.walletSource != null && (profile.bank?.verified ?? false))
                 N11Button(key: const Key('closure-withdraw'), label: 'Rút toàn bộ số dư ví', onPressed: busy ? null : () => Navigator.of(context).push(n11Route(WithdrawScreen(source: widget.walletSource!, closing: true)))),
               N11Button(key: const Key('closure-refresh'), label: 'Cập nhật trạng thái', kind: ButtonKind.secondary, onPressed: busy ? null : c.load),
               N11Button(key: const Key('driver-closure-undo'), label: 'Hủy yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy || !(profile.closure?.canCancel ?? false) ? null : c.cancelClosure),
-            ] else if (active) ...<Widget>[
+            ] else if (active || suspended) ...<Widget>[
+              if (suspended) const ReasonNote('Tài khoản đang bị khóa. Bạn vẫn gửi được yêu cầu dừng hoạt động để nhận lại số dư; việc này không mở khóa nhận đơn.', key: Key('driver-closure-suspended-note')),
               N11Field(fieldKey: const Key('driver-closure-note'), label: 'Ghi chú', optionalLabel: true, controller: _note, maxLength: 500, enabled: !busy),
               N11Button(key: const Key('driver-closure-request'), validate: true, label: 'Gửi yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy ? null : () => _confirmClosure(context, c)),
             ] else
-              const ReasonNote('Chỉ gửi được yêu cầu ngừng hoạt động khi hồ sơ đang hoạt động.'),
+              const ReasonNote('Chỉ gửi được yêu cầu ngừng hoạt động khi hồ sơ đang hoạt động hoặc đang bị khóa.'),
           ],
         );
       },

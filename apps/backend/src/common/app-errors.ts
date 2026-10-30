@@ -137,6 +137,9 @@ export const APP_ERROR_DEFINITIONS = {
   // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
   WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
   WITHDRAWAL_INSUFFICIENT_AVAILABLE: { status: 409, message: 'The available balance is not enough for this withdrawal' },
+  // Owner lock 2026-10-28 (#255): a new withdrawal exists only while the Shipper is CLOSING; a new top-up request does not once the closure is asked (#256).
+  WITHDRAWAL_ONLY_WHEN_CLOSING: { status: 409, message: 'A withdrawal can only be requested while the account is being closed' },
+  TOPUP_NOT_ALLOWED_WHEN_CLOSING: { status: 409, message: 'New top-up requests are not accepted while the account is being closed' },
   WITHDRAWAL_BANK_NOT_VERIFIED: { status: 409, message: 'A verified bank account is needed to withdraw' },
   WITHDRAWAL_NOT_FOUND: { status: 404, message: 'The withdrawal was not found' },
   WITHDRAWAL_STATE_CONFLICT: { status: 409, message: 'The withdrawal is not in a state that allows this action' },

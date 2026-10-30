@@ -109,7 +109,7 @@ export class AdminConfigService {
           'M03/M04',
           walletRows.reduce((sum, row) => sum + row.version, 0),
           maxMs(walletRows.map((row) => row.updatedAtMs)),
-          walletRows.map((row) => ({ key: row.key, label: row.key === 'topup_min_vnd' ? 'Nạp tối thiểu mỗi yêu cầu' : 'Rút tối thiểu mỗi yêu cầu', value: row.valueVnd, unit: 'đ' })),
+          walletRows.map((row) => ({ key: row.key, label: row.key === 'topup_min_vnd' ? 'Nạp tối thiểu mỗi yêu cầu' : 'Rút tối thiểu (tham số lịch sử, không áp dụng khi đóng hoạt động)', value: row.valueVnd, unit: 'đ' })),
           [
             // M04-C owns the commission as an append-only policy changed in Tài chính; each assignment snapshots the amount when it is accepted, so a new policy never changes a delivery already taken.
             { key: 'commission_vnd', label: `Hoa hồng mỗi đơn giao thành công (chính sách phiên bản ${String(commission.version)}, sửa ở Tài chính; chốt theo từng lần nhận)`, value: Number(commission.amountVnd), unit: 'đ' },
