@@ -84,6 +84,7 @@ void main() {
         'goods': <String, Object?>{'description': 'g', 'value_vnd': 1000, 'paid_vnd': 0},
         'fee': <String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'amount_vnd': null, 'status': 'UNKNOWN', 'distance_m': null, 'agreement': null, 'decider': 'SHOP', 'basis': null},
         'search': <String, Object?>{'started_at': '2026-10-18T09:00:00Z', 'expires_at': '2026-10-18T09:30:00Z', 'server_now': '2026-10-18T09:05:00Z', 'stopped_at': null},
+        'dropoff_note': 'Cổng xanh, gọi bảo vệ',
         'can': <String, Object?>{'cancel': true, 'recall': false, 'confirm_fee': true},
       });
       expect(d.state, DeliveryState.waitingDriver);
@@ -96,6 +97,7 @@ void main() {
       expect(d.allows('recall'), isFalse);
       expect(d.search.elapsedMinutes, 5);
       expect(d.goods.unpaidVnd, 1000);
+      expect(d.dropoffNote, 'Cổng xanh, gọi bảo vệ');
     });
 
     test('a body that is not the contract is refused, not half filled', () {
@@ -575,6 +577,174 @@ void main() {
         OfferView.fromJson(<String, Object?>{...offer, 'agreement': <String, Object?>{'state': 'PROPOSED', 'proposed_vnd': 1, 'reason_code': 'URGENT', 'expires_at': '2026-10-24T10:30:00Z'}}).canCounter,
         isTrue,
       );
+    });
+  });
+
+  group('PR #231: customer courier and COD', () {
+    testWidgets('Issue #212: OfferCard has no skip button, no dropoff area, and displays COD and recipient pays', (WidgetTester tester) async {
+      final OfferView offer = OfferView(
+        deliveryId: 'o-cod',
+        code: 'G-COD01',
+        shopName: 'Điểm gửi',
+        distanceToShopM: 1000,
+        dropoffAreaText: 'Khu vực bí mật',
+        destinationKnown: true,
+        goodsValueVnd: 0,
+        unpaidVnd: 0,
+        codVnd: 200000,
+        recipientPaysVnd: 220000,
+        feeVnd: 20000,
+        feeStatus: 'FINAL',
+        feePayer: 'RECIPIENT',
+        expiresAt: DateTime.utc(2026, 10, 30, 10),
+        serverNow: DateTime.utc(2026, 10, 30, 9),
+        eligible: true,
+      );
+      await mount(
+        tester,
+        Scaffold(
+          body: OfferCard(
+            offer: offer,
+            busy: false,
+            onAccept: () {},
+            onAgree: () {},
+            onSkip: () {},
+            onCounter: () {},
+          ),
+        ),
+      );
+      // Skip button must not exist
+      expect(key('m07-fee-skip'), findsNothing);
+      expect(find.text('Bỏ qua'), findsNothing);
+      // Dropoff area text must not exist
+      expect(find.text('Khu vực giao'), findsNothing);
+      expect(find.text('Khu vực bí mật'), findsNothing);
+      // COD and recipient pays are displayed
+      expect(find.text('Thu hộ (COD)'), findsOneWidget);
+      expect(find.text('200.000đ'), findsOneWidget);
+      expect(find.text('Người nhận trả'), findsOneWidget);
+      expect(find.text('220.000đ'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('Issue #212: askFeeProposal dialog renders compact layout, displays subtitle, and returns amount', (WidgetTester tester) async {
+      int? proposed;
+      await mount(
+        tester,
+        Builder(
+          builder: (BuildContext context) => ElevatedButton(
+            key: const Key('open-dialog'),
+            onPressed: () async {
+              proposed = await askFeeProposal(context, currentFeeVnd: 15000, proposedFeeVnd: 20000, deciderText: 'khách');
+            },
+            child: const Text('Open'),
+          ),
+        ),
+      );
+      await tap(tester, key('open-dialog'));
+      expect(find.text('Đề xuất mức phí'), findsOneWidget);
+      expect(find.text('Phí hiện tại: 15.000đ · Đang đề xuất: 20.000đ'), findsOneWidget);
+      await tester.enterText(key('m07-counter-amount'), '25000');
+      await tap(tester, key('m07-counter-send'));
+      expect(proposed, 25000);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerCallScreen: creates delivery without GPS and calculates recipient total', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerCallScreen(source: source));
+      expect(find.text('Ghim vị trí lấy hàng (tùy chọn)'), findsOneWidget);
+      expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
+      await tester.enterText(key('m07-c-sender-phone'), '0901234567');
+      await tester.enterText(key('m07-c-pickup-addr'), 'Số 1 Phố Huế');
+      await tester.enterText(key('m07-c-recip-name'), 'Người nhận A');
+      await tester.enterText(key('m07-c-recip-phone'), '0987654321');
+      await tester.enterText(key('m07-c-dropoff-addr'), 'Số 10 Phố Trúc');
+      await tester.enterText(key('m07-c-goods'), 'Hộp quà');
+      // Toggle COD
+      await tap(tester, find.text('Thu hộ tiền hàng (COD)'));
+      await tester.enterText(key('m07-c-cod-amount'), '200000');
+      // Set recipient pays fee
+      await tester.ensureVisible(find.text('Người nhận trả phí giao'));
+      await tap(tester, find.text('Người nhận trả phí giao'));
+      // Custom fee
+      await tester.enterText(key('m07-c-fee-amount'), '25000');
+      await settle(tester);
+      // Recipient total summary should show COD + fee
+      expect(find.textContaining('225.000đ (200.000đ COD + 25.000đ ship)'), findsOneWidget);
+      // Submit
+      await tap(tester, key('m07-c-submit'));
+      expect(find.text('Xác nhận gọi shipper?'), findsOneWidget);
+      await tap(tester, find.text('Gọi shipper ngay'));
+      await settle(tester);
+      final List<DeliveryView> active = await source.list(history: false);
+      expect(active.first.goods.codVnd, 200000);
+      expect(active.first.fee.agreement?.proposedVnd, 25000);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerDeliveryDetailScreen: shows COD, tracking link management, and no map when GPS missing', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-wait'));
+      expect(find.text('Thu hộ (COD)'), findsOneWidget);
+      expect(find.text('200.000đ'), findsWidgets);
+      expect(find.text('Theo dõi & Chia sẻ công khai'), findsOneWidget);
+      // Create link
+      await tap(tester, find.text('Tạo liên kết chia sẻ cho người nhận'));
+      expect(find.textContaining('https://11ship.app/track/sample-track-cd-wait'), findsOneWidget);
+      // Revoke link
+      await tap(tester, find.text('Thu hồi liên kết chia sẻ'));
+      expect(find.text('Tạo liên kết chia sẻ cho người nhận'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerDeliveryDetailScreen: displays shipper card, chat, and live location toggle when GPS present', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-run'));
+      expect(find.text('Shipper phụ trách'), findsOneWidget);
+      expect(find.text('Shipper Mẫu'), findsOneWidget);
+      expect(find.text('SĐT: 0900000003'), findsOneWidget);
+      expect(find.text('Biển số: 11A-000.00'), findsOneWidget);
+      // Create link and toggle live location on GPS-enabled delivery
+      await tap(tester, find.text('Tạo liên kết chia sẻ cho người nhận'));
+      await tap(tester, find.text('Chia sẻ vị trí shipper trực tiếp'));
+      expect(find.text('Thu hồi liên kết chia sẻ'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerDeliveryDetailScreen: handles counter fee accept', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-counter'));
+      expect(find.text('Shipper đề xuất phí mới'), findsOneWidget);
+      expect(find.text('30.000đ'), findsWidgets);
+      expect(find.byKey(const Key('customer-counter-accept')), findsOneWidget);
+      expect(find.byKey(const Key('customer-counter-reject')), findsOneWidget);
+      await tap(tester, find.byKey(const Key('customer-counter-accept')));
+      await settle(tester);
+      final DeliveryView updated = await source.get('cd-counter');
+      expect(updated.fee.status, 'FINAL');
+      expect(updated.fee.amountVnd, 30000);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerOrdersTab: switches between food orders and direct delivery calls', (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+      final SampleOrderStore store = SampleOrderStore();
+      final SampleCustomerOrders customer = SampleCustomerOrders(store);
+      final CartController cart = CartController(source: customer);
+      final OrderRuntime runtime = OrderRuntime(
+        customer: customer,
+        shop: SampleShopOrders(store),
+        cart: cart,
+      );
+      await mount(tester, Scaffold(body: CustomerOrdersTab(runtime: runtime, deliveries: source)));
+      expect(find.text('Đơn món'), findsOneWidget);
+      expect(find.text('Giao hàng'), findsOneWidget);
+      await tap(tester, find.text('Giao hàng'));
+      expect(key('m07-customer-call-shipper'), findsOneWidget);
+      expect(find.text('Đang xử lý'), findsOneWidget);
+      expect(find.text('Lịch sử'), findsOneWidget);
+      await unmount(tester);
     });
   });
 

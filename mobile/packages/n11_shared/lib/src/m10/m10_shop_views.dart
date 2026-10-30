@@ -1,3 +1,5 @@
+import '../address_change/address_change_widgets.dart';
+import '../guidance/order_incident_guidance.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -131,7 +133,10 @@ class _ShopOrderListState extends State<ShopOrderList> {
       statuses: _orderStatusOptions,
     );
     if (mounted && next != null) {
-      setState(() { _filters = next; _offset = 0; });
+      setState(() {
+        _filters = next;
+        _offset = 0;
+      });
     }
   }
 
@@ -158,7 +163,10 @@ class _ShopOrderListState extends State<ShopOrderList> {
                 key: const Key('shop-orders-search'),
                 controller: _search,
                 textInputAction: TextInputAction.search,
-                onSubmitted: (String value) => setState(() { _query = value.trim(); _offset = 0; }),
+                onSubmitted: (String value) => setState(() {
+                  _query = value.trim();
+                  _offset = 0;
+                }),
                 decoration: InputDecoration(
                   hintText: 'Tìm mã đơn hoặc tên người nhận',
                   prefixIcon: const Icon(Icons.search),
@@ -189,8 +197,7 @@ class _ShopOrderListState extends State<ShopOrderList> {
           builder: (BuildContext context, OrderList list, Future<void> Function() reload) => vstack(<Widget>[
             if (list.orders.isEmpty) ...<Widget>[
               const EmptyState(key: Key('shop-orders-empty'), icon: Icons.receipt_long_outlined, title: 'Không có đơn phù hợp', text: 'Hãy thử tìm kiếm hoặc thay đổi bộ lọc.'),
-              if (_filters.isActive || _query.isNotEmpty)
-                TextButton(key: const Key('shop-orders-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
+              if (_filters.isActive || _query.isNotEmpty) TextButton(key: const Key('shop-orders-clear-filters'), onPressed: _reset, child: const Text('Xóa bộ lọc')),
             ] else
               for (final OrderSummary o in list.orders)
                 OrderSummaryCard(
@@ -204,19 +211,21 @@ class _ShopOrderListState extends State<ShopOrderList> {
             if (_offset > 0 || list.orders.length == 50)
               Row(
                 children: <Widget>[
-                  if (_offset > 0) TextButton(
-                    key: const Key('shop-orders-page-previous'),
-                    onPressed: () => setState(() => _offset -= 50),
-                    child: const Text('Trang trước'),
-                  ),
+                  if (_offset > 0)
+                    TextButton(
+                      key: const Key('shop-orders-page-previous'),
+                      onPressed: () => setState(() => _offset -= 50),
+                      child: const Text('Trang trước'),
+                    ),
                   const Spacer(),
                   Text('Trang ${_offset ~/ 50 + 1}', style: N11Text.caption),
                   const Spacer(),
-                  if (list.orders.length == 50) TextButton(
-                    key: const Key('shop-orders-page-next'),
-                    onPressed: () => setState(() => _offset += 50),
-                    child: const Text('Trang sau'),
-                  ),
+                  if (list.orders.length == 50)
+                    TextButton(
+                      key: const Key('shop-orders-page-next'),
+                      onPressed: () => setState(() => _offset += 50),
+                      child: const Text('Trang sau'),
+                    ),
                 ],
               ),
           ]),
@@ -284,7 +293,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   Future<void> _confirm(OrderView o) async {
     String? reason;
     if (o.edited) {
-      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được chỉnh. Khách sẽ thấy bản ban đầu, bản chốt và lý do này.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
+      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được sửa. Khách sẽ thấy bản ban đầu, bản chốt và lý do này.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
       if (reason == null) {
         return;
       }
@@ -300,6 +309,18 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   }
 
   Future<void> _call(OrderView o) async {
+    if (o.money.fee.customerProposed) {
+      final int proposed = o.money.fee.estimateVnd ?? 0;
+      final String? payer = await showDecision(
+        context,
+        title: 'Gọi shipper',
+        text: 'Khách đã chủ động đề xuất tổng phí giao ${m10Money(proposed)} và khách là người trả khoản này. Quán không bị chuyển khoản phí hoặc tiền cảm ơn sang mình.',
+        dismissible: true,
+        actions: const <DialogAction>[DialogAction('Gọi shipper · Khách trả phí', 'CUSTOMER', kind: ButtonKind.primary, key: Key('call-payer-customer-proposed'))],
+      );
+      if (payer != null) await _callWith(o, payer, null);
+      return;
+    }
     final String? payer = await showDecision(
       context,
       title: 'Gọi shipper',
@@ -319,8 +340,9 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       try {
         await source.callShipper(o.orderId, feePayer: payer, agreedFee: fee, expectedVersion: o.version, key: key);
       } on M07Failure catch (failure) {
-        if (failure.code == 'FEE_REQUIRED') {
+        if (<String>{'FEE_REQUIRED', 'PICKUP_PIN_MISSING', 'DROPOFF_PIN_MISSING', 'ROUTE_UNAVAILABLE', 'ROUTE_TIMEOUT', 'OUT_OF_PRICE_RANGE', 'POLICY_NOT_CONFIGURED'}.contains(failure.code)) {
           needsFee = true;
+          if (mounted) m02Toast(context, _callQuoteFailure(failure.code));
           return;
         }
         rethrow;
@@ -334,6 +356,16 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
       }
     }
   }
+
+  String _callQuoteFailure(String? code) => switch (code) {
+        'PICKUP_PIN_MISSING' => 'Quán chưa có ghim lấy hàng; chưa thể tính tuyến.',
+        'DROPOFF_PIN_MISSING' => 'Khách chưa chọn ghim điểm giao; chưa thể tính tuyến.',
+        'ROUTE_TIMEOUT' => 'Tính tuyến hết thời gian chờ. Bạn có thể thử lại hoặc đề xuất phí.',
+        'ROUTE_UNAVAILABLE' => 'Tạm thời không tìm được tuyến. Bạn có thể thử lại hoặc đề xuất phí.',
+        'OUT_OF_PRICE_RANGE' => 'Tuyến nằm ngoài bảng giá; cần đề xuất phí thỏa thuận.',
+        'POLICY_NOT_CONFIGURED' => 'Chưa có bảng giá; cần đề xuất phí thỏa thuận.',
+        _ => 'Chưa tính được phí tự động; cần đề xuất phí thỏa thuận.',
+      };
 
   Future<void> _cancel(OrderView o) async {
     final String? reason = await showReasonDialog(
@@ -353,6 +385,19 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     if (reason != null) {
       await _run('close', (String key) => source.closeNotCompleted(o.orderId, reason: reason, expectedVersion: o.version, key: key));
     }
+  }
+
+  Future<void> _decideAddressChange(OrderView o, bool accept, String? reason) async {
+    await act('address-change-decide-$accept', (String key) async {
+      await source.decideAddressChange(
+        o.orderId,
+        accept: accept,
+        reason: reason,
+        expectedVersion: o.addressChange?.version ?? 1,
+        key: key,
+      );
+      await _fetcher.reload();
+    }, onConflict: _fetcher.reload);
   }
 
   Future<void> _edit(OrderView o) async {
@@ -375,11 +420,12 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
 
   Widget? _bottom(OrderView o) {
     final List<Widget> buttons = <Widget>[
-      if (o.allowed('confirm') && widget.runtime.newWorkBlocked())
-        const ReasonNote('Cần cập nhật ứng dụng trước khi nhận đơn mới. Các đơn đã nhận vẫn xử lý bình thường; bạn vẫn có thể từ chối đơn này.', key: Key('order-confirm-blocked'))
-      else if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã chỉnh' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
-      if (o.allowed('edit')) N11Button(key: const Key('order-edit'), label: 'Chỉnh đơn', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))),
-      if (o.allowed('reject')) DangerButton(label: 'Từ chối đơn', onPressed: busy ? null : () => unawaited(_reject(o))),
+      if (o.allowed('confirm') && widget.runtime.newWorkBlocked()) const ReasonNote('Cần cập nhật ứng dụng trước khi nhận đơn mới. Các đơn đã nhận vẫn xử lý bình thường; bạn vẫn có thể từ chối đơn này.', key: Key('order-confirm-blocked')) else if (o.allowed('confirm')) N11Button(key: const Key('order-confirm'), label: o.edited ? 'Xác nhận đơn đã sửa' : 'Xác nhận đơn', loading: busy, onPressed: () => unawaited(_confirm(o))),
+      if (o.allowed('edit') || o.allowed('reject'))
+        OrderActionsBar(
+          edit: o.allowed('edit') ? N11Button(key: const Key('order-edit'), label: 'Sửa đơn', icon: Icons.edit_outlined, kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))) : null,
+          destructive: o.allowed('reject') ? DangerButton(key: const Key('order-reject'), label: 'Từ chối đơn', outlined: false, onPressed: busy ? null : () => unawaited(_reject(o))) : null,
+        ),
       if (o.allowed('call_shipper')) N11Button(key: const Key('order-call'), label: o.deliveries.isEmpty ? 'Gọi shipper' : 'Gọi lại shipper', loading: busy, onPressed: () => unawaited(_call(o))),
       if (o.allowed('close_not_completed')) N11Button(key: const Key('order-close'), label: 'Đóng đơn "Không hoàn tất"', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_close(o))),
       if (o.allowed('cancel')) DangerButton(label: 'Hủy đơn món', onPressed: busy ? null : () => unawaited(_cancel(o))),
@@ -425,12 +471,18 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
           ],
         ),
       ),
+      if (o.addressChange != null)
+        AddressChangeBanner(
+          request: o.addressChange!,
+          canDecide: o.allowed('decide_address_change'),
+          onAccept: busy ? null : () => _decideAddressChange(o, true, null),
+          onReject: busy ? null : (String reason) => _decideAddressChange(o, false, reason),
+        ),
       if (o.scheduleConflict) const N11Banner(key: Key('order-schedule-conflict'), kind: BannerKind.warn, title: 'Giờ hẹn nằm ngoài giờ hoạt động mới', text: 'Quán đã đổi lịch sau khi nhận đơn. Đơn vẫn giữ nguyên, không tự hủy — hãy liên hệ khách để xử lý.'),
-      if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã chỉnh, bạn phải ghi lý do.'),
+      if (o.allowed('edit')) const N11Banner(key: Key('order-edit-note'), kind: BannerKind.info, title: 'Liên hệ khách trước khi đổi', text: 'Đổi nội dung hoặc tăng tiền cần được khách đồng ý trước. Khi xác nhận đơn đã sửa, bạn phải ghi lý do.'),
       if (o.display == DisplayStatus.searchStopped) const N11Banner(key: Key('order-search-stopped'), kind: BannerKind.warn, title: 'Chưa tìm được shipper', text: 'Đơn món vẫn còn. Bạn có thể gọi lại shipper hoặc hủy đơn món.'),
       if (o.display == DisplayStatus.deliveryFailed && !o.allowed('call_shipper')) const N11Banner(key: Key('order-goods-out'), kind: BannerKind.error, title: 'Hàng chưa về quán', text: 'Giao thất bại. Khi hàng còn ở shipper hoặc chưa rõ thì chưa gọi lại được. Xác nhận hàng đã về hoặc đã xử lý ở phần giao hàng.'),
-      if (o.display == DisplayStatus.delivering)
-        const N11Banner(key: Key('order-delivering-note'), kind: BannerKind.info, title: 'Shipper đã lấy hàng', text: 'Đơn này do khách đặt nên chỉ khách mới hủy được. Nếu shipper báo không giao được, hãy gọi khách và shipper để thống nhất.'),
+      if (o.display == DisplayStatus.delivering) const N11Banner(key: Key('order-delivering-note'), kind: BannerKind.info, title: 'Shipper đã lấy hàng', text: 'Đơn này do khách đặt nên chỉ khách mới hủy được. Nếu shipper báo không giao được, hãy gọi khách và shipper để thống nhất.'),
       // The customer: the number on the ORDER (the one the customer typed for the recipient), never the account's number.
       OrderSection(
         id: 'customer',
@@ -438,9 +490,24 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
         summary: [o.recipient.name, dialNumberText(o.recipient.phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
         initiallyExpanded: live,
         trailing: live ? QuickCall(phone: o.recipient.phone, who: 'khách') : null,
-        builder: (BuildContext _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]), if (o.note != null) Container(key: const Key('order-customer-note'), margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(N11Space.gap2), decoration: BoxDecoration(color: N11Colors.yellowFaint, borderRadius: BorderRadius.circular(kRadiusControl)), child: Text('Ghi chú của khách: ${o.note}', style: N11Text.body))]),
+        builder: (BuildContext _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          KeyValueRows(<(String, String)>[('Tên', o.recipient.name), ('Số điện thoại', o.recipient.phone), ('Địa chỉ', o.recipient.addressText)]),
+          if (o.note != null) Container(key: const Key('order-customer-note'), margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(N11Space.gap2), decoration: BoxDecoration(color: N11Colors.yellowFaint, borderRadius: BorderRadius.circular(kRadiusControl)), child: Text('Ghi chú của khách: ${o.note}', style: N11Text.body))
+        ]),
       ),
       if (d != null) _deliverySection(o, d),
+      OrderIncidentGuidance(
+        role: 'SHOP',
+        orderStatus: o.status,
+        deliveryState: d?.state.name,
+        hasShipper: d?.assignment != null,
+        customerPhone: o.recipient.phone,
+        shipperPhone: d?.assignment?.shipperPhone,
+        onCallCustomer: () => orderPhoneDialer.dial(o.recipient.phone),
+        onCallShipper: d?.assignment?.shipperPhone != null ? () => orderPhoneDialer.dial(d!.assignment!.shipperPhone!) : null,
+        incident: d?.incident,
+        isAfterPickup: d != null && ['delivering', 'completed', 'failed'].contains(d.state.name),
+      ),
       OrderSection(id: 'items', title: 'Món đã đặt', summary: orderLinesSummary(o.items, o.money.itemsVnd), initiallyExpanded: live, builder: (BuildContext _) => OrderLinesBody(key: const Key('m10-lines'), lines: o.items)),
       OrderSection(id: 'money', title: 'Tiền món và phí giao', summary: orderMoneySummary(o.money), initiallyExpanded: true, builder: (BuildContext _) => OrderMoneyBody(key: const Key('m10-money'), money: o.money, edited: o.edited)),
       OrderSection(id: 'other', title: 'Thông tin khác', summary: 'Đặt lúc ${m10When(o.createdAt)}', builder: (BuildContext _) => _otherInfo(o, d)),
@@ -448,7 +515,11 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
         OrderSection(
           id: 'map',
           title: 'Bản đồ giao hàng',
-          summary: !live ? 'Xem bản đồ · Đơn đã kết thúc' : d?.location != null ? 'Xem bản đồ · Đang theo dõi shipper' : 'Xem bản đồ · Chưa có vị trí shipper',
+          summary: !live
+              ? 'Xem bản đồ · Đơn đã kết thúc'
+              : d?.location != null
+                  ? 'Xem bản đồ · Đang theo dõi shipper'
+                  : 'Xem bản đồ · Chưa có vị trí shipper',
           // Closed by default: the heavy map is not built until the shop asks for it.
           builder: (BuildContext _) => OrderMapCard(
             framed: false,
@@ -564,14 +635,15 @@ class _EditSheetState extends State<_EditSheet> {
   @override
   Widget build(BuildContext context) {
     final List<LineEdit> changes = _changes();
-    return Form(child: Padding(
+    return Form(
+        child: Padding(
       padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, MediaQuery.of(context).viewInsets.bottom + N11Space.gap4),
       child: SingleChildScrollView(
         child: Column(
           key: const Key('edit-sheet'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text('Chỉnh đơn', style: N11Text.h2),
+            const Text('Sửa đơn', style: N11Text.h2),
             const SizedBox(height: N11Space.gap2),
             const ReasonNote('Chỉ sửa sau khi đã liên hệ và được khách đồng ý. Sau khi xác nhận, món và tiền món bị khóa.'),
             for (final OrderLine l in widget.order.items.where((OrderLine l) => !l.removed))
@@ -586,13 +658,24 @@ class _EditSheetState extends State<_EditSheet> {
                           Text('${_qty[l.lineId]}', key: Key('edit-qty-${l.lineId}'), style: N11Text.bodyStrong),
                           IconButton(key: Key('edit-plus-${l.lineId}'), onPressed: () => setState(() => _qty[l.lineId] = _qty[l.lineId]! + 1), icon: const Icon(Icons.add_circle, color: N11Colors.yellowStrong)),
                           const SizedBox(width: N11Space.gap2),
-                          Expanded(child: N11Field(validator: (String value) { final int? price = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')); return price == null || price < 1 || price > 99999999 ? 'Đơn giá cần từ 1 đến 99.999.999đ.' : null; }, fieldKey: Key('edit-price-${l.lineId}'), label: 'Đơn giá (đ)', controller: _price[l.lineId]!, keyboard: TextInputType.number, maxLength: 9, onChanged: () => setState(() {}))),
+                          Expanded(
+                              child: N11Field(
+                                  validator: (String value) {
+                                    final int? price = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), ''));
+                                    return price == null || price < 1 || price > 99999999 ? 'Đơn giá cần từ 1 đến 99.999.999đ.' : null;
+                                  },
+                                  fieldKey: Key('edit-price-${l.lineId}'),
+                                  label: 'Đơn giá (đ)',
+                                  controller: _price[l.lineId]!,
+                                  keyboard: TextInputType.number,
+                                  maxLength: 9,
+                                  onChanged: () => setState(() {}))),
                           IconButton(key: Key('edit-remove-${l.lineId}'), tooltip: 'Bỏ món', onPressed: () => setState(() => _removed.add(l.lineId)), icon: const Icon(Icons.delete_outline, color: N11Colors.error)),
                         ]),
                       ]),
               ),
             const SizedBox(height: N11Space.gap3),
-            N11Button(key: const Key('edit-save'), validate: true, label: 'Lưu chỉnh sửa', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
+            N11Button(key: const Key('edit-save'), validate: true, label: 'Lưu thay đổi', onPressed: changes.isEmpty ? null : () => Navigator.of(context).pop(changes)),
             const SizedBox(height: N11Space.gap2),
             N11Button(key: const Key('edit-back'), label: 'Quay lại', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).pop()),
           ],

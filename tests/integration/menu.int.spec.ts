@@ -69,6 +69,23 @@ describe('M02 — menu and public shop view', () => {
       expect(data.limits).toEqual({ name_max_length: 120, price_max_vnd: 99999999, items_max: 300, image_max_bytes: 2097152 });
     });
 
+    it('serializes the last free visible slot, frees hidden slots and preserves dishes after entitlement revocation',async()=>{
+      const o=await owner();
+      for(let i=0;i<19;i++)expect((await createItem(app,o.token,dish(active,{name:'Quota '+i}))).status).toBe(201);
+      const [a,b]=await Promise.all([createItem(app,o.token,dish(active,{name:'Slot A'})),createItem(app,o.token,dish(active,{name:'Slot B'}))]);
+      expect([a.status,b.status].sort()).toEqual([201,409]);
+      expect(errorCode(a.status===409?a:b)).toBe('MENU_VISIBLE_LIMIT_REACHED');
+      const item=itemOf(a.status===201?a:b);
+      expect((await itemAction(app,o.token,String(item.item_id),'hide',1)).status).toBe(200);
+      expect((await createItem(app,o.token,dish(active,{name:'Slot C'}))).status).toBe(201);
+      expect(errorCode(await itemAction(app,o.token,String(item.item_id),'show',2))).toBe('MENU_VISIBLE_LIMIT_REACHED');
+      await app.pool.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,created_at) VALUES($1,$2,'MENU_EXPANDED','GRANT','Fixture grant',$3,clock_timestamp())`,[randomUUID(),o.shopId,o.userId]);
+      expect((await itemAction(app,o.token,String(item.item_id),'show',2)).status).toBe(200);
+      await app.pool.query(`INSERT INTO app.shop_entitlement_grants(grant_id,shop_id,entitlement,action,reason,actor_user_id,created_at) VALUES($1,$2,'MENU_EXPANDED','REVOKE','Fixture revoke',$3,clock_timestamp())`,[randomUUID(),o.shopId,o.userId]);
+      const current=await getMenu(app,o.token);expect(itemsOf(current).filter(i=>i.status==='VISIBLE')).toHaveLength(21);
+      expect((await updateItem(app,o.token,String(item.item_id),{...dish(active,{name:'Chỉnh sửa vẫn được'}),expected_version:3})).status).toBe(200);
+      expect(errorCode(await createItem(app,o.token,dish(active)))).toBe('MENU_VISIBLE_LIMIT_REACHED');
+    });
     it('creates a dish that is visible at version 1, and the same key replays the very same dish', async () => {
       const o = await owner();
       const key = randomUUID();
@@ -84,6 +101,28 @@ describe('M02 — menu and public shop view', () => {
       const reused = await createItem(app, o.token, dish(active, { price_vnd: 130000 }), key);
       expect([reused.status, errorCode(reused)]).toEqual([409, 'IDEMPOTENCY_KEY_REUSED']);
       expect(itemsOf(await getMenu(app, o.token))).toHaveLength(1);
+    });
+
+    it('#207: round-trips 300 graphemes, preserves on legacy edit, clears explicitly and keeps shop isolation', async () => {
+      const o = await owner();
+      await completeSetup(app, o, { categoryId: active });
+      const description = '👨‍👩‍👦'.repeat(298) + 'ắ\n';
+      const created = itemOf(await createItem(app, o.token, dish(active, { description })));
+      expect(created.description).toBe(description);
+      const id = String(created.item_id);
+      const edit = async (version: unknown, extra: Record<string, unknown>) => updateItem(app, o.token, id, { expected_version: version, ...dish(active, extra) });
+      const legacy = itemOf(await edit(created.version, { name: 'Tên mới' }));
+      expect(legacy.description).toBe(description);
+      expect(itemsOf(await getMenu(app, o.token)).find((i) => i.item_id === id)?.description).toBe(description);
+      const pub = dataOf(await publicShop(app, o.shopId));
+      const publicItems = (pub.categories as { items: Record<string, unknown>[] }[]).flatMap((c) => c.items);
+      expect(publicItems.find((i) => i.item_id === id)?.description).toBe(description);
+      expect((await edit(legacy.version, { description: description + 'x' })).status).toBe(400);
+      const other = await owner();
+      expect((await updateItem(app, other.token, id, { expected_version: legacy.version, ...dish(active, { description: 'Không được sửa' }) })).status).toBe(404);
+      const cleared = itemOf(await edit(legacy.version, { description: '' }));
+      expect(cleared.description).toBeNull();
+      expect(itemsOf(await getMenu(app, o.token)).find((i) => i.item_id === id)?.description).toBeNull();
     });
 
     it('trims the name, refuses a bad shape and any privileged extra field', async () => {
@@ -299,7 +338,7 @@ describe('M02 — menu and public shop view', () => {
   });
 
   describe('the public view of a shop (customers, no session)', () => {
-    /** A shop that is SET UP (issue #190): open all week, one sellable dish with a picture (in group `ownGroup`, so group lists stay exact). */
+    /** A shop that is SET UP (issue #190): open all week, one VISIBLE dish with a price (photo optional). */
     async function setUpOwner(dishName = 'Món nền', group = active): Promise<ShopOwner> {
       const o = await owner();
       await completeSetup(app, o, { categoryId: group, dishName });
@@ -313,7 +352,7 @@ describe('M02 — menu and public shop view', () => {
       const response = await publicShop(app, o.shopId);
       expect(response.status).toBe(200);
       const data = dataOf(response);
-      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'shop_id', 'timezone'].sort());
+      expect(Object.keys(data).sort()).toEqual(['address_text', 'availability', 'categories', 'contact', 'hours', 'name', 'next_refresh_ms', 'shop_id', 'timezone'].sort());
       expect(data).toMatchObject({ shop_id: o.shopId, name: 'Fixture shop', address_text: 'Fixture address', timezone: 'Asia/Ho_Chi_Minh' });
       expect((data.availability as Record<string, unknown>).reason).toBe('ONLINE');
       // The shop's OWN contact from its profile: the contact phone (not the login phone), a Zalo link and a Messenger link, nothing else.
@@ -352,7 +391,6 @@ describe('M02 — menu and public shop view', () => {
     it.each([
       ['a (0, 0) pickup placeholder', `UPDATE app.shops SET pickup_lat = 0, pickup_lng = 0 WHERE shop_id = $1::uuid`],
       ['no dish on sale (hidden)', `UPDATE app.menu_items SET status = 'HIDDEN', version = version + 1 WHERE shop_id = $1::uuid`],
-      ['a dish without a picture', `UPDATE app.menu_items SET image_id = NULL WHERE shop_id = $1::uuid`],
       ['the owner account locked', `UPDATE app.users SET status = 'DISABLED' WHERE user_id = (SELECT user_id FROM app.shop_members WHERE shop_id = $1::uuid AND member_role = 'OWNER')`],
     ])('issue #190: a shop with %s is not public', async (label, sql) => {
       const o = await setUpOwner();
@@ -360,6 +398,14 @@ describe('M02 — menu and public shop view', () => {
       await app.pool.query(sql, [o.shopId]);
       const response = await publicShop(app, o.shopId);
       expect([label, response.status, errorCode(response)]).toEqual([label, 403, 'SHOP_UNAVAILABLE']);
+    });
+
+    it('keeps an ACTIVE shop public when its only sellable dish has no picture', async () => {
+      const o = await setUpOwner();
+      await app.pool.query('UPDATE app.menu_items SET image_id = NULL WHERE shop_id = $1::uuid', [o.shopId]);
+      expect((await publicShop(app, o.shopId)).status).toBe(200);
+      const progress = dataOf(await app.call('GET', '/onboarding/shop/setup', { bearer: o.token }));
+      expect(progress).toMatchObject({ state: 'ACTIVATED', completed_steps: 4, missing: [], public: true });
     });
 
     it('a closed shop that IS set up stays visible with its menu and contact (only a new order is refused)', async () => {

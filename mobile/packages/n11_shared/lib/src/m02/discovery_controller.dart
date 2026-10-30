@@ -6,6 +6,7 @@ import '../account/models.dart';
 import '../flows/location.dart';
 import 'discovery_models.dart';
 import 'route_distance.dart';
+import 'availability_refresh.dart';
 
 // The state behind the Home discovery (M02-KP01), the filter sheet (KP03) and the search screen (KP02). Rules that matter:
 //  - GPS areas come only from configured backend coverage; manual choices remain available when location fails;
@@ -71,8 +72,10 @@ class DiscoveryController extends ChangeNotifier {
           if (next != null) await refresh();
         }
       } on AuthFailure {
+      freshness.failed();
         if (!_disposed && epoch == _areaEpoch) areaResolutionFailed = true;
       } on FeatureNotConnected {
+      freshness.failed();
         if (!_disposed && epoch == _areaEpoch) areaResolutionFailed = true;
       }
     }
@@ -82,6 +85,11 @@ class DiscoveryController extends ChangeNotifier {
     }
   }
 
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability, invalidate: () {
+    _stale = true;
+    _notify();
+  });
+  Future<void> refreshAvailability() => refresh();
   final DiscoveryApi api;
 
   // Choices
@@ -140,6 +148,7 @@ class DiscoveryController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    freshness.dispose();
     position.dispose();
     super.dispose();
   }
@@ -170,8 +179,10 @@ class DiscoveryController extends ChangeNotifier {
         categoryId = null;
       }
     } on FeatureNotConnected {
+      freshness.failed();
       _choices = DiscoveryLoad.notConnected;
     } on AuthFailure {
+      freshness.failed();
       _choices = DiscoveryLoad.failed;
     }
     _notify();
@@ -204,14 +215,18 @@ class DiscoveryController extends ChangeNotifier {
         return;
       }
       _shops = onlyPublic(page.items);
+      freshness.arm(page.nextRefreshMs);
       _hasMore = page.hasMore;
       _list = DiscoveryLoad.ready;
       _stale = false;
     } on FeatureNotConnected {
+      freshness.failed();
       if (epoch == _epoch) {
-        _list = DiscoveryLoad.notConnected;
+        _stale = _shops.isNotEmpty;
+        _list = _shops.isNotEmpty ? DiscoveryLoad.ready : DiscoveryLoad.notConnected;
       }
     } on AuthFailure {
+      freshness.failed();
       if (epoch != _epoch) {
         return;
       }
@@ -257,8 +272,10 @@ class DiscoveryController extends ChangeNotifier {
       _hasMore = page.hasMore;
       _stale = false;
     } on FeatureNotConnected {
+      freshness.failed();
       // unchanged
     } on AuthFailure {
+      freshness.failed();
       if (epoch == _epoch) {
         _stale = true;
       }
@@ -374,6 +391,11 @@ class DishSearchController extends ChangeNotifier {
     bool openOnly = false,
     this.debounce = const Duration(milliseconds: 350),
   });
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability, invalidate: () {
+    stale = true;
+    _notify();
+  });
+  Future<void> refreshAvailability() => run();
   final DiscoveryApi api;
   String? areaId;
   void setArea(String? id) {
@@ -423,6 +445,7 @@ class DishSearchController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    freshness.dispose();
     _epoch++;
     _timer?.cancel();
     super.dispose();
@@ -504,7 +527,9 @@ class DishSearchController extends ChangeNotifier {
       }
       state = DiscoveryLoad.ready;
       stale = false;
+      if (!more) freshness.arm(sp?.nextRefreshMs ?? dp?.nextRefreshMs);
     } on FeatureNotConnected {
+      freshness.failed();
       if (epoch == _epoch) {
         if (more) {
           stale = true;
@@ -513,6 +538,7 @@ class DishSearchController extends ChangeNotifier {
         }
       }
     } on AuthFailure {
+      freshness.failed();
       if (epoch == _epoch) {
         if (more) {
           stale = true;

@@ -77,6 +77,7 @@ WITH expected(table_name, privileges) AS (
     ('delivery_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('delivery_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shipper_latest_locations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('delivery_tracking_links', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shop_public_ids', ARRAY['SELECT']::text[]),
     ('shop_display_counters', ARRAY['SELECT']::text[]),
     ('shop_display_numbers', ARRAY['SELECT']::text[]),
@@ -86,6 +87,7 @@ WITH expected(table_name, privileges) AS (
     ('order_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_chat_messages', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
     ('order_chat_holds', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('address_change_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('order_timeout_policy', ARRAY['SELECT', 'UPDATE']::text[]),
     ('order_timeout_policy_changes', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_parameters', ARRAY['SELECT', 'UPDATE']::text[]),
@@ -105,6 +107,8 @@ WITH expected(table_name, privileges) AS (
     ('business_push_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('business_finance_messages', ARRAY['SELECT', 'INSERT']::text[]),
     ('business_bank_receipts', ARRAY['SELECT', 'INSERT']::text[]),
+    ('shop_finance_policy', ARRAY['SELECT', 'UPDATE']::text[]),
+    ('shop_entitlement_grants', ARRAY['SELECT', 'INSERT']::text[]),
     ('notification_push_tokens', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notification_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('notifications', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
@@ -145,7 +149,7 @@ WITH expected(table_name, privileges) AS (
               ELSE 'OK' END AS result
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'),
+  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
          ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,

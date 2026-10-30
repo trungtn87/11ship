@@ -21,6 +21,7 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
   List<Map<String, Object?>> _items = <Map<String, Object?>>[];
   List<Map<String, Object?>> _messages = <Map<String, Object?>>[];
   Map<String, Object?>? _request;
+  List<Map<String, Object?>> _accounts = <Map<String, Object?>>[];
   String? _id;
   String? _before;
   String? _error;
@@ -58,7 +59,7 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
       _keys.remove(logical);
       return response.data! as Map<String, Object?>;
     }
-    if (response.status >= 400 && response.status < 500 && response.errorCode != 'IDEMPOTENCY_BUSY') _keys.remove(logical);
+    if (response.status >= 400 && response.status < 500 && response.errorCode != 'IDEMPOTENCY_BUSY' && response.errorCode != 'IDEMPOTENCY_KEY_UNAVAILABLE') _keys.remove(logical);
     throw const FormatException('Finance request failed');
   }
   static List<Map<String, Object?>> _rows(Object? raw) {
@@ -72,8 +73,10 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
     setState(() { _loading = true; if (!quiet) _error = null; });
     try {
       final String query = older && _before != null ? '?before=${Uri.encodeQueryComponent(_before!)}' : '';
+      final Map<String, Object?> accounts = await _call('GET', '/receiving-accounts');
       final Map<String, Object?> data = await _call('GET', id == null ? '/requests$query' : '/requests/$id$query');
       if (!mounted || epoch != widget.session.sessionEpoch || id != _id) return;
+      _accounts = _rows(accounts['accounts']);
       if (id == null) {
         final List<Map<String, Object?>> rows = _rows(data['items']);
         if (rows.any((Map<String, Object?> r) => r['request_id'] is! String || r['amount_requested_vnd'] is! int || r['state'] is! String)) throw const FormatException('Invalid finance request');
@@ -83,7 +86,12 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
         final Map<String, Object?> messages = data['messages']! as Map<String, Object?>;
         final List<Map<String, Object?>> rows = _rows(messages['items']);
         if (rows.any((Map<String, Object?> r) => r['sequence'] is! String || r['body'] is! String || r['role'] is! String)) throw const FormatException('Invalid finance message');
-        setState(() { _request = request; _messages = older ? <Map<String, Object?>>[...rows, ..._messages] : rows; _before = messages['next_before'] as String?; });
+        setState(() {
+          _request = request;
+          final Map<String, Map<String, Object?>> history = <String, Map<String, Object?>>{for (final Map<String, Object?> m in _messages) m['sequence']! as String: m, for (final Map<String, Object?> m in rows) m['sequence']! as String: m};
+          _messages = history.values.toList()..sort((Map<String, Object?> a, Map<String, Object?> b) => BigInt.parse(a['sequence']! as String).compareTo(BigInt.parse(b['sequence']! as String)));
+          if (!quiet || _before == null) _before = messages['next_before'] as String?;
+        });
         if (rows.isNotEmpty) await _call('POST', '/requests/$id/read', body: <String, Object?>{'sequence': rows.last['sequence']});
       }
     } on Object {
@@ -94,22 +102,41 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
   }
   Future<void> _send({bool create = false}) async {
     if (_sending) return;
+    final int epoch = widget.session.sessionEpoch;
     final int? amount = int.tryParse(_amount.text.trim());
     if (create && (amount == null || amount < 1 || _note.text.trim().isEmpty)) {
       setState(() => _error = 'Nhập số tiền và nội dung thanh toán.'); return;
     }
     if (!create && _message.text.trim().isEmpty) return;
+    if ((create ? _note.text.trim() : _message.text.trim()).characters.length > 500) { setState(() => _error = 'Tối đa 500 ký tự.'); return; }
     setState(() { _sending = true; _error = null; });
     try {
       final Map<String, Object?> result = await _call('POST', create ? '/shop-payments' : '/requests/$_id/messages', body: create ? <String, Object?>{'amount_vnd': amount, 'note': _note.text.trim()} : <String, Object?>{'body': _message.text.trim()});
-      if (!mounted) return;
-      setState(() { if (create) { _id = result['request_id']! as String; _request = null; _messages = <Map<String, Object?>>[]; } _message.clear(); });
+      if (!mounted || epoch != widget.session.sessionEpoch) return;
+      setState(() { if (create) { _id = result['request_id']! as String; _request = null; _messages = <Map<String, Object?>>[]; _before = null; } _message.clear(); });
       await _reload();
     } on Object {
       if (mounted) setState(() => _error = 'Chưa xác định được kết quả. Giữ nguyên nội dung và thử lại; hệ thống chống gửi trùng.');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+  Future<void> _reportTransfer() async {
+    if (_sending || _id == null) return;
+    final int epoch = widget.session.sessionEpoch;
+    setState(() { _sending = true; _error = null; });
+    try {
+      await _call('POST', '/requests/$_id/report-transfer', body: <String, Object?>{});
+      if (mounted && epoch == widget.session.sessionEpoch) await _reload();
+    } on Object {
+      if (mounted && epoch == widget.session.sessionEpoch) setState(() => _error = 'Chưa xác định được kết quả báo chuyển khoản. Giữ nguyên và thử lại.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+  String _time(Object? value) {
+    final DateTime? at = value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    return at == null ? '' : '${at.day}/${at.month}/${at.year} ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
   }
   String _state(Object? state) => switch (state) { 'PENDING' => 'Chờ kiểm tra', 'CONFIRMED' => 'Đã xác nhận', 'REJECTED' => 'Từ chối', 'CANCELLED' => 'Đã hủy', _ => 'Đang tải' };
   @override
@@ -122,21 +149,28 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
         if (_loading) const LinearProgressIndicator(),
         if (!room) ...<Widget>[
           if (widget.shopPayments) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-            const Text('Báo đã thanh toán'),
-            const Text('Chỉ thông báo đã chuyển tiền. Quản trị kiểm tra và xác nhận thủ công; tài khoản quán không tự mở.'),
+            const Text('Tạo yêu cầu thanh toán'),
+            const Text('Nhập số tiền và mục đích. Chuyển khoản ngoài ứng dụng rồi báo đã chuyển ở bước tiếp theo. Ghi nhận tiền và cấp quyền thực đơn là hai bước riêng.'),
             TextField(controller: _amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Số tiền (đ)')),
-            TextField(controller: _note, maxLength: 1000, decoration: const InputDecoration(labelText: 'Nội dung / mã giao dịch')),
-            FilledButton(onPressed: _sending ? null : () => _send(create: true), child: const Text('Tôi đã thanh toán')),
+            TextField(controller: _note, maxLength: 500, decoration: const InputDecoration(labelText: 'Mục đích / nội dung thanh toán')),
+            FilledButton(onPressed: _sending ? null : () => _send(create: true), child: const Text('Tạo yêu cầu')),
           ]))),
           if (_items.isEmpty && !_loading) const Text('Chưa có yêu cầu thanh toán.'),
           for (final Map<String, Object?> r in _items) Card(child: ListTile(title: Text('${r['label']} · ${r['amount_requested_vnd']} đ'), subtitle: Text('${_state(r['state'])} · ${r['unread']} chưa đọc'), trailing: const Icon(Icons.chat_outlined), onTap: () { setState(() { _id = r['request_id']! as String; _before = null; _request = null; _messages = <Map<String, Object?>>[]; }); unawaited(_reload()); })),
         ] else ...<Widget>[
           TextButton(onPressed: () { setState(() { _id = null; _before = null; _request = null; }); unawaited(_reload()); }, child: const Text('← Danh sách yêu cầu')),
           Text(_state(_request?['state']), style: Theme.of(context).textTheme.titleMedium),
-          const Text('Tin nhắn chỉ dùng để trao đổi, không tự xác nhận tiền đã nhận.'),
-          for (final Map<String, Object?> m in _messages) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(switch (m['role']) { 'SYSTEM_EVENT' => 'Thông báo', 'SHOP' => 'Quán', 'SHIPPER' => 'Shipper', _ => 'Quản trị' }, style: Theme.of(context).textTheme.labelSmall), Text(m['body']! as String)]))),
           if (_request?['state'] == 'PENDING') ...<Widget>[
-            TextField(controller: _message, maxLength: 1000, minLines: 1, maxLines: 4, decoration: const InputDecoration(labelText: 'Tin nhắn')),
+            const Text('Chuyển khoản ngoài ứng dụng theo tài khoản nhận đang được cấu hình:'),
+            if (_accounts.isEmpty) const Text('Chưa có tài khoản nhận. Trao đổi với quản trị trước khi chuyển khoản.'),
+            for (final Map<String, Object?> a in _accounts) SelectableText('${a['bank_id']} · ${a['account_number']}\n${a['account_holder']}'),
+            if (_request?['reported_at'] == null) OutlinedButton(onPressed: _sending ? null : _reportTransfer, child: const Text('Tôi đã chuyển khoản'))
+            else Text('Đã báo chuyển khoản lúc ${_time(_request?['reported_at'])}. Chờ kiểm tra tiền thực nhận.'),
+          ],
+          const Text('Tin nhắn chỉ dùng để trao đổi, không tự xác nhận tiền đã nhận.'),
+          for (final Map<String, Object?> m in _messages) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('${m['sender_name'] ?? switch (m['role']) { 'SYSTEM_EVENT' => 'Thông báo', 'SHOP' => 'Quán', 'SHIPPER' => 'Shipper', _ => 'Quản trị' }} · ${_time(m['created_at'])}', style: Theme.of(context).textTheme.labelSmall), Text(m['body']! as String)]))),
+          if (_request?['state'] == 'PENDING') ...<Widget>[
+            TextField(controller: _message, maxLength: 500, minLines: 1, maxLines: 4, decoration: const InputDecoration(labelText: 'Tin nhắn')),
             FilledButton(onPressed: _sending ? null : () => _send(), child: const Text('Gửi tin nhắn')),
           ] else if (_request != null) const Text('Yêu cầu đã kết thúc. Lịch sử trao đổi vẫn được giữ lại.'),
         ],

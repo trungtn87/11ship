@@ -228,6 +228,59 @@ class ShopDeliveryRatingScreen extends StatelessWidget {
   }
 }
 
+/// Customer: rate the Shipper of one finished customer delivery.
+class CustomerDeliveryRatingScreen extends StatelessWidget {
+  const CustomerDeliveryRatingScreen({super.key, required this.source, required this.deliveryId, required this.picker});
+
+  final M11Source source;
+  final String deliveryId;
+  final ImagePickerPort picker;
+
+  @override
+  Widget build(BuildContext context) {
+    return m07Page('Đánh giá shipper', false, <Widget>[
+      M07Loader<CustomerDeliveryReviewState>(
+        keyPrefix: 'm11-customer-delivery',
+        load: () => source.customerDelivery(deliveryId),
+        builder: (BuildContext context, CustomerDeliveryReviewState state, Future<void> Function() reload) {
+          final RatedShipper? shipper = state.shipper;
+          return vstack(<Widget>[
+            Text('Chuyến giao ${state.deliveryCode}', style: N11Text.caption),
+            if (shipper == null)
+              const N11Card(child: Text('Chuyến giao này chưa có shipper hoàn thành nên chưa có gì để đánh giá.', key: Key('m11-customer-no-shipper'), style: N11Text.caption))
+            else
+              _RateTarget(
+                keyPrefix: 'm11-customer-rate',
+                title: 'Shipper thực hiện',
+                subtitle: shipper.name,
+                review: state.review,
+                canReview: state.canReview,
+                whyNot: 'Giao xong rồi khách mới đánh giá được shipper.',
+                onRate: () async {
+                  await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+                    builder: (_) => RateScreen(
+                      title: 'Đánh giá shipper',
+                      subject: shipper.name,
+                      shipper: shipper,
+                      submit: (int s, String? c, String k) => source.customerRateDeliveryShipper(deliveryId, stars: s, comment: c, key: k),
+                    ),
+                  ));
+                  await reload();
+                },
+              ),
+            N11Button(
+              key: const Key('m11-customer-delivery-complain'),
+              label: 'Gửi phản ánh về chuyến giao này',
+              kind: ButtonKind.secondary,
+              onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => ComplaintFormScreen(source: source, role: M11Role.customer, subject: ComplaintSubject.delivery(deliveryId), subjectLabel: 'Chuyến giao ${state.deliveryCode}', picker: picker))),
+            ),
+          ]);
+        },
+      ),
+    ]);
+  }
+}
+
 /// One shop review card (public page and the shop's own page).
 class ShopReviewCard extends StatelessWidget {
   const ShopReviewCard({super.key, required this.review, this.onReply});

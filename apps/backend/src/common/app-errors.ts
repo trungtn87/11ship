@@ -3,6 +3,8 @@
 // ever copied into a response: classification looks at the class of the exception, not its content.
 
 export const APP_ERROR_DEFINITIONS = {
+  BUSINESS_CHAT_RATE_LIMITED: { status: 429, message: 'Gửi tin nhắn quá nhanh. Vui lòng chờ một phút.' },
+  MENU_VISIBLE_LIMIT_REACHED: { status: 409, message: 'Đã đạt giới hạn món hiển thị. Ẩn bớt món hoặc liên hệ quản trị để mở rộng thực đơn.' },
   BUSINESS_PUSH_NOT_CONFIGURED: { status: 503, message: 'Thông báo đẩy chưa được cấu hình. Vẫn có thể xem danh sách chờ.' },
   BUSINESS_REQUEST_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu thanh toán.' },
   BUSINESS_REQUEST_CLOSED: { status: 409, message: 'Yêu cầu đã kết thúc. Không thể gửi thêm tin nhắn.' },
@@ -187,6 +189,14 @@ export const APP_ERROR_DEFINITIONS = {
   SHIPPER_FAIL_NOT_ALLOWED: { status: 403, message: 'A Shipper cannot report a failed delivery; contact the shop' },
   FEE_ANSWER_EXPIRED: { status: 409, message: 'The time to answer the proposed delivery fee has run out; the earlier fee stays' },
   FEE_REQUIRED: { status: 400, message: 'The delivery fee must be chosen or proposed to call a Shipper' },
+  ORDER_QUOTE_CHANGED: { status: 409, message: 'The delivery quote changed; review it before placing the order' },
+  ORDER_QUOTE_REQUIRED: { status: 409, message: 'Review and confirm the delivery quote before placing the order; update the app if this continues' },
+  PICKUP_PIN_MISSING: { status: 400, message: 'The pickup point is missing a map pin' },
+  DROPOFF_PIN_MISSING: { status: 400, message: 'The delivery point is missing a map pin' },
+  ROUTE_UNAVAILABLE: { status: 503, message: 'The road route is temporarily unavailable' },
+  ROUTE_TIMEOUT: { status: 503, message: 'The road route request timed out' },
+  OUT_OF_PRICE_RANGE: { status: 400, message: 'The road route is outside the configured fee table' },
+  POLICY_NOT_CONFIGURED: { status: 400, message: 'The shipping fee table is not configured' },
   DESTINATION_NOT_CONFIRMED: { status: 409, message: 'The drop-off point is not confirmed yet' },
   RECALL_BLOCKED_GOODS_OUT: { status: 409, message: 'The goods are not back at the shop, so the delivery cannot be requested again' },
   ADMIN_ACTION_NOT_ALLOWED: { status: 409, message: 'This action does not apply to the delivery in its current state' },
@@ -318,6 +328,13 @@ export const APP_ERROR_DEFINITIONS = {
   RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
   RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
   ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
+  // Address change requests (#218)
+  ADDRESS_CHANGE_ALREADY_PENDING: { status: 409, message: 'Đang có yêu cầu đổi địa chỉ chờ xử lý' },
+  ADDRESS_CHANGE_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu đổi địa chỉ' },
+  ADDRESS_CHANGE_NOT_PENDING: { status: 409, message: 'Yêu cầu đổi địa chỉ không còn ở trạng thái chờ' },
+  ADDRESS_CHANGE_NOT_PERMITTED: { status: 403, message: 'Bạn không có quyền thao tác trên yêu cầu này' },
+  CANNOT_CHANGE_AFTER_PICKUP: { status: 409, message: 'Không thể đổi địa chỉ sau khi hàng đã lấy' },
+  ORDER_NOT_CONFIRMED: { status: 409, message: 'Đơn chưa xác nhận' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

@@ -9,7 +9,7 @@ const FILES = readdirSync(sourcePath('customers'))
   .map((name) => `customers/${name}`);
 
 describe('Customer address book boundary (M05)', () => {
-  it('exposes exactly the six routes of the approved contract', () => {
+  it('exposes the address book, independent defaults, and place search routes', () => {
     const controller = codeOf('customers/customers.controller.ts');
     expect(controller).toContain("@Controller('customers/me')");
     expect(controller.match(/@(Get|Put|Post|Patch|Delete)\([^)]*\)/g)).toEqual([
@@ -19,14 +19,20 @@ describe('Customer address book boundary (M05)', () => {
       "@Patch('addresses/:addressId')",
       "@Delete('addresses/:addressId')",
       "@Put('addresses/:addressId/default')",
+      "@Get('places')",
+      "@Put('addresses/:addressId/defaults/:kind')",
+      "@Delete('addresses/:addressId/defaults/:kind')",
     ]);
   });
 
-  it('is guarded and takes identity only from the principal: the one path parameter is an address id', () => {
+  it('is guarded and takes identity only from the principal', () => {
     const controller = codeOf('customers/customers.controller.ts');
     expect(controller).toContain('@UseGuards(SessionAuthGuard)');
     expect(controller).toContain('request.auth');
-    expect(controller.match(/@Param\('(\w+)'\)/g)).toEqual(Array(3).fill("@Param('addressId')"));
+    expect(controller.match(/@Param\('(\w+)'\)/g)).toEqual([
+      "@Param('addressId')", "@Param('addressId')", "@Param('addressId')",
+      "@Param('addressId')", "@Param('kind')", "@Param('addressId')", "@Param('kind')",
+    ]);
     expect(controller).not.toMatch(/userId|customerId|driverId|user_id|customer_id|driver_id/);
   });
 
@@ -76,7 +82,6 @@ describe('Customer address book boundary (M05)', () => {
       "this.authority.lock(context, principal, 'update')",
       'this.#requireCustomerRole(',
       'this.#ensureCustomer(',
-      'this.customers.countActive(',
       'this.customers.insertAddress(',
       'this.#audit(',
     ].map((marker) => create.indexOf(marker));

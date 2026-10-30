@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { normalizeVietnamPhone } from '../auth/phone';
 import { shaped, text } from '../delivery/delivery-validation';
 import { AGREEMENT_REASONS, AgreementReason } from '../shipping-policy/shipping-fee-agreement';
+import { MAX_FEE_VND } from '../shipping-policy/shipping-fee-policy';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { MAX_CART_LINES, MAX_ITEM_NOTE, MAX_LINE_QUANTITY, MAX_ORDER_NOTE, MAX_REASON } from './order-constants';
 
@@ -106,10 +107,13 @@ export interface CheckoutInput {
   readonly shopId: string;
   readonly lines: readonly LineInput[];
   readonly note: string | null;
+  readonly deliveryNote: string | null;
   readonly recipientName: string;
   readonly recipientPhone: string;
   readonly address: AddressInput;
   readonly scheduledForMs: number | null;
+  /** Voluntary amount added to the single proposed delivery fee. It is never a separate payment. */
+  readonly tipVnd: number;
 }
 
 function address(value: unknown): AddressInput {
@@ -134,28 +138,49 @@ function checkout(b: Record<string, unknown>, withPrice: boolean): CheckoutInput
     shopId: uuid(b.shop_id),
     lines: lines(b.lines, withPrice),
     note: optionalText(b.note, MAX_ORDER_NOTE),
+    deliveryNote: optionalText(b.delivery_note, MAX_ORDER_NOTE),
     recipientName: text(b.recipient_name, 1, 80),
     recipientPhone: phone,
     address: address(b.address),
     scheduledForMs: b.scheduled_for === undefined || b.scheduled_for === null ? null : instant(b.scheduled_for),
+    tipVnd: b.tip_vnd === undefined ? 0 : whole(b.tip_vnd, 0, MAX_FEE_VND),
   };
 }
 
 /** POST /v1/customers/me/orders/preview : what the checkout shows before sending (no prices from the client). */
 export function parsePreviewBody(body: unknown): CheckoutInput {
-  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'scheduled_for']), false);
+  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'delivery_note', 'scheduled_for', 'tip_vnd']), false);
 }
 
 export interface PlaceInput extends CheckoutInput {
   readonly clientRef: string;
   /** The total the customer saw: a changed price or dish is refused so they check and send again. */
   readonly expectedItemsTotalVnd: number;
+  readonly expectedQuote: { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: string | null; readonly policyVersion: number | null; readonly snapshot: string; readonly complete: boolean } | null;
 }
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
 export function parsePlaceBody(body: unknown): PlaceInput {
-  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'scheduled_for']);
-  return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER) };
+  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'delivery_note', 'scheduled_for', 'expected_quote', 'tip_vnd']);
+  let expectedQuote: PlaceInput['expectedQuote'] = null;
+  if (b.expected_quote !== undefined) {
+    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version']);
+    const nullableWhole = (v: unknown): number | null => v === null ? null : whole(v, 0, Number.MAX_SAFE_INTEGER);
+    if (q.status !== 'PRICED' && q.status !== 'UNAVAILABLE') return reject();
+    const distanceM = nullableWhole(q.distance_m);
+    const feeVnd = nullableWhole(q.fee_vnd);
+    if ((q.status === 'PRICED' && (distanceM === null || feeVnd === null)) || (q.status === 'UNAVAILABLE' && feeVnd !== null)) return reject();
+    expectedQuote = {
+      status: q.status,
+      distanceM,
+      feeVnd,
+      reason: q.reason === undefined || q.reason === null ? null : text(q.reason, 1, 40),
+      policyVersion: q.policy_version === undefined ? null : nullableWhole(q.policy_version),
+      snapshot: text(q.snapshot, 1, 300),
+      complete: Object.prototype.hasOwnProperty.call(q, 'reason') && Object.prototype.hasOwnProperty.call(q, 'policy_version'),
+    };
+  }
+  return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER), expectedQuote };
 }
 
 export function parseClientRefQuery(query: unknown): string {

@@ -1,6 +1,6 @@
 import { AdminAuthController } from '../core/controller.js';
 import { AdminRole } from '../core/api.js';
-import { BusinessApi, BusinessApiError, businessError, BusinessReports, FinanceList, FinanceMessage, FinanceRequest, FinanceRoom, Notices, Report } from '../core/business-api.js';
+import { BusinessApi, BusinessApiError, businessError, BusinessReports, Entitlement, FinanceList, FinanceMessage, FinanceRequest, FinanceRoom, Notices, Report } from '../core/business-api.js';
 import { ShellLayout } from './shell-layout.js';
 import { ShellHost } from './view.js';
 import { h, svg } from './dom.js';
@@ -18,12 +18,13 @@ export class BusinessDashboard implements ShellHost {
   private readonly api:BusinessApi;
   private host:HTMLElement|undefined;private content=h('main',{class:'business-content',tabindex:'-1'});private error=h('p',{class:'business-error',role:'alert',hidden:true});
   private updated=h('span',{class:'business-updated'});private badge=h('span',{class:'business-badge'});
-  private timer:number|undefined;private generation=0;private mountEpoch=0;private busy=false;private canRecord=false;
+  private timer:number|undefined;private generation=0;private mountEpoch=0;private busy=false;private isSystem=false;
   private range='today';private from='';private to='';private detailId:string|undefined;private pollRoom:(()=>Promise<void>)|undefined;
   private navButtons=new Map<string,HTMLButtonElement>();
   constructor(private readonly auth:AdminAuthController){this.api=new BusinessApi(auth);}
   mount({layout,role}:{layout:ShellLayout;role:AdminRole}):void {
-    const epoch=++this.mountEpoch;this.busy=false;this.canRecord=false;
+    ++this.mountEpoch;this.busy=false;this.isSystem=false;
+    this.isSystem=role==='SYSTEM';
     this.host=layout.root;this.host.className='business-shell';
     const heading=h('div',{},h('p',{class:'business-eyebrow'},'11SHIP BUSINESS'),h('h1',{},'Điều hành kinh doanh'));
     const theme=button('Sáng / tối',()=>{const dark=this.host?.dataset.theme!=='dark';if(this.host)this.host.dataset.theme=dark?'dark':'light';try{localStorage.setItem('11business.theme',dark?'dark':'light');}catch{/* optional */}});
@@ -33,11 +34,11 @@ export class BusinessDashboard implements ShellHost {
     this.navButtons.clear();for(const [name,label,icon]of tabs){const b=button('',()=>this.navigate(name));b.append(h('span',{'aria-hidden':'true'},icon),h('span',{},label));if(name==='notifications')b.append(this.badge);this.navButtons.set(name,b);nav.append(b);}
     this.host.replaceChildren(h('header',{class:'business-header'},heading,h('div',{class:'business-actions'},theme,logout)),h('div',{class:'business-status'},h('span',{},role==='SYSTEM'?'Tài khoản hệ thống':'Quản trị viên'),this.updated,button('Làm mới',()=>void this.refresh(true))),this.error,this.content,nav);
     window.addEventListener('popstate',this.pop);
-    void this.api.call<{implicit:boolean;permissions:string[]}>('/v1/admin/finance/access/me').then(r=>{if(this.current(epoch))this.canRecord=r.implicit||r.permissions.includes('wallet.topup.record');}).catch(()=>undefined).finally(()=>{if(this.current(epoch))void this.refresh(true);});
+    void this.refresh(true);
     this.timer=window.setInterval(()=>void this.refresh(false),30000);
     void this.restorePush();
   }
-  unmount():void{this.mountEpoch++;this.generation++;this.busy=false;this.canRecord=false;if(this.timer)clearInterval(this.timer);this.timer=undefined;window.removeEventListener('popstate',this.pop);this.clearSensitiveView();this.host=undefined;this.api.clear();this.pollRoom=undefined;}
+  unmount():void{this.mountEpoch++;this.generation++;this.busy=false;this.isSystem=false;if(this.timer)clearInterval(this.timer);this.timer=undefined;window.removeEventListener('popstate',this.pop);this.clearSensitiveView();this.host=undefined;this.api.clear();this.pollRoom=undefined;}
   resume():void{void this.refresh(true);}
   clearSensitiveView():void{this.content.replaceChildren();this.detailId=undefined;this.pollRoom=undefined;}
   private readonly pop=()=>void this.refresh(true);
@@ -113,9 +114,9 @@ export class BusinessDashboard implements ShellHost {
   private async requests(finance:boolean,before?:string,append=false):Promise<void>{
     const epoch=this.mountEpoch;
     this.detailId=undefined;this.pollRoom=undefined;
-    const query=new URLSearchParams();if(finance)query.set('state','PENDING');if(before)query.set('before',before);
+    const query=new URLSearchParams();if(before)query.set('before',before);
     const list=await this.api.call<FinanceList>(BASE+'/requests?'+query);if(!this.current(epoch))return;
-    const panel=h('section',{class:'business-panel'},h('h2',{},finance?'Yêu cầu chờ kiểm tra':'Trao đổi tài chính'));
+    const panel=h('section',{class:'business-panel'},h('h2',{},finance?'Yêu cầu thanh toán và quyền thực đơn':'Trao đổi tài chính'));
     if(finance){
       panel.append(h('p',{},'Chỉ xác nhận sau khi kiểm tra tiền thực nhận. Tin nhắn không thay thế sao kê.'),h('a',{href:'/finance/withdrawals'},'Xử lý rút ví'),h('a',{href:'/finance/reconciliation'},'Đối soát ví'));
       const d=await this.api.call<BusinessReports>(BASE+'/reports?'+this.query()).catch(error=>{if(error instanceof BusinessApiError&&error.status===403)return undefined;throw error;});
@@ -123,6 +124,7 @@ export class BusinessDashboard implements ShellHost {
       if(d?.reports.money?.current)panel.append(this.filters(),this.reportPanel(d.reports.money.current,d.reports.money.previous));
       if(d?.trade.shop_payments.status==='OK')panel.append(this.tile('Thanh toán quán đã xác nhận',d.trade.shop_payments.confirmed_vnd,'vnd'),h('p',{class:'business-muted'},'Ghi nhận tiền thực nhận theo ngày xác nhận. Không tạo ví hoặc tự mở tài khoản quán.'));
     }
+    if(finance){panel.append(this.manualEntitlement());if(this.isSystem)panel.append(await this.policyForm());}
     if(!list.items.length)panel.append(h('p',{},'Không có yêu cầu.'));
     for(const r of list.items)panel.append(this.requestCard(r));
     if(list.next_before)panel.append(button('Xem tiếp',()=>void this.requests(finance,list.next_before!,true).catch(e=>this.showError(e))));
@@ -136,28 +138,30 @@ export class BusinessDashboard implements ShellHost {
     const request=room.request;
     const messages=h('div',{class:'business-messages','aria-live':'polite'});
     const history=new Map<string,FinanceMessage>();
-    const render=(r:FinanceRoom)=>{for(const m of r.messages.items)history.set(m.sequence,m);messages.replaceChildren(...[...history.values()].sort((a,b)=>BigInt(a.sequence)<BigInt(b.sequence)?-1:1).map(m=>h('article',{class:'business-message '+(m.role==='SYSTEM_EVENT'?'business-event':'')},h('small',{},`${({SYSTEM_EVENT:'Thông báo',SHIPPER:'Shipper',SHOP:'Quán',ADMIN:'Quản trị',SYSTEM:'Hệ thống'} as Record<string,string>)[m.role]??m.role} · ${time(m.created_at)}`),h('p',{},m.body))));};render(room);
+    const render=(r:FinanceRoom)=>{for(const m of r.messages.items)history.set(m.sequence,m);messages.replaceChildren(...[...history.values()].sort((a,b)=>BigInt(a.sequence)<BigInt(b.sequence)?-1:1).map(m=>h('article',{class:'business-message '+(m.role==='SYSTEM_EVENT'?'business-event':'')},h('small',{},`${m.sender_name??({SYSTEM_EVENT:'Thông báo',SHIPPER:'Shipper',SHOP:'Quán',ADMIN:'Quản trị',SYSTEM:'Hệ thống'} as Record<string,string>)[m.role]??m.role} · ${time(m.created_at)}`),h('p',{},m.body))));};render(room);
     const panel=h('section',{class:'business-panel'},button('← Danh sách',()=>this.navigate('chat')),h('h2',{},request.label),h('p',{},`${money(request.amount_requested_vnd)} · ${stateText[request.state]??request.state}`),messages);
     if(request.kind==='TOPUP')panel.append(h('a',{href:'/finance/topups/'+request.request_id},'Xem hồ sơ nạp ví'));
     if(request.actual_amount_vnd!==null)panel.append(h('p',{},'Tiền thực nhận: '+money(request.actual_amount_vnd)));
     let olderCursor=room.messages.next_before;
     if(olderCursor){const older=button('Xem tin cũ hơn',()=>{if(!olderCursor)return;older.disabled=true;void this.api.call<FinanceRoom>(BASE+'/requests/'+id+'?before='+olderCursor).then(r=>{if(!this.current(epoch)||this.detailId!==id)return;render(r);olderCursor=r.messages.next_before;if(!olderCursor)older.remove();}).catch(e=>this.showError(e)).finally(()=>{older.disabled=false;});});panel.insertBefore(older,messages);}
-    if(request.state==='PENDING'){
-      const input=h('textarea',{'aria-label':'Tin nhắn',placeholder:'Nhập trao đổi…',maxlength:'1000',rows:'3',required:true});
+    if(request.state==='PENDING'&&room.capabilities.can_send){
+      const input=h('textarea',{'aria-label':'Tin nhắn',placeholder:'Nhập trao đổi…',rows:'3',required:true});
       const send=h('button',{type:'submit',class:'business-button business-primary'},'Gửi tin nhắn');const form=h('form',{},input,send);
-      form.onsubmit=e=>{e.preventDefault();if(!input.value.trim())return;send.disabled=true;void this.api.call(BASE+'/requests/'+id+'/messages',{body:input.value.trim()}).then(async()=>{input.value='';await update();}).catch(e=>this.showError(e)).finally(()=>{send.disabled=false;});};panel.append(form);
-      if(this.canRecord)panel.append(await this.settlement(request));
-    }else panel.append(h('p',{},'Yêu cầu đã kết thúc. Lịch sử trao đổi được giữ lại.'));
-    const update=async()=>{const r=await this.api.call<FinanceRoom>(BASE+'/requests/'+id);if(!this.current(epoch)||this.detailId!==id)return;if(r.request.state!==request.state){this.detailId=undefined;this.pollRoom=undefined;await this.room(id,true);return;}render(r);await this.markRead(r);};
+      form.onsubmit=e=>{e.preventDefault();if(!input.value.trim())return;if([...new Intl.Segmenter('vi',{granularity:'grapheme'}).segment(input.value.trim())].length>500){this.error.hidden=false;this.error.textContent='Tin nhắn tối đa 500 ký tự.';return;}send.disabled=true;void this.api.call(BASE+'/requests/'+id+'/messages',{body:input.value.trim()}).then(async()=>{input.value='';await update();}).catch(e=>this.showError(e)).finally(()=>{send.disabled=false;});};panel.append(form);
+    }else if(request.state!=='PENDING')panel.append(h('p',{},'Yêu cầu đã kết thúc. Lịch sử trao đổi được giữ lại.'));
+    if(request.state==='PENDING'&&room.capabilities.can_record)panel.append(await this.settlement(request));
+    if(request.reported_at)panel.append(h('p',{},'Đã báo chuyển khoản: '+time(request.reported_at)));
+    if(room.entitlement)panel.append(this.entitlementForm(room.entitlement,room.capabilities.can_manage_entitlement));
+    const update=async()=>{const r=await this.api.call<FinanceRoom>(BASE+'/requests/'+id);if(!this.current(epoch)||this.detailId!==id)return;if(JSON.stringify([r.request,r.capabilities,r.entitlement])!==JSON.stringify([room.request,room.capabilities,room.entitlement])){this.detailId=undefined;this.pollRoom=undefined;await this.room(id,true);return;}render(r);await this.markRead(r);};
     if(!this.current(epoch))return;
     this.pollRoom=update;this.content.replaceChildren(panel);await this.markRead(room);
   }
   private async markRead(r:FinanceRoom):Promise<void>{const seq=r.messages.items.at(-1)?.sequence;if(seq)await this.api.call(BASE+'/requests/'+r.request.request_id+'/read',{sequence:seq});}
   private async settlement(r:FinanceRequest):Promise<HTMLElement>{
-    const accounts=await this.api.call<{accounts:{account_id:string;bank_id:string;account_number_masked:string;can_receive:boolean}[]}>('/v1/admin/finance/topup-receiving-accounts');
+    const accounts=await this.api.call<{accounts:{account_id:string;bank_id:string;account_number:string;account_holder:string;can_receive:boolean}[]}>(BASE+'/receiving-accounts');
     const box=h('details',{class:'business-details'},h('summary',{},'Kiểm tra và xử lý thanh toán'));
     const amount=h('input',{type:'number',inputmode:'numeric',min:'1',step:'1',required:true,value:String(r.amount_requested_vnd)});
-    const account=h('select',{required:true});for(const a of accounts.accounts.filter(a=>a.can_receive))account.append(h('option',{value:a.account_id},`${a.bank_id} · ${a.account_number_masked}`));
+    const account=h('select',{required:true});for(const a of accounts.accounts.filter(a=>a.can_receive))account.append(h('option',{value:a.account_id},`${a.bank_id} · ${a.account_number} · ${a.account_holder}`));
     const transaction=h('input',{type:'text',maxlength:'128',required:true,autocomplete:'off'});
     const at=h('input',{type:'datetime-local',required:true});
     const submit=h('button',{type:'submit',class:'business-button business-primary'},'Xác nhận đã nhận tiền');
@@ -167,6 +171,30 @@ export class BusinessDashboard implements ShellHost {
     const reason=h('select',{'aria-label':'Lý do từ chối'});for(const [v,t]of [['NOT_RECEIVED','Chưa nhận tiền'],['AMOUNT_MISMATCH','Số tiền chưa khớp'],['DUPLICATE_REQUEST','Yêu cầu trùng'],['INVALID_REQUEST','Thông tin chưa hợp lệ'],['OTHER','Cần trao đổi thêm']])reason.append(h('option',{value:v},t));
     const reject=button('Từ chối yêu cầu',()=>{reject.disabled=true;void this.api.call(base+'/reject',{expected_version:r.version,reason_code:reason.value}).then(()=>{this.detailId=undefined;void this.refresh(true);}).catch(e=>this.showError(e)).finally(()=>{reject.disabled=false;});},'business-danger');
     box.append(form,h('hr'),reason,reject);return box;
+  }
+  private entitlementForm(e:Entitlement,canManage:boolean):HTMLElement {
+    const box=h('section',{class:'business-panel'},h('h3',{},'Quyền mở rộng thực đơn'),h('p',{},e.expanded?'Đã được cấp, không có ngày hết hạn.':'Chưa có quyền mở rộng. Món đang hiển thị được giữ nguyên.'));
+    for(const row of e.history)box.append(h('p',{},`${row.action==='GRANT'?'Cấp':'Thu hồi'} · ${time(row.created_at)} · ${row.reason}`));
+    if(canManage){
+      const reason=h('textarea',{'aria-label':'Lý do cấp hoặc thu hồi quyền',required:true,rows:'2'});
+      const submit=h('button',{type:'submit',class:'business-button'},e.expanded?'Thu hồi quyền mở rộng':'Cấp quyền mở rộng');
+      const form=h('form',{},h('p',{},'Thao tác riêng, không ghi nhận tiền và không mở lại chat. Bắt buộc có lý do.'),reason,submit);
+      form.onsubmit=event=>{event.preventDefault();const text=reason.value.trim();if([...text].length<3||[...text].length>300){this.error.hidden=false;this.error.textContent='Lý do cần từ 3 đến 300 ký tự.';return;}submit.disabled=true;
+        void this.api.call(BASE+'/shops/'+e.shop_id+'/entitlement',{action:e.expanded?'REVOKE':'GRANT',reason:text,expected_version:e.version}).then(()=>{this.detailId=undefined;void this.refresh(true);}).catch(error=>this.showError(error)).finally(()=>{submit.disabled=false;});};box.append(form);
+    }return box;
+  }
+  private manualEntitlement():HTMLElement {
+    const id=h('input',{'aria-label':'Mã quán',placeholder:'Mã quán (UUID)',required:true});
+    const result=h('div');const form=h('form',{},h('label',{},'Tra cứu quyền của quán (cần quyền quản lý)',id),h('button',{type:'submit',class:'business-button'},'Xem quyền'));
+    const epoch=this.mountEpoch;form.onsubmit=e=>{e.preventDefault();if(!/^[0-9a-f-]{36}$/.test(id.value.trim()))return;void this.api.call<Entitlement>(BASE+'/shops/'+id.value.trim()+'/entitlement').then(data=>{if(this.current(epoch))result.replaceChildren(this.entitlementForm(data,true));}).catch(error=>this.showError(error));};return h('details',{},h('summary',{},'Quyền thực đơn theo quán'),form,result);
+  }
+  private async policyForm():Promise<HTMLElement> {
+    const p=await this.api.call<{visible_limit:number;messages_per_minute:number;version:number}>(BASE+'/policy');
+    const limit=h('input',{type:'number',min:'1',max:'300',required:true,value:String(p.visible_limit),'aria-label':'Số món miễn phí đang hiển thị'});
+    const rate=h('input',{type:'number',min:'1',max:'60',required:true,value:String(p.messages_per_minute),'aria-label':'Tin nhắn mỗi phút'});
+    const reason=h('input',{required:true,'aria-label':'Lý do đổi chính sách'});const submit=h('button',{type:'submit',class:'business-button'},'Lưu chính sách');
+    const form=h('form',{},h('label',{},'Giới hạn món hiển thị khi chưa mở rộng',limit),h('label',{},'Giới hạn tin nhắn mỗi người mỗi phút',rate),h('label',{},'Lý do',reason),submit);
+    form.onsubmit=e=>{e.preventDefault();submit.disabled=true;void this.api.call(BASE+'/policy',{visible_limit:Number(limit.value),messages_per_minute:Number(rate.value),expected_version:p.version,reason:reason.value.trim()}).then(()=>void this.refresh(true)).catch(error=>this.showError(error)).finally(()=>{submit.disabled=false;});};return h('details',{},h('summary',{},'Chính sách thực đơn và trao đổi (SYSTEM)'),form);
   }
   private async notifications(before?:string,append=false):Promise<void>{
     const epoch=this.mountEpoch;

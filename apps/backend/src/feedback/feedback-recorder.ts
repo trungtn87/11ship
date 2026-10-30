@@ -24,7 +24,7 @@ export class FeedbackRecorder {
     private readonly outbox: OutboxWriter,
   ) {}
 
-  async review(context: TransactionContext, a: AuditPart, review: { reviewId: string; kind: string; version: number; shopId: string; driverId: string | null; stars: number; visibility: string }): Promise<void> {
+  async review(context: TransactionContext, a: AuditPart, review: { reviewId: string; kind: string; version: number; shopId: string | null; driverId: string | null; stars: number; visibility: string }): Promise<void> {
     await this.audit.append(context, {
       requestId: a.requestId,
       actorType: a.actorType,
@@ -50,7 +50,7 @@ export class FeedbackRecorder {
   async complaint(
     context: TransactionContext,
     a: AuditPart,
-    c: { complaintId: string; code: string; version: number; status: string; shopId: string; driverId: string | null; submitterUserId: string; submitterRole: string; awaitingFrom: string | null },
+    c: { complaintId: string; code: string; version: number; status: string; shopId: string | null; driverId: string | null; submitterUserId: string; submitterRole: string; awaitingFrom: string | null },
     change: string,
   ): Promise<void> {
     await this.audit.append(context, {

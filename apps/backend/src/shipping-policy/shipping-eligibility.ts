@@ -41,6 +41,7 @@ export interface EligibilityFacts {
         readonly hasShipper: boolean;
         readonly searchExpiresAtMs: number;
         readonly shop: LatLng | null;
+        readonly locationOptional?: boolean;
         /** The commission hold M04 would take for this delivery; null when M07/M04 cannot say yet (then the wallet cannot be judged). */
         readonly requiredHoldVnd: bigint | null;
       };
@@ -103,7 +104,9 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
   } else if (delivery !== undefined) {
     if (!isValidPoint(delivery.shop)) {
       // The shop position is needed by EXTERNAL (the radius) and PLATFORM (the exemption is only from the radius) alike.
-      reasons.push('SHOP_LOCATION_MISSING');
+      if (!delivery.locationOptional) {
+        reasons.push('SHOP_LOCATION_MISSING');
+      }
     } else {
       distance = haversineMeters(delivery.shop, location.point);
       if (!platform && distance > SHIPPER_SEARCH_RADIUS_M) {

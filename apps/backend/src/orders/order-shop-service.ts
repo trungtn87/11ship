@@ -19,6 +19,7 @@ import { OrderRepository, OrderRow } from './order-repository';
 import { goodsDescriptionOf, totalOf } from './order-rules';
 import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery, VersionInput } from './order-validation';
 import { OrderViews } from './order-views';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
 
 /**
  * The shop's side of M10 (11Food): the list and detail of the Orders, editing before confirmation, confirming or refusing, the paid amount,
@@ -42,6 +43,7 @@ export class OrderShopService {
     private readonly deliveries: DeliveryRepository,
     private readonly deliveryShop: DeliveryShopService,
     private readonly cancelling: DeliveryCancel,
+    private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
   // ---- reads -----------------------------------------------------------------------------------------------------------------
@@ -212,10 +214,22 @@ export class OrderShopService {
    * Shipper or unknown, a new call is refused. The road distance is asked of M14 outside any transaction.
    */
   async callShipper(principal: AuthPrincipal, orderId: string, input: CallInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    const route = await this.#routeOf(principal, orderId);
+    const routeResult = await this.#routeOf(principal, orderId);
     return this.#command(principal, orderId, ORDER_OPERATIONS.callShipper, key, { expected_version: input.expectedVersion, fee_payer: input.feePayer, agreed: input.agreedFee }, async (context, caller, order) => {
       this.#expect(order, input.expectedVersion, 'PREPARING');
       requireActiveShop(caller.shop);
+
+      if (this.addressChanges) {
+        const activeReq = await this.addressChanges.lockActiveByOrderId(context, orderId);
+        if (activeReq !== undefined) {
+          const nowMs = await freshClockMs(context);
+          if (nowMs >= activeReq.expiresAtMs) {
+            await this.addressChanges.resolve(context, activeReq.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', activeReq.version);
+          } else {
+            throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+          }
+        }
+      }
       const all = await this.deliveries.listOfOrder(context, orderId);
       if (all.some((d) => ACTIVE_STATES.includes(d.state))) {
         throw new AppError('ORDER_STATE_CONFLICT');
@@ -228,6 +242,16 @@ export class OrderShopService {
         }
       }
       const items = (await this.orders.listItems(context, orderId)).filter((i) => i.removedAtMs === null);
+      const quoteFeeVnd = order.feeQuoteVnd ?? null;
+      const customerRaisedFee = quoteFeeVnd !== null && order.feeEstimateVnd !== null && order.feeEstimateVnd > quoteFeeVnd;
+      if (input.agreedFee === null && routeResult.reason !== undefined && !customerRaisedFee) throw new AppError(routeResult.reason);
+      if (customerRaisedFee && input.feePayer !== 'CUSTOMER') {
+        // A customer's voluntary increase cannot silently become a shop expense.
+        throw new AppError('ORDER_INPUT_INVALID');
+      }
+      const agreedFee = customerRaisedFee
+        ? { reasonCode: 'OTHER' as const, reasonNote: 'Khách tự nguyện đề xuất phí giao khi đặt đơn', amountVnd: order.feeEstimateVnd as number }
+        : input.agreedFee;
       const delivery = await this.deliveryShop.createForOrder(context, caller, {
         orderId,
         previousDeliveryId: latest?.deliveryId ?? null,
@@ -241,10 +265,11 @@ export class OrderShopService {
         paidVnd: order.paidVnd,
         feePayer: input.feePayer,
         note: order.note,
-        agreedFee: input.agreedFee,
+        dropoffNote: order.deliveryNote,
+        agreedFee,
         estimatedDistanceM: order.feeEstimateDistanceM,
-        route: route?.leg,
-        routeFrom: route?.from,
+        route: routeResult.route?.leg,
+        routeFrom: routeResult.route?.from,
         requestId,
       });
       // The Order row itself did not change; its version moves so that a screen showing it reloads the new call.
@@ -263,16 +288,16 @@ export class OrderShopService {
     });
   }
 
-  async #routeOf(principal: AuthPrincipal, orderId: string): Promise<Awaited<ReturnType<DeliveryShopService['routeFor']>>> {
+  async #routeOf(principal: AuthPrincipal, orderId: string): Promise<Awaited<ReturnType<DeliveryShopService['routeForQuote']>>> {
     if (!isCanonicalUuid(orderId)) {
-      return undefined;
+      return { reason: 'ROUTE_UNAVAILABLE' };
     }
     const point = await this.transactions.withTransaction(async (context) => {
       const { shop } = await this.actors.shopReader(context, principal);
       const order = await this.orders.findOfShop(context, orderId, shop.shopId);
       return order === undefined ? undefined : { lat: order.addressLat, lng: order.addressLng };
     });
-    return point === undefined ? undefined : this.deliveryShop.routeFor(principal, point.lat, point.lng);
+    return point === undefined ? { reason: 'ROUTE_UNAVAILABLE' } : this.deliveryShop.routeForQuote(principal, point.lat, point.lng);
   }
 
   // ---- ending ----------------------------------------------------------------------------------------------------------------

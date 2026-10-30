@@ -1,3 +1,4 @@
+import '../address_change/address_change_models.dart';
 // M07 (delivery flow) data the phone screens draw. Wire contract: docs/current/M07-implementation-20261018.md section 5.
 //
 // PRIVACY BY TYPE. [OfferView] (what a Shipper sees BEFORE accepting) has no field for a customer phone, a detailed address or a drop-off
@@ -153,7 +154,7 @@ class FeeView {
   factory FeeView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
     final String payer = _str(m['payer']);
-    if (payer != 'CUSTOMER' && payer != 'SHOP') {
+    if (payer != 'CUSTOMER' && payer != 'SHOP' && payer != 'SENDER' && payer != 'RECIPIENT') {
       throw const FormatException('payer');
     }
     return FeeView(
@@ -196,7 +197,12 @@ class FeeView {
   final AgreementSummary? agreement;
 
   bool get isFinal => status == 'FINAL' && amountVnd != null;
-  String get payerText => payer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship';
+  String get payerText => switch (payer) {
+    'SENDER' => 'Người gửi trả ship',
+    'RECIPIENT' => 'Người nhận trả ship',
+    'SHOP' => 'Quán trả ship',
+    _ => 'Khách trả ship',
+  };
 }
 
 class RecipientView {
@@ -232,16 +238,24 @@ class PickupView {
 }
 
 class GoodsView {
-  const GoodsView({required this.description, required this.valueVnd, required this.paidVnd});
+  const GoodsView({required this.description, required this.valueVnd, required this.paidVnd, this.codVnd, this.recipientPaysVnd});
 
   factory GoodsView.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return GoodsView(description: _str(m['description']), valueVnd: _int(m['value_vnd']), paidVnd: _int(m['paid_vnd']));
+    return GoodsView(
+      description: _str(m['description']),
+      valueVnd: _int(m['value_vnd']),
+      paidVnd: _int(m['paid_vnd']),
+      codVnd: _intOrNull(m['cod_vnd']),
+      recipientPaysVnd: _intOrNull(m['recipient_pays_vnd']),
+    );
   }
 
   final String description;
   final int valueVnd;
   final int paidVnd;
+  final int? codVnd;
+  final int? recipientPaysVnd;
 
   int get unpaidVnd => valueVnd - paidVnd;
 }
@@ -400,6 +414,7 @@ class DeliveryView {
     required this.fee,
     required this.search,
     this.note,
+    this.dropoffNote,
     this.assignment,
     this.location,
     this.result,
@@ -407,6 +422,7 @@ class DeliveryView {
     this.can = const <String>{},
     this.timeline = const <TimelineEntry>[],
     this.story = const <StoryEntry>[],
+    this.addressChange,
   });
 
   factory DeliveryView.fromJson(Object? raw) {
@@ -427,6 +443,7 @@ class DeliveryView {
       fee: FeeView.fromJson(m['fee']),
       search: SearchView.fromJson(m['search']),
       note: _strOrNull(m['note']),
+      dropoffNote: _strOrNull(m['dropoff_note']),
       assignment: m['assignment'] == null ? null : AssignmentView.fromJson(m['assignment']),
       location: m['location'] == null ? null : LocationView.fromJson(m['location']),
       result: m['result'] == null ? null : ResultView.fromJson(m['result']),
@@ -434,6 +451,7 @@ class DeliveryView {
       can: <String>{for (final MapEntry<String, Object?> e in can.entries) if (_bool(e.value)) e.key},
       timeline: <TimelineEntry>[for (final Object? t in _list(m['timeline'] ?? <Object?>[])) TimelineEntry.fromJson(t)],
       story: storyOf(m['story']),
+      addressChange: m['address_change_request'] != null ? AddressChangeView.fromJson(m['address_change_request']) : null,
     );
   }
 
@@ -456,6 +474,7 @@ class DeliveryView {
   final FeeView fee;
   final SearchView search;
   final String? note;
+  final String? dropoffNote;
   final AssignmentView? assignment;
   final LocationView? location;
   final ResultView? result;
@@ -467,6 +486,7 @@ class DeliveryView {
 
   /// The milestones for the screen (plain words); [timeline] is the raw log and is never drawn.
   final List<StoryEntry> story;
+  final AddressChangeView? addressChange;
 
   bool allows(String action) => can.contains(action);
 
@@ -486,6 +506,8 @@ class DeliveryView {
     Set<String>? can,
     List<TimelineEntry>? timeline,
     List<StoryEntry>? story,
+    AddressChangeView? addressChange,
+    bool clearAddressChange = false,
   }) =>
       DeliveryView(
         deliveryId: deliveryId,
@@ -502,6 +524,7 @@ class DeliveryView {
         fee: fee ?? this.fee,
         search: search ?? this.search,
         note: note,
+        dropoffNote: dropoffNote,
         assignment: clearAssignment ? null : (assignment ?? this.assignment),
         location: clearLocation ? null : (location ?? this.location),
         result: result ?? this.result,
@@ -509,6 +532,7 @@ class DeliveryView {
         can: can ?? this.can,
         timeline: timeline ?? this.timeline,
         story: story ?? this.story,
+        addressChange: clearAddressChange ? null : (addressChange ?? this.addressChange),
       );
 
   /// The fee was never settled and the server lets the Shipper enter the agreed amount (`can.confirm_fee`). A missing map point never blocks anything:
@@ -528,6 +552,8 @@ class OfferView {
     required this.destinationKnown,
     required this.goodsValueVnd,
     required this.unpaidVnd,
+    this.codVnd,
+    this.recipientPaysVnd,
     this.feeVnd,
     required this.feeStatus,
     required this.feePayer,
@@ -555,6 +581,8 @@ class OfferView {
       destinationKnown: _bool(m['destination_known']),
       goodsValueVnd: _int(m['goods_value_vnd']),
       unpaidVnd: _int(m['unpaid_vnd']),
+      codVnd: _intOrNull(m['cod_vnd']),
+      recipientPaysVnd: _intOrNull(m['recipient_pays_vnd']),
       feeVnd: _intOrNull(m['fee_vnd']),
       feeStatus: _str(m['fee_status']),
       feePayer: _str(m['fee_payer']),
@@ -597,6 +625,8 @@ class OfferView {
   final bool destinationKnown;
   final int goodsValueVnd;
   final int unpaidVnd;
+  final int? codVnd;
+  final int? recipientPaysVnd;
   final int? feeVnd;
   final String feeStatus;
   final String feePayer;

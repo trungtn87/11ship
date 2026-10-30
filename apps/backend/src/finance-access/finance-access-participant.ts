@@ -34,6 +34,12 @@ export class FinanceAccessParticipant {
     }
   }
 
+  async has(context:TransactionContext,actor:LockedActor,permission:FinancePermissionKey,nowMs:number):Promise<boolean> {
+    if(isExpiredAt(actor.session.expiresAtMs,nowMs))throw new AppError('ADMIN_SESSION_INVALID');
+    if(actor.checked.membership.adminRole==='SYSTEM')return true;
+    return (await this.grants.lockForShare(context,actor.known.userId,permission))?.state==='GRANTED';
+  }
+
   /** The rights the actor holds now (for the actor's own read). SYSTEM: all of the grantable ones, implicitly. */
   async held(context: TransactionContext, actor: LockedActor): Promise<{ readonly implicit: boolean; readonly permissions: readonly string[] }> {
     if (actor.checked.membership.adminRole === 'SYSTEM') {

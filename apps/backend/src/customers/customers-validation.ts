@@ -6,6 +6,7 @@ import { objectWithKeys, positiveVersion } from '../onboarding/shop-onboarding-v
 import { isCanonicalUuid } from '../shared/identifiers';
 import {
   ADDRESS_DESCRIPTION_MAX_LENGTH,
+  ADDRESS_DISPLAY_NAME_MAX_LENGTH,
   ADDRESS_LABELS,
   ADDRESS_NOTE_MAX_LENGTH,
   ADDRESS_RECIPIENT_NAME_MAX_LENGTH,
@@ -19,6 +20,7 @@ import {
 
 export interface AddressFields {
   readonly label: AddressLabel;
+  readonly displayName: string | null;
   readonly recipientName: string | null;
   /** E.164 (+84...), normalized by the Auth phone rules. */
   readonly contactPhone: string;
@@ -29,20 +31,21 @@ export interface AddressFields {
 }
 
 export interface AddressCreateInput extends AddressFields {
-  /** The first address is the default whatever this says; later ones are default only when true. */
-  readonly makeDefault: boolean;
+  readonly pickupDefault: boolean;
+  readonly deliveryDefault: boolean;
 }
 
 /** A partial change: only the keys present are changed. null clears an optional field. */
 export interface AddressPatch {
   readonly label?: AddressLabel;
+  readonly displayName?: string | null;
   readonly recipientName?: string | null;
   readonly contactPhone?: string;
   readonly addressDescription?: string;
   readonly position?: { readonly latitude: number; readonly longitude: number } | null;
   readonly deliveryNote?: string | null;
-  /** Only `true` exists: the default cannot be unset except by choosing another one. */
-  readonly makeDefault?: true;
+  readonly pickupDefault?: boolean;
+  readonly deliveryDefault?: boolean;
 }
 
 export interface AddressUpdateInput {
@@ -118,31 +121,38 @@ function phone(value: unknown): string {
   return requireNormalizedPhone(value);
 }
 
-const FIELD_KEYS = ['label', 'recipient_name', 'contact_phone', 'address_description', 'latitude', 'longitude', 'delivery_note'] as const;
+const FIELD_KEYS = ['label', 'display_name', 'recipient_name', 'contact_phone', 'address_description', 'latitude', 'longitude', 'delivery_note'] as const;
 
 /** POST /v1/customers/me/addresses. label, contact_phone and address_description are required. */
 export function parseAddressCreateBody(body: unknown): AddressCreateInput {
   const parsed = objectWithKeys(body, ['label', 'contact_phone', 'address_description'], [
+    'display_name',
     'recipient_name',
     'latitude',
     'longitude',
     'delivery_note',
     'is_default',
+    'is_pickup_default',
+    'is_delivery_default',
   ]);
-  const makeDefault = parsed.is_default;
-  if (makeDefault !== undefined && typeof makeDefault !== 'boolean') {
+  for (const value of [parsed.is_default, parsed.is_pickup_default, parsed.is_delivery_default]) {
+    if (value !== undefined && typeof value !== 'boolean') return reject();
+  }
+  if (parsed.is_default !== undefined && parsed.is_delivery_default !== undefined && parsed.is_default !== parsed.is_delivery_default) {
     return reject();
   }
   const where = position(parsed.latitude, parsed.longitude);
   return {
     label: label(parsed.label),
+    displayName: optionalText(parsed.display_name, ADDRESS_DISPLAY_NAME_MAX_LENGTH),
     recipientName: optionalText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH),
     contactPhone: phone(parsed.contact_phone),
     addressDescription: requiredText(parsed.address_description, ADDRESS_DESCRIPTION_MAX_LENGTH),
     latitude: where === null ? null : where.latitude,
     longitude: where === null ? null : where.longitude,
     deliveryNote: optionalText(parsed.delivery_note, ADDRESS_NOTE_MAX_LENGTH),
-    makeDefault: makeDefault === true,
+    pickupDefault: parsed.is_pickup_default === true,
+    deliveryDefault: parsed.is_delivery_default === true || parsed.is_default === true,
   };
 }
 
@@ -151,19 +161,24 @@ export function parseAddressCreateBody(body: unknown): AddressCreateInput {
  * longitude are changed together. is_default accepts only true.
  */
 export function parseAddressUpdateBody(body: unknown): AddressUpdateInput {
-  const parsed = objectWithKeys(body, ['expected_version'], [...FIELD_KEYS, 'is_default']);
+  const parsed = objectWithKeys(body, ['expected_version'], [...FIELD_KEYS, 'is_default', 'is_pickup_default', 'is_delivery_default']);
   const expectedVersion = positiveVersion(parsed.expected_version);
   const patch: {
     label?: AddressLabel;
+    displayName?: string | null;
     recipientName?: string | null;
     contactPhone?: string;
     addressDescription?: string;
     position?: { latitude: number; longitude: number } | null;
     deliveryNote?: string | null;
-    makeDefault?: true;
+    pickupDefault?: boolean;
+    deliveryDefault?: boolean;
   } = {};
   if (Object.hasOwn(parsed, 'label')) {
     patch.label = label(parsed.label);
+  }
+  if (Object.hasOwn(parsed, 'display_name')) {
+    patch.displayName = optionalText(parsed.display_name, ADDRESS_DISPLAY_NAME_MAX_LENGTH);
   }
   if (Object.hasOwn(parsed, 'recipient_name')) {
     patch.recipientName = optionalText(parsed.recipient_name, ADDRESS_RECIPIENT_NAME_MAX_LENGTH);
@@ -188,12 +203,28 @@ export function parseAddressUpdateBody(body: unknown): AddressUpdateInput {
     if (parsed.is_default !== true) {
       return reject();
     }
-    patch.makeDefault = true;
+    patch.deliveryDefault = true;
+  }
+  if (Object.hasOwn(parsed, 'is_pickup_default')) {
+    if (typeof parsed.is_pickup_default !== 'boolean') return reject();
+    patch.pickupDefault = parsed.is_pickup_default;
+  }
+  if (Object.hasOwn(parsed, 'is_delivery_default')) {
+    if (typeof parsed.is_delivery_default !== 'boolean') return reject();
+    if (Object.hasOwn(parsed, 'is_default') && parsed.is_delivery_default !== true) return reject();
+    patch.deliveryDefault = parsed.is_delivery_default;
   }
   if (Object.keys(patch).length === 0) {
     return reject();
   }
   return { expectedVersion, patch };
+}
+
+export type AddressDefaultKind = 'pickup' | 'delivery';
+
+export function parseAddressDefaultKind(value: unknown): AddressDefaultKind {
+  if (value !== 'pickup' && value !== 'delivery') return reject();
+  return value;
 }
 
 /** A path id: a malformed one names no address of this customer. */

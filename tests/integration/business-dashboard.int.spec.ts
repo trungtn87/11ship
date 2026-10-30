@@ -1,3 +1,5 @@
+import { NotificationEventService } from '../../apps/backend/src/notifications/notification-event-service';
+import { OutboxPublishEvent } from '../../apps/backend/src/outbox/outbox-publisher';
 import { randomInt, randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -42,6 +44,12 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     const r=await client(shop,'POST','/shop-payments',{amount_vnd:29000,note:'Đã chuyển khoản, nhờ kiểm tra'});expect(r.status).toBe(201);return String(adminData(r).request_id);
   };
   const confirmation=(version=1)=>({expected_version:version,actual_amount_vnd:29000,bank_id:'VCB',system_owned_account_id:accountId,canonical_transaction_id:bankTransaction,received_at:new Date().toISOString()});
+  it('keeps the new entitlement trigger inventory explicit alongside the older migration inventory',async()=>{
+    const triggers=await admin.pool.query<{tgname:string}>(`SELECT tgname FROM pg_trigger WHERE tgrelid='app.shop_entitlement_grants'::regclass AND NOT tgisinternal ORDER BY tgname`);
+    expect(triggers.rows.map(r=>r.tgname)).toEqual(['shop_entitlement_grants_guard','shop_entitlement_grants_immutable','shop_entitlement_grants_no_truncate']);
+    const legacyLink=await admin.pool.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='app' AND table_name='shop_entitlement_grants' AND column_name='payment_request_id'`);
+    expect(legacyLink.rowCount).toBe(0);
+  });
   it('locks before checking financial history during rollback, preserving a concurrent committed request',async()=>{
     const id=randomUUID();const writer=await admin.pool.connect();const migrator=await admin.pool.connect();
     try{
@@ -68,6 +76,67 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect((await postAs(admin,viewer.login,`/business/requests/${request}/confirm`,confirmation())).status).toBe(403);
     expect((await changeGrant(admin,system,'revoke',viewer.userId,'wallet.read',1)).status).toBe(200);
     expect((await getAs(admin,viewer.login,'/business/requests')).status).toBe(403);
+  });
+  it('separates shop read, handling, report, receipt and entitlement permissions, including replays',async()=>{
+    const viewer=await activatedAdmin(admin,system,[permission('SHOP')],'Shop finance reader');
+    await changeGrant(admin,system,'grant',viewer.userId,'shop.payment.read',0);
+    const id=await create();const url='/business/requests/'+id;
+    expect((await getAs(admin,viewer.login,url)).status).toBe(200);
+    const key=randomUUID();const body={body:'Trao đổi từ admin'};
+    expect((await postAs(admin,viewer.login,url+'/messages',body,key)).status).toBe(403);
+    await changeGrant(admin,system,'grant',viewer.userId,'shop.payment.record',0);
+    expect((await postAs(admin,viewer.login,url+'/messages',body,key)).status).toBe(200);
+    expect((await postAs(admin,viewer.login,'/business/shops/'+shop.shopId+'/entitlement',{action:'GRANT',reason:'Không có quyền',expected_version:'0'})).status).toBe(403);
+    await changeGrant(admin,system,'revoke',viewer.userId,'shop.payment.record',1);
+    expect((await postAs(admin,viewer.login,url+'/messages',body,key)).status).toBe(403);
+    const reportKey=randomUUID();
+    const [report,retry]=await Promise.all([client(shop,'POST',`/requests/${id}/report-transfer`,{},reportKey),client(shop,'POST',`/requests/${id}/report-transfer`,{},reportKey)]);
+    expect(report.status).toBe(200);expect(retry.status).toBe(200);
+    const read=adminData(await client(shop,'GET','/requests/'+id));
+    expect(read.request).toMatchObject({state:'PENDING',actual_amount_vnd:null,version:1});
+    expect((read.request as {reported_at:unknown}).reported_at).not.toBeNull();
+    expect(read.entitlement).toMatchObject({expanded:false,version:'0'});
+    expect(read.capabilities).toMatchObject({can_send:true,can_record:false,can_manage_entitlement:false});
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE source_id=$1`,[id])).rows[0].n).toBe(0);
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_finance_messages WHERE request_id=$1 AND body LIKE 'Người nộp báo%'`,[id])).rows[0].n).toBe(1);
+    const grantUrl='/business/shops/'+shop.shopId+'/entitlement';
+    const grantBody={action:'GRANT',reason:'Cấp quyền độc lập với giao dịch',expected_version:'0'};
+    // A manual entitlement does not accept a payment link and works even before money is confirmed.
+    expect((await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,payment_request_id:id})).status).toBe(400);
+    const grantKey=randomUUID();
+    const grant=await postAs(admin,systemLoginOf(system),grantUrl,grantBody,grantKey);expect(grant.status).toBe(200);
+    const replay=await postAs(admin,systemLoginOf(system),grantUrl,grantBody,grantKey);expect(replay.status).toBe(200);expect(adminData(replay)).toEqual(adminData(grant));
+    const stillPending=adminData(await client(shop,'GET','/requests/'+id));
+    expect(stillPending.request).toMatchObject({state:'PENDING',actual_amount_vnd:null});
+    expect(stillPending.entitlement).toMatchObject({expanded:true});
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE source_id=$1`,[id])).rows[0].n).toBe(0);
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_finance_messages WHERE request_id=$1 AND body LIKE 'Quản trị đã cấp quyền%'`,[id])).rows[0].n).toBe(0);
+    const confirmed=await postAs(admin,systemLoginOf(system),url+'/confirm',{...confirmation(),canonical_transaction_id:'ENT-'+randomUUID()});
+    expect(confirmed.status).toBe(200);
+    expect(adminData(await client(shop,'GET','/requests/'+id)).entitlement).toMatchObject({expanded:true});
+    expect((await client(shop,'POST',`/requests/${id}/messages`,{body:'Không mở lại chat'})).status).toBe(409);
+    const version=String(adminData(grant).version);
+    expect((await postAs(admin,systemLoginOf(system),grantUrl,{action:'REVOKE',reason:'Thu hồi có lý do',expected_version:version})).status).toBe(200);
+    const after=adminData(await getAs(admin,systemLoginOf(system),grantUrl));expect(after.expanded).toBe(false);
+    expect((after.history as unknown[]).length).toBe(2);
+    // A stale version must conflict, but a manual grant after revocation is valid without linking a payment.
+    expect((await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,expected_version:version})).status).toBe(409);
+    const regrant=await postAs(admin,systemLoginOf(system),grantUrl,{...grantBody,expected_version:after.version});
+    expect(regrant.status).toBe(200);
+    expect(adminData(regrant)).toMatchObject({expanded:true});
+    expect((adminData(regrant).history as unknown[]).length).toBe(3);
+  });
+  it('enforces sender-wide configured chat rate while idempotent retries cost no new message',async()=>{
+    const otherId=String(adminData(await client(other,'POST','/shop-payments',{amount_vnd:100,note:'Thử giới hạn'})).request_id);
+    const policy=adminData(await getAs(admin,systemLoginOf(system),'/business/policy'));
+    const changed=await postAs(admin,systemLoginOf(system),'/business/policy',{visible_limit:policy.visible_limit,messages_per_minute:1,expected_version:policy.version,reason:'Kiểm tra giới hạn gửi'});expect(changed.status).toBe(200);
+    try{
+      const key=randomUUID();const body={body:'Tin nhắn đầu tiên'};
+      expect((await client(other,'POST',`/requests/${otherId}/messages`,body,key)).status).toBe(200);
+      expect((await client(other,'POST',`/requests/${otherId}/messages`,body,key)).status).toBe(200);
+      expect(adminErrorCode(await client(other,'POST',`/requests/${otherId}/messages`,{body:'Vượt giới hạn'}))).toBe('BUSINESS_CHAT_RATE_LIMITED');
+      expect((await client(other,'GET','/requests/'+otherId)).status).toBe(200);
+    }finally{expect((await postAs(admin,systemLoginOf(system),'/business/policy',{visible_limit:policy.visible_limit,messages_per_minute:policy.messages_per_minute,expected_version:adminData(changed).version,reason:'Khôi phục sau test'})).status).toBe(200);}
   });
   it('makes one shop request per intent, enforces ownership, and never provisions money or activates a shop',async()=>{
     const key=randomUUID();const body={amount_vnd:29000,note:'Báo đã thanh toán'};
@@ -116,6 +185,31 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
     expect(adminData(after).request).toMatchObject({state:'CONFIRMED',version:2,actual_amount_vnd:100000});
     expect(Number((await app.pool.query('SELECT balance_vnd FROM app.driver_wallets WHERE wallet_id=$1',[shipper.walletId])).rows[0].balance_vnd)).toBe(before+100000);
     expect((await app.pool.query("SELECT count(*)::int AS n FROM app.wallet_ledger_entries WHERE wallet_id=$1 AND entry_kind='TOPUP'",[shipper.walletId])).rows[0].n).toBe(1);
+  });
+  it('uses real finance events for M08, not message text or a typed recipient, and rechecks the target owner',async()=>{
+    const id=await create();
+    expect((await postAs(admin,systemLoginOf(system),`/business/requests/${id}/messages`,{body:'Nội dung ngân hàng không nằm trên push'})).status).toBe(200);
+    const row=(await admin.pool.query(`SELECT event_id,event_type,resource_type,resource_id,resource_version,payload,occurred_at FROM app.outbox_events WHERE event_type='business.finance.updated.v1' AND resource_id=$1 ORDER BY occurred_at DESC LIMIT 1`,[id])).rows[0];
+    const event:OutboxPublishEvent={attemptCount:1,eventId:row.event_id,eventType:row.event_type,eventSchemaVersion:1,resourceType:row.resource_type,resourceId:row.resource_id,resourceVersion:Number(row.resource_version),payload:row.payload,occurredAt:new Date(row.occurred_at).toISOString()};
+    const events=admin.running.app.get(NotificationEventService);await events.consume(event);await events.consume(event);
+    const notices=(await admin.pool.query(`SELECT notification_id,recipient_user_id,app,title,body,target_type,target_id FROM app.notifications WHERE source_event_id=$1`,[event.eventId])).rows;
+    expect(notices).toHaveLength(1);expect(notices[0]).toMatchObject({recipient_user_id:shop.userId,app:'FOOD',target_type:'FINANCE_REQUEST',target_id:id});
+    expect(String(notices[0].body)).not.toContain('ngân hàng');
+    const open=await admin.call('POST',`/notifications/${notices[0].notification_id}/open`,{basePath:'/v1',headers:{authorization:'Bearer '+shop.token},body:{}});
+    expect(open.status).toBe(200);expect(adminData(open).target).toEqual({type:'FINANCE_REQUEST',id});
+    const otherOpen=await admin.call('POST',`/notifications/${notices[0].notification_id}/open`,{basePath:'/v1',headers:{authorization:'Bearer '+other.token},body:{}});expect(otherOpen.status).toBe(404);
+  });
+  it('serializes duplicate bank confirmations and send versus close without reopening a room',async()=>{
+    const a=await create(),b=await create();const transaction='RACE-'+randomUUID();
+    const body={...confirmation(),canonical_transaction_id:transaction};
+    const results=await Promise.all([postAs(admin,systemLoginOf(system),`/business/requests/${a}/confirm`,body),postAs(admin,systemLoginOf(system),`/business/requests/${b}/confirm`,body)]);
+    expect(results.map(r=>r.status).sort()).toEqual([200,409]);
+    expect((await admin.pool.query(`SELECT count(*)::int n FROM app.business_bank_receipts WHERE canonical_transaction_id=$1`,[transaction])).rows[0].n).toBe(1);
+    const id=await create();
+    const [send,close]=await Promise.all([client(shop,'POST',`/requests/${id}/messages`,{body:'Tin cuối trước khi đóng'}),postAs(admin,systemLoginOf(system),`/business/requests/${id}/reject`,{expected_version:1,reason_code:'OTHER'})]);
+    expect(close.status).toBe(200);expect([200,409]).toContain(send.status);
+    const room=adminData(await client(shop,'GET','/requests/'+id));expect(room.request).toMatchObject({state:'REJECTED'});
+    if(send.status===200){const messages=(room.messages as {items:{sequence:string;body:string}[]}).items;const sent=messages.find(m=>m.body==='Tin cuối trước khi đóng')!;const state=messages.find(m=>m.body.startsWith('Yêu cầu bị từ chối'))!;expect(BigInt(sent.sequence)<BigInt(state.sequence)).toBe(true);}
   });
   it('counts a direct call once when it is recalled, without adding an Order',async()=>{
     const current=async()=>adminData(await getAs(admin,systemLoginOf(system),'/business/reports?range=today')).trade as {transactions:number;goods_vnd:number};

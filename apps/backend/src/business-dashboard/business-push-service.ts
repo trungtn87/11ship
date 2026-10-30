@@ -69,7 +69,7 @@ export class BusinessPushService implements OnApplicationBootstrap,OnApplication
         const known=await this.sessions.findByDigest(c,sub.token_digest);
         if(!known||known.revoked||known.expiredAtLookup)sub=undefined;
         else {
-          try {await this.finance.authorize(c,{kind:'admin',known});}
+          try {await this.finance.room(c,{kind:'admin',known},sub.request_id);}
           catch(error){if(error instanceof AppError)sub=undefined;else throw error;}
         }
       }
