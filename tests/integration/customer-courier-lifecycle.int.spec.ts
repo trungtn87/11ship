@@ -59,9 +59,12 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
   });
 
   afterAll(async () => {
-    await cleanup();
-    await app.close();
-    await new Promise<void>((resolve) => router.close(() => resolve()));
+    try {
+      await cleanup();
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve) => router.close(() => resolve()));
+    }
   });
 
   async function cleanup(): Promise<void> {
@@ -81,6 +84,7 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
       'driver_wallets',
       'shipping_fee_agreement_events',
       'shipping_fee_agreements',
+      'shipping_fee_policy_versions',
     ];
     try {
       await client.query('BEGIN');
