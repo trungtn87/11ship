@@ -174,4 +174,28 @@ export class WalletReportReader {
     );
     return { count: whole(result.rows[0]?.n), requestedVnd: whole(result.rows[0]?.amount) };
   }
+
+  /** The top-up requests still PENDING, oldest first (M12 "Việc cần xử lý": one row per request). The Shipper is named by the caller through M03. */
+  async pendingTopupList(context: TransactionContext, limit: number): Promise<Array<{ requestId: string; driverId: string; amountVnd: number; sinceMs: number }>> {
+    const result = await context.query<{ request_id: string; driver_id: string; amount: string; since: string }>(
+      `SELECT request_id::text AS request_id, driver_id::text AS driver_id, amount_requested_vnd::text AS amount, (extract(epoch FROM created_at) * 1000)::bigint::text AS since
+         FROM app.wallet_topup_requests WHERE state = 'PENDING' ORDER BY created_at, request_id LIMIT $1::int`,
+      [limit],
+    );
+    return result.rows.map((row) => ({ requestId: row.request_id, driverId: row.driver_id, amountVnd: whole(row.amount), sinceMs: whole(row.since) }));
+  }
+
+  /**
+   * The withdrawals not finished (PENDING, PROCESSING, RECONCILIATION), oldest wait first. Waiting since: the request (PENDING), the claim (PROCESSING) or the
+   * report that the outcome is unknown (RECONCILIATION): the moment the CURRENT step began.
+   */
+  async openWithdrawalList(context: TransactionContext, limit: number): Promise<Array<{ withdrawalId: string; driverId: string; state: string; amountVnd: number; sinceMs: number }>> {
+    const since = `CASE state WHEN 'PENDING' THEN created_at WHEN 'PROCESSING' THEN COALESCE(processing_started_at, created_at) ELSE COALESCE(reconciliation_reported_at, updated_at) END`;
+    const result = await context.query<{ withdrawal_id: string; driver_id: string; state: string; amount: string; since: string }>(
+      `SELECT withdrawal_id::text AS withdrawal_id, driver_id::text AS driver_id, state, amount_vnd::text AS amount, (extract(epoch FROM ${since}) * 1000)::bigint::text AS since
+         FROM app.wallet_withdrawals WHERE state IN ('PENDING', 'PROCESSING', 'RECONCILIATION') ORDER BY ${since}, withdrawal_id LIMIT $1::int`,
+      [limit],
+    );
+    return result.rows.map((row) => ({ withdrawalId: row.withdrawal_id, driverId: row.driver_id, state: row.state, amountVnd: whole(row.amount), sinceMs: whole(row.since) }));
+  }
 }
