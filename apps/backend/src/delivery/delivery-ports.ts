@@ -26,7 +26,8 @@ export class DeliveryOfferReader implements DeliveryOfferPort {
       searching: delivery.state === 'waiting_driver',
       hasShipper: taken,
       searchExpiresAtMs: delivery.searchExpiresAtMs,
-      shop: { lat: delivery.pickupLat, lng: delivery.pickupLng },
+      shop: delivery.pickupLat === null || delivery.pickupLng === null ? null : { lat: delivery.pickupLat, lng: delivery.pickupLng },
+      locationOptional: delivery.source === 'CUSTOMER',
       dropoff: delivery.dropoffLat === null || delivery.dropoffLng === null ? null : { lat: delivery.dropoffLat, lng: delivery.dropoffLng },
       // The commission M04 would set aside: the policy in force now (M04-C, versioned), snapshotted on the assignment when it is accepted.
       requiredHoldVnd: (await this.policies.current(context)).amountVnd,
@@ -51,7 +52,7 @@ export class ShipperWorkReader implements ShipperWorkPort {
         orderId: delivery.deliveryId,
         originalEtaMs: assignment.originalEtaAtMs,
         pickedUp: assignment.pickedUpAtMs !== null,
-        pickup: { lat: delivery.pickupLat, lng: delivery.pickupLng },
+        pickup: delivery.pickupLat === null || delivery.pickupLng === null ? null : { lat: delivery.pickupLat, lng: delivery.pickupLng },
         dropoff: delivery.dropoffLat === null || delivery.dropoffLng === null ? null : { lat: delivery.dropoffLat, lng: delivery.dropoffLng },
       });
     }

@@ -328,6 +328,13 @@ export const APP_ERROR_DEFINITIONS = {
   RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
   RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
   ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
+  // Address change requests (#218)
+  ADDRESS_CHANGE_ALREADY_PENDING: { status: 409, message: 'Đang có yêu cầu đổi địa chỉ chờ xử lý' },
+  ADDRESS_CHANGE_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu đổi địa chỉ' },
+  ADDRESS_CHANGE_NOT_PENDING: { status: 409, message: 'Yêu cầu đổi địa chỉ không còn ở trạng thái chờ' },
+  ADDRESS_CHANGE_NOT_PERMITTED: { status: 403, message: 'Bạn không có quyền thao tác trên yêu cầu này' },
+  CANNOT_CHANGE_AFTER_PICKUP: { status: 409, message: 'Không thể đổi địa chỉ sau khi hàng đã lấy' },
+  ORDER_NOT_CONFIRMED: { status: 409, message: 'Đơn chưa xác nhận' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;
