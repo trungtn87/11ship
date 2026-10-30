@@ -1,7 +1,5 @@
-import '../address_change/address_change_models.dart';
 import '../address_change/address_change_widgets.dart';
 import '../guidance/order_incident_guidance.dart';
-import '../m10/order_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -708,6 +706,27 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                 ),
                 const SizedBox(height: N11Space.gap3),
 
+                if (d.addressChange != null) ...<Widget>[
+                  AddressChangeBanner(
+                    request: d.addressChange!,
+                    canCancel: d.allows('cancel_address_change'),
+                    onCancel: () => _cancelAddressChange(d),
+                  ),
+                  const SizedBox(height: N11Space.gap3),
+                ],
+                OrderIncidentGuidance(
+                  role: 'CUSTOMER',
+                  deliveryState: d.state.name,
+                  hasShipper: d.assignment != null,
+                  shipperPhone: d.assignment?.shipperPhone,
+                  onCallShipper: d.assignment?.shipperPhone != null ? () => orderPhoneDialer.dial(d.assignment!.shipperPhone!) : null,
+                  canRequestAddressChange: d.allows('request_address_change') && d.addressChange?.isPending != true,
+                  onRequestAddressChange: () => _requestAddressChange(d),
+                  feePending: isFeeCountered,
+                  incident: d.incident,
+                  isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+                ),
+                const SizedBox(height: N11Space.gap3),
                 // MAP SECTION (only when both pins exist)
                 if (hasBothPins && widget.mapBuilder != null && isActive) ...<Widget>[
                   SizedBox(
