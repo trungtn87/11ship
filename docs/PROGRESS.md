@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `41912de` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: —
+> Dữ liệu theo mã main `` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: —
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -108,7 +108,7 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2D · Onboarding shipper (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 | **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
-| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `41912de` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `` | — | Claude triển khai |
 | &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
@@ -314,7 +314,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#246](https://github.com/trungtn87/11ship/pull/246) feat(governance): agent permissions, PR readiness checks an… | Đã merge (`MERGED`) | — | — | — | `a469d21` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#249](https://github.com/trungtn87/11ship/pull/249) feat(v5): Flutter UI-only preview for 11Food &amp; 11Ship w… | 🚫 Đã hủy / bỏ qua (`CANCELLED / IGNORED`) | — | — | — | `ceb99ee` | 🚫 không tính (đã hủy) — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#250](https://github.com/trungtn87/11ship/pull/250) feat(ui): áp dụng Design V5 trực tiếp lên 11Food &amp; 11Sh… | Đã merge (`MERGED`) | — | — | — | `c46653e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#267](https://github.com/trungtn87/11ship/pull/267) (Nhóm 13) Tài khoản, OTP và khôi phục mật khẩu (#251, #235) | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4b9565c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#267](https://github.com/trungtn87/11ship/pull/267) (Nhóm 13) Tài khoản, OTP và khôi phục mật khẩu (#251, #235) | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `4b9565c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#268](https://github.com/trungtn87/11ship/pull/268) (Nhóm 14) Ghim quán, điều kiện công khai và quản lý vùng (#… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `ac12c54` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#269](https://github.com/trungtn87/11ship/pull/269) (Nhóm 15) Đóng hoạt động shipper, hoàn số dư và đối soát nạ… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `2678ab6` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#270](https://github.com/trungtn87/11ship/pull/270) (Nhóm 16) Điều kiện nhận chuyến và xử lý chuyến đang giữ (#… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `1605ec5` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
