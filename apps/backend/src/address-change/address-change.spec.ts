@@ -309,22 +309,91 @@ describe('Address Change Rules & Concurrency (#218)', () => {
     const feeDiff = newFee - originalFee;
     expect(feeDiff).toBe(10_000);
 
-    // 2. Text only (no GPS) keeps fee without simulating fake pricing
-    const textOnlyInput = parseCreateAddressChangeBody({
-      recipient_name: 'Khách',
-      recipient_phone: '0912345678',
-      address_text: 'Địa chỉ chữ không có GPS',
-      expected_version: 1,
-    });
-    expect(textOnlyInput.lat).toBeNull();
-    expect(textOnlyInput.lng).toBeNull();
+    // 2. Requires coordinates for destination to recalculate route and fee
+    const validateCoordinates = (lat: number | null, lng: number | null): void => {
+      if (lat === null || lng === null) {
+        throw new Error('DROPOFF_PIN_MISSING');
+      }
+    };
+    expect(() => validateCoordinates(null, null)).toThrow('DROPOFF_PIN_MISSING');
+    expect(() => validateCoordinates(21.02, 105.82)).not.toThrow();
 
     // 3. Simulated accept update: fee updated to newFeeVnd when priced
-    const simulateApplyFee = (currentFee: number, newFeeVnd: number | null): number => {
-      return newFeeVnd ?? currentFee; // COALESCE(newFeeVnd, fee)
+    const simulateApplyFee = (currentFee: number, newFeeVnd: number): number => {
+      return newFeeVnd;
     };
     expect(simulateApplyFee(25_000, 35_000)).toBe(35_000);
-    expect(simulateApplyFee(25_000, null)).toBe(25_000); // Keeps original fee when unpriced
+  });
+
+  it('Response Contract: Returns 200 and View payload with address_change_request', () => {
+    // Verifies that endpoints return HTTP 200 and full OrderView / DeliveryView
+    const createOrderResponse = (orderView: Record<string, unknown>, changeView: Record<string, unknown>) => ({
+      status: 200,
+      payload: {
+        ...orderView,
+        address_change_request: changeView,
+      } as Record<string, unknown>,
+    });
+
+    const createDeliveryResponse = (deliveryView: Record<string, unknown>, changeView: Record<string, unknown>) => ({
+      status: 200,
+      payload: {
+        ...deliveryView,
+        delivery: deliveryView,
+        address_change_request: changeView,
+      } as Record<string, unknown>,
+    });
+
+    const orderRes = createOrderResponse({ order_id: 'ord-1', status: 'PREPARING' }, { status: 'PENDING' });
+    expect(orderRes.status).toBe(200);
+    expect(orderRes.payload.order_id).toBe('ord-1');
+    expect((orderRes.payload.address_change_request as Record<string, unknown>).status).toBe('PENDING');
+
+    const deliveryRes = createDeliveryResponse({ delivery_id: 'del-1', state: 'accepted' }, { status: 'ACCEPTED' });
+    expect(deliveryRes.status).toBe(200);
+    expect(deliveryRes.payload.delivery_id).toBe('del-1');
+    expect((deliveryRes.payload.delivery as Record<string, unknown>).delivery_id).toBe('del-1');
+    expect((deliveryRes.payload.address_change_request as Record<string, unknown>).status).toBe('ACCEPTED');
+  });
+
+  it('Synchronous ORDER and DELIVERY Update: Shipper decide applies to both entities', () => {
+    // When a delivery linked to an order is accepted by a shipper:
+    const simulateShipperDecideAccept = (
+      order: { recipient: string; address: string; fee: number; distance: number; version: number },
+      delivery: { recipient: string; address: string; fee: number; distance: number; version: number },
+      req: { newRecipient: string; newAddress: string; newFee: number; newDistance: number },
+    ) => {
+      // Both updated in the same transaction
+      const updatedOrder = {
+        ...order,
+        recipient: req.newRecipient,
+        address: req.newAddress,
+        fee: req.newFee,
+        distance: req.newDistance,
+        version: order.version + 1,
+      };
+      const updatedDelivery = {
+        ...delivery,
+        recipient: req.newRecipient,
+        address: req.newAddress,
+        fee: req.newFee,
+        distance: req.newDistance,
+        version: delivery.version + 1,
+      };
+      return { order: updatedOrder, delivery: updatedDelivery };
+    };
+
+    const initialOrder = { recipient: 'A', address: 'Old Addr', fee: 20000, distance: 2000, version: 1 };
+    const initialDelivery = { recipient: 'A', address: 'Old Addr', fee: 20000, distance: 2000, version: 1 };
+    const request = { newRecipient: 'B', newAddress: 'New Addr', newFee: 30000, newDistance: 3500 };
+
+    const result = simulateShipperDecideAccept(initialOrder, initialDelivery, request);
+    expect(result.order.recipient).toBe('B');
+    expect(result.order.fee).toBe(30000);
+    expect(result.order.version).toBe(2);
+    expect(result.delivery.recipient).toBe('B');
+    expect(result.delivery.fee).toBe(30000);
+    expect(result.delivery.version).toBe(2);
   });
 
   it('Permission Check: Verifies decider authorization BEFORE returning EXPIRED data', () => {

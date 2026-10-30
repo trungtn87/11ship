@@ -6,6 +6,7 @@ import { ACTIVE_STATES } from '../delivery/delivery-constants';
 import { DeliveryActors } from '../delivery/delivery-actors';
 import { DeliveryRecorder } from '../delivery/delivery-recorder';
 import { DeliveryRepository } from '../delivery/delivery-repository';
+import { DeliveryViews } from '../delivery/delivery-views';
 import { dropoffAreaOf } from '../delivery/delivery-rules';
 import { M14RouteClient } from '../delivery/m14-route-client';
 import { DriverRepository } from '../driver/driver-repository';
@@ -13,6 +14,7 @@ import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempoten
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { OrderRecorder } from '../orders/order-recorder';
 import { OrderRepository } from '../orders/order-repository';
+import { OrderViews } from '../orders/order-views';
 import { isEnded } from '../orders/order-rules';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
@@ -38,6 +40,8 @@ export class AddressChangeService {
     private readonly shops: ShopAvailabilityReader,
     private readonly routes: M14RouteClient,
     private readonly agreements: ShippingFeeAgreementService,
+    private readonly orderViews: OrderViews,
+    private readonly deliveryViews: DeliveryViews,
   ) {}
 
   #replay(principal: AuthPrincipal) {
@@ -102,26 +106,32 @@ export class AddressChangeService {
           }
         }
 
-        let newDistanceM: number | null = null;
-        let newFeeVnd: number | null = null;
+        if (input.lat === null || input.lng === null) {
+          throw new AppError('DROPOFF_PIN_MISSING');
+        }
+
         const pickupLat = running?.pickupLat ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLat ?? null;
         const pickupLng = running?.pickupLng ?? (await this.shops.snapshotOfShop(context, order.shopId))?.pickupLng ?? null;
-
-        if (pickupLat !== null && pickupLng !== null && input.lat !== null && input.lng !== null) {
-          const route = await this.routes.route({ lat: pickupLat, lng: pickupLng }, { lat: input.lat, lng: input.lng });
-          if (!route || route.distanceM === null || route.distanceM === undefined) {
-            throw new AppError('ROUTE_UNAVAILABLE');
-          }
-          newDistanceM = route.distanceM;
-          const quote = await this.agreements.estimate(context, route.distanceM);
-          if (quote.status === 'UNPRICED') {
-            if (quote.reason === 'OUT_OF_PRICE_RANGE') {
-              throw new AppError('OUT_OF_PRICE_RANGE');
-            }
-          } else if (quote.status === 'PRICED') {
-            newFeeVnd = quote.feeVnd;
-          }
+        if (pickupLat === null || pickupLng === null) {
+          throw new AppError('ROUTE_UNAVAILABLE');
         }
+
+        const route = await this.routes.route({ lat: pickupLat, lng: pickupLng }, { lat: input.lat, lng: input.lng });
+        if (!route || route.distanceM === null || route.distanceM === undefined) {
+          throw new AppError('ROUTE_UNAVAILABLE');
+        }
+        const newDistanceM = route.distanceM;
+        const quote = await this.agreements.estimate(context, route.distanceM);
+        if (quote.status === 'UNPRICED') {
+          throw new AppError(
+            quote.reason === 'POLICY_NOT_CONFIGURED'
+              ? 'POLICY_NOT_CONFIGURED'
+              : quote.reason === 'OUT_OF_PRICE_RANGE'
+                ? 'OUT_OF_PRICE_RANGE'
+                : 'ROUTE_UNAVAILABLE',
+          );
+        }
+        const newFeeVnd = quote.feeVnd;
 
         let targetActor: AddressChangeTargetActor = 'SHOP';
         let targetDriverId: string | null = null;
@@ -186,10 +196,15 @@ export class AddressChangeService {
         });
 
         const created = await this.addressChangeRepo.findById(context, changeRequestId);
+        const freshOrder = (await this.orders.findById(context, orderId))!;
+        const orderView = await this.orderViews.forCustomer(context, freshOrder, true);
         return {
-          status: 201,
+          status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(created, nowMs) },
+          payload: {
+            ...orderView,
+            address_change_request: addressChangeView(created, nowMs),
+          },
         };
       },
     );
@@ -260,10 +275,15 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const freshOrder = (await this.orders.findById(context, orderId))!;
+          const orderView = await this.orderViews.forShop(context, freshOrder, true);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...orderView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -273,10 +293,15 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const freshOrder = (await this.orders.findById(context, orderId))!;
+          const orderView = await this.orderViews.forShop(context, freshOrder, true);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...orderView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -302,10 +327,15 @@ export class AddressChangeService {
           });
 
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const freshOrder = (await this.orders.findById(context, orderId))!;
+          const orderView = await this.orderViews.forShop(context, freshOrder, true);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...orderView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -377,10 +407,14 @@ export class AddressChangeService {
         });
 
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+        const orderView = await this.orderViews.forShop(context, freshOrder, true);
         return {
           status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(updated, nowMs) },
+          payload: {
+            ...orderView,
+            address_change_request: addressChangeView(updated, nowMs),
+          },
         };
       },
     );
@@ -428,10 +462,15 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const freshOrder = (await this.orders.findById(context, orderId))!;
+          const orderView = await this.orderViews.forCustomer(context, freshOrder, true);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...orderView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -452,10 +491,15 @@ export class AddressChangeService {
         });
 
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+        const freshOrder = (await this.orders.findById(context, orderId))!;
+        const orderView = await this.orderViews.forCustomer(context, freshOrder, true);
         return {
           status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(updated, nowMs) },
+          payload: {
+            ...orderView,
+            address_change_request: addressChangeView(updated, nowMs),
+          },
         };
       },
     );
@@ -507,23 +551,28 @@ export class AddressChangeService {
           }
         }
 
-        let newDistanceM: number | null = null;
-        let newFeeVnd: number | null = null;
-        if (delivery.pickupLat !== null && delivery.pickupLng !== null && input.lat !== null && input.lng !== null) {
-          const route = await this.routes.route({ lat: delivery.pickupLat, lng: delivery.pickupLng }, { lat: input.lat, lng: input.lng });
-          if (!route || route.distanceM === null || route.distanceM === undefined) {
-            throw new AppError('ROUTE_UNAVAILABLE');
-          }
-          newDistanceM = route.distanceM;
-          const quote = await this.agreements.estimate(context, route.distanceM);
-          if (quote.status === 'UNPRICED') {
-            if (quote.reason === 'OUT_OF_PRICE_RANGE') {
-              throw new AppError('OUT_OF_PRICE_RANGE');
-            }
-          } else if (quote.status === 'PRICED') {
-            newFeeVnd = quote.feeVnd;
-          }
+        if (input.lat === null || input.lng === null) {
+          throw new AppError('DROPOFF_PIN_MISSING');
         }
+        if (delivery.pickupLat === null || delivery.pickupLng === null) {
+          throw new AppError('ROUTE_UNAVAILABLE');
+        }
+        const route = await this.routes.route({ lat: delivery.pickupLat, lng: delivery.pickupLng }, { lat: input.lat, lng: input.lng });
+        if (!route || route.distanceM === null || route.distanceM === undefined) {
+          throw new AppError('ROUTE_UNAVAILABLE');
+        }
+        const newDistanceM = route.distanceM;
+        const quote = await this.agreements.estimate(context, route.distanceM);
+        if (quote.status === 'UNPRICED') {
+          throw new AppError(
+            quote.reason === 'POLICY_NOT_CONFIGURED'
+              ? 'POLICY_NOT_CONFIGURED'
+              : quote.reason === 'OUT_OF_PRICE_RANGE'
+                ? 'OUT_OF_PRICE_RANGE'
+                : 'ROUTE_UNAVAILABLE',
+          );
+        }
+        const newFeeVnd = quote.feeVnd;
 
         const activeAssignment = await this.deliveries.findActiveAssignment(context, deliveryId);
         const hasShipper = activeAssignment !== undefined && ['accepted', 'location_confirmed'].includes(delivery.state);
@@ -599,10 +648,16 @@ export class AddressChangeService {
           await this.addressChangeRepo.resolve(context, changeRequestId, 'ACCEPTED', principal.userId, null, 1);
 
           const finalReq = await this.addressChangeRepo.findById(context, changeRequestId);
+          const freshDelivery = (await this.deliveries.findById(context, deliveryId))!;
+          const deliveryView = await this.deliveryViews.forCustomer(context, freshDelivery, nowMs);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(finalReq, nowMs) },
+            payload: {
+              ...deliveryView,
+              delivery: deliveryView,
+              address_change_request: addressChangeView(finalReq, nowMs),
+            },
           };
         }
 
@@ -652,10 +707,16 @@ export class AddressChangeService {
         });
 
         const created = await this.addressChangeRepo.findById(context, changeRequestId);
+        const freshDelivery = (await this.deliveries.findById(context, deliveryId))!;
+        const deliveryView = await this.deliveryViews.forCustomer(context, freshDelivery, nowMs);
         return {
-          status: 201,
+          status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(created, nowMs) },
+          payload: {
+            ...deliveryView,
+            delivery: deliveryView,
+            address_change_request: addressChangeView(created, nowMs),
+          },
         };
       },
     );
@@ -680,6 +741,13 @@ export class AddressChangeService {
         replay: this.#replay(principal),
       },
       async (context) => {
+        const peekDelivery = await this.deliveries.findById(context, deliveryId);
+        if (peekDelivery === undefined) {
+          throw new AppError('DELIVERY_NOT_FOUND');
+        }
+        if (peekDelivery.orderId !== null) {
+          await this.orders.lockById(context, peekDelivery.orderId);
+        }
         const delivery = await this.deliveries.lockById(context, deliveryId);
         if (delivery === undefined) {
           throw new AppError('DELIVERY_NOT_FOUND');
@@ -695,7 +763,7 @@ export class AddressChangeService {
           : null;
 
         const { driver } = await this.actors.shipperWriter(context, principal, { acceptNew: false });
-        if (currentDriverId === null || driver.driverId !== currentDriverId) {
+        if (activeAssignment === undefined || currentDriverId === null || driver.driverId !== currentDriverId) {
           throw new AppError('ADDRESS_CHANGE_NOT_PERMITTED');
         }
 
@@ -714,10 +782,15 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const deliveryView = await this.deliveryViews.forShipper(context, delivery, activeAssignment, nowMs);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...deliveryView,
+              delivery: deliveryView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -727,12 +800,19 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const deliveryView = await this.deliveryViews.forShipper(context, delivery, activeAssignment, nowMs);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...deliveryView,
+              delivery: deliveryView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
+
+        const linkedOrderId = req.orderId ?? delivery.orderId;
 
         if (!input.accept) {
           const resolved = await this.addressChangeRepo.resolve(context, req.changeRequestId, 'REJECTED', principal.userId, input.reason, req.version);
@@ -751,11 +831,37 @@ export class AddressChangeService {
             requestId,
           });
 
+          if (linkedOrderId !== null) {
+            const currentOrder = await this.orders.findById(context, linkedOrderId);
+            if (currentOrder !== undefined) {
+              await this.orderRecorder.record(context, {
+                order: currentOrder,
+                type: 'address_change_rejected',
+                actorType: 'SYSTEM',
+                actorId: principal.userId,
+                note: input.reason,
+                details: {
+                  change_request_id: req.changeRequestId,
+                  rejected_by: 'SHIPPER',
+                  driver_id: driver.driverId,
+                  reason: input.reason,
+                },
+                operation: ADDRESS_CHANGE_OPERATIONS.deliveryDecide,
+                requestId,
+              });
+            }
+          }
+
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const deliveryView = await this.deliveryViews.forShipper(context, delivery, activeAssignment, nowMs);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...deliveryView,
+              delivery: deliveryView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -788,6 +894,44 @@ export class AddressChangeService {
           ],
         );
 
+        if (linkedOrderId !== null) {
+          await context.query(
+            `UPDATE app.orders
+             SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
+                 fee_estimate_distance_m = $6,
+                 fee_estimate_vnd = COALESCE($7, fee_estimate_vnd),
+                 version = version + 1, updated_at = clock_timestamp()
+             WHERE order_id = $8`,
+            [
+              req.newRecipientName,
+              req.newRecipientPhone,
+              req.newAddressText,
+              req.newLat,
+              req.newLng,
+              req.newDistanceM,
+              req.newFeeVnd,
+              linkedOrderId,
+            ],
+          );
+
+          const freshOrder = (await this.orders.findById(context, linkedOrderId))!;
+          await this.orderRecorder.record(context, {
+            order: freshOrder,
+            type: 'address_change_accepted',
+            actorType: 'SYSTEM',
+            actorId: principal.userId,
+            note: 'Shipper đã đồng ý đổi địa chỉ giao hàng',
+            details: {
+              change_request_id: req.changeRequestId,
+              accepted_by: 'SHIPPER',
+              driver_id: driver.driverId,
+              new_address: req.newAddressText,
+            },
+            operation: ADDRESS_CHANGE_OPERATIONS.deliveryDecide,
+            requestId,
+          });
+        }
+
         const updatedDelivery = (await this.deliveries.findById(context, deliveryId))!;
         await this.deliveryRecorder.record(context, {
           delivery: updatedDelivery,
@@ -801,10 +945,15 @@ export class AddressChangeService {
         });
 
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+        const deliveryView = await this.deliveryViews.forShipper(context, updatedDelivery, activeAssignment, nowMs);
         return {
           status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(updated, nowMs) },
+          payload: {
+            ...deliveryView,
+            delivery: deliveryView,
+            address_change_request: addressChangeView(updated, nowMs),
+          },
         };
       },
     );
@@ -852,10 +1001,16 @@ export class AddressChangeService {
             throw new AppError('VERSION_CONFLICT');
           }
           const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+          const freshDelivery = (await this.deliveries.findById(context, deliveryId))!;
+          const deliveryView = await this.deliveryViews.forCustomer(context, freshDelivery, nowMs);
           return {
             status: 200,
             replayGuard: { user_id: principal.userId },
-            payload: { address_change_request: addressChangeView(updated, nowMs) },
+            payload: {
+              ...deliveryView,
+              delivery: deliveryView,
+              address_change_request: addressChangeView(updated, nowMs),
+            },
           };
         }
 
@@ -875,10 +1030,16 @@ export class AddressChangeService {
         });
 
         const updated = await this.addressChangeRepo.findById(context, req.changeRequestId);
+        const freshDelivery = (await this.deliveries.findById(context, deliveryId))!;
+        const deliveryView = await this.deliveryViews.forCustomer(context, freshDelivery, nowMs);
         return {
           status: 200,
           replayGuard: { user_id: principal.userId },
-          payload: { address_change_request: addressChangeView(updated, nowMs) },
+          payload: {
+            ...deliveryView,
+            delivery: deliveryView,
+            address_change_request: addressChangeView(updated, nowMs),
+          },
         };
       },
     );

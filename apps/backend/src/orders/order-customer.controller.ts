@@ -107,7 +107,7 @@ export class OrderCustomerController {
   }
 
   @Post('orders/:order_id/address-change-request')
-  @HttpCode(201)
+  @HttpCode(200)
   async requestAddressChange(
     @Param('order_id') id: string,
     @Body() body: unknown,

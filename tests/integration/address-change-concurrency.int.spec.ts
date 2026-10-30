@@ -106,11 +106,17 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
         const tables = [
           'address_change_requests', 'order_events', 'order_items', 'orders',
           'delivery_events', 'delivery_incidents', 'delivery_assignments', 'deliveries',
-          'menu_items',
+          'wallet_holds', 'driver_wallets', 'menu_items',
         ];
         for (const t of tables) {
           await client.query(`ALTER TABLE app.${t} DISABLE TRIGGER USER`);
         }
+        await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[]))`, [
+          [driverId1, driverId2].filter(Boolean),
+        ]);
+        await client.query(`DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`, [
+          [driverId1, driverId2].filter(Boolean),
+        ]);
         await client.query(`DELETE FROM app.address_change_requests WHERE requested_by = ANY($1::uuid[])`, [
           [customerUserId, shopOwnerUserId, driverUserId1, driverUserId2].filter(Boolean),
         ]);
@@ -540,5 +546,153 @@ describe('Address Change Concurrency & PostgreSQL 17 Invariants (#218, #217, #23
     });
 
     expect(checkPermissionOutcome).toBe('ORDER_NOT_FOUND_OR_DENIED');
+  });
+
+  it('Dual Sync: Synchronizes both app.orders and app.deliveries atomically when shipper accepts via delivery decide in PostgreSQL 17', async () => {
+    const orderId = await createOrder(customerUserId, shopId);
+    const deliveryId = randomUUID();
+    const assignmentId = randomUUID();
+    const changeRequestId = randomUUID();
+    const newFee = 42000;
+    const newDistance = 5500;
+
+    const walletId = randomUUID();
+    const holdId = randomUUID();
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.delivery_assignments DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.driver_wallets DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, 100000, 3000, 1, clock_timestamp(), clock_timestamp())
+         ON CONFLICT (driver_id) DO UPDATE SET held_vnd = app.driver_wallets.held_vnd + 3000`,
+        [walletId, driverId1],
+      );
+      await client.query(
+        `INSERT INTO app.deliveries (
+           delivery_id, code, source, order_id, shop_id, requested_by, state, shop_name, shop_phone,
+           pickup_address_text, pickup_lat, pickup_lng, recipient_name, recipient_phone, dropoff_address_text,
+           dropoff_lat, dropoff_lng, goods_description, goods_value_vnd, paid_vnd, fee_mode, fee_payer,
+           fee_vnd, route_distance_m, search_started_at, search_expires_at, version, created_at, updated_at
+         ) VALUES (
+           $1::uuid, $2, 'ORDER', $3::uuid, $4::uuid, $5::uuid, 'accepted', 'Tiệm Bánh Test', '+84900000001',
+           '123 Phố Huế', 21.03, 105.78, 'Người Nhận Cũ', '+84912345678', '456 Cầu Giấy',
+           21.03, 105.78, 'Món ăn', 100000, 100000, 'STANDARD', 'CUSTOMER',
+           25000, 3500, date_trunc('milliseconds', now()), date_trunc('milliseconds', now()) + interval '30 minutes', 1, now(), now()
+         )`,
+        [deliveryId, `ODD-${deliveryId.slice(0, 8)}`, orderId, shopId, shopOwnerUserId],
+      );
+      await client.query(
+        `INSERT INTO app.delivery_assignments (
+           assignment_id, delivery_id, driver_id, status, accepted_at, commission_vnd, commission_policy, version, created_at, updated_at
+         ) VALUES ($1::uuid, $2::uuid, $3::uuid, 'ACTIVE', clock_timestamp(), 3000, 'TEST_POLICY', 1, clock_timestamp(), clock_timestamp())`,
+        [assignmentId, deliveryId, driverId1],
+      );
+      const effectiveWalletId = (await client.query<{ wallet_id: string }>(`SELECT wallet_id FROM app.driver_wallets WHERE driver_id = $1::uuid`, [driverId1])).rows[0].wallet_id;
+      await client.query(
+        `INSERT INTO app.wallet_holds (hold_id, wallet_id, purpose, amount_vnd, status, commission_assignment_id, version, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, 'COMMISSION', 3000, 'ACTIVE', $3::uuid, 1, clock_timestamp(), clock_timestamp())`,
+        [holdId, effectiveWalletId, assignmentId],
+      );
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.delivery_assignments ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.driver_wallets ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await manager().withTransaction(async (ctx) => {
+      await repo.insert(ctx, {
+        changeRequestId,
+        orderId,
+        deliveryId,
+        source: 'ORDER',
+        requestedBy: customerUserId,
+        status: 'PENDING',
+        targetActor: 'SHIPPER',
+        targetDriverId: driverId1,
+        originalRecipientName: 'Người Nhận Cũ',
+        originalRecipientPhone: '+84912345678',
+        originalAddressText: '456 Cầu Giấy',
+        originalLat: 21.03,
+        originalLng: 105.78,
+        originalFeeVnd: 25000,
+        originalDistanceM: 3500,
+        newRecipientName: 'Người Nhận Đồng Bộ',
+        newRecipientPhone: '+84977777777',
+        newAddressText: '888 Kim Mã, Ba Đình, Hà Nội',
+        newLat: 21.035,
+        newLng: 105.815,
+        newFeeVnd: newFee,
+        newDistanceM: newDistance,
+        feeDifferenceVnd: newFee - 25000,
+        note: 'Đổi sang Kim Mã',
+        expiresAtMs: Date.now() + 300_000,
+        orderVersion: 1,
+        deliveryVersion: 1,
+      });
+    });
+
+    // Shipper accepts via delivery decide: atomic update to both app.deliveries and app.orders
+    await manager().withTransaction(async (ctx) => {
+      // 1. Lock in consistent order: order -> delivery -> address_change_requests
+      await ctx.query(`SELECT 1 FROM app.orders WHERE order_id = $1::uuid FOR UPDATE`, [orderId]);
+      await ctx.query(`SELECT 1 FROM app.deliveries WHERE delivery_id = $1::uuid FOR UPDATE`, [deliveryId]);
+      const req = (await repo.lockActiveByDeliveryId(ctx, deliveryId))!;
+
+      // 2. Resolve request
+      await repo.resolve(ctx, req.changeRequestId, 'ACCEPTED', driverUserId1, null, req.version);
+
+      // 3. Set guard config and update deliveries
+      await ctx.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      await ctx.query(
+        `UPDATE app.deliveries
+         SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
+             dropoff_lat = $4, dropoff_lng = $5, route_distance_m = $6, fee_vnd = $7,
+             version = version + 1, updated_at = clock_timestamp()
+         WHERE delivery_id = $8`,
+        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, req.newFeeVnd, deliveryId],
+      );
+
+      // 4. Simultaneously update orders
+      await ctx.query(
+        `UPDATE app.orders
+         SET recipient_name = $1, recipient_phone = $2, address_text = $3,
+             address_lat = $4, address_lng = $5, fee_estimate_distance_m = $6,
+             fee_estimate_vnd = $7, version = version + 1, updated_at = clock_timestamp()
+         WHERE order_id = $8`,
+        [req.newRecipientName, req.newRecipientPhone, req.newAddressText, req.newLat, req.newLng, req.newDistanceM, req.newFeeVnd, orderId],
+      );
+    });
+
+    // Verify app.deliveries
+    const delivery = (await pool.query<{ recipient_name: string; dropoff_address_text: string; fee_vnd: string; route_distance_m: number }>(
+      `SELECT recipient_name, dropoff_address_text, fee_vnd, route_distance_m FROM app.deliveries WHERE delivery_id = $1::uuid`,
+      [deliveryId],
+    )).rows[0];
+    expect(delivery.recipient_name).toBe('Người Nhận Đồng Bộ');
+    expect(delivery.dropoff_address_text).toBe('888 Kim Mã, Ba Đình, Hà Nội');
+    expect(Number(delivery.fee_vnd)).toBe(42000);
+    expect(delivery.route_distance_m).toBe(5500);
+
+    // Verify app.orders
+    const order = (await pool.query<{ recipient_name: string; address_text: string; fee_estimate_vnd: string; fee_estimate_distance_m: number }>(
+      `SELECT recipient_name, address_text, fee_estimate_vnd, fee_estimate_distance_m FROM app.orders WHERE order_id = $1::uuid`,
+      [orderId],
+    )).rows[0];
+    expect(order.recipient_name).toBe('Người Nhận Đồng Bộ');
+    expect(order.address_text).toBe('888 Kim Mã, Ba Đình, Hà Nội');
+    expect(Number(order.fee_estimate_vnd)).toBe(42000);
+    expect(order.fee_estimate_distance_m).toBe(5500);
   });
 });

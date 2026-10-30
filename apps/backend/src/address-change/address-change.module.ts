@@ -4,6 +4,7 @@ import { M14RoutingModule } from '../delivery/m14-routing.module';
 import { DriverModule } from '../driver/driver.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OrdersCoreModule } from '../orders/orders-core.module';
+import { OrderViews } from '../orders/order-views';
 import { ShippingEligibilityModule } from '../shipping-policy/shipping-eligibility.module';
 import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
@@ -27,7 +28,7 @@ export class AddressChangeModule {
         ShippingEligibilityModule,
         AddressChangeReadModule,
       ],
-      providers: [AddressChangeService],
+      providers: [AddressChangeService, OrderViews],
       exports: [AddressChangeReadModule, AddressChangeService],
     };
   }

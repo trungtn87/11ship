@@ -114,7 +114,7 @@ export class DeliveryCustomerController {
   }
 
   @Post('deliveries/:delivery_id/address-change-request')
-  @HttpCode(201)
+  @HttpCode(200)
   async requestAddressChange(
     @Param('delivery_id') id: string,
     @Body() body: unknown,

@@ -314,6 +314,10 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
       setState(() => _error = 'Vui lòng nhập địa chỉ nhận hàng mới');
       return;
     }
+    if (_lat == null || _lng == null) {
+      setState(() => _error = 'Vui lòng chọn vị trí trên bản đồ để tính lại cước phí');
+      return;
+    }
 
     setState(() {
       _submitting = true;
@@ -410,19 +414,19 @@ class _AddressChangeRequestSheetState extends State<AddressChangeRequestSheet> {
                     child: Text(
                       _lat != null && _lng != null
                           ? 'Tọa độ: ${_lat!.toStringAsFixed(4)}, ${_lng!.toStringAsFixed(4)}'
-                          : 'Chưa gắn tọa độ (nhập địa chỉ chữ)',
+                          : 'Bắt buộc chọn vị trí trên bản đồ để tính lại cước phí',
                       style: const TextStyle(fontSize: 12, color: N11Colors.ink2),
                     ),
                   ),
                   TextButton.icon(
                     icon: const Icon(Icons.place_outlined, size: 16),
-                    label: Text(_lat != null && _lng != null ? 'Sửa vị trí' : 'Chọn vị trí'),
+                    label: Text(_lat != null && _lng != null ? 'Sửa vị trí' : 'Chọn vị trí trên bản đồ'),
                     onPressed: () async {
                       final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(
                         MaterialPageRoute<AddressLocation>(
                           builder: (_) => AddressLocationPicker(
                             initial: AddressLocation(_addressCtrl.text, latitude: _lat, longitude: _lng),
-                            requirePoint: false,
+                            requirePoint: true,
                           ),
                         ),
                       );
