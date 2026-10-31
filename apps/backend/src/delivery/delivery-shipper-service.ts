@@ -139,9 +139,14 @@ export class DeliveryShipperService {
   async reportLocation(principal: AuthPrincipal, input: LocationInput): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
       const caller = await this.actors.shipperReader(context, principal);
-      // Issue #265 (Owner 2026-10-31): a report that reaches the server just after the Shipper switched Online OFF is a late upload: it must not become a live position. The first
-      // fix of a turn-on (sent while the switch is still off, long after the last change) is kept, as the turn-on needs it. The answer says "stop" either way.
-      const lateAfterOff = !shouldShareLocation(caller.driver) && (await freshClockMs(context)) - caller.driver.updatedAtMs < LATE_UPLOAD_AFTER_OFF_MS;
+      // Issue #265 (Owner 2026-10-31): a report that reaches the server just after the Shipper switched Online OFF is a late upload: it must not become a live position. The mark of a
+      // late upload is that the Shipper was still sharing a moment ago: the row changed within seconds AND the last stored position is just as fresh. The first fix of a turn-on (a Shipper
+      // just activated, or with no recent position) is kept, as the turn-on needs it. The answer says "stop" either way.
+      let lateAfterOff = false;
+      if (!shouldShareLocation(caller.driver) && (await freshClockMs(context)) - caller.driver.updatedAtMs < LATE_UPLOAD_AFTER_OFF_MS) {
+        const last = await this.locations.find(context, caller.driver.driverId);
+        lateAfterOff = last !== undefined && last.ageSeconds * 1000 < LATE_UPLOAD_AFTER_OFF_MS * 3;
+      }
       if (!lateAfterOff) {
         await this.locations.upsert(context, caller.driver.driverId, input.lat, input.lng, input.accuracyM);
       }
