@@ -8,7 +8,6 @@ import '../m10/m10_customer_views.dart' show DishStepper;
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
-import '../brand.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'discovery_controller.dart';
@@ -441,10 +440,9 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     );
   }
 
-  /// The brand and the notification bell.
+  /// The notification bell (the brand logo was dropped from the Home by the Owner, #282).
   Widget _header() => Row(
     children: <Widget>[
-      const BrandLogo(brand: foodBrand, height: N11V5.logoHeight),
       const Spacer(),
       Material(
         color: N11Colors.white,

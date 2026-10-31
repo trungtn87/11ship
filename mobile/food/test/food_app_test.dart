@@ -112,9 +112,9 @@ void main() {
     expect(find.byType(N11BottomNav), findsOneWidget);
   });
 
-  testWidgets('three customer tabs in the agreed order, ready banner shown', (WidgetTester tester) async {
+  testWidgets('four tabs for a guest (Gọi ship included) in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Tài khoản']) {
+    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
     // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
@@ -140,7 +140,7 @@ void main() {
     await tester.tap(find.byKey(const Key('register-next')));
     await tester.pumpAndSettle();
     expect(tester.widget<ListTile>(find.byKey(const Key('purpose-owner'))).selected, isTrue);
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
     expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
   });
 
@@ -151,10 +151,10 @@ void main() {
     final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
     server.owner = true;
     await session.refreshIdentity();
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'shop', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
     expect(server.contexts, isEmpty);
   });
 
