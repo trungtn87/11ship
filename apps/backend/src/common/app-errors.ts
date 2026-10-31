@@ -78,6 +78,12 @@ export const APP_ERROR_DEFINITIONS = {
   SHOP_ONBOARDING_EXISTS: { status: 409, message: 'A shop profile already exists for this account' },
   SHOP_PROFILE_INCOMPLETE: { status: 409, message: 'The shop profile is not ready to be completed' },
   INVALID_SERVICE_AREA: { status: 400, message: 'The service area is not valid' },
+  // Issue #252: the pickup pin lies outside the circle the server configured for the chosen service area. Nothing is reassigned silently.
+  // Issue #253: the Administration management of the service areas (SYSTEM only).
+  SERVICE_AREA_NOT_FOUND: { status: 404, message: 'The service area was not found' },
+  SERVICE_AREA_CODE_CONFLICT: { status: 409, message: 'A service area with this code already exists' },
+  SERVICE_AREA_IMPACT_CONFIRM_REQUIRED: { status: 409, message: 'This change affects shops or open work and must be confirmed' },
+  PICKUP_OUTSIDE_SERVICE_AREA: { status: 400, message: 'The pickup point is outside the selected service area' },
   VERSION_CONFLICT: { status: 409, message: 'The resource was changed by another request' },
 
   // Driver onboarding (M01-A2D, task section 14). Same rule: fixed messages that echo nothing the client sent

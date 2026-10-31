@@ -665,6 +665,9 @@ class ShopOpsController extends ChangeNotifier {
         _pending = null;
         if (failure.kind == AuthFailureKind.versionConflict) {
           _conflict = failureView == _failureView;
+        } else if (failure.kind == AuthFailureKind.pickupOutsideArea) {
+          // Beside the picker, drafts untouched: the owner re-pins (or changes nothing and goes back to the stored point).
+          _profileErrors = <String, String>{'position': 'Ghim vị trí lấy hàng nằm ngoài khu vực phục vụ đã chọn. Hãy chọn lại ghim trên bản đồ; thông tin bạn đã nhập được giữ nguyên.'};
         } else if (failure.kind == AuthFailureKind.invalidServiceArea) {
           _profileErrors = <String, String>{'area': 'Khu vực phục vụ chưa hợp lệ. Vui lòng tải lại hồ sơ.'};
           unawaited(loadAreas());

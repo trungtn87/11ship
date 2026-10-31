@@ -421,7 +421,8 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
             N11Field(fieldKey: const Key('profile-field-zalo'), label: 'Zalo', placeholder: 'Số Zalo của quán', optionalLabel: true, controller: _zalo, maxLength: 160, enabled: !ops.locked, onChanged: _push),
             N11Field(fieldKey: const Key('profile-field-facebook'), label: 'Facebook', placeholder: 'Liên kết trang Facebook', optionalLabel: true, controller: _facebook, maxLength: 300, enabled: !ops.locked, onChanged: _push),
             KeyedSubtree(key: _errorKey('address'), child: AddressLocationField(
-              key: const Key('profile-field-address'), label: 'Địa chỉ lấy hàng', text: _address.text,
+              key: const Key('profile-field-address'), label: 'Chọn vị trí lấy hàng trên bản đồ', text: _address.text,
+              pinSummary: _pinSummary(ops.fix?.latitude ?? o.pickupLat, ops.fix?.longitude ?? o.pickupLng),
               error: ops.profileErrors['address'] ?? ops.profileErrors['position'] ?? ops.profileErrors['area'],
               onTap: ops.locked ? null : () async {
                 final int epoch = ops.session.sessionEpoch;
@@ -476,6 +477,9 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
         ),
     ];
   }
+
+  /// The pin the owner confirmed (never called a GPS proof of presence): shown with the address so it can be reviewed before saving.
+  String _pinSummary(double? lat, double? lng) => lat == null || lng == null ? 'Chưa chọn ghim trên bản đồ.' : 'Ghim đã chọn: ${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
 
   Widget _field(String errorKey, String label, TextEditingController controller, String key, {TextInputType? keyboard, int? maxLength, String? help}) {
     final String? error = ops.profileErrors[errorKey];

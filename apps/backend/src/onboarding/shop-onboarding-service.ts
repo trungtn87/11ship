@@ -8,7 +8,7 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-executor';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
-import { ServiceAreaRepository } from '../shop/service-area-repository';
+import { assertPinInArea, ServiceAreaRepository } from '../shop/service-area-repository';
 import { ShopRepository } from '../shop/shop-repository';
 import { ShopActivation } from '../shop-setup/shop-activation';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -134,6 +134,7 @@ export class ShopOnboardingService {
       if (area === undefined || area.status !== 'ACTIVE') {
         throw new AppError('INVALID_SERVICE_AREA');
       }
+      assertPinInArea(area, input.pickupLat, input.pickupLng);
     }
 
     let shopId: string;
@@ -190,7 +191,7 @@ export class ShopOnboardingService {
     if (shop.pickupLat === null || shop.pickupLng === null || shop.serviceAreaId === null) {
       throw new AppError('SHOP_PROFILE_INCOMPLETE');
     }
-    const version = await this.#finishProfile(context, userId, { shopId: shop.shopId, version: shop.version, serviceAreaId: shop.serviceAreaId }, requestId);
+    const version = await this.#finishProfile(context, userId, { shopId: shop.shopId, version: shop.version, serviceAreaId: shop.serviceAreaId, pickupLat: shop.pickupLat, pickupLng: shop.pickupLng }, requestId);
 
     return {
       status: 200,
@@ -210,11 +211,12 @@ export class ShopOnboardingService {
    * save that already carries a pickup point and an area. The caller holds user, session, membership and shop locks; the area is locked FOR SHARE here.
    * Returns the new version. It does NOT make the shop public: that is the setup readiness (schedule, point, a sellable dish).
    */
-  async #finishProfile(context: TransactionContext, userId: string, shop: { readonly shopId: string; readonly version: number; readonly serviceAreaId: string }, requestId: string): Promise<number> {
+  async #finishProfile(context: TransactionContext, userId: string, shop: { readonly shopId: string; readonly version: number; readonly serviceAreaId: string; readonly pickupLat: number | null; readonly pickupLng: number | null }, requestId: string): Promise<number> {
     const area = await this.serviceAreas.lockShared(context, shop.serviceAreaId);
     if (area === undefined || area.status !== 'ACTIVE') {
       throw new AppError('INVALID_SERVICE_AREA');
     }
+    assertPinInArea(area, shop.pickupLat, shop.pickupLng);
     const version = await this.shops.activate(context, shop.shopId, shop.version);
     await this.roleGrants.grant(context, userId, 'SHOP');
     await this.audit.append(context, {
