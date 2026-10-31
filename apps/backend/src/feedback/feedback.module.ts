@@ -9,6 +9,7 @@ import { ShopModule } from '../shop/shop.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ComplaintController } from './complaint.controller';
 import { ComplaintService } from './complaint-service';
+import { AttachmentJanitor, AttachmentJanitorRuntime } from './attachment-janitor';
 import { FeedbackActors } from './feedback-actors';
 import { FEEDBACK_ORDER_PORT } from './feedback-order-port';
 import { FeedbackReadModule } from './feedback-read.module';
@@ -28,8 +29,8 @@ export class FeedbackModule {
       module: FeedbackModule,
       imports: [auth, TransactionModule, IdempotencyModule, FeedbackReadModule, DeliveryCoreModule.register(auth), DriverModule, ShopModule, ShopSetupCoreModule, OrdersCoreModule],
       controllers: [ReviewController, PublicReviewController, ComplaintController],
-      providers: [FeedbackActors, ReviewService, ComplaintService, { provide: FEEDBACK_ORDER_PORT, useExisting: OrderFeedbackAdapter }],
-      exports: [FeedbackReadModule],
+      providers: [FeedbackActors, ReviewService, ComplaintService, AttachmentJanitor, AttachmentJanitorRuntime, { provide: FEEDBACK_ORDER_PORT, useExisting: OrderFeedbackAdapter }],
+      exports: [FeedbackReadModule, AttachmentJanitor],
     };
   }
 }

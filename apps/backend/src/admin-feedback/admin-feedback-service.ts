@@ -171,7 +171,7 @@ export class AdminFeedbackService {
     const history = r.kind === 'SHOP_BY_CUSTOMER' ? await this.reviews.replyHistory(context, r.reviewId) : [];
     const moderations = await this.reviews.moderations(context, r.reviewId);
     const delivery = r.deliveryId === null ? undefined : await this.deliveries.findById(context, r.deliveryId);
-    const complaints = await this.complaints.complaintsOfReview(context, r.reviewId);
+    const complaints = await this.complaints.complaintsOfReview(context, r.reviewId, auth.view);
     const can: string[] = [];
     if (reviewInScope(r.kind, auth.manage)) {
       can.push(r.visibility === 'VISIBLE' ? 'hide' : 'restore');
@@ -238,8 +238,8 @@ export class AdminFeedbackService {
     const known = await this.actor.precheck(sessionToken, { required: false });
     return this.transactions.withTransaction(async (context): Promise<JsonObject> => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
-      await this.#authorize(context, known, 'view');
-      return { handlers: await this.#handlers(context) };
+      const auth = await this.#authorize(context, known, 'view');
+      return { handlers: await this.#handlers(context, auth.view) };
     });
   }
 
@@ -635,7 +635,7 @@ export class AdminFeedbackService {
     const delivery = c.deliveryId === null ? undefined : await this.deliveries.findById(context, c.deliveryId);
     const chain = delivery === undefined ? [] : await this.deliveries.listChain(context, delivery.deliveryId);
     const review: ReviewRow | undefined = c.reviewId === null ? undefined : await this.reviews.findById(context, c.reviewId);
-    const handlers = await this.#handlers(context);
+    const handlers = await this.#handlers(context, auth.view);
     const assignee = c.assignedTo === null ? null : { user_id: c.assignedTo, name: handlers.find((h) => h.user_id === c.assignedTo)?.name ?? '—' };
     const pending = reconsiderations.find((r) => r.closureNo === c.closureNo && r.status === 'PENDING');
     const can = this.#can(c, auth, delivery, adjustments, pending !== undefined);
@@ -735,7 +735,7 @@ export class AdminFeedbackService {
     return can;
   }
 
-  async #handlers(context: TransactionContext): Promise<{ user_id: string; name: string; role: string }[]> {
+  async #handlers(context: TransactionContext, view: FeedbackScope): Promise<{ user_id: string; name: string; role: string }[]> {
     const out: { user_id: string; name: string; role: string }[] = [];
     const system = await this.memberships.findSystemUserId(context);
     if (system !== undefined) {
@@ -744,7 +744,9 @@ export class AdminFeedbackService {
     const admins = await this.permissions.listAdministrators(context, { status: 'ACTIVE', search: { pattern: null, phoneDigits: null }, cursor: null, fetch: 200 });
     const rights = await this.permissions.permissionsOf(context, admins.map((a) => a.userId));
     for (const admin of admins) {
-      if (mayHandle(rights.get(admin.userId) ?? [])) {
+      // Issue #261: only administrators who can handle something inside the caller's own scope are listed.
+      const manage = manageScopeOf(rights.get(admin.userId) ?? []);
+      if ((manage.shop && view.shop) || (manage.driver && view.driver)) {
         out.push({ user_id: admin.userId, name: admin.fullName, role: 'ADMIN' });
       }
     }

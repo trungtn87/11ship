@@ -324,6 +324,26 @@ export class ComplaintRepository {
 
   // ---- attachments -------------------------------------------------------------------------------------------------------------
 
+  /**
+   * Issue #261 janitor: deletes up to `limit` pictures that were never attached (complaint_id IS NULL) and were uploaded more than 24 hours ago. The rows are
+   * locked first and skipped when another transaction holds them (an upload being attached right now locks its rows), and the database guard refuses anything linked or
+   * younger than 24 hours, so a picture a user is still about to attach cannot be removed.
+   */
+  async purgeOrphanAttachments(context: TransactionContext, limit: number): Promise<{ count: number; bytes: number }> {
+    const result = await context.query<{ n: string; bytes: string | null }>(
+      `WITH doomed AS (
+         SELECT attachment_id FROM app.complaint_attachments
+          WHERE complaint_id IS NULL AND created_at < ${CLOCK} - interval '24 hours'
+          ORDER BY created_at LIMIT $1::int FOR UPDATE SKIP LOCKED
+       ), gone AS (
+         DELETE FROM app.complaint_attachments a USING doomed d WHERE a.attachment_id = d.attachment_id AND a.complaint_id IS NULL RETURNING a.byte_size
+       )
+       SELECT count(*)::text AS n, sum(byte_size)::text AS bytes FROM gone`,
+      [limit],
+    );
+    return { count: safe(result.rows[0]?.n ?? '0'), bytes: safe(result.rows[0]?.bytes ?? '0') };
+  }
+
   async countUnlinked(context: TransactionContext, userId: string): Promise<number> {
     const result = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.complaint_attachments WHERE uploader_user_id = $1::uuid AND complaint_id IS NULL`, [userId]);
     return safe(result.rows[0]?.n ?? '0');
@@ -503,10 +523,11 @@ export class ComplaintRepository {
     return new Set(result.rows.map((r) => r.complaint_id));
   }
 
-  async complaintsOfReview(context: TransactionContext, reviewId: string): Promise<{ complaintId: string; code: string; status: ComplaintStatus }[]> {
+  /** The complaints about one review that the caller's scope may see (issue #261: a file naming both parties needs both parts). */
+  async complaintsOfReview(context: TransactionContext, reviewId: string, scope: FeedbackScope): Promise<{ complaintId: string; code: string; status: ComplaintStatus }[]> {
     const result = await context.query<{ complaint_id: string; code: string; status: ComplaintStatus }>(
-      `SELECT complaint_id::text AS complaint_id, code, status FROM app.complaints WHERE review_id = $1::uuid ORDER BY created_at`,
-      [reviewId],
+      `SELECT c.complaint_id::text AS complaint_id, c.code, c.status FROM app.complaints c WHERE c.review_id = $1::uuid AND ${complaintScopeSql('c', 2, 3)} ORDER BY c.created_at`,
+      [reviewId, scope.shop, scope.driver],
     );
     return result.rows.map((r) => ({ complaintId: r.complaint_id, code: r.code, status: r.status }));
   }
