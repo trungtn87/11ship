@@ -33,3 +33,18 @@ describe('M10 historical quote reason projection', () => {
       .toMatchObject({ status: 'UNAVAILABLE', fee_vnd: null, reason: 'POLICY_NOT_CONFIGURED' });
   });
 });
+
+describe('M10 item payment projection', () => {
+  it('keeps paid and remaining item money separate and never returns a negative remainder', () => {
+    expect(moneyView(historical({ itemsTotalVnd: 45_000, paidVnd: 20_000 }), undefined)).toMatchObject({ paid_vnd: 20_000, items_remaining_vnd: 25_000 });
+    expect(moneyView(historical({ itemsTotalVnd: 45_000, paidVnd: 50_000 }), undefined)).toMatchObject({ paid_vnd: 50_000, items_remaining_vnd: 0 });
+  });
+});
+
+describe('M10 customer fee proposal projection', () => {
+  it('marks only a fee that the customer raised above the canonical quote', () => {
+    expect(moneyView(historical({ feeQuoteVnd: 10_000, feeEstimateVnd: 30_000 }), undefined).fee).toMatchObject({ customer_proposed: true, estimate_vnd: 30_000 });
+    expect(moneyView(historical({ feeQuoteVnd: 10_000, feeEstimateVnd: 10_000 }), undefined).fee).toMatchObject({ customer_proposed: false, estimate_vnd: 10_000 });
+    expect(moneyView(historical({ feeEstimateVnd: 10_000 }), undefined).fee).toMatchObject({ customer_proposed: false });
+  });
+});

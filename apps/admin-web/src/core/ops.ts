@@ -93,6 +93,77 @@ export interface OpsMaintenance {
   readonly state: 'ACTIVE' | 'SCHEDULED' | 'ENDED' | 'CANCELLED';
 }
 
+/** The independent probe outside the VPS, as the server can truthfully say it (#264): four states, never "configured" without an active key. */
+export const PROBE_STATUSES = ['NOT_CONFIGURED', 'WAITING_FIRST_REPORT', 'ACTIVE', 'STALE'] as const;
+export type ProbeStatus = (typeof PROBE_STATUSES)[number];
+export interface OpsProbe {
+  readonly status: ProbeStatus;
+  readonly activated: boolean;
+  readonly label: string;
+  readonly note: string;
+  readonly activeKeyCount: number;
+  readonly lastReportAt: string | null;
+  readonly lastKeyUsedAt: string | null;
+  readonly lastOutageAt: string | null;
+  readonly runbookPath: string;
+  readonly webhookNote: string;
+}
+
+/** The short VPS card of the overview. */
+export interface VpsSummary {
+  readonly collectorStale: boolean;
+  readonly collectorState: 'ACTIVE' | 'STALE' | 'NO_DATA';
+  readonly lastSampleAt: string | null;
+  readonly cpuPercent: number | null;
+  readonly memoryPercent: number | null;
+  readonly diskPercent: number | null;
+  readonly uptimeSeconds: number | null;
+  readonly dbConnections: number | null;
+  readonly dbSizeBytes: number | null;
+}
+
+export const VPS_RANGES = ['1h', '24h', '7d', '30d'] as const;
+export type VpsRange = (typeof VPS_RANGES)[number];
+export const VPS_RANGE_LABEL: Record<VpsRange, string> = { '1h': '1 giờ', '24h': '24 giờ', '7d': '7 ngày', '30d': '30 ngày' };
+
+export interface VpsPoint {
+  readonly at: string;
+  readonly value: number;
+}
+export interface VpsProcess {
+  readonly pid: number;
+  readonly name: string;
+  readonly cpuPercent: number | null;
+  readonly rssBytes: number;
+  readonly memoryPercent: number;
+}
+export interface VpsHost {
+  readonly uptimeSeconds: number;
+  readonly cpuPercent: number | null;
+  readonly cpuCores: number;
+  readonly loadAvg: readonly [number, number, number];
+  readonly memory: { readonly totalBytes: number; readonly availableBytes: number; readonly usedBytes: number; readonly usedPercent: number } | null;
+  readonly swap: { readonly totalBytes: number; readonly usedBytes: number; readonly usedPercent: number } | null;
+  readonly disks: ReadonlyArray<{ readonly label: string; readonly path: string; readonly totalBytes: number; readonly freeBytes: number; readonly usedBytes: number; readonly usedPercent: number }>;
+  readonly io: { readonly readBytes: number; readonly writeBytes: number } | null;
+  readonly network: { readonly rxBytesTotal: number; readonly txBytesTotal: number; readonly rxBytesPerSec: number | null; readonly txBytesPerSec: number | null } | null;
+}
+export interface VpsPage {
+  readonly updatedAt: string;
+  readonly range: VpsRange;
+  readonly expectedStepSeconds: number;
+  readonly gapCount: number;
+  readonly gaps: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  readonly collector: { readonly state: 'ACTIVE' | 'STALE' | 'NO_DATA'; readonly stale: boolean; readonly lastSampleAt: string | null; readonly message: string };
+  readonly host: VpsHost | null;
+  readonly backend: { readonly status: 'OK' | 'WARN' | 'CRITICAL' | 'UNKNOWN'; readonly pid: number | null; readonly uptimeSeconds: number | null; readonly rssBytes: number | null; readonly heapUsedBytes: number | null; readonly cpuPercent: number | null; readonly selfHealthLatencyMs: number | null };
+  readonly postgres: { readonly status: 'OK' | 'WARN' | 'CRITICAL' | 'UNKNOWN'; readonly latencyMs: number | null; readonly activeConnections: number | null; readonly databaseSizeBytes: number | null };
+  readonly processesByCpu: readonly VpsProcess[];
+  readonly processesByMemory: readonly VpsProcess[];
+  readonly series: Readonly<Record<string, readonly VpsPoint[]>>;
+  readonly level: OpsLevel;
+}
+
 export interface OpsOverview {
   readonly updatedAt: string;
   readonly dataNote: string | null;
@@ -101,7 +172,8 @@ export interface OpsOverview {
   readonly critical: number;
   readonly unacknowledged: number;
   readonly incidents: readonly OpsIncident[];
-  readonly probe: { readonly activated: boolean; readonly label: string; readonly lastReportAt: string | null; readonly note: string };
+  readonly probe: OpsProbe;
+  readonly vps: VpsSummary | null;
   readonly discord: { readonly enabled: boolean; readonly configured: boolean; readonly pending: number; readonly failed7d: number; readonly lastSentAt: string | null };
   readonly maintenance: readonly OpsMaintenance[];
   readonly lastUpdate: OpsDeploy | null;
@@ -306,6 +378,7 @@ export interface OpsConfigPage {
   readonly discord: { readonly enabled: boolean; readonly minSeverity: 'WARNING' | 'CRITICAL'; readonly webhookConfigured: boolean; readonly webhookMasked: string | null; readonly webhookUpdatedAt: string | null } | null;
   readonly maintenance: readonly OpsMaintenance[];
   readonly access: ReadonlyArray<{ readonly userId: string; readonly label: string | null; readonly level: OpsLevel; readonly version: number }> | null;
+  readonly probe: OpsProbe | null;
   readonly level: OpsLevel;
 }
 
@@ -347,6 +420,7 @@ export interface TestResult {
 export interface OpsSource {
   me(): Promise<OpsRead<OpsLevel>>;
   overview(): Promise<OpsRead<OpsOverview>>;
+  vps(range: VpsRange): Promise<OpsRead<VpsPage>>;
   incidents(query: IncidentQuery): Promise<OpsRead<{ rows: readonly OpsIncident[]; total: number }>>;
   incident(ref: string): Promise<OpsRead<IncidentDetail>>;
   incidentAction(id: string, key: string, action: IncidentAction): Promise<OpsWrite>;
@@ -371,6 +445,7 @@ const NOT_WIRED_WRITE = { kind: 'not-wired' } as const;
 export const NOT_WIRED_OPS: OpsSource = {
   me: async () => NOT_WIRED_READ,
   overview: async () => NOT_WIRED_READ,
+  vps: async () => NOT_WIRED_READ,
   incidents: async () => NOT_WIRED_READ,
   incident: async () => NOT_WIRED_READ,
   incidentAction: async () => NOT_WIRED_WRITE,
@@ -403,4 +478,54 @@ export const WRITE_MESSAGE: Record<Exclude<OpsWrite['kind'], 'ok'>, string> = {
   'rate-limited': 'Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.',
   unknown: 'Chưa biết kết quả thao tác. Hãy tải lại để xem trạng thái trước khi thử lại.',
   'not-wired': 'Chưa kết nối máy chủ.',
+};
+
+// ---- VPS monitoring helpers (pure) ------------------------------------------------------------------------------------------------------
+
+export const VPS_WINDOW_MS: Record<VpsRange, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 };
+
+/** Splits a series into runs: a distance longer than twice the expected step ends the run, so the chart never draws a line across missing samples. */
+export function splitSegments(points: readonly VpsPoint[], expectedStepSeconds: number): VpsPoint[][] {
+  const limit = expectedStepSeconds * 2000;
+  const runs: VpsPoint[][] = [];
+  let current: VpsPoint[] = [];
+  let previous = Number.NaN;
+  for (const p of points) {
+    const at = Date.parse(p.at);
+    if (current.length > 0 && at - previous > limit) {
+      runs.push(current);
+      current = [];
+    }
+    current.push(p);
+    previous = at;
+  }
+  if (current.length > 0) runs.push(current);
+  return runs;
+}
+
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? String(Math.round(value)) : value.toFixed(1)} ${units[unit] as string}`;
+}
+
+export function formatUptime(seconds: number | null): string {
+  if (seconds === null) return '—';
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return days > 0 ? `${days} ngày ${hours} giờ` : hours > 0 ? `${hours} giờ ${minutes} phút` : `${minutes} phút`;
+}
+
+export const PROBE_STATUS_TEXT: Record<ProbeStatus, string> = {
+  NOT_CONFIGURED: 'Chưa cấu hình',
+  WAITING_FIRST_REPORT: 'Chờ báo cáo đầu tiên',
+  ACTIVE: 'Đang hoạt động',
+  STALE: 'Quá 15 phút không báo cáo',
 };

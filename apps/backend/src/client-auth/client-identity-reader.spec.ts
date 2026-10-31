@@ -9,8 +9,9 @@ function reader(options: {
   profile?: { fullName: string; version: number };
   shop?: { onboarding: string; selectable: boolean };
   driver?: { onboarding: string; selectable: boolean };
+  origin?: string;
 }) {
-  const users = { rolesAmong: async () => options.roles };
+  const users = { rolesAmong: async () => options.roles, findById: async () => ({ accountOrigin: options.origin ?? 'PHONE_VERIFIED' }) };
   const customers = { findProfile: async () => options.profile };
   const shops = { ownerShopEligibility: async () => options.shop ?? { onboarding: 'NOT_STARTED', selectable: false } };
   const drivers = { ownerDriverEligibility: async () => options.driver ?? { onboarding: 'NOT_STARTED', selectable: false } };
@@ -30,6 +31,13 @@ describe('ClientIdentityReader', () => {
       onboarding_required: false,
       role_selection_required: false,
     });
+  });
+
+  it('reports the phone verification state from the stored origin: VERIFIED only when a proof backed the account', async () => {
+    const status = async (origin: string): Promise<unknown> => (await reader({ roles: ['CUSTOMER'], origin }).read(CONTEXT, base)).phone_verification_status;
+    expect(await status('PHONE_VERIFIED')).toBe('VERIFIED');
+    expect(await status('PHONE_UNVERIFIED')).toBe('UNVERIFIED');
+    expect(await status('TEST_UNVERIFIED')).toBe('UNVERIFIED_TEST');
   });
 
   it('SHIP asks for driver onboarding while NOT_STARTED', async () => {

@@ -51,7 +51,7 @@ const SECURITY_HEADERS = {
 };
 
 // Client-side routes of the page (see apps/admin-web/src/core/routes.ts): the page is served, and it decides what to show.
-const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?|catalog\/categories|system\/settings|system\/config|system\/audit|system\/backups|overview|reports|system\/parameters\/shipper-wallet|system\/shipping-fee-policy|system-ops(?:\/(?:incidents(?:\/(?:SC-\d{1,9}|[0-9a-fA-F-]{36}))?|gateway|logs|releases|config))?|operations\/(?:shippers(?:\/.*)?|orders|shops(?:\/[0-9a-fA-F-]{36})?|deliveries|notifications)|system\/parameters\/wallet|finance(?:\/(?:wallets|transactions|reconciliation|bank-accounts|(?:topups|withdrawals)(?:\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?))?)$/;
+const APP_ROUTES = /^\/(?:activate|reset|invitations(?:\/.*)?|accounts(?:\/.*)?|catalog\/categories|system\/settings|system\/config|system\/audit|system\/backups|overview|reports|system\/parameters\/shipper-wallet|system\/shipping-fee-policy|system-ops(?:\/(?:incidents(?:\/(?:SC-\d{1,9}|[0-9a-fA-F-]{36}))?|gateway|logs|releases|config|vps))?|operations\/(?:shippers(?:\/.*)?|orders|shops(?:\/[0-9a-fA-F-]{36})?|deliveries|notifications)|system\/parameters\/wallet|finance(?:\/(?:wallets|transactions|reconciliation|bank-accounts|(?:topups|withdrawals)(?:\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?))?)$/;
 
 // Login (#34), invitation management (1B) and activation (1C). Nothing else of the backend is reachable through this front.
 const API_PREFIXES = ['/v1/admin-auth/', '/v1/admin-activation/', '/v1/admin/'];
@@ -243,7 +243,7 @@ function serveStatic(pathname, request, response, distRoot) {
     response.end('Not found');
     return;
   }
-  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(relative)) relative = '/business.html';
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications|reset)?)?\/?$/.test(relative)) relative = '/business.html';
   const candidate = normalize(join(distRoot, relative));
   let file;
   try {

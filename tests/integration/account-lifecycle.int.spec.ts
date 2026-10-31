@@ -381,6 +381,67 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(done.status).toBe(200);
       expect((await loginClient(user.phone, NEW_PASSWORD)).status).toBe(200);
     });
+
+    it('case 3b (M01-POLICY-01) — the admin detail shows which consent pair the account accepted and when, and matches it with the pair in force: an older pair never counts as the current one', async () => {
+      const user = await seedUser();
+      const noConsent = adminData(await detail(user.id));
+      expect(noConsent.consent).toEqual({ current: { terms_version: TERMS, privacy_version: PRIVACY }, accepted_current: false, history: [] });
+
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await postSettings(sys(), settingsBody(0, false, true));
+      const created = await registerClient(registerBody(phone));
+      expect(created.status).toBe(201);
+      const registered = adminData(await detail(String(dataOf(created).user_id)));
+      expect(registered.consent).toMatchObject({ accepted_current: true, history: [{ terms_version: TERMS, privacy_version: PRIVACY, client_app: 'FOOD' }] });
+      const first = (registered.consent as { history: { accepted_at: string }[] }).history[0];
+      expect(Number.isNaN(Date.parse(String(first?.accepted_at)))).toBe(false);
+
+      // A pair accepted before the texts changed: kept, listed, and not equal to the one in force.
+      await app.pool.query(
+        "INSERT INTO app.user_consents (id, user_id, terms_version, privacy_version, accepted_at, client_app) VALUES ($1::uuid, $2::uuid, 'terms-old-v0', 'privacy-old-v0', clock_timestamp() - interval '30 days', 'SHIP')",
+        [randomUUID(), user.id],
+      );
+      const old = adminData(await detail(user.id));
+      expect(old.consent).toMatchObject({ accepted_current: false, history: [{ terms_version: 'terms-old-v0', privacy_version: 'privacy-old-v0', client_app: 'SHIP' }] });
+    });
+
+    it('case 4b (M01-OTP-TEST-01) — an account made while the registration OTP was off stays PHONE_UNVERIFIED: turning the OTP back on, logging in or resetting the password never verifies it', async () => {
+      await postSettings(sys(), settingsBody(0, false, true));
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const created = await registerClient(registerBody(phone));
+      expect(created.status).toBe(201);
+      const userId = String(dataOf(created).user_id);
+      const unverified = { account_origin: 'PHONE_UNVERIFIED', verified: false };
+      expect(dataOf(await loginClient(phone)).phone_verification_status).toBe('UNVERIFIED');
+
+      // SYSTEM restores the production default (both OTP switches on): the stored truth does not change.
+      await postSettings(sys(), settingsBody(1, true, true));
+      expect(await clientConfig()).toBe('REQUIRED');
+      const afterToggle = await loginClient(phone);
+      expect(afterToggle.status).toBe(200);
+      expect(dataOf(afterToggle).phone_verification_status).toBe('UNVERIFIED');
+      expect(dataOf(await me(tokenOf(afterToggle))).phone_verification_status).toBe('UNVERIFIED');
+      expect(await userRow(userId)).toMatchObject(unverified);
+
+      // A real OTP reset (the SMS gateway is the only channel) changes the password, still not the verification state.
+      const asked = await api(base(), 'POST', '/account-recovery/otp', { body: { phone: phone.local } });
+      expect(asked.status).toBe(200);
+      const sms = await nextSms();
+      const proof = await api(base(), 'POST', `/account-recovery/otp/${String(dataOf(asked).verification_id)}/verify`, { body: { otp: sms?.otp } });
+      const reset = await api(base(), 'POST', '/account-recovery/reset', { headers: { 'idempotency-key': randomUUID() }, body: { verification_token: String(dataOf(proof).verification_token), password: NEW_PASSWORD } });
+      expect(reset.status).toBe(200);
+      const afterReset = await loginClient(phone, NEW_PASSWORD);
+      expect(dataOf(afterReset).phone_verification_status).toBe('UNVERIFIED');
+      expect(await userRow(userId)).toMatchObject(unverified);
+
+      // The registration door is closed again for everybody: no body without a proof creates an account (no bypass for ordinary users).
+      const bypass = randomPhone();
+      app.track(bypass.normalized);
+      expect((await registerClient(registerBody(bypass))).status).toBe(400);
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [bypass.normalized])).toBe(0);
+    });
   });
 
   // =============================================================================================================================
@@ -611,10 +672,10 @@ describe('account lifecycle, scopes and system settings', () => {
       const registry = app.running.app.get(AccountActivityRegistry, { strict: false });
       const user = await seedUser({ roles: ['CUSTOMER', 'DRIVER'] });
       let processing = 2;
-      registry.register({ name: 'DELIVERIES', relatedData: () => Promise.resolve(true), activeWork: (_context, userId) => Promise.resolve(userId === user.id ? processing : 0) });
+      registry.register({ name: 'TEST_PROCESSING', relatedData: () => Promise.resolve(true), activeWork: (_context, userId) => Promise.resolve(userId === user.id ? processing : 0) });
       try {
         const shown = adminData(await detail(user.id));
-        expect(shown.lifecycle).toMatchObject({ active_work: ['DELIVERIES'], lock_blocked_reason: 'ACTIVE_WORK', delete_blocked_reason: 'ACTIVE_WORK' });
+        expect(shown.lifecycle).toMatchObject({ active_work: ['TEST_PROCESSING'], lock_blocked_reason: 'ACTIVE_WORK', delete_blocked_reason: 'ACTIVE_WORK' });
         const version = Number(shown.version);
         expect(codeOf(await command('lock', user.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
         expect(codeOf(await command('delete', user.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
@@ -631,7 +692,7 @@ describe('account lifecycle, scopes and system settings', () => {
         expect((await command('unlock', user.id, lockBody(version + 1))).status).toBe(200);
         expect(await userRow(user.id)).toMatchObject({ status: 'ACTIVE', lock_reason: null });
       } finally {
-        registry.unregister('DELIVERIES');
+        registry.unregister('TEST_PROCESSING');
       }
     });
 

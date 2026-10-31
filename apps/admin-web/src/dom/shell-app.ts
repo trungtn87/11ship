@@ -68,6 +68,7 @@ import { NOT_WIRED_ORDERS, OrderSource } from '../core/orders.js';
 import { OrderHost, OrderListView } from './orders-view.js';
 import { NOT_WIRED_CHAT, OrderChatSource } from '../core/order-chat.js';
 import { NOT_WIRED_NOTIFICATIONS, NotificationSource } from '../core/notifications.js';
+import { QueueTarget } from '../core/action-queue.js';
 import { NotificationHost, NotificationsView } from './notifications-view.js';
 import { FinanceController, isFinanceRoute } from '../core/finance-controller.js';
 import { FinanceSource, NOT_WIRED_FINANCE } from '../core/finance.js';
@@ -77,7 +78,7 @@ import { FinanceOpsSource, NOT_WIRED_FINANCE_OPS } from '../core/finance-ops.js'
 import { FinanceOpsHost, OpsOverviewView, ReconciliationPageView, TransactionsView, WalletListView, WithdrawalDetailView, WithdrawalListView } from './finance-ops-view.js';
 import { BankAccountsView, FinanceAdminHost, FINANCE_RECORD_REQUIRES_READ, openFinanceAccessDialog, TopupDetailView, TopupListView } from './finance-admin-view.js';
 import { NOT_WIRED_OPS, OpsLevel, OpsSource } from '../core/ops.js';
-import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, SysOpsOverviewView, OpsReleasesView, openOpsAccessDialog } from './ops-view.js';
+import { OpsConfigView, OpsGatewayView, OpsHost, OpsIncidentDetailView, OpsIncidentsView, OpsLogsView, SysOpsOverviewView, OpsReleasesView, OpsVpsView, openOpsAccessDialog } from './ops-view.js';
 import { ErrorLogView } from './monitoring-errors-view.js';
 import { statePanel } from './states.js';
 import { ShellLayout } from './shell-layout.js';
@@ -367,8 +368,10 @@ export class ShellApp implements ShellHost {
   #opsPage(content: HTMLElement, route: Route): void {
     const host = this.#opsHost();
     const view =
-      route.name === 'ops-incident'
-        ? new OpsIncidentDetailView(content, host, route.ref)
+      route.name === 'ops-vps'
+        ? new OpsVpsView(content, host)
+        : route.name === 'ops-incident'
+          ? new OpsIncidentDetailView(content, host, route.ref)
         : route.name === 'ops-incidents'
           ? new OpsIncidentsView(content, host)
           : route.name === 'ops-gateway'
@@ -543,6 +546,7 @@ export class ShellApp implements ShellHost {
         this.#notificationPage(content);
         return;
       case 'ops':
+      case 'ops-vps':
       case 'ops-incidents':
       case 'ops-incident':
       case 'ops-gateway':
@@ -846,6 +850,9 @@ export class ShellApp implements ShellHost {
         return;
       case 'has-active-work':
         ui.phase('failed', LOCK_MESSAGE.activeWork);
+        return;
+      case 'unverified':
+        ui.phase('failed', LOCK_MESSAGE.unverified);
         return;
       case 'conflict':
         ui.phase('conflict');
@@ -1217,10 +1224,26 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       open: (link) => this.go(routeOfLink(link.area, link.query)),
+      openQueue: () => this.go({ name: 'notifications' }),
     };
     const view = new OverviewView(content, host);
     this.#unsubscribe = () => view.dispose();
     void view.load();
+  }
+
+  /** Opens what a "Việc cần xử lý" row points at. The owning screen or endpoint decides the right and the version again; nothing is changed from here. */
+  #openQueueTarget(target: QueueTarget): void {
+    switch (target.kind) {
+      case 'route':
+        this.go(routeOfLink(target.area, target.query));
+        break;
+      case 'detail':
+        this.go(target.area === 'shipper' ? { name: 'shipper', id: target.id } : target.area === 'finance-topup' ? { name: 'finance-topup', id: target.id } : { name: 'finance-withdrawal', id: target.id });
+        break;
+      case 'page':
+        window.location.assign(target.href);
+        break;
+    }
   }
 
   /** "Vận hành › Đơn hàng" (M10.05): filters, list and the detail drawer; the server decides every read and action. */
@@ -1276,6 +1299,18 @@ export class ShellApp implements ShellHost {
       login: () => this.history.restart(),
       home: () => this.go({ name: 'home' }),
       openDeliveries: () => this.go({ name: 'deliveries' }),
+      actionQueue: {
+        read: (query) => this.overview.actionQueue(query),
+        onSessionLost: () => this.onSessionLost(),
+        onForbidden: () => {
+          if (this.#role === 'ADMIN') {
+            this.#loadGrants(true);
+          }
+        },
+        login: () => this.history.restart(),
+        home: () => this.go({ name: 'home' }),
+        open: (target) => this.#openQueueTarget(target),
+      },
       canEdit: this.#role === 'SYSTEM',
     };
     const view = new NotificationsView(content, host);

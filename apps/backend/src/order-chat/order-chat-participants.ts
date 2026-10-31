@@ -21,7 +21,7 @@ export interface ChatRoom {
   readonly type: ChatRoomType;
   /** The order id (ORDER) or the delivery id (DIRECT). */
   readonly id: string;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly customerUserId: string | null;
   readonly customerName: string | null;
   readonly shopName: string;
@@ -45,7 +45,15 @@ export const orderIsOpen = (status: string): boolean => !ENDED_STATUSES.includes
 export const deliveryIsOpen = (state: string): boolean => !(TERMINAL_STATES as readonly string[]).includes(state);
 
 const orderRoom = (o: OrderRow): ChatRoom => ({ type: 'ORDER', id: o.orderId, shopId: o.shopId, customerUserId: o.customerUserId, customerName: o.recipientName, shopName: o.shopName, open: orderIsOpen(o.status) });
-const directRoom = (d: DeliveryRow): ChatRoom => ({ type: 'DIRECT', id: d.deliveryId, shopId: d.shopId, customerUserId: null, customerName: null, shopName: d.shopName, open: deliveryIsOpen(d.state) });
+const directRoom = (d: DeliveryRow): ChatRoom => ({
+  type: 'DIRECT',
+  id: d.deliveryId,
+  shopId: d.shopId,
+  customerUserId: d.source === 'CUSTOMER' ? d.requestedBy : null,
+  customerName: d.source === 'CUSTOMER' ? d.shopName : null,
+  shopName: d.shopName,
+  open: deliveryIsOpen(d.state),
+});
 
 @Injectable()
 export class OrderChatParticipants {
@@ -64,13 +72,19 @@ export class OrderChatParticipants {
 
   async directRoom(context: TransactionContext, deliveryId: string): Promise<ChatRoom | undefined> {
     const delivery = await this.deliveries.findById(context, deliveryId);
-    return delivery === undefined || delivery.source !== 'DIRECT' ? undefined : directRoom(delivery);
+    return delivery === undefined || (delivery.source !== 'DIRECT' && delivery.source !== 'CUSTOMER') ? undefined : directRoom(delivery);
   }
 
   /** The customer's own order. Another account's order reads as missing. */
   async customerSeat(context: TransactionContext, userId: string, orderId: string): Promise<ChatSeat | undefined> {
     const order = await this.orders.findOfCustomer(context, orderId, userId);
     return order === undefined ? undefined : { room: orderRoom(order), mayRead: true, maySend: orderIsOpen(order.status) };
+  }
+
+  /** The customer's own direct delivery (source CUSTOMER). Another account's delivery reads as missing. */
+  async customerDirectSeat(context: TransactionContext, userId: string, deliveryId: string): Promise<ChatSeat | undefined> {
+    const delivery = await this.deliveries.findOfCustomer(context, deliveryId, userId);
+    return delivery === undefined || delivery.source !== 'CUSTOMER' ? undefined : { room: directRoom(delivery), mayRead: true, maySend: deliveryIsOpen(delivery.state) };
   }
 
   /** The order of the caller's own shop. */
@@ -117,11 +131,13 @@ export class OrderChatParticipants {
   async recipients(context: TransactionContext, room: ChatRoom, excludeUserId: string): Promise<ChatRecipient[]> {
     const out: ChatRecipient[] = [];
     if (room.customerUserId !== null) {
-      out.push({ userId: room.customerUserId, app: 'FOOD', targetType: 'ORDER', targetId: room.id });
+      out.push({ userId: room.customerUserId, app: 'FOOD', targetType: room.type === 'ORDER' ? 'ORDER' : 'DELIVERY', targetId: room.id });
     }
-    const owner = await this.shops.ownerUserIdOfShop(context, room.shopId);
-    if (owner !== undefined) {
-      out.push({ userId: owner, app: 'FOOD', targetType: room.type === 'ORDER' ? 'ORDER' : 'DELIVERY', targetId: room.id });
+    if (room.shopId !== null) {
+      const owner = await this.shops.ownerUserIdOfShop(context, room.shopId);
+      if (owner !== undefined) {
+        out.push({ userId: owner, app: 'FOOD', targetType: room.type === 'ORDER' ? 'ORDER' : 'DELIVERY', targetId: room.id });
+      }
     }
     const running = room.type === 'ORDER' ? (await this.deliveries.listOfOrder(context, room.id)).filter((d) => deliveryIsOpen(d.state)) : [];
     const holders = room.type === 'ORDER' ? running : [await this.deliveries.findById(context, room.id)].filter((d): d is DeliveryRow => d !== undefined);

@@ -1,4 +1,7 @@
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
+import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
+import { WithdrawalMoneyService } from '../../apps/backend/src/wallet/withdrawal-money-service';
+import { WithdrawalRepository } from '../../apps/backend/src/wallet/withdrawal-repository';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
@@ -214,11 +217,26 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     (await client.pool.query<{ state: string; version: string }>('SELECT state, version::text FROM app.wallet_withdrawals WHERE withdrawal_id = $1::uuid', [id])).rows[0] as { state: string; version: string };
   const txid = (): string => `OUT${Math.floor(1e11 + Math.random() * 9e11)}`;
 
+  /**
+   * A withdrawal that already exists, of any amount, for the administration tests. Since the Owner lock of 2026-10-28 the Shipper API creates one only while CLOSING and for
+   * the WHOLE balance (see the dedicated tests below); requests validly made before that (partial amounts) are seeded through the same money service, so the processing,
+   * payment and reconciliation paths keep being proven against them.
+   */
   async function request(s: Shipper, amount: number): Promise<string> {
-    const response = await withdraw(s, { amount_vnd: amount });
-    expect(response.status).toBe(201);
-    return String(dataOf(response).withdrawal_id);
+    const transactions = client.running.app.get(TransactionManager);
+    const money = client.running.app.get(WithdrawalMoneyService);
+    const withdrawals = client.running.app.get(WithdrawalRepository);
+    return transactions.withTransaction(async (context) => {
+      const wallet = await money.lockWalletOfDriver(context, s.driverId);
+      expect(wallet).toBeDefined();
+      const row = await money.reserve(context, wallet as NonNullable<typeof wallet>, { driverId: s.driverId, amountVnd: BigInt(amount), createdByUserId: s.userId });
+      await withdrawals.insertEvent(context, { eventId: randomUUID(), withdrawalId: row.withdrawalId, kind: 'CREATED', fromState: null, toState: row.state, actorUserId: s.userId, reasonCode: null, version: row.version });
+      return row.withdrawalId;
+    });
   }
+
+  /** Asks to close the account through the real route (ACTIVE or SUSPENDED -> CLOSING). */
+  const closeAccount = async (s: Shipper, note: string | null = null): Promise<ApiResponse> => selfCommand(s, 'closure-request', { note });
   const evidence = (id: string, over: Record<string, unknown> = {}, amount = 50_000): Record<string, unknown> => ({
     actual_amount_vnd: amount,
     bank_id: 'VCB',
@@ -265,12 +283,15 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
   it('Android PASSWORD wallet withdrawal holds once and never debits before manual confirmation', async () => {
     const old = await newShipper(100_000);
     const s = { ...old, token: await loginAs(old.phone, { ...WEB_SHIP, platform: 'ANDROID' }) };
+    // An ACTIVE Shipper cannot ask for money back at all; closing the account is the only way, and it returns the whole balance.
+    expect(errorCode(await withdraw(s, { amount_vnd: 50_000 }))).toBe('WITHDRAWAL_ONLY_WHEN_CLOSING');
+    expect((await closeAccount(s)).status).toBe(200);
     const key = randomUUID();
-    const first = await withdraw(s, { amount_vnd: 50_000 }, key);
+    const first = await withdraw(s, { amount_vnd: 100_000 }, key);
     expect(first.status).toBe(201);
-    const repeated = await withdraw(s, { amount_vnd: 50_000 }, key);
+    const repeated = await withdraw(s, { amount_vnd: 100_000 }, key);
     expect(dataOf(repeated).withdrawal_id).toBe(dataOf(first).withdrawal_id);
-    expect(await wallet(s)).toEqual({ balance: '100000', held: '50000' });
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
     expect(await debits(s.walletId)).toBe(0);
   });
 
@@ -354,34 +375,43 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     expect((await stateOf(id)).state).toBe('PENDING');
   });
 
-  it('2. create: the amount is only set aside (hold), never debited; bank details are a verified snapshot; refusals write nothing', async () => {
+  it('2. create: only while CLOSING and only the WHOLE balance; the amount is set aside (hold), never debited; bank details are a verified snapshot; refusals write nothing', async () => {
     const s = await newShipper(100_000);
+    // Outside CLOSING nothing is created, whatever the key, the amount or the route (Owner lock 2026-10-28).
+    for (const amount of [10_000, 50_000, 100_000]) {
+      expect(errorCode(await withdraw(s, { amount_vnd: amount }))).toBe('WITHDRAWAL_ONLY_WHEN_CLOSING');
+    }
+    expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [s.walletId])).toBe(0);
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+    expect((await closeAccount(s)).status).toBe(200);
     for (const body of [{}, { amount_vnd: 0 }, { amount_vnd: 10.5 }, { amount_vnd: '10000' }, { amount_vnd: 10_000, driver_id: s.driverId }]) {
       expect([JSON.stringify(body), (await withdraw(s, body)).status]).toEqual([JSON.stringify(body), 400]);
     }
-    expect(errorCode(await withdraw(s, { amount_vnd: 9_999 }))).toBe('WITHDRAWAL_AMOUNT_BELOW_MINIMUM');
+    // A part of the balance is refused (it is never partial) and there is no minimum to fall under.
+    expect(errorCode(await withdraw(s, { amount_vnd: 9_999 }))).toBe('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
+    expect(errorCode(await withdraw(s, { amount_vnd: 40_000 }))).toBe('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
     expect(errorCode(await withdraw(s, { amount_vnd: 100_001 }))).toBe('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
-    expect(errorCode(await withdraw(s, { amount_vnd: 10_000 }, null))).toBe('IDEMPOTENCY_KEY_REQUIRED');
+    expect(errorCode(await withdraw(s, { amount_vnd: 100_000 }, null))).toBe('IDEMPOTENCY_KEY_REQUIRED');
     expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
     const key = randomUUID();
-    const created = await withdraw(s, { amount_vnd: 40_000 }, key);
+    const created = await withdraw(s, { amount_vnd: 100_000 }, key);
     expect(created.status).toBe(201);
     const data = dataOf(created);
-    expect(data).toMatchObject({ amount_vnd: 40_000, state: 'PENDING', version: 1, can_cancel: true, account: { bank_code: 'VCB', account_number_masked: `****${s.number.slice(-4)}` } });
+    expect(data).toMatchObject({ amount_vnd: 100_000, state: 'PENDING', version: 1, can_cancel: true, account: { bank_code: 'VCB', account_number_masked: `****${s.number.slice(-4)}` } });
     expect(JSON.stringify(data)).not.toContain(s.number);
     const id = String(data.withdrawal_id);
-    expect(await wallet(s)).toEqual({ balance: '100000', held: '40000' });
-    expect(await holdOf(id)).toEqual({ status: 'ACTIVE', amount: '40000' });
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
+    expect(await holdOf(id)).toEqual({ status: 'ACTIVE', amount: '100000' });
     expect(await debits(s.walletId)).toBe(0);
     // The snapshot keeps the leading zero and the exact verified data.
     const snap = (await client.pool.query('SELECT account_number, account_holder, bank_code FROM app.wallet_withdrawals WHERE withdrawal_id = $1::uuid', [id])).rows[0];
     expect(snap).toEqual({ account_number: s.number, account_holder: HOLDER, bank_code: 'VCB' });
     expect(s.number.startsWith('0')).toBe(true);
     // Replay: same key and body -> the same withdrawal, nothing more; the same key with another body is refused.
-    expect(dataOf(await withdraw(s, { amount_vnd: 40_000 }, key)).withdrawal_id).toBe(id);
+    expect(dataOf(await withdraw(s, { amount_vnd: 100_000 }, key)).withdrawal_id).toBe(id);
     expect(errorCode(await withdraw(s, { amount_vnd: 41_000 }, key))).toBe('IDEMPOTENCY_KEY_REUSED');
     expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [s.walletId])).toBe(1);
-    expect(await wallet(s)).toEqual({ balance: '100000', held: '40000' });
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
     // Audit and outbox: identifiers, state and amount, never a bank detail.
     const trail = JSON.stringify([
       (await client.pool.query('SELECT metadata FROM app.audit_logs WHERE resource_id = $1', [id])).rows,
@@ -390,21 +420,56 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     for (const secret of [s.number, HOLDER]) {
       expect(trail).not.toContain(secret);
     }
-    // The second request sees the available money already set aside.
-    expect(errorCode(await withdraw(s, { amount_vnd: 60_001 }))).toBe('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
-    expect((await withdraw(s, { amount_vnd: 60_000 })).status).toBe(201);
+    // A second request with another key finds the money held: it is refused and nothing is doubled.
+    expect(errorCode(await withdraw(s, { amount_vnd: 100_000 }))).toBe('DRIVER_WALLET_NOT_SETTLED');
     expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
   });
 
-  it('3. no verified bank account, no withdrawal; two parallel requests cannot overspend the available money', async () => {
+  it('2b. Owner lock: ACTIVE, SUSPENDED, PENDING and CLOSED never create a withdrawal, even with a verified bank and a balance; the wallet, holds and ledger stay as they were', async () => {
+    const check = async (status: string, expectedCode: string): Promise<void> => {
+      const s = await newShipper(100_000);
+      if (status === 'SUSPENDED') {
+        const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+        expect((await send(systemLogin(), `/shippers/${s.driverId}/lock`, { expected_version: profile.version, reason: 'Khóa để thử' })).status).toBe(200);
+      } else if (status !== 'ACTIVE') {
+        await client.pool.query('UPDATE app.drivers SET status = $2, accepting_deliveries = false WHERE driver_id = $1::uuid', [s.driverId, status]);
+      }
+      const before = await wallet(s);
+      for (const key of [randomUUID(), randomUUID()]) {
+        expect([status, errorCode(await withdraw(s, { amount_vnd: 100_000 }, key))]).toEqual([status, expectedCode]);
+      }
+      expect(await wallet(s)).toEqual(before);
+      expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [s.walletId])).toBe(0);
+      expect(await debits(s.walletId)).toBe(0);
+    };
+    await check('ACTIVE', 'WITHDRAWAL_ONLY_WHEN_CLOSING');
+    await check('SUSPENDED', 'WITHDRAWAL_ONLY_WHEN_CLOSING');
+    await check('PENDING', 'WITHDRAWAL_ONLY_WHEN_CLOSING');
+    await check('CLOSED', 'DRIVER_STATE_CONFLICT');
+  });
+
+  it('2c. CLOSING with an empty wallet needs no withdrawal: nothing can be requested for 0 and the Admin can finish the closure', async () => {
+    const s = await newShipper(0);
+    expect((await closeAccount(s)).status).toBe(200);
+    expect((await withdraw(s, { amount_vnd: 0 })).status).toBe(400);
+    expect(errorCode(await withdraw(s, { amount_vnd: 1 }))).toBe('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
+    expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [s.walletId])).toBe(0);
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+    expect((await send(systemLogin(), `/shippers/${s.driverId}/closure/finalize`, { expected_version: profile.version })).status).toBe(200);
+  });
+
+  it('3. no verified bank account, no withdrawal; parallel and repeated requests with different keys create exactly one', async () => {
     const unverified = await newShipper(50_000, { verified: false });
-    expect(errorCode(await withdraw(unverified, { amount_vnd: 10_000 }))).toBe('WITHDRAWAL_BANK_NOT_VERIFIED');
+    expect((await closeAccount(unverified)).status).toBe(200);
+    expect(errorCode(await withdraw(unverified, { amount_vnd: 50_000 }))).toBe('WITHDRAWAL_BANK_NOT_VERIFIED');
     expect(await wallet(unverified)).toEqual({ balance: '50000', held: '0' });
     expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [unverified.walletId])).toBe(0);
     const s = await newShipper(100_000);
-    const results = await Promise.all([withdraw(s, { amount_vnd: 70_000 }), withdraw(s, { amount_vnd: 70_000 }), withdraw(s, { amount_vnd: 70_000 })]);
+    expect((await closeAccount(s)).status).toBe(200);
+    const results = await Promise.all([withdraw(s, { amount_vnd: 100_000 }), withdraw(s, { amount_vnd: 100_000 }), withdraw(s, { amount_vnd: 100_000 })]);
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409]);
-    expect(await wallet(s)).toEqual({ balance: '100000', held: '70000' });
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
+    expect(await countRows(client.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE wallet_id = $1::uuid', [s.walletId])).toBe(1);
   });
 
   it('4. cancel: only while PENDING, once, at the right version; the hold is released and no ledger row appears', async () => {
@@ -426,6 +491,19 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     const both = await Promise.all([cancel(s, id2, { expected_version: 1 }), cancel(s, id2, { expected_version: 1 })]);
     expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
     expect(await wallet(s)).toEqual({ balance: '100000', held: '0' });
+  });
+
+  it('4b. correcting a mistyped name does not change where an existing withdrawal pays and does not approve the bank again', async () => {
+    const s = await newShipper(100_000);
+    const id = await request(s, 50_000);
+    const profile = dataOf(await client.call('GET', '/driver/me', { bearer: s.token }));
+    const renamed = await client.call('PUT', '/driver/me/profile', { bearer: s.token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: profile.version, full_name: `Nguyễn Văn Sửa ${tag}`, plate_number: null } });
+    expect(renamed.status).toBe(200);
+    const snap = (await client.pool.query('SELECT account_number, account_holder, bank_code FROM app.wallet_withdrawals WHERE withdrawal_id = $1::uuid', [id])).rows[0];
+    expect(snap).toEqual({ account_number: s.number, account_holder: HOLDER, bank_code: 'VCB' });
+    expect((await client.pool.query('SELECT verification_state FROM app.driver_bank_accounts WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.verification_state).toBe('UNVERIFIED');
+    expect((await stateOf(id)).state).toBe('PENDING');
+    expect(await wallet(s)).toEqual({ balance: '100000', held: '50000' });
   });
 
   it('5. permissions: no right, read only, process only, confirm only and reconcile only each get exactly their own routes; the destination is masked in lists', async () => {

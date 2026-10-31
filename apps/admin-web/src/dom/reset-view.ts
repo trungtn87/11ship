@@ -31,6 +31,8 @@ export interface ResetHooks {
   resend(): void;
   setPassword(password: string): void;
   toLogin(): void;
+  /** Where "Về trang đăng nhập" points (default "/"; the Mini Business PWA uses "/business/" so it stays inside its scope). */
+  loginHref?: string;
 }
 
 const CODE_ERROR: Record<ResetCodeError, string> = {
@@ -98,7 +100,7 @@ export class ResetPage {
   }
 
   #toLogin(): HTMLElement {
-    const back = h('a', { href: '/', class: 'link-btn link-center' }, 'Về trang đăng nhập');
+    const back = h('a', { href: this.hooks.loginHref ?? '/', class: 'link-btn link-center' }, 'Về trang đăng nhập');
     back.addEventListener('click', (event) => {
       event.preventDefault();
       this.hooks.toLogin();

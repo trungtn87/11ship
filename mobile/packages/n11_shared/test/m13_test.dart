@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:n11_shared/testing.dart';
 
 class _FakeTransport implements ApiTransport {
   _FakeTransport(this.answer);
@@ -93,6 +96,60 @@ AppUpdateController _controller(_FakeTransport transport, _FakeFiles files, _Fak
       busyProbe: probe,
       retryDelay: Duration.zero,
     );
+
+const AppConfig _config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
+
+Future<({SessionController session, FakeApiTransport api})> _signedIn() async {
+  final FakeApiTransport api = FakeApiTransport();
+  installAccountRoutes(api);
+  final SessionController session = createSessionController(ClientApp.food, _config, transport: api, bridge: FakeDeviceBridge());
+  await session.start();
+  await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+  return (session: session, api: api);
+}
+
+/// A source whose token registration the server refuses (or that is offline); only what PushSync calls is implemented.
+class _PushFailSource implements NotificationSource {
+  _PushFailSource(this.session);
+
+  final SessionController session;
+  NotificationFailureKind kind = NotificationFailureKind.server;
+  int tries = 0;
+
+  @override
+  Future<void> registerPushToken(String token) async {
+    tries += 1;
+    throw NotificationFailure(kind);
+  }
+
+  @override
+  Future<void> reportPushPermissionDenied() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(invocation.memberName.toString());
+}
+
+class _PushPort implements PushPort {
+  final StreamController<String> refreshes = StreamController<String>.broadcast();
+
+  @override
+  Future<PushState> state() async => const PushState(supported: true, permission: PushPermission.granted, token: 'tok-aaaaaaaaaaaaaaaaaaaa');
+
+  @override
+  Future<PushPermission> requestPermission() async => PushPermission.granted;
+
+  @override
+  Future<void> openSystemSettings() async {}
+
+  @override
+  Future<void> deleteToken() async {}
+
+  @override
+  Stream<String> get tokenRefreshes => refreshes.stream;
+
+  @override
+  Stream<String> get taps => const Stream<String>.empty();
+}
 
 void main() {
   late Directory dir;
@@ -575,6 +632,164 @@ void main() {
       expect(await q.add(kind: 'OTHER', code: 'A', appVersion: '1.0'), isFalse);
       await q.add(kind: 'PUSH_ERROR', code: 'A', appVersion: '1.0', message: 'm', deliveryCode: 'D1');
       expect(q.entries.single.toWire().keys.toSet(), <String>{'at', 'kind', 'code', 'app_version', 'message', 'delivery_code'});
+    });
+  });
+
+  group('error instrumentation (G20-D #264): the five kinds are really reported, redacted and not repeated', () {
+    late MemoryLogQueueStore store;
+    late ClientLogQueue queue;
+    late OpsClient ops;
+
+    setUp(() {
+      store = MemoryLogQueueStore();
+      queue = ClientLogQueue(store: store);
+      // Signed out on purpose: reporting only queues; nothing is delivered in these tests.
+      final SessionController signedOut = createSessionController(ClientApp.ship, _config, transport: FakeApiTransport(), bridge: FakeDeviceBridge());
+      ops = OpsClient(
+        app: ClientApp.ship,
+        config: _config,
+        session: signedOut,
+        updates: _controller(_FakeTransport((String _) => _json(<String, Object?>{})), _FakeFiles(<List<int>>[]), _FakePlatform(dir)),
+        queue: queue,
+      );
+      OpsClient.attachForTest(ops);
+    });
+
+    tearDown(() => OpsClient.attachForTest(null));
+
+    Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
+
+    test('the static gate queues every documented kind, redacts the text and ignores a repeat or an unknown kind; with no client it does nothing', () async {
+      OpsClient.report(kind: 'ACTION_ERROR', code: 'post save', message: 'Bearer abc.def-123 for 0912345678 otp: 123456');
+      OpsClient.report(kind: 'MAP_ERROR', code: 'PLACE_SEARCH_BAD');
+      OpsClient.reportRouteError('ROUTE_DISTANCE_FAILED', message: 'at 22.66667,106.25833');
+      OpsClient.report(kind: 'GPS_STALE', code: 'GPS_STALE_NO_SERVER_POSITION');
+      OpsClient.report(kind: 'PUSH_ERROR', code: 'PUSH_REGISTER_SERVER');
+      OpsClient.report(kind: 'PUSH_ERROR', code: 'PUSH_REGISTER_SERVER');
+      OpsClient.report(kind: 'NOT_A_KIND', code: 'X');
+      await settle();
+      expect(queue.entries.map((ClientLogEntry e) => e.kind).toList(), <String>['ACTION_ERROR', 'MAP_ERROR', 'ROUTE_ERROR', 'GPS_STALE', 'PUSH_ERROR']);
+      expect(queue.entries.first.code, 'POST_SAVE');
+      final String stored = store.content!;
+      for (final String secret in <String>['abc.def-123', '0912345678', '123456']) {
+        expect(stored.contains(secret), isFalse, reason: secret);
+      }
+      OpsClient.attachForTest(null);
+      OpsClient.report(kind: 'CRASH', code: 'NOBODY');
+      await settle();
+      expect(queue.length, 5);
+    });
+
+    test('an action code names the endpoint without identifiers or a query', () {
+      expect(opsActionCode('post', '/v1/shop/me/deliveries/11111111-1111-4111-8111-111111111111/cancel?x=1'), 'POST_DELIVERIES_CANCEL');
+      expect(opsActionCode('PATCH', '/v1/orders/12345/status'), 'PATCH_ORDERS_STATUS');
+    });
+
+    test('ACTION_ERROR: a server fault or an unreadable answer on a WRITE is reported; a refusal, a lost answer and a failed read are not', () async {
+      final t = await _signedIn();
+      const String id = '11111111-1111-4111-8111-111111111111';
+      final HttpShopDeliverySource source = HttpShopDeliverySource(session: t.session);
+      Future<void> cancel() async {
+        try {
+          await source.cancel(id, reason: 'x', expectedVersion: 1, key: '33333333-3333-4333-8333-333333333333');
+        } on M07Failure {
+          // expected
+        }
+      }
+
+      t.api.routes['POST /v1/shop/me/deliveries/$id/cancel'] = (String m, String p, Map<String, String> h, String b) async => apiError(409, 'DELIVERY_STATE_CONFLICT');
+      await cancel();
+      t.api.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);
+      await cancel();
+      t.api.routes['GET /v1/shop/me/deliveries/$id'] = (String m, String p, Map<String, String> h, String b) async => apiError(500, 'INTERNAL');
+      try {
+        await source.get(id);
+      } on M07Failure {
+        // expected
+      }
+      await settle();
+      expect(queue.length, 0, reason: 'none of these is a server fault on a write');
+
+      t.api.routes['POST /v1/shop/me/deliveries/$id/cancel'] = (String m, String p, Map<String, String> h, String b) async => apiError(500, 'INTERNAL');
+      await cancel();
+      await settle();
+      expect(queue.entries.single.kind, 'ACTION_ERROR');
+      expect(queue.entries.single.code, 'POST_DELIVERIES_CANCEL');
+      expect(queue.entries.single.message, contains('/shop/me/deliveries/:id/cancel'));
+      expect(queue.entries.single.message, isNot(contains(id)));
+
+      t.api.routes['POST /v1/shop/me/deliveries/$id/recall'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'delivery_id': id}});
+      try {
+        await source.recall(id, key: '44444444-4444-4444-8444-444444444444');
+      } on M07Failure {
+        // expected
+      }
+      await settle();
+      expect(queue.entries.map((ClientLogEntry e) => e.code), contains('DELIVERY_BAD_RESPONSE'));
+    });
+
+    test('MAP_ERROR: a failed place search or a location that cannot be taken is reported; a refused permission and the typed text are not', () async {
+      final t = await _signedIn();
+      final HttpPlaceSearchApi places = HttpPlaceSearchApi(t.session);
+      t.api.routes['GET /v1/customers/me/places?query=Cao+B%E1%BA%B1ng'] = (String m, String p, Map<String, String> h, String b) async => apiError(503, 'SERVICE_DOWN');
+      try {
+        await places.search('Cao Bằng');
+      } on Object {
+        // expected
+      }
+      await settle();
+      final int afterSearch = queue.length;
+      expect(afterSearch, 1);
+      expect(queue.entries.single.kind, 'MAP_ERROR');
+      expect(store.content ?? '', isNot(contains('Cao B')));
+
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel = MethodChannel('vn.eleven.n11/location-test');
+      final MethodChannelLocationProvider provider = MethodChannelLocationProvider(channel: channel);
+      String code = 'TIMEOUT';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (MethodCall call) async => throw PlatformException(code: code));
+      addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+      await expectLater(provider.currentFix(), throwsA(isA<LocationException>()));
+      await settle();
+      expect(queue.entries.any((ClientLogEntry e) => e.kind == 'MAP_ERROR' && e.code == 'LOCATION_TIMEOUT'), isTrue);
+      final int before = queue.length;
+      code = 'DENIED';
+      await expectLater(provider.currentFix(), throwsA(isA<LocationException>()));
+      code = 'DISABLED';
+      await expectLater(provider.currentFix(), throwsA(isA<LocationException>()));
+      await settle();
+      expect(queue.length, before, reason: 'permission and GPS switch are the person\'s choices');
+    });
+
+    test('ROUTE_ERROR: a road-distance request that fails is reported once per failure; the card still says "unavailable", never a number', () async {
+      final FakeDiscoveryApi api = FakeDiscoveryApi()..routeOffline = true;
+      final RouteDistanceController routes = RouteDistanceController(api: api);
+      final LocationFix here = LocationFix(latitude: 10.0123, longitude: 106.0456, accuracyMeters: 10, takenAt: DateTime.utc(2026, 10, 25));
+      const ShopCardData shop = ShopCardData(shopId: 's1', name: 'Quán', address: 'x', reason: 'ONLINE', latitude: 10.02, longitude: 106.05);
+      await routes.want(<ShopCardData>[shop], here);
+      await settle();
+      expect(routes.of(shop, here).kind, RouteDistanceKind.unavailable);
+      expect(queue.entries.single.kind, 'ROUTE_ERROR');
+      expect(queue.entries.single.code, 'ROUTE_DISTANCE_FAILED');
+      expect(store.content!.contains('10.0123'), isFalse, reason: 'the position is never reported');
+    });
+
+    test('PUSH_ERROR: a token that the server did not accept is reported (not an offline phone), without the token', () async {
+      final SessionController session = (await _signedIn()).session;
+      final _PushFailSource source = _PushFailSource(session);
+      final _PushPort port = _PushPort();
+      final PushSync sync = PushSync(session: session, source: source, port: port);
+      await settle();
+      expect(source.tries, 1);
+      expect(queue.entries.single.kind, 'PUSH_ERROR');
+      expect(queue.entries.single.code, 'PUSH_REGISTER_SERVER');
+      expect(store.content!.contains('tok-aaaaaaaaaaaaaaaaaaaa'), isFalse);
+      source.kind = NotificationFailureKind.offline;
+      port.refreshes.add('tok-bbbbbbbbbbbbbbbbbbbb');
+      await settle();
+      expect(source.tries, 2);
+      expect(queue.length, 1, reason: 'being offline is not a push fault');
+      sync.dispose();
     });
   });
 }

@@ -56,6 +56,14 @@ String _refusalText(String? code) {
       return 'Yêu cầu nạp đã được xử lý nên không hủy được nữa.';
     case 'TOPUP_REQUEST_NOT_FOUND' || 'WITHDRAWAL_NOT_FOUND':
       return 'Không tìm thấy yêu cầu này.';
+    case 'TOPUP_NOT_ALLOWED_WHEN_CLOSING':
+      return 'Đang đóng hoạt động, không thể tạo yêu cầu nạp mới.';
+    case 'WITHDRAWAL_ONLY_WHEN_CLOSING':
+      return 'Chỉ rút tiền khi bạn dừng hoạt động. Hãy gửi yêu cầu dừng hoạt động trước.';
+    case 'DRIVER_HAS_ACTIVE_WORK':
+      return 'Bạn còn đơn đang giao. Hãy hoàn tất đơn trước khi rút toàn bộ số dư.';
+    case 'DRIVER_WALLET_NOT_SETTLED':
+      return 'Ví còn khoản đang chờ xử lý (tiền tạm giữ, yêu cầu nạp hoặc rút). Hãy chờ xử lý xong rồi rút toàn bộ số dư.';
     case 'WITHDRAWAL_AMOUNT_BELOW_MINIMUM':
       return 'Số tiền rút thấp hơn mức tối thiểu hiện tại.';
     case 'WITHDRAWAL_INSUFFICIENT_AVAILABLE':
@@ -160,7 +168,8 @@ TopupRequest _parseTopup(Object? data) {
   if (amount < 1 || version < 1) {
     throw const FormatException('amount');
   }
-  return TopupRequest(code: id, displayCode: walletShortCode(id), amount: amount, createdAt: _time(raw['created_at']), status: _topupStatus(raw['state']), version: version);
+  final Object? transfer = raw['transfer_code'];
+  return TopupRequest(code: id, displayCode: walletShortCode(id), amount: amount, createdAt: _time(raw['created_at']), status: _topupStatus(raw['state']), version: version, transferCode: transfer is String && transfer.isNotEmpty ? transfer : null);
 }
 
 WithdrawalRequest _parseWithdrawal(Object? data) {
@@ -336,7 +345,8 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
         if (withdraw > 0) {
           _minWithdraw = withdraw;
         }
-        return Wallet(total: balance, held: held);
+        final Object? status = data['driver_status'];
+        return Wallet(total: balance, held: held, driverStatus: status is String ? status : null);
       });
 
   /// The next older page of the cursor each filter is at: the server pages (50 a page), so the whole history is reachable without a cap.

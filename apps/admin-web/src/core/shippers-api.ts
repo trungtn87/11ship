@@ -141,6 +141,7 @@ export function parseDetail(data: Record<string, unknown>): ShipperDetail | unde
     id, code, fullName: name, phone, plate, driverType: data.driver_type as DriverType, status: data.status as DriverStatus, reviewState: data.review_state as ReviewState,
     rejectionReason, suspensionReason, accepting: data.accepting_deliveries, version: data.version, bank, blocks: readiness.blocks as string[], canAccept: readiness.can_accept,
     closureNote: closure === null ? null : (nullableStr(closure.note) ?? null), closureRequestedAt: closure === null ? null : (nullableIso(closure.requested_at) ?? null),
+    closureFromStatus: closure !== null && (closure.from_status === 'ACTIVE' || closure.from_status === 'SUSPENDED') ? closure.from_status : null,
     submittedAt, createdAt, history,
   };
 }

@@ -117,7 +117,7 @@ export class ReviewService {
         reviewId: randomUUID(),
         kind: 'SHIPPER_BY_CUSTOMER',
         reviewerUserId: caller.userId,
-        shopId: run.delivery.shopId,
+        shopId: run.delivery.shopId ?? order.shopId,
         driverId: run.driverId,
         orderId: order.orderId,
         deliveryId: run.delivery.deliveryId,
@@ -128,6 +128,71 @@ export class ReviewService {
         shopName: run.delivery.shopName,
         driverName: driver?.fullName ?? null,
         relatedCode: run.delivery.code,
+      });
+    });
+  }
+
+  
+
+  async customerDeliveryState(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
+    return this.transactions.withTransaction(async (context) => {
+      const caller = await this.actors.customer(context, principal, 'share');
+      const delivery = await this.deliveries.findOfCustomer(context, deliveryId, caller.userId);
+      if (delivery === undefined || delivery.source !== 'CUSTOMER') {
+        throw new AppError('DELIVERY_NOT_FOUND');
+      }
+      const assignments = await this.deliveries.listAssignments(context, deliveryId);
+      const executing = assignments.find((a) => a.status === 'COMPLETED');
+      const shipperReview = await this.reviews.findOfDelivery(context, deliveryId, 'SHIPPER_BY_CUSTOMER');
+      const driver = executing === undefined ? undefined : await this.drivers.findById(context, executing.driverId);
+      const rating = driver === undefined ? undefined : (await this.reviews.shipperSummary(context, driver.driverId)).all;
+      const completed = delivery.state === 'completed';
+      return {
+        delivery: { delivery_id: delivery.deliveryId, code: delivery.code, completed },
+        shipper:
+          executing === undefined || driver === undefined
+            ? null
+            : {
+                name: driver.fullName,
+                shipper_code: driver.shipperCode,
+                rating: rating === undefined ? null : summaryView(rating),
+                can_review: completed && shipperReview === undefined,
+                review: shipperReview === undefined ? null : ownReviewView(shipperReview),
+              },
+      };
+    });
+  }
+
+  async customerReviewDeliveryShipper(principal: AuthPrincipal, deliveryId: string, input: ReviewInput, key: Key, requestId: string): Promise<IdempotentOutcome> {
+    return this.#write(principal, 'CUSTOMER', OPERATIONS.reviewShipperByCustomer, { delivery_id: deliveryId, stars: input.stars, comment: input.comment }, key, async (context, caller) => {
+      if (caller.role !== 'CUSTOMER') {
+        throw new TechnicalError('internal', 'Unexpected caller');
+      }
+      const delivery = await this.deliveries.findOfCustomer(context, deliveryId, caller.userId);
+      if (delivery === undefined || delivery.source !== 'CUSTOMER' || delivery.state !== 'completed') {
+        throw new AppError('REVIEW_NOT_ELIGIBLE');
+      }
+      const assignments = await this.deliveries.listAssignments(context, deliveryId);
+      const completedAssignment = assignments.find((a) => a.status === 'COMPLETED');
+      if (completedAssignment === undefined) {
+        throw new AppError('REVIEW_NOT_ELIGIBLE');
+      }
+      const driver = await this.drivers.findById(context, completedAssignment.driverId);
+      return this.#insert(context, requestId, caller.userId, {
+        reviewId: randomUUID(),
+        kind: 'SHIPPER_BY_CUSTOMER',
+        reviewerUserId: caller.userId,
+        shopId: null,
+        driverId: completedAssignment.driverId,
+        orderId: null,
+        deliveryId: delivery.deliveryId,
+        assignmentId: completedAssignment.assignmentId,
+        stars: input.stars,
+        comment: input.comment,
+        reviewerName: caller.displayName,
+        shopName: delivery.shopName,
+        driverName: driver?.fullName ?? null,
+        relatedCode: delivery.code,
       });
     });
   }
@@ -178,7 +243,7 @@ export class ReviewService {
         reviewId: randomUUID(),
         kind: 'SHIPPER_BY_SHOP',
         reviewerUserId: caller.userId,
-        shopId: delivery.shopId,
+        shopId: delivery.shopId ?? caller.shop.shopId,
         driverId: executing.driverId,
         orderId: delivery.orderId,
         deliveryId: delivery.deliveryId,

@@ -63,6 +63,22 @@ describe('admin web account read - parsers', () => {
     expect(parseUserPage({ ...base, items: 'x' })).toBeUndefined();
   });
 
+  it('the consent block of a detail (M01-POLICY-01): versions, time and the match with the version in force; absent is fine, a wrong shape refuses the detail', () => {
+    const base = { ...summary(), updated_at: '2026-10-02T00:00:00.000Z', version: 3, profiles: {}, phone_verified: true, lifecycle: lifecycle(), allowed_actions: [] };
+    const pair = { terms_version: 'terms-20261014-v1', privacy_version: 'privacy-20261017-v1' };
+    const good = parseUserDetail({ ...base, consent: { current: pair, accepted_current: true, history: [{ ...pair, accepted_at: '2026-10-01T03:04:05.123Z', client_app: 'FOOD' }] } });
+    expect(good?.consent).toEqual({
+      current: { termsVersion: 'terms-20261014-v1', privacyVersion: 'privacy-20261017-v1' },
+      acceptedCurrent: true,
+      history: [{ termsVersion: 'terms-20261014-v1', privacyVersion: 'privacy-20261017-v1', acceptedAt: '2026-10-01T03:04:05.123Z', clientApp: 'FOOD' }],
+    });
+    expect(parseUserDetail({ ...base, consent: { current: null, accepted_current: null, history: [] } })?.consent).toEqual({ current: null, acceptedCurrent: null, history: [] });
+    expect(parseUserDetail(base)?.consent).toBeUndefined();
+    expect(parseUserDetail({ ...base, consent: { current: pair, accepted_current: 'yes', history: [] } })).toBeUndefined();
+    expect(parseUserDetail({ ...base, consent: { current: pair, accepted_current: false, history: [{ ...pair, accepted_at: 'later', client_app: 'FOOD' }] } })).toBeUndefined();
+    expect(parseUserDetail({ ...base, consent: { current: { terms_version: 'bad version', privacy_version: 'x' }, accepted_current: false, history: [] } })).toBeUndefined();
+  });
+
   it('the detail carries no timeline and exactly the actions the server allows; any other shape is refused', () => {
     const detail = parseUserDetail({
       ...summary(),
@@ -208,6 +224,7 @@ describe('admin web account lock - source', () => {
       [409, 'USER_ACCOUNT_ALREADY_IN_STATE', { kind: 'conflict' }],
       [409, 'USER_ACCOUNT_IMPACT_REVIEW_REQUIRED', { kind: 'review-required' }],
       [409, 'USER_ACCOUNT_HAS_ACTIVE_WORK', { kind: 'has-active-work' }],
+      [503, 'USER_ACCOUNT_ACTIVITY_UNVERIFIED', { kind: 'unverified' }],
       [404, 'USER_NOT_AVAILABLE', { kind: 'not-found' }],
       [403, 'ADMIN_FORBIDDEN', { kind: 'forbidden' }],
       [401, 'ADMIN_SESSION_INVALID', { kind: 'session-expired' }],

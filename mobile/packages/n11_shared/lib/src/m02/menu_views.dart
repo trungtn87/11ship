@@ -32,9 +32,10 @@ mixin _LeaveWhenSignedOut<T extends StatefulWidget> on State<T> {
 }
 
 class MenuListScreen extends StatefulWidget {
-  const MenuListScreen({super.key, required this.flows});
+  const MenuListScreen({super.key, required this.flows, this.cropper});
 
   final M02Flows flows;
+  final DishImageCropperPort? cropper;
 
   @override
   State<MenuListScreen> createState() => _MenuListScreenState();
@@ -91,7 +92,7 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
     } else if (menu.startEdit(itemId) == null) {
       return;
     }
-    await Navigator.of(context).push(n11Route(DishFormScreen(flows: widget.flows)));
+    await Navigator.of(context).push(n11Route(DishFormScreen(flows: widget.flows, cropper: widget.cropper)));
     if (mounted) {
       menu.closeForm();
     }
@@ -229,9 +230,10 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
 
 /// Q06-A (new) and Q06-B (edit). The form lives in the controller; this screen only shows it.
 class DishFormScreen extends StatefulWidget {
-  const DishFormScreen({super.key, required this.flows});
+  const DishFormScreen({super.key, required this.flows, this.cropper});
 
   final M02Flows flows;
+  final DishImageCropperPort? cropper;
 
   @override
   State<DishFormScreen> createState() => _DishFormScreenState();
@@ -565,48 +567,128 @@ class _DishFormScreenState extends State<DishFormScreen> with _LeaveWhenSignedOu
     ]);
   }
 
+  Future<void> _pickImage() async {
+    final ItemForm? f = menu.form;
+    if (f == null || menu.locked || widget.flows.ops.readOnly) return;
+    PickedImage? picked;
+    try {
+      picked = await menu.picker.pick();
+    } on ImagePickException {
+      f.errors = <String, String>{...f.errors, 'image': 'Không đọc được ảnh này. Hãy chọn ảnh khác.'};
+      menu.edited();
+      return;
+    }
+    if (picked == null || menu.form != f) return;
+    f.rawPickedBytes = picked.bytes;
+
+    PickedImage? cropped;
+    final DishImageCropperPort? customCropper = widget.cropper ?? widget.flows.cropper ?? menu.cropper;
+    if (customCropper != null) {
+      cropped = await customCropper(picked);
+    } else {
+      if (!mounted) return;
+      cropped = await Navigator.of(context).push<PickedImage>(
+        MaterialPageRoute<PickedImage>(
+          builder: (_) => DishImageCropScreen(
+            rawBytes: picked!.bytes,
+            picker: menu.picker,
+          ),
+        ),
+      );
+    }
+    if (cropped == null || !mounted || menu.form != f) return;
+    await menu.applyCroppedImage(cropped, rawBytes: picked.bytes);
+  }
+
+  Future<void> _recropImage() async {
+    final ItemForm? f = menu.form;
+    if (f == null || f.rawPickedBytes == null || menu.locked || widget.flows.ops.readOnly) return;
+    PickedImage? cropped;
+    final DishImageCropperPort? customCropper = widget.cropper ?? widget.flows.cropper ?? menu.cropper;
+    final PickedImage rawPicked = PickedImage(bytes: f.rawPickedBytes!, contentType: 'image/png');
+    if (customCropper != null) {
+      cropped = await customCropper(rawPicked);
+    } else {
+      if (!mounted) return;
+      cropped = await Navigator.of(context).push<PickedImage>(
+        MaterialPageRoute<PickedImage>(
+          builder: (_) => DishImageCropScreen(
+            rawBytes: f.rawPickedBytes!,
+            picker: menu.picker,
+          ),
+        ),
+      );
+    }
+    if (cropped == null || !mounted || menu.form != f) return;
+    await menu.applyCroppedImage(cropped, rawBytes: f.rawPickedBytes);
+  }
+
   Widget _image(ItemForm f, bool lock) {
     final ImageStage stage = f.imageStage;
     final bool hasPicture = f.imageUrl != null || f.picked != null;
     final String? error = f.errors['image'];
-    final Widget preview = Container(
-      key: const Key('dish-image'),
-      height: 160,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(color: N11Colors.yellowFaint, border: Border.all(color: error != null ? N11Colors.error : N11Colors.line, width: error != null ? 2 : 1), borderRadius: BorderRadius.circular(kRadiusCard)),
-      clipBehavior: Clip.antiAlias,
-      child: hasPicture
-          ? Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                DishThumbFill(url: f.imageUrl, bytes: f.picked?.bytes),
-                if (stage == ImageStage.uploading) Container(color: const Color(0x88FFFFFF), alignment: Alignment.center, child: const CircularProgressIndicator()),
-              ],
-            )
-          : const Column(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[Icon(Icons.add_a_photo_outlined, size: 32, color: N11Colors.ink2), SizedBox(height: 6), Text('Thêm ảnh món (không bắt buộc)', style: N11Text.caption)]),
+    final Widget preview = AspectRatio(
+      aspectRatio: kDishImageAspectRatio,
+      child: Container(
+        key: const Key('dish-image'),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: N11Colors.yellowFaint,
+          border: Border.all(color: error != null ? N11Colors.error : N11Colors.line, width: error != null ? 2 : 1),
+          borderRadius: BorderRadius.circular(kRadiusCard),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: hasPicture
+            ? Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  DishThumbFill(url: f.imageUrl, bytes: f.picked?.bytes),
+                  if (stage == ImageStage.uploading)
+                    Container(color: const Color(0x88FFFFFF), alignment: Alignment.center, child: const CircularProgressIndicator()),
+                ],
+              )
+            : const Column(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[Icon(Icons.add_a_photo_outlined, size: 36, color: N11Colors.ink2), SizedBox(height: 8), Text('Thêm ảnh món (không bắt buộc)', style: N11Text.caption)]),
+      ),
     );
+    final bool canRecrop = !lock && f.rawPickedBytes != null && stage != ImageStage.uploading;
     final List<(String, String, VoidCallback)> actions = <(String, String, VoidCallback)>[
       if (!lock && stage == ImageStage.failed) ...<(String, String, VoidCallback)>[
-        ('image-other', 'Chọn ảnh khác', menu.pickImage),
+        ('image-other', 'Chọn ảnh khác', _pickImage),
         ('image-retry', 'Thử lại', menu.retryUpload),
         ('image-remove', 'Bỏ ảnh', menu.removeImage),
       ] else if (!lock && hasPicture && stage != ImageStage.uploading) ...<(String, String, VoidCallback)>[
-        ('image-replace', 'Thay ảnh', menu.pickImage),
+        if (canRecrop) ('image-recrop', 'Căn chỉnh lại', _recropImage),
+        ('image-replace', 'Thay ảnh', _pickImage),
         ('image-remove', 'Xóa ảnh', menu.removeImage),
       ],
     ];
     return vstack(<Widget>[
       const Text('Ảnh món', style: N11Text.label),
-      Semantics(button: !lock && !hasPicture, label: 'Chọn ảnh từ thiết bị', child: InkWell(key: const Key('image-pick'), borderRadius: BorderRadius.circular(kRadiusCard), onTap: lock || hasPicture || stage == ImageStage.uploading ? null : menu.pickImage, child: preview)),
+      Semantics(
+        button: !lock && !hasPicture,
+        label: 'Chọn ảnh từ thiết bị',
+        child: InkWell(
+          key: const Key('image-pick'),
+          borderRadius: BorderRadius.circular(kRadiusCard),
+          onTap: lock || hasPicture || stage == ImageStage.uploading ? null : _pickImage,
+          child: preview,
+        ),
+      ),
       if (stage == ImageStage.uploading) const Text('Đang tải ảnh lên…', key: Key('image-uploading'), style: N11Text.caption),
       if (error != null) N11Banner(key: const Key('image-error'), kind: BannerKind.error, title: 'Ảnh chưa dùng được', text: error),
       if (actions.isNotEmpty)
-        Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[for (final (String k, String label, VoidCallback go) in actions) N11Button(key: Key(k), label: label, compact: true, kind: ButtonKind.secondary, onPressed: go)]),
+        Wrap(
+          spacing: N11Space.gap2,
+          runSpacing: N11Space.gap2,
+          children: <Widget>[
+            for (final (String k, String label, VoidCallback go) in actions)
+              N11Button(key: Key(k), label: label, compact: true, kind: ButtonKind.secondary, onPressed: go),
+          ],
+        ),
     ]);
   }
 }
 
-/// Fills its parent with a picture (preview of the form).
 class DishThumbFill extends StatelessWidget {
   const DishThumbFill({super.key, required this.url, required this.bytes});
 

@@ -6,7 +6,7 @@ import { TransactionContext } from '../transaction/transaction-context';
  * so everything that depends on the wallet is blocked safely and honestly. No balance is ever invented here. When M04 lands it binds
  * its own implementation to DRIVER_WALLET_PORT and the blocked paths open without a change in M03.
  */
-export type WalletReadiness = { readonly ready: true } | { readonly ready: false; readonly reason: 'WALLET_NOT_AVAILABLE' | 'BALANCE_TOO_LOW' };
+export type WalletReadiness = { readonly ready: true } | { readonly ready: false; readonly reason: 'WALLET_NOT_AVAILABLE' | 'BALANCE_TOO_LOW' | 'FUNDING_TOO_LOW' };
 export type WalletSettlement = { readonly settled: true } | { readonly settled: false; readonly reason: 'WALLET_NOT_AVAILABLE' | 'BALANCE_REMAINING' };
 
 /** The first activation needs real money: at least 100.000 VND of CONFIRMED top-ups, still available (ADR-004 6). */

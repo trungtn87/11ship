@@ -162,6 +162,8 @@ export class AdminAccountLockService {
     body: LockBody,
     meta: { requestId: string },
   ): Promise<{ status: number; replayGuard: JsonObject; payload: JsonObject }> {
+    // Locks first, then the read: the data seen is the data that is still there when the account is purged or locked.
+    await this.activity.lockWorkSources(context, userId);
     const related = await this.activity.relatedData(context, userId);
     if (related.length === 0) {
       const purged = await this.accounts.purge(context, auth.target);
@@ -247,6 +249,8 @@ export class AdminAccountLockService {
   }
 
   async #assertNoActiveWork(context: TransactionContext, userId: string): Promise<void> {
+    // The shops and wallet of the account are locked before anything is read, so no order or money can slip in before the status changes.
+    await this.activity.lockWorkSources(context, userId);
     if ((await this.activity.activeWork(context, userId)).length > 0) {
       throw new AppError('USER_ACCOUNT_HAS_ACTIVE_WORK');
     }

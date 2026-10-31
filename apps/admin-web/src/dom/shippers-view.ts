@@ -119,7 +119,7 @@ export class ShipperListView {
       h(
         'section',
         { class: 'content content-wide', 'aria-labelledby': 'shipper-title' },
-        h('header', { class: 'page-head' }, h('div', {}, h('h1', { class: 'title', tabindex: '-1', id: 'shipper-title' }, 'Shipper'), h('p', { class: 'lead lead-last' }, 'Hồ sơ, tài khoản ngân hàng và trạng thái nhận đơn của Shipper. Shipper tự đăng ký qua ứng dụng 11Ship; quản trị viên xét duyệt tại đây.'))),
+        h('header', { class: 'page-head' }, h('div', {}, h('h1', { class: 'title', tabindex: '-1', id: 'shipper-title' }, 'Shipper'), h('p', { class: 'lead lead-last' }, 'Hồ sơ, tài khoản ngân hàng và trạng thái nhận đơn của Shipper. Shipper tự đăng ký qua ứng dụng 11Ship và hoạt động ngay (các nhãn xét duyệt chỉ còn cho hồ sơ cũ); quản trị viên khóa, mở khóa, xác minh ngân hàng và hoàn tất đóng hoạt động tại đây.'))),
         h('div', { class: 'toolbar toolbar-filters', role: 'search' }, h('div', { class: 'search' }, icon('search', 18), this.#search), this.#status, refresh),
         this.#results,
       ),
@@ -292,7 +292,7 @@ export class ShipperDetailView {
   }
 
   #detail(s: ShipperDetail): HTMLElement[] {
-    const state = standing(s.status, s.reviewState);
+    const state = standing(s.status, s.reviewState, s.closureFromStatus);
     const actions = this.#actions(s);
     const blocks: HTMLElement[] = [
       this.#back(),
@@ -309,7 +309,7 @@ export class ShipperDetailView {
     if (s.status === 'PENDING' && s.reviewState === 'REJECTED' && s.rejectionReason !== null) {
       blocks.push(h('p', { class: 'message message-warning' }, `Đã từ chối: ${s.rejectionReason}`));
     }
-    if (s.status === 'SUSPENDED' && s.suspensionReason !== null) {
+    if ((s.status === 'SUSPENDED' || (s.status === 'CLOSING' && s.closureFromStatus === 'SUSPENDED')) && s.suspensionReason !== null) {
       blocks.push(h('p', { class: 'message message-warning' }, `Đang tạm khóa: ${s.suspensionReason}`));
     }
     blocks.push(
@@ -351,6 +351,9 @@ export class ShipperDetailView {
             ['Gửi lúc', s.closureRequestedAt === null ? '—' : formatDateTime(s.closureRequestedAt)],
             ['Ghi chú của Shipper', s.closureNote ?? 'Không có'],
           ]),
+          s.closureFromStatus === 'SUSPENDED'
+            ? h('p', { class: 'message message-warning', id: 'closure-from-suspended' }, 'Shipper đang bị KHÓA và xin đóng chỉ để nhận lại số dư. Tài khoản vẫn bị khóa nhận đơn; thanh toán hoàn tiền hay hoàn tất không mở khóa. Nếu từ chối, Shipper quay lại trạng thái tạm khóa với lý do cũ.')
+            : undefined,
           h('p', { class: 'hint' }, 'Shipper đã ngừng nhận đơn mới. Đơn đang giao phải hoàn tất và ví phải được tất toán trước khi hoàn tất. Số dư ví không bị mất.'),
         ),
       );
@@ -445,7 +448,7 @@ export class ShipperDetailView {
     if (s.status === 'CLOSING') {
       actions.push(
         this.#button('Hoàn tất ngừng hoạt động', { name: 'closure/finalize', title: 'Hoàn tất ngừng hoạt động', text: 'Xử lý và xác nhận hoàn tiền tại Tài chính → Rút tiền trước. Chỉ hoàn tất khi không còn đơn đang giao và ví đã tất toán. Máy chủ kiểm tra lại điều kiện; số dư không bị mất.', confirm: 'Hoàn tất', danger: true }, false),
-        this.#button('Từ chối yêu cầu', { name: 'closure/reject', title: 'Từ chối yêu cầu ngừng hoạt động', text: 'Shipper quay lại trạng thái hoạt động với nhận đơn đang tắt.', confirm: 'Từ chối yêu cầu', reason: true }, true),
+        this.#button('Từ chối yêu cầu', { name: 'closure/reject', title: 'Từ chối yêu cầu ngừng hoạt động', text: s.closureFromStatus === 'SUSPENDED' ? 'Shipper quay lại trạng thái tạm khóa (giữ nguyên lý do khóa).' : 'Shipper quay lại trạng thái hoạt động với nhận đơn đang tắt.', confirm: 'Từ chối yêu cầu', reason: true }, true),
       );
     }
     return actions;
@@ -678,7 +681,7 @@ export class WalletParametersView {
         h('h3', { class: 'subtitle' }, 'Số tiền tối thiểu mỗi yêu cầu'),
         h('div', { class: 'field' }, h('label', { for: 'wallet-topup', class: 'label' }, `${WALLET_PARAMETER_LABEL.topup_min_vnd} (VND)`), h('div', { class: 'input-wrap' }, topup), topupError),
         h('div', { class: 'field' }, h('label', { for: 'wallet-withdraw', class: 'label' }, `${WALLET_PARAMETER_LABEL.withdraw_min_vnd} (VND)`), h('div', { class: 'input-wrap' }, withdraw), withdrawError),
-        h('p', { class: 'hint' }, 'Chỉ nhận số nguyên VND dương. Áp dụng cho yêu cầu nạp/rút mới, không sửa giao dịch đã xảy ra. Đây không phải số dư tối thiểu để nhận đơn (quy tắc của module Ví M04).'),
+        h('p', { class: 'hint' }, 'Chỉ nhận số nguyên VND dương. Mức nạp tối thiểu áp dụng cho yêu cầu nạp mới. Mức rút tối thiểu chỉ là tham số lịch sử: Shipper chỉ rút toàn bộ số dư khi đóng hoạt động nên mức này không chặn việc rút (ví dụ 5.000đ vẫn hoàn được). Đây không phải số dư tối thiểu để nhận đơn.'),
         status,
         canEdit ? h('div', { class: 'detail-actions' }, save, cancel) : h('p', { class: 'hint', id: 'wallet-readonly' }, 'Bạn chỉ có quyền xem các tham số hệ thống. Chỉ tài khoản SYSTEM được chỉnh sửa.'),
         h('p', { class: 'hint' }, p.updatedAt === null ? 'Đang dùng giá trị mặc định.' : `Cập nhật lần cuối: ${formatDateTime(p.updatedAt)}`),
