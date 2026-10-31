@@ -1,5 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
-import { CustomerOrderChatController, ShipperOrderChatController, ShopOrderChatController } from './order-chat.controller';
+import { CustomerDeliveryChatController, CustomerOrderChatController, ShipperOrderChatController, ShopOrderChatController } from './order-chat.controller';
 import { OrderChatServiceModule } from './order-chat-service.module';
 
 /**
@@ -12,7 +12,7 @@ export class OrderChatModule {
     return {
       module: OrderChatModule,
       imports: [auth, OrderChatServiceModule.register(auth)],
-      controllers: [CustomerOrderChatController, ShipperOrderChatController, ShopOrderChatController],
+      controllers: [CustomerOrderChatController, CustomerDeliveryChatController, ShipperOrderChatController, ShopOrderChatController],
     };
   }
 }

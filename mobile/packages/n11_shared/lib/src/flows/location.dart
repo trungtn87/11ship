@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../m13/m13_ops.dart' show OpsClient;
+
 // One real position fix, taken only when the person presses the button at the shop (foreground, one shot, no tracking). The native
 // side (mobile/tool/android-templates/kotlin/N11LocationChannel.kt) asks for the minimal foreground location permission, refuses a
 // mock provider, and never keeps listening. There is no default position and no way to type coordinates to pass the gate.
@@ -38,6 +40,18 @@ class MethodChannelLocationProvider implements LocationProvider {
 
   @override
   Future<LocationFix> currentFix() async {
+    try {
+      return await _currentFix();
+    } on LocationException catch (error) {
+      // A refusal of the person (permission denied, GPS switched off) is their choice; a timeout or a phone that cannot give a fix is a fault worth knowing.
+      if (error.failure == LocationFailure.unavailable || error.failure == LocationFailure.timeout) {
+        OpsClient.report(kind: 'MAP_ERROR', code: 'LOCATION_${error.failure.name.toUpperCase()}', message: 'One-shot location failed');
+      }
+      rethrow;
+    }
+  }
+
+  Future<LocationFix> _currentFix() async {
     try {
       final Map<Object?, Object?>? raw = await _channel.invokeMethod<Map<Object?, Object?>>('currentFix');
       final Object? lat = raw?['latitude'];

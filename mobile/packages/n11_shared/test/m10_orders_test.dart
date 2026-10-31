@@ -148,6 +148,28 @@ void main() {
       return (runtime, store);
     }
 
+    Future<(OrderRuntime, SampleOrderStore, AddressBookController)> readyPinnedCheckout(WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
+      const DeliveryAddress pinned = DeliveryAddress(
+        id: 'tip-address',
+        label: AddressLabel.home,
+        recipientName: 'Nguyễn An',
+        contactPhone: '+84912345678',
+        addressText: '12 Phố Huế',
+        deliveryNote: null,
+        latitude: 21,
+        longitude: 105.82,
+        isDeliveryDefault: true,
+        version: 1,
+      );
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(const <DeliveryAddress>[pinned]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      await settle(tester);
+      return (runtime, store, book);
+    }
+
     Future<void> fill(WidgetTester tester) async {
       await tester.enterText(key('checkout-name'), 'Nguyễn An');
       await tester.enterText(key('checkout-phone'), '0912345678');
@@ -156,6 +178,241 @@ void main() {
       await tap(tester, key('location-save'));
       await settle(tester);
     }
+
+    testWidgets('voluntary tip updates the proposed delivery fee and total without changing item money', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000, by: 10);
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: tea.id, name: tea.name, priceVnd: 5000);
+      const DeliveryAddress pinned = DeliveryAddress(id: 'tip-address', label: AddressLabel.home, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: '12 Phố Huế', deliveryNote: null, latitude: 21, longitude: 105.82, isDeliveryDefault: true, version: 1);
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(const <DeliveryAddress>[pinned]));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+      expect(key('checkout-tip'), findsOneWidget);
+      await tap(tester, key('checkout-tip-20000'));
+      expect(find.text('Tiền món'), findsOneWidget);
+      expect(find.text('455.000đ'), findsOneWidget);
+      expect(find.text('Tiền cảm ơn'), findsOneWidget);
+      expect(find.text('20.000đ'), findsWidgets);
+      expect(find.text('Tổng phí giao đề xuất'), findsOneWidget);
+      expect(find.text('30.000đ'), findsOneWidget);
+      expect(find.text('485.000đ'), findsWidgets);
+      await unmount(tester);
+    });
+
+    testWidgets('tip invalidates stale totals, survives an unavailable address safely, and can be removed before a fresh quote', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _DeferredPreviews customer = _DeferredPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final List<DeliveryAddress> addresses = <DeliveryAddress>[
+        const DeliveryAddress(id: 'pinned', label: AddressLabel.home, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Có ghim', deliveryNote: null, latitude: 21, longitude: 105.82, isDeliveryDefault: true, version: 1),
+        const DeliveryAddress(id: 'no-gps', label: AddressLabel.other, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Không có GPS', deliveryNote: null, version: 1),
+      ];
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(addresses));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+
+      customer.pending.single.complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'initial'));
+      await settle(tester);
+      expect(find.text('55.000đ'), findsWidgets);
+      await tap(tester, key('checkout-tip-20000'));
+      expect(key('checkout-repricing'), findsOneWidget);
+      expect(find.text('55.000đ'), findsNothing, reason: 'the no-tip total becomes stale immediately');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-no-gps'));
+      await tap(tester, key('picker-confirm'));
+      customer.pending[1].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'stale-tip', tip: 20000));
+      await settle(tester);
+      customer.pending[2].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, tipVnd: 20000, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps'));
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Chưa xác định được phí giao'), findsOneWidget);
+      expect(find.text('Tổng phí giao đề xuất'), findsNothing);
+      expect(key('checkout-tip'), findsOneWidget);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tap(tester, key('checkout-tip-0'));
+      customer.pending[3].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps-no-tip'));
+      await settle(tester);
+      expect(find.text('Tiền cảm ơn'), findsNothing);
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-pinned'));
+      await tap(tester, key('picker-confirm'));
+      customer.pending[4].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'recovered'));
+      await settle(tester);
+      expect(find.text('55.000đ'), findsWidgets);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+      await unmount(tester);
+    });
+
+    testWidgets('custom tip input remains enabled and focused while typing 1, 5, 0, 0, 0 during pending preview, coalesces requests, ignores late quotes, and handles null fee on lost GPS safely', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final _DeferredPreviews customer = _DeferredPreviews(store);
+      final OrderRuntime runtime = OrderRuntime(customer: customer, shop: SampleShopOrders(store), cart: CartController(source: customer));
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      final List<DeliveryAddress> addresses = <DeliveryAddress>[
+        const DeliveryAddress(id: 'pinned', label: AddressLabel.home, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Có ghim', deliveryNote: null, latitude: 21, longitude: 105.82, isDeliveryDefault: true, version: 1),
+        const DeliveryAddress(id: 'pinned-2', label: AddressLabel.office, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Có ghim 2', deliveryNote: null, latitude: 21.05, longitude: 105.85, version: 1),
+        const DeliveryAddress(id: 'no-gps', label: AddressLabel.other, recipientName: 'Nguyễn An', contactPhone: '+84912345678', addressText: 'Không có GPS', deliveryNote: null, version: 1),
+      ];
+      final AddressBookController book = AddressBookController(api: _StaticAddressApi(addresses));
+      addTearDown(book.dispose);
+      await book.load();
+      await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
+
+      // 1. Initial preview completes (items: 45k, fee: 10k, total: 55k)
+      customer.pending.single.complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'initial'));
+      await settle(tester);
+      expect(find.text('55.000đ'), findsWidgets);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+
+      // Verify the custom tip field is enabled
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+
+      // Start entering characters '1', '5', '0', '0', '0'
+      // Each character is entered while preview hasn't returned
+      await tester.enterText(key('checkout-tip-custom'), '1');
+      await tester.pump();
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue, reason: 'Field must not be disabled when typing starts');
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, '1');
+      expect(key('checkout-repricing'), findsOneWidget);
+      expect(find.text('55.000đ'), findsNothing, reason: 'Old total is invalidated immediately');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull, reason: 'Send button is disabled during reprice');
+
+      await tester.enterText(key('checkout-tip-custom'), '15');
+      await tester.pump();
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, '15');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tester.enterText(key('checkout-tip-custom'), '150');
+      await tester.pump();
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, '150');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tester.enterText(key('checkout-tip-custom'), '1500');
+      await tester.pump();
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, '1500');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      await tester.enterText(key('checkout-tip-custom'), '15000');
+      await tester.pump();
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, '15000');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Because typing occurred within 300ms debounce interval, no redundant preview was dispatched yet
+      expect(customer.pending.length, 1, reason: 'Rapid typing coalesced without extra preview requests');
+
+      // Now debounce interval expires (300ms)
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(customer.pending.length, 2, reason: 'Preview dispatched after debounce completes');
+      expect(customer.drafts.last.tipVnd, 15000);
+
+      // While preview 2 is in-flight (held / pending):
+      // Field remains enabled, Send remains disabled, no old or unconfirmed totals
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isTrue);
+      expect(key('checkout-repricing'), findsOneWidget);
+      expect(find.text('55.000đ'), findsNothing);
+      expect(find.text('70.000đ'), findsNothing);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Complete preview 2 with valid quote for 15000 tip
+      customer.pending[1].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'tip-15000', tip: 15000));
+      await settle(tester);
+
+      // Total updates to 70.000đ (items 45k + fee 10k + tip 15k) and Send is now enabled
+      expect(key('checkout-repricing'), findsNothing);
+      expect(find.text('70.000đ'), findsWidgets);
+      expect(find.text('25.000đ'), findsOneWidget, reason: 'Proposed fee: 10k base + 15k tip = 25k');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+
+      // Test late API response: user changes tip to 20000 chip, then types 10000 custom tip while preview 3 is held
+      await tap(tester, key('checkout-tip-20000'));
+      expect(customer.pending.length, 3, reason: 'Chip tap sends immediate preview');
+      expect(customer.drafts.last.tipVnd, 20000);
+
+      // While preview 3 is held, user types 10000 in custom tip
+      await tester.enterText(key('checkout-tip-custom'), '10000');
+      await tester.pump(const Duration(milliseconds: 300));
+      // In-flight preview 3 prevents starting preview 4 until preview 3 releases
+      expect(customer.pending.length, 3, reason: 'Pending preview in-flight avoids duplicate wire calls');
+
+      // Now preview 3 (late response for 20000) arrives late
+      customer.pending[2].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'stale-20000', tip: 20000));
+      await settle(tester);
+
+      // Preview 4 for 10000 was dispatched automatically upon discarding stale preview 3
+      expect(customer.pending.length, 4, reason: 'Preview for 10000 dispatched after in-flight completes');
+      expect(customer.drafts.last.tipVnd, 10000);
+      expect(find.text('75.000đ'), findsNothing, reason: 'Late quote for 20k was safely discarded');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Preview 4 (fresh quote for 10000) arrives
+      customer.pending[3].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'fresh-10000', tip: 10000));
+      await settle(tester);
+      expect(find.text('65.000đ'), findsWidgets, reason: 'Total reflects latest fresh quote: 45k + 10k + 10k');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+
+      // Test switching between two addresses that both have GPS but different delivery fees:
+      // Address 1 had base fee = 10k. Switch to Address 2 which has base fee = 25k.
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-pinned-2'));
+      await tap(tester, key('picker-confirm'));
+      await settle(tester);
+      await settle(tester);
+
+      // Immediately upon picking Address 2: old total and quote are invalidated; old base fee is discarded
+      expect(key('checkout-repricing'), findsOneWidget);
+      expect(find.text('65.000đ'), findsNothing, reason: 'Old total is invalidated immediately on address change');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Preview for Address 2 completes with base fee = 25000 (total = items 45k + fee 25k + tip 10k = 80k)
+      customer.pending[4].complete(pricedPreview(fee: 25000, distance: 6000, snapshot: 'addr-2-fee-25k', tip: 10000));
+      await settle(tester);
+      await settle(tester);
+
+      // Verify the new base fee 25.000đ is displayed, proposed fee is 35.000đ (25k + 10k), and total is 80.000đ
+      expect(find.text('25.000đ'), findsOneWidget, reason: 'Phí giao dự tính reflects Address 2 base fee (25k)');
+      expect(find.text('35.000đ'), findsOneWidget, reason: 'Proposed fee is 25k base + 10k tip = 35k (not 10k + 10k)');
+      expect(find.text('80.000đ'), findsWidgets, reason: 'Total reflects Address 2 fee + tip: 45k + 25k + 10k');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNotNull);
+
+      // Test lost GPS / null fee: user switches to address without pin
+      await tap(tester, key('checkout-pick'));
+      await tap(tester, key('picker-no-gps'));
+      await tap(tester, key('picker-confirm'));
+      await settle(tester);
+      await settle(tester);
+
+      // Preview for no-gps address completes with null fee
+      customer.pending[5].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, tipVnd: 10000, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps'));
+      await settle(tester);
+      await settle(tester);
+
+      expect(tester.takeException(), isNull, reason: 'No null assertion crash');
+      expect(find.text('Chưa xác định được phí giao'), findsOneWidget);
+      expect(find.text('Tổng phí giao đề xuất'), findsNothing);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isFalse, reason: 'Custom tip disabled when fee is null');
+      expect(find.text('Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.'), findsOneWidget);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull, reason: 'Cannot submit order with tip when fee is null');
+
+      // User safely removes tip via 'Không tip' chip
+      await tap(tester, key('checkout-tip-0'));
+      customer.pending[6].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps-zero-tip'));
+      await settle(tester);
+      expect(find.text('Tiền cảm ơn'), findsNothing);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).controller!.text, isEmpty);
+
+      await unmount(tester);
+    });
 
     testWidgets('choosing A then B replaces all recipient data; one-order edits do not change the address book', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
@@ -407,6 +664,132 @@ void main() {
       await unmount(tester);
     });
 
+    testWidgets('idempotency Test 1: lost answer enters UNKNOWN, locks draft edits (name, note, custom tip, chips, address), preserves clientRef/key, prevents second order, and lookup finds original order', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      store.dropNextPlaceAnswer = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(key('order-sent'), findsNothing);
+      expect(store.orderCount, 1);
+      final String? originalClientRef = store.lastOrderClientRef;
+      final String? originalId = store.lastOrderId;
+
+      // Verify fields are locked
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-phone')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-delivery-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isFalse);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-0')).onSelected, isNull);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-10000')).onSelected, isNull);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+
+      // Attempt edits: enterText or taps must not change clientRef or reset UNKNOWN
+      await tester.enterText(key('checkout-name'), 'Attacker Name');
+      await tester.enterText(key('checkout-note'), 'Attacker Note');
+      await tester.enterText(key('checkout-tip-custom'), '50000');
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(key('checkout-unknown'), findsOneWidget, reason: 'edits must not clear UNKNOWN state');
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull, reason: 'cannot send second order');
+      expect(store.orderCount, 1);
+
+      // Lookup returns the exact original Order
+      await tap(tester, key('checkout-lookup'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1);
+      expect(store.lastOrderClientRef, originalClientRef);
+      expect(store.lastOrderId, originalId);
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 2: in-flight POST locks draft fields, prevents concurrent orders and payload changes', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      final Completer<void> gate = Completer<void>();
+      store.pendingPlaceCompleter = gate;
+
+      await tap(tester, key('checkout-send'));
+      await tester.pump();
+
+      // Request is pending
+      expect(tester.widget<N11Button>(key('checkout-send')).loading, isTrue);
+      expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-note')).enabled, isFalse);
+      expect(tester.widget<TextField>(key('checkout-tip-custom')).enabled, isFalse);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-0')).onSelected, isNull);
+      expect(tester.widget<ChoiceChip>(key('checkout-tip-5000')).onSelected, isNull);
+
+      // Try tapping send again or editing text
+      await tester.enterText(key('checkout-name'), 'Concurrent Edit');
+      await tester.enterText(key('checkout-tip-custom'), '25000');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(store.placeAttempts, 1);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.placeAttempts, 1);
+      expect(store.orderCount, 1);
+      expect(store.lastOrderRecipientName, 'Nguyễn An', reason: 'concurrent edit ignored by snapshot');
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 3: retry from UNKNOWN reuses original identifiers and payload without inflating fee or tip', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      // Select 10k tip before sending
+      await tap(tester, key('checkout-tip-10000'));
+      await settle(tester);
+      expect(find.text('10.000đ'), findsWidgets);
+
+      store.dropNextPlaceAnswer = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(store.orderCount, 1);
+      final String? firstId = store.lastOrderId;
+      final String? firstClientRef = store.lastOrderClientRef;
+
+      // Resend
+      await tap(tester, key('checkout-resend'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1, reason: 'retry must not create duplicate order');
+      expect(store.lastOrderId, firstId);
+      expect(store.lastOrderClientRef, firstClientRef);
+      await unmount(tester);
+    });
+
+    testWidgets('idempotency Test 4: lookup confirms not found -> safe reset to edit/resend; lookup offline glitch -> preserves UNKNOWN', (WidgetTester tester) async {
+      final (OrderRuntime runtime, SampleOrderStore store, _) = await readyPinnedCheckout(tester);
+
+      // Case 4a: Order never reached server
+      store.failNextPlaceOffline = true;
+      await tap(tester, key('checkout-send'));
+      expect(key('checkout-unknown'), findsOneWidget);
+      expect(store.orderCount, 0);
+
+      // Case 4b: Lookup fails with network glitch -> preserves UNKNOWN
+      store.failNextLookupOffline = true;
+      await tap(tester, key('checkout-lookup'));
+      expect(key('checkout-unknown'), findsOneWidget, reason: 'network failure during lookup keeps UNKNOWN');
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isFalse);
+
+      // Case 4c: Network ok, lookup confirms not found on server -> safe reset
+      await tap(tester, key('checkout-lookup'));
+      await settle(tester);
+      expect(key('checkout-unknown'), findsNothing, reason: 'confirmed not found clears unknown');
+      expect(tester.widget<TextField>(key('checkout-name')).enabled, isTrue, reason: 'fields unlocked for editing');
+
+      // Now place order normally
+      await tap(tester, key('checkout-send'));
+      expect(key('order-sent'), findsOneWidget);
+      expect(store.orderCount, 1);
+      await unmount(tester);
+    });
+
     testWidgets('a dish that is no longer sold is flagged in the cart and blocks continuing', (WidgetTester tester) async {
       final (OrderRuntime runtime, SampleOrderStore store) = await readyCart();
       store.removeDish(tea.id);
@@ -653,7 +1036,7 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('there is no "Món đã sẵn sàng" step: "Gọi shipper" is the one action after confirming, and no payment is recorded in the app', (WidgetTester tester) async {
+    testWidgets('there is no "Món đã sẵn sàng" step: "Gọi shipper" is the action after confirming and recorded item payment is shown read-only', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       final String id = store.seed(status: 'PREPARING');
@@ -662,13 +1045,29 @@ void main() {
       expect(containing('Món đã sẵn sàng'), findsNothing);
       expect(key('order-payment'), findsNothing);
       expect(containing('Ghi nhận đã thanh toán'), findsNothing);
-      expect(containing('Đã thanh toán'), findsNothing);
-      expect(containing('Còn phải thu'), findsNothing);
+      expect(containing('Đã thanh toán tiền món'), findsOneWidget);
+      expect(containing('Còn phải thanh toán tiền món'), findsOneWidget);
       expect(key('order-call'), findsOneWidget);
       await tap(tester, key('order-call'));
       expect(containing('sẵn sàng để shipper đến lấy'), findsOneWidget);
       await tap(tester, key('call-payer-customer'));
       expect(containing('Đang tìm shipper'), findsWidgets);
+      await unmount(tester);
+    });
+
+    testWidgets('a customer-raised fee is shown to the shop and can only be called with the customer as payer', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = runtimeOf(store);
+      final String id = store.seed(status: 'PREPARING', tipVnd: 20000);
+      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: id));
+      await tap(tester, key('order-call'));
+      expect(find.textContaining('tổng phí giao 30.000đ'), findsOneWidget);
+      expect(key('call-payer-customer-proposed'), findsOneWidget);
+      expect(key('call-payer-shop'), findsNothing);
+      await tap(tester, key('call-payer-customer-proposed'));
+      final OrderView called = await runtime.shop.get(id);
+      expect(called.money.fee.payer, 'CUSTOMER');
+      expect(called.money.fee.amountVnd, 30000);
       await unmount(tester);
     });
 
@@ -834,6 +1233,24 @@ void main() {
       expect(DisplayStatus.rejected.label, 'Quán từ chối');
     });
   });
+
+  testWidgets('order money distinguishes paid and remaining item money from the delivery fee', (WidgetTester tester) async {
+    const OrderMoney money = OrderMoney(
+      originalItemsVnd: 455000,
+      itemsVnd: 455000,
+      paidVnd: 200000,
+      remainingVnd: 255000,
+      fee: OrderFee(payer: 'CUSTOMER', amountVnd: 30000, estimateVnd: 30000, status: 'FINAL', distanceM: 2500),
+      expectedTotalVnd: 485000,
+    );
+    await mount(tester, const Scaffold(body: OrderMoneyBody(money: money, edited: false)));
+    expect(find.text('Đã thanh toán tiền món'), findsOneWidget);
+    expect(find.text('200.000đ'), findsOneWidget);
+    expect(find.text('Còn phải thanh toán tiền món'), findsOneWidget);
+    expect(find.text('255.000đ'), findsOneWidget);
+    expect(find.text('Tổng cộng'), findsOneWidget);
+    await unmount(tester);
+  });
 }
 
 /// A customer source whose cart writes can be made to fail like a lost connection.
@@ -874,7 +1291,7 @@ class _CapturedOrders extends SampleCustomerOrders {
   }
 }
 
-CheckoutPreview pricedPreview({required int fee, required int distance, required String snapshot}) => CheckoutPreview(ok: true, blockers: const <String>[], lines: const <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: fee, feeDistanceM: distance, expectedTotalVnd: 45000 + fee, feeStatus: 'PRICED', quoteSnapshot: snapshot, policyVersion: 1);
+CheckoutPreview pricedPreview({required int fee, required int distance, required String snapshot, int tip = 0}) => CheckoutPreview(ok: true, blockers: const <String>[], lines: const <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: fee, feeDistanceM: distance, expectedTotalVnd: 45000 + fee + tip, tipVnd: tip, feeStatus: 'PRICED', quoteSnapshot: snapshot, policyVersion: 1);
 
 class _DeferredPreviews extends _CapturedOrders {
   _DeferredPreviews(super.store);

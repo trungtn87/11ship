@@ -69,6 +69,9 @@ export type DriverOnboarding = 'NOT_STARTED' | 'PENDING_APPROVAL' | 'ACTIVE' | '
 const SHOP_STATES: readonly string[] = ['NOT_STARTED', 'INCOMPLETE', 'COMPLETED'];
 const DRIVER_STATES: readonly string[] = ['NOT_STARTED', 'PENDING_APPROVAL', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'];
 
+export type PhoneVerification = 'VERIFIED' | 'UNVERIFIED' | 'UNVERIFIED_TEST';
+const PHONE_VERIFICATIONS: readonly string[] = ['VERIFIED', 'UNVERIFIED', 'UNVERIFIED_TEST'];
+
 /** What the server says about the signed-in person. Routing hints and capabilities only guide the screen: the server rechecks every action. */
 export interface AuthIdentity {
   readonly userId: string;
@@ -81,6 +84,8 @@ export interface AuthIdentity {
   readonly onboarding: { readonly shop: ShopOnboarding; readonly driver: DriverOnboarding };
   readonly onboardingRequired: boolean;
   readonly roleSelectionRequired: boolean;
+  /** Was the phone number proven by an OTP? UNVERIFIED = made while SYSTEM had the registration OTP off; it stays so until a real proof exists. */
+  readonly phoneVerification: PhoneVerification;
 }
 
 export interface AuthSessionInfo {
@@ -106,7 +111,7 @@ function parseRoles(value: unknown): readonly PublicContext[] | undefined {
   return indexes.every((index, position) => position === 0 || index > (indexes[position - 1] as number)) ? value : undefined;
 }
 
-const IDENTITY_KEYS = ['user_id', 'phone_normalized', 'available_roles', 'active_role', 'profile', 'capabilities', 'onboarding', 'onboarding_required', 'role_selection_required'] as const;
+const IDENTITY_KEYS = ['user_id', 'phone_normalized', 'available_roles', 'active_role', 'profile', 'capabilities', 'onboarding', 'onboarding_required', 'role_selection_required', 'phone_verification_status'] as const;
 const CAPABILITY_KEYS = ['customer_access', 'shop_profile_read', 'shop_manage', 'driver_profile_read'] as const;
 
 function parseIdentityFields(data: Record<string, unknown>): AuthIdentity | undefined {
@@ -121,6 +126,8 @@ function parseIdentityFields(data: Record<string, unknown>): AuthIdentity | unde
     (data.active_role !== null && !roles.includes(data.active_role as PublicContext)) ||
     typeof data.onboarding_required !== 'boolean' ||
     typeof data.role_selection_required !== 'boolean' ||
+    typeof data.phone_verification_status !== 'string' ||
+    !PHONE_VERIFICATIONS.includes(data.phone_verification_status) ||
     !isRecord(profile) ||
     !hasExactKeys(profile, ['full_name', 'version']) ||
     !(profile.full_name === null || (typeof profile.full_name === 'string' && profile.full_name.length <= 480)) ||
@@ -152,6 +159,7 @@ function parseIdentityFields(data: Record<string, unknown>): AuthIdentity | unde
     onboarding: { shop: onboarding.shop as ShopOnboarding, driver: onboarding.driver as DriverOnboarding },
     onboardingRequired: data.onboarding_required,
     roleSelectionRequired: data.role_selection_required,
+    phoneVerification: data.phone_verification_status as PhoneVerification,
   };
 }
 

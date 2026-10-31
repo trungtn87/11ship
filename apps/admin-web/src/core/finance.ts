@@ -303,7 +303,7 @@ export const WALLET_PARAM_DEFAULTS: WalletParams = { minTopup: 100_000, minWithd
 export type WalletParamKey = keyof WalletParams;
 export const WALLET_PARAM_LABEL: Record<WalletParamKey, string> = {
   minTopup: 'Nạp tối thiểu mỗi lần',
-  minWithdraw: 'Rút tối thiểu mỗi lần',
+  minWithdraw: 'Rút tối thiểu (tham số lịch sử)',
   commissionPerOrder: 'Hoa hồng mỗi đơn giao thành công',
 };
 export const WALLET_PARAM_HINT: Record<WalletParamKey, string> = {

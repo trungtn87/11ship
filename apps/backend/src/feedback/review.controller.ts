@@ -51,6 +51,28 @@ export class ReviewController {
     return { data: outcome.payload };
   }
 
+  
+
+  @Get('customers/me/deliveries/:delivery_id/review')
+  async customerDeliveryReviewState(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    rejectBodyAndQuery(request, query);
+    return { data: await this.reviews.customerDeliveryState(principalOf(request), parseUuid(id)) };
+  }
+
+  @Post('customers/me/deliveries/:delivery_id/review/shipper')
+  @HttpCode(201)
+  async customerDeliveryShipper(@Param('delivery_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.reviews.customerReviewDeliveryShipper(principalOf(request), parseUuid(id), parseReviewBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  @Post('customers/me/deliveries/:delivery_id/review')
+  @HttpCode(201)
+  async customerDeliveryShipperAlias(@Param('delivery_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.reviews.customerReviewDeliveryShipper(principalOf(request), parseUuid(id), parseReviewBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
   // ---- shop ----------------------------------------------------------------------------------------------------------------------
 
   @Get('shop/me/deliveries/:delivery_id/review')

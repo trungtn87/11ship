@@ -37,6 +37,12 @@ export class ShopEligibilityReader {
     return { onboarding: 'COMPLETED', selectable: row.status === 'ACTIVE' };
   }
 
+  /** Ids of every shop the user belongs to, in id order: the account lifecycle resolves the shop side of an account through this port. */
+  async memberShopIds(context: TransactionContext, userId: string): Promise<string[]> {
+    const result = await context.query<{ shop_id: string }>('SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid ORDER BY shop_id', [userId]);
+    return result.rows.map((row) => row.shop_id);
+  }
+
   /**
    * Does the user belong to ANY shop, as owner or otherwise? The account lifecycle (Owner decision 2026-10-14) reads this as "the account has
    * business data": such an account is locked, never deleted. Nothing is locked or written.

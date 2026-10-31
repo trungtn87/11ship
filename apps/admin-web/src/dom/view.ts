@@ -40,6 +40,8 @@ export class AdminView {
     private readonly root: HTMLElement,
     private readonly controller: AdminAuthController,
     private readonly host?: ShellHost,
+    /** Where "Quên mật khẩu?" leads. The Web Admin uses "/reset"; the Mini Business PWA "/business/reset" (inside its scope, issue #235). */
+    private readonly resetHref: string = '/reset',
   ) {}
 
   render(screen: Screen): void {
@@ -163,7 +165,7 @@ export class AdminView {
       formError,
       lockMessage,
       submit,
-      h('a', { href: '/reset', class: 'link-btn link-center' }, 'Quên mật khẩu?'),
+      h('a', { href: this.resetHref, class: 'link-btn link-center' }, 'Quên mật khẩu?'),
     );
     form.addEventListener('submit', (event) => {
       event.preventDefault();

@@ -206,12 +206,14 @@ function parseThread(value: unknown): ThreadLine | undefined {
 function parseAdjustment(value: unknown): AdjustmentRecord | undefined {
   const raw = record(value);
   const createdAt = iso(raw?.created_at);
+  const updatedAt = iso(raw?.updated_at);
+  const id = str(raw?.adjustment_id);
   const reason = str(raw?.reason);
   const amount = nullableWhole(raw?.amount_vnd);
   const pending = nullableStr(raw?.pending_reason);
   const originalAssignment = nullableStr(raw?.original_assignment_status);
   if (
-    raw === undefined || createdAt === undefined || reason === undefined || amount === undefined || pending === undefined || originalAssignment === undefined || (raw.kind !== 'DELIVERY_RESULT' && raw.kind !== 'COMMISSION') ||
+    raw === undefined || createdAt === undefined || updatedAt === undefined || id === undefined || reason === undefined || amount === undefined || pending === undefined || originalAssignment === undefined || (raw.kind !== 'DELIVERY_RESULT' && raw.kind !== 'COMMISSION') ||
     typeof raw.original_state !== 'string' || (raw.status !== 'RECORDED' && raw.status !== 'PENDING_FINANCE' && raw.status !== 'EXECUTED') || typeof raw.history_reviewed !== 'boolean' || !Array.isArray(raw.successor_delivery_ids)
   ) {
     return undefined;
@@ -219,8 +221,8 @@ function parseAdjustment(value: unknown): AdjustmentRecord | undefined {
   const corrected = raw.corrected_result === 'DELIVERED' || raw.corrected_result === 'NOT_DELIVERED' ? raw.corrected_result : null;
   const direction = raw.direction === 'REFUND_TO_SHIPPER' || raw.direction === 'CHARGE_TO_SHIPPER' ? raw.direction : null;
   return {
-    kind: raw.kind, originalState: raw.original_state, originalAssignmentStatus: originalAssignment, correctedResult: corrected, direction, amountVnd: amount, status: raw.status, pendingReason: pending,
-    historyReviewed: raw.history_reviewed, successorCount: raw.successor_delivery_ids.length, reason, createdAt,
+    id, kind: raw.kind, originalState: raw.original_state, originalAssignmentStatus: originalAssignment, correctedResult: corrected, direction, amountVnd: amount, status: raw.status, pendingReason: pending,
+    historyReviewed: raw.history_reviewed, successorCount: raw.successor_delivery_ids.length, reason, createdAt, updatedAt,
   };
 }
 
@@ -498,6 +500,10 @@ export class AdminFeedbackApi extends ApiClient {
         body.amount_vnd = request.amountVnd;
         body.reason = request.body;
         body.history_reviewed = request.historyReviewed === true;
+        break;
+      case 'retry-commission':
+        // Only the note: the money (direction, amount, Shipper) is the one recorded on the adjustment, never sent again.
+        body.reason = request.body;
         break;
       case 'receive':
         break;

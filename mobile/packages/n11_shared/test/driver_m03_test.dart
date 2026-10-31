@@ -93,6 +93,22 @@ void main() {
       expect(t.driver.profile!.acceptingDeliveries, isFalse);
     });
 
+    test('a SUSPENDED Shipper can ask to close for the refund without being unlocked, and a cancel returns to SUSPENDED with the reason', () async {
+      final t = await start(profile: <String, Object?>{...baseProfile(status: 'SUSPENDED', review: 'APPROVED'), 'suspension_reason': 'Khiếu nại giao hàng'});
+      expect(t.driver.profile!.canRequestClosure, isTrue);
+      expect(await t.driver.requestClosure('Nhận lại tiền'), isTrue);
+      final DriverProfile closing = t.driver.profile!;
+      expect(closing.status, 'CLOSING');
+      expect(closing.closure!.fromSuspended, isTrue);
+      expect(closing.suspensionReason, 'Khiếu nại giao hàng');
+      expect(driverStandingLabel(closing), contains('vẫn bị khóa'));
+      expect(closing.acceptingDeliveries, isFalse);
+      expect(await t.driver.cancelClosure(), isTrue);
+      expect(t.driver.profile!.status, 'SUSPENDED');
+      expect(t.driver.profile!.suspensionReason, 'Khiếu nại giao hàng');
+      expect(t.driver.profile!.acceptingDeliveries, isFalse);
+    });
+
     test('closure request stops receiving at once, can be cancelled, and a lost answer retries the same key and body', () async {
       final t = await start(profile: <String, Object?>{...baseProfile(status: 'ACTIVE', review: 'APPROVED'), 'accepting_deliveries': true});
       t.api.failNext = const AuthFailure(AuthFailureKind.unknownOutcome);

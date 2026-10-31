@@ -18,6 +18,7 @@ export interface DeliveryOffer {
   readonly dropoff: LatLng | null;
   /** The commission hold M04 would take; null while M07/M04 cannot say. */
   readonly requiredHoldVnd: bigint | null;
+  readonly locationOptional?: boolean;
 }
 
 export interface DeliveryOfferPort {
