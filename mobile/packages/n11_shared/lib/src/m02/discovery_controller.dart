@@ -85,10 +85,8 @@ class DiscoveryController extends ChangeNotifier {
     }
   }
 
-  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability, invalidate: () {
-    _stale = true;
-    _notify();
-  });
+  // No `invalidate`: going to the background or starting a reload says nothing about the data; `_stale` is set only by a refresh that failed.
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability);
   Future<void> refreshAvailability() => refresh();
   final DiscoveryApi api;
 
@@ -275,10 +273,8 @@ class DiscoveryController extends ChangeNotifier {
       freshness.failed();
       // unchanged
     } on AuthFailure {
+      // A failed next page does not make the first page outdated.
       freshness.failed();
-      if (epoch == _epoch) {
-        _stale = true;
-      }
     }
     if (epoch == _epoch) {
       _loadingMore = false;
@@ -391,10 +387,8 @@ class DishSearchController extends ChangeNotifier {
     bool openOnly = false,
     this.debounce = const Duration(milliseconds: 350),
   });
-  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability, invalidate: () {
-    stale = true;
-    _notify();
-  });
+  // No `invalidate`: see DiscoveryController; `stale` is set only by a failed first-page refresh.
+  late final AvailabilityRefresh freshness = AvailabilityRefresh(refresh: refreshAvailability);
   Future<void> refreshAvailability() => run();
   final DiscoveryApi api;
   String? areaId;
@@ -530,21 +524,14 @@ class DishSearchController extends ChangeNotifier {
       if (!more) freshness.arm(sp?.nextRefreshMs ?? dp?.nextRefreshMs);
     } on FeatureNotConnected {
       freshness.failed();
-      if (epoch == _epoch) {
-        if (more) {
-          stale = true;
-        } else {
-          state = DiscoveryLoad.notConnected;
-        }
+      // A failed next page ("more") does not make the first page outdated.
+      if (epoch == _epoch && !more) {
+        state = DiscoveryLoad.notConnected;
       }
     } on AuthFailure {
       freshness.failed();
-      if (epoch == _epoch) {
-        if (more) {
-          stale = true;
-        } else {
-          state = DiscoveryLoad.failed;
-        }
+      if (epoch == _epoch && !more) {
+        state = DiscoveryLoad.failed;
       }
     }
     if (epoch == _epoch) {

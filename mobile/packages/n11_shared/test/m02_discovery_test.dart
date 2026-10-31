@@ -216,6 +216,59 @@ void main() {
       expect(c.shops.map((ShopCardData s) => s.shopId).toSet(), hasLength(35));
       expect(c.hasMore, isFalse);
     });
+
+    // Issue #281: the orange "Chưa cập nhật" must follow a refresh that really failed, not the app going to the background or a reload that has only started.
+    test('going to the background, coming back and a pending refresh never flag the list as not up to date (issue #281)', () async {
+      final FakeDiscoveryApi api = seeded();
+      final DiscoveryController c = DiscoveryController(api: api);
+      addTearDown(c.dispose);
+      await c.start();
+      expect(c.stale, isFalse);
+      for (final AppLifecycleState s in <AppLifecycleState>[AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
+        c.freshness.didChangeAppLifecycleState(s);
+        expect(c.stale, isFalse, reason: '$s alone says nothing about the data');
+      }
+      c.freshness.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(c.stale, isFalse, reason: 'the reload has started, its result is not known yet');
+      await Future<void>.delayed(Duration.zero);
+      await c.freshness.reload();
+      expect(c.stale, isFalse);
+      expect(c.shops, hasLength(3));
+    });
+
+    test('a refresh that really fails after coming back flags the list, and the next success clears it (issue #281)', () async {
+      final FakeDiscoveryApi api = seeded();
+      final DiscoveryController c = DiscoveryController(api: api);
+      addTearDown(c.dispose);
+      await c.start();
+      api.offline = true;
+      c.freshness.didChangeAppLifecycleState(AppLifecycleState.paused);
+      c.freshness.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      await c.freshness.reload();
+      expect(c.stale, isTrue);
+      expect(c.shops, hasLength(3));
+      api.offline = false;
+      await c.refresh();
+      expect(c.stale, isFalse);
+    });
+
+    test('a failed Xem thêm does not mark the loaded first page as not up to date (issue #281)', () async {
+      final FakeDiscoveryApi api = FakeDiscoveryApi(
+        shops: <FakeShopEntry>[
+          for (int i = 0; i < 35; i++)
+            FakeShopEntry('s$i', 'Quán $i', dishes: const <FakeDishEntry>[FakeDishEntry('d', 'Món', 1000, 'c1')]),
+        ],
+      );
+      final DiscoveryController c = DiscoveryController(api: api);
+      addTearDown(c.dispose);
+      await c.start();
+      api.offline = true;
+      await c.loadMore();
+      expect(c.stale, isFalse);
+      expect(c.shops, hasLength(30));
+      expect(c.hasMore, isTrue);
+    });
   });
 
   testWidgets(
