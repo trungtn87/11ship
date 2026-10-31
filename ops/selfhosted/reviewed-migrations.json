@@ -74,7 +74,7 @@
       "review": "PR #269 / #255; compatibility review 2026-10-30: Up replaces CHECK drivers_suspension_reason_ck on app.drivers so suspension_reason and suspended_at may also be present while status is CLOSING or CLOSED with status_before_closing = 'SUSPENDED' (a SUSPENDED Shipper closing to get the balance back). It only widens the check: every existing row still satisfies it, no data is read or changed, no table, column, grant or function changes. The old backend never writes that combination, so it keeps working; the new backend needs this migration before a SUSPENDED Shipper can request closure. Down clears suspension fields on non-SUSPENDED rows and restores the old check. No remote migration or deployment authorized."
     },
     "1797379200000_complaint-orphan-attachment-janitor": {
-      "sha256": "09831b6c9853e97e4ff195d0402254623b3fdca9a969a5a8931ac39247637aeb",
+      "sha256": "15775e7c0639d5e7a101293eb231971cf7ac72f54ad03c78a5c8b0eb6d1757dc",
       "review": "PR #272 / #261; compatibility review 2026-10-31: Up replaces the statement trigger complaint_attachments_no_delete on app.complaint_attachments with a TRUNCATE guard (same refusal as before) and a row-level DELETE guard that allows deleting only a row with complaint_id IS NULL older than 24 hours. No table, column, constraint or data changes and no existing row is touched. The old backend never deletes attachments, so it keeps working; the new backend needs this migration before its orphan-attachment janitor can delete anything (until then the janitor is refused by the old trigger and deletes nothing). Down drops the row guard and function and restores the original no-delete statement trigger. No remote migration or deployment authorized."
     }
   }
