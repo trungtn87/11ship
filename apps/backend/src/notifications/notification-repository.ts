@@ -745,13 +745,18 @@ export class NotificationRepository {
   }
 
   /** The work that needs a person: pushes that failed for good, pushes that are late, accounts that cannot receive pushes at all. */
-  async workQueue(context: TransactionContext): Promise<{ failed: number; stuck: number; skippedNoToken: number; deadOutbox: number; pendingReminders: number }> {
+  /**
+   * Counters of the work queue, limited to the apps the caller may see (issue #259). Pushes and reminders carry their app; dead outbox events do not, so they
+   * are counted only for a caller who sees both apps.
+   */
+  async workQueue(context: TransactionContext, apps: readonly string[] = ['FOOD', 'SHIP']): Promise<{ failed: number; stuck: number; skippedNoToken: number; deadOutbox: number; pendingReminders: number }> {
     const result = await context.query<{ failed: string; stuck: string; skipped: string; dead: string; reminders: string }>(
-      `SELECT (SELECT count(*) FROM app.notification_pushes WHERE status = 'FAILED' AND created_at > ${CLOCK} - interval '7 days')::text AS failed,
-              (SELECT count(*) FROM app.notification_pushes WHERE status IN ('PENDING', 'SENDING') AND next_attempt_at < ${CLOCK} - interval '5 minutes' AND expires_at > ${CLOCK})::text AS stuck,
-              (SELECT count(*) FROM app.notification_pushes WHERE status = 'SKIPPED' AND skip_reason = 'NO_TOKEN' AND created_at > ${CLOCK} - interval '7 days')::text AS skipped,
-              (SELECT count(*) FROM app.outbox_events WHERE status = 'DEAD' AND event_type IN ('delivery.changed.v1', 'wallet.topup_request.changed.v1', 'driver.state_changed.v1'))::text AS dead,
-              (SELECT count(*) FROM app.notification_reminders WHERE status = 'PENDING' AND due_at < ${CLOCK} - interval '2 minutes')::text AS reminders`,
+      `SELECT (SELECT count(*) FROM app.notification_pushes WHERE app = ANY($1::text[]) AND status = 'FAILED' AND created_at > ${CLOCK} - interval '7 days')::text AS failed,
+              (SELECT count(*) FROM app.notification_pushes WHERE app = ANY($1::text[]) AND status IN ('PENDING', 'SENDING') AND next_attempt_at < ${CLOCK} - interval '5 minutes' AND expires_at > ${CLOCK})::text AS stuck,
+              (SELECT count(*) FROM app.notification_pushes WHERE app = ANY($1::text[]) AND status = 'SKIPPED' AND skip_reason = 'NO_TOKEN' AND created_at > ${CLOCK} - interval '7 days')::text AS skipped,
+              (SELECT count(*) FROM app.outbox_events WHERE cardinality($1::text[]) = 2 AND status = 'DEAD' AND event_type IN ('delivery.changed.v1', 'wallet.topup_request.changed.v1', 'driver.state_changed.v1'))::text AS dead,
+              (SELECT count(*) FROM app.notification_reminders WHERE app = ANY($1::text[]) AND status = 'PENDING' AND due_at < ${CLOCK} - interval '2 minutes')::text AS reminders`,
+      [apps],
     );
     const r = result.rows[0];
     return { failed: num(r?.failed ?? '0'), stuck: num(r?.stuck ?? '0'), skippedNoToken: num(r?.skipped ?? '0'), deadOutbox: num(r?.dead ?? '0'), pendingReminders: num(r?.reminders ?? '0') };

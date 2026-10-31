@@ -11,6 +11,7 @@ import { ShopRepository } from '../shop/shop-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TopupRequestRepository } from '../wallet/topup-request-repository';
+import { WithdrawalRepository } from '../wallet/withdrawal-repository';
 
 // Read-only lookups that turn an identifier from an event into the ACCOUNT that receives the notification, THROUGH the repositories of the modules that own
 // the tables (Shop, Driver, Wallet, Delivery, M06): M08 issues no SQL against them. The recipient is always an account that owns the business object (the
@@ -47,6 +48,7 @@ export class NotificationRecipients {
     private readonly orders: OrderRepository,
     private readonly chatParticipants: OrderChatParticipants,
     private readonly finance: BusinessFinanceRepository,
+    private readonly withdrawals: WithdrawalRepository,
   ) {}
 
   async financeFacts(context:TransactionContext,id:string){
@@ -124,6 +126,12 @@ export class NotificationRecipients {
     }
     const driverId = agreement.boundDriverId ?? (await this.agreements.lastAnsweredDriver(context, agreement.agreementId));
     return driverId === undefined ? undefined : this.driverUser(context, driverId);
+  }
+
+  /** The Shipper's user that owns a withdrawal, read from the database row (never from an event payload). */
+  async withdrawalOwner(context: TransactionContext, withdrawalId: string): Promise<string | undefined> {
+    const request = await this.withdrawals.findById(context, withdrawalId);
+    return request === undefined ? undefined : this.driverUser(context, request.driverId);
   }
 
   async topupOwner(context: TransactionContext, requestId: string): Promise<string | undefined> {

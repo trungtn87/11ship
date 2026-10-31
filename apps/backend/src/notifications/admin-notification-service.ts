@@ -103,15 +103,16 @@ export class AdminNotificationService {
     return this.transactions.withTransaction(async (context) => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const rights = await this.#rights(context, known);
-      const counts = await this.repo.workQueue(context);
+      const counts = await this.repo.workQueue(context, rights.apps);
       const failures = await this.repo.recentFailures(context, 30);
-      const cases = await this.repo.openGoodsCases(context, 30);
+      // A goods case joins a shop (FOOD) to a Shipper's delivery (SHIP): shown, and counted, only to a caller who may see both apps (issue #259).
+      const cases = rights.apps.length === 2 ? await this.repo.openGoodsCases(context, 30) : [];
       return {
         counters: { failed_pushes: counts.failed, late_pushes: counts.stuck, no_device: counts.skippedNoToken, dead_events: counts.deadOutbox, late_reminders: counts.pendingReminders, goods_cases: cases.length },
         push_provider_configured: this.provider.configured,
         failures: failures.filter((f) => rights.apps.includes(f.app)).map((f) => ({ notification_id: f.notificationId, kind: f.kind, app: f.app, status: f.status, error_code: f.code, evidence: f.evidence, at: iso(f.atMs) })),
         // Business cases an Administration with the right must handle (goods of a failed delivery). Opening one goes to the delivery screen, which decides again.
-        goods_cases: rights.apps.includes('FOOD') || rights.apps.includes('SHIP') ? cases.map((c) => ({ delivery_id: c.deliveryId, code: c.code, shop_name: c.shopName, opened_at: iso(c.openedAtMs) })) : [],
+        goods_cases: cases.map((c) => ({ delivery_id: c.deliveryId, code: c.code, shop_name: c.shopName, opened_at: iso(c.openedAtMs) })),
       };
     });
   }
