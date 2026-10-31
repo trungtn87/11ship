@@ -36,31 +36,6 @@ class ShipOnline extends ChangeNotifier {
 
   DriverController? get driver => _driver;
 
-  Listenable? _updateGate;
-  bool Function() _newWorkBlocked = _never;
-  static bool _never() => false;
-
-  /// M13 (#193): while a REQUIRED app update is pending, no NEW work starts. The switch refuses to go online (with the reason), and a shipper who is online
-  /// is switched to "not accepting" so no new order is dispatched to a phone whose app will cover itself once the order in hand is done. An order already
-  /// accepted is never touched: it is finished, and the location sharing for it goes on (M14).
-  void bindUpdateGate({required Listenable gate, required bool Function() blocked}) {
-    _updateGate?.removeListener(_onUpdateGate);
-    _updateGate = gate;
-    _newWorkBlocked = blocked;
-    gate.addListener(_onUpdateGate);
-    _onUpdateGate();
-  }
-
-  bool get newWorkBlockedByUpdate => _newWorkBlocked();
-
-  void _onUpdateGate() {
-    _notify();
-    final DriverProfile? p = _driver?.profile;
-    if (_newWorkBlocked() && p != null && p.acceptingDeliveries && !_busy && !_disposed && session.status == SessionStatus.signedIn) {
-      unawaited(setOnline(false));
-    }
-  }
-
   /// A turn-on or turn-off is in progress: the button ignores further taps.
   bool get busy => _busy;
   LocationProblem get problem => _problem != LocationProblem.none ? _problem : reporter.problem;
@@ -98,7 +73,6 @@ class ShipOnline extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _updateGate?.removeListener(_onUpdateGate);
     _retryTimer?.cancel();
     _staleTimer?.cancel();
     if (_attached) {
@@ -239,11 +213,6 @@ class ShipOnline extends ChangeNotifier {
   Future<bool> setOnline(bool on) async {
     final DriverController? d = _driver;
     if (_disposed || _busy || d == null || d.profile == null || session.status != SessionStatus.signedIn) return false;
-    if (on && _newWorkBlocked()) {
-      _message = 'Cần cập nhật ứng dụng trước khi nhận đơn mới. Đơn đang làm vẫn hoàn thành bình thường.';
-      _notify();
-      return false;
-    }
     _busy = true;
     _turningOn = on;
     _problem = LocationProblem.none;

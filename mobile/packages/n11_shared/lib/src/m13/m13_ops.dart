@@ -12,7 +12,7 @@ import '../config.dart';
 import 'm13_log_queue.dart';
 import 'm13_update.dart';
 
-// M13 on the phone: the update check, the version report and the offline error queue of one app. It adds no screen of its own except the update banner,
+// M13 on the phone: the update check (a notice only, issue #280), the version report and the offline error queue of one app. It adds no screen of its own
 // it never blocks the app for a reason other than a REQUIRED update (and then not while the person is in the middle of an order), and it never sends
 // anything before the redaction in m13_log_queue.dart.
 
@@ -37,7 +37,6 @@ class OpsClient {
   static OpsClient? _current;
 
   Timer? _timer;
-  Timer? _busyTimer;
   String? _reportedFor;
   bool _flushing = false;
   late final _OpsLifecycle _lifecycle = _OpsLifecycle(this);
@@ -52,8 +51,6 @@ class OpsClient {
     unawaited(queue.load());
     unawaited(updates.check());
     _timer = Timer.periodic(flushInterval, (Timer _) => unawaited(tick()));
-    // While a REQUIRED update waits, learn quickly that the last order ended.
-    _busyTimer = Timer.periodic(const Duration(minutes: 1), (Timer _) => unawaited(updates.refreshBusy()));
   }
 
   void dispose() {
@@ -61,7 +58,6 @@ class OpsClient {
       _current = null;
     }
     _timer?.cancel();
-    _busyTimer?.cancel();
     WidgetsBinding.instance.removeObserver(_lifecycle);
     session.removeListener(_onSession);
   }
@@ -217,9 +213,8 @@ class _OpsLifecycle with WidgetsBindingObserver {
   }
 }
 
-/// The M13 client of one app, or null when the build has no server address (then nothing is checked or sent). [busyProbe] says whether the person is in the
-/// middle of work an update must not interrupt (a shipper with an active order).
-OpsClient? createOpsClient(ClientApp app, SessionController session, AppConfig config, {Future<bool> Function()? busyProbe, UpdatePlatform platform = const MethodChannelUpdatePlatform()}) {
+/// The M13 client of one app, or null when the build has no server address (then nothing is checked or sent).
+OpsClient? createOpsClient(ClientApp app, SessionController session, AppConfig config, {UpdatePlatform platform = const MethodChannelUpdatePlatform()}) {
   final Uri? base = config.apiUri;
   if (base == null) {
     return null;
@@ -230,9 +225,7 @@ OpsClient? createOpsClient(ClientApp app, SessionController session, AppConfig c
     installedVersionCode: code,
     installedVersionName: config.versionName,
     transport: HttpApiTransport(base: base),
-    files: HttpUpdateFileSource(base: base),
     platform: platform,
-    busyProbe: busyProbe,
     // A local build without a build number is never told to "update".
     enabled: code > 0,
   );
