@@ -144,14 +144,14 @@ export function positionDiagram(points: readonly DiagramPoint[]): SVGElement {
 const ACTION_LABEL: Record<DeliveryActionName, string> = {
   'record-custody': 'Ghi nhận hàng',
   'adjust-after-pickup': 'Điều chỉnh sau lấy hàng',
-  'refer-m11': 'Chuyển phản ánh (M11)',
+  'refer-m11': 'Đánh dấu cần theo dõi (M11)',
   'release-assignment': 'Giải phóng shipper',
 };
 
 const ACTION_TEXT: Record<DeliveryActionName, string> = {
   'record-custody': 'Ghi nhận hàng đã về quán hoặc đã xử lý không giao tiếp. Đây là ghi nhận, không tự bồi thường hay hoàn tiền.',
   'adjust-after-pickup': 'Sửa phí hoặc địa chỉ mô tả sau khi shipper đã lấy hàng. Giá trị trước/sau được ghi vào nhật ký kiểm toán cùng lý do.',
-  'refer-m11': 'Đánh dấu đã chuyển sang Phản ánh (M11). Hệ thống chỉ ghi dấu và nhật ký, không tạo phiếu khi M11 chưa sẵn sàng.',
+  'refer-m11': 'Đánh dấu chuyến này cần theo dõi ở Phản ánh (M11). Hệ thống chỉ ghi dấu và nhật ký; KHÔNG tạo phiếu phản ánh thay khách hay shipper.',
   'release-assignment': 'Dùng khi tài khoản shipper bị khóa hoặc thiết bị hỏng và đơn chưa lấy hàng: kết thúc lần nhận, giải phóng hoa hồng, tìm shipper khác trong thời hạn còn lại. Không tự suy ra giao xong.',
 };
 
@@ -648,7 +648,7 @@ export class DeliveryListView {
             ['Hàng hiện ở', CUSTODY_LABEL[d.incident.custody]],
             ['Lý do giao thất bại', d.incident.reason],
             ['Mở lúc', formatDateTime(d.incident.openedAt)],
-            ['Đã chuyển M11', d.incident.m11ReferredAt === null ? 'Chưa' : formatDateTime(d.incident.m11ReferredAt)],
+            ['Đánh dấu theo dõi M11', d.incident.m11ReferredAt === null ? 'Chưa' : formatDateTime(d.incident.m11ReferredAt)],
           ]),
           h('p', { class: 'hint' }, 'Hàng ở tay ai người đó chịu trách nhiệm. Giao thất bại không có nghĩa hàng đã về quán. Không tự bồi thường hay hoàn tiền.'),
         ),

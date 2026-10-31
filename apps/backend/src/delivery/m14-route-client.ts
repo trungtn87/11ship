@@ -25,6 +25,8 @@ export type Fetcher = (url: string, init: { method: string; headers: Record<stri
 
 /** Largest number of legs one matrix may ask for (the routing service allows few requests per minute; beyond this the answer is "unavailable"). */
 export const MAX_MATRIX_LEGS = 20;
+/** Legs asked of the routing service at the same time (issue #257): enough to stay inside the 60 s snapshot window, few enough not to flood a small server. */
+export const MATRIX_CONCURRENCY = 4;
 const CACHE_TTL_MS = 5 * 60_000;
 const CACHE_MAX = 256;
 
@@ -110,17 +112,31 @@ export class M14RouteClient implements RouteMatrixPort {
       return { kind: 'unavailable' };
     }
     const seconds: (number | null)[][] = points.map(() => points.map(() => 0));
+    const pairs: [number, number][] = [];
     for (let from = 0; from < size; from += 1) {
       for (let to = 0; to < size; to += 1) {
-        if (from === to) {
-          continue;
+        if (from !== to) {
+          pairs.push([from, to]);
         }
+      }
+    }
+    // Bounded concurrency, all or nothing: one worker pool; the first missing leg stops new requests and the whole answer is "unavailable" (no guess, no partial matrix).
+    let next = 0;
+    let failed = false;
+    const worker = async (): Promise<void> => {
+      while (!failed && next < pairs.length) {
+        const [from, to] = pairs[next++] as [number, number];
         const leg = await this.route(points[from] as LatLng, points[to] as LatLng);
         if (leg === undefined) {
-          return { kind: 'unavailable' };
+          failed = true;
+          return;
         }
         (seconds[from] as (number | null)[])[to] = leg.seconds;
       }
+    };
+    await Promise.all(Array.from({ length: Math.min(MATRIX_CONCURRENCY, pairs.length) }, () => worker()));
+    if (failed) {
+      return { kind: 'unavailable' };
     }
     return { kind: 'ok', seconds, routeVersion: 'm14-route-v1' };
   }

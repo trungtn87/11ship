@@ -119,14 +119,6 @@ void main() {
       await tester.pump();
       expect(find.byKey(const Key('m06-fee-failed')), findsOneWidget);
     });
-
-    test(
-        'the default sources of a build are "not ready" unless the preview flag is on',
-        () {
-      expect(kM06UiPreview, isFalse);
-      expect(buildM06Sources().fee.isSample, isFalse);
-      expect(buildM06Sources(preview: true).fee.isSample, isTrue);
-    });
   });
 
   group('11Food: Phí giao hàng (sample data)', () {

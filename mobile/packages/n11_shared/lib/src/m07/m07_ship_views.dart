@@ -406,6 +406,12 @@ class OfferCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: N11Space.gap2),
               child: ReasonNote(m06ReasonText(offer.reasons.first)),
             ),
+          if (offer.eligible && !pendingFee)
+            const Padding(
+              key: Key('m07-prescreen-note'),
+              padding: EdgeInsets.only(top: N11Space.gap2),
+              child: ReasonNote('Đủ điều kiện sơ bộ. Việc ghép với đơn bạn đang có được kiểm tra khi bạn bấm "Nhận đơn"; nếu không ghép được, đơn sẽ không được giữ cho bạn.'),
+            ),
           if (pendingFee)
             const Padding(
               padding: EdgeInsets.only(top: N11Space.gap2),
