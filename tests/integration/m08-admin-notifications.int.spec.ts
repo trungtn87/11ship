@@ -23,6 +23,7 @@ describe('M08.06 — notification administration', () => {
   let driverViewer: AdminLogin;
   let shopViewer: AdminLogin;
   const ids = { ship: randomUUID(), food: randomUUID(), failed: randomUUID() };
+  let lastViewerUserId = '';
 
   async function viewerWith(app: 'DRIVER' | 'SHOP'): Promise<AdminLogin> {
     const phone = randomPhone();
@@ -34,7 +35,8 @@ describe('M08.06 — notification administration', () => {
     const secret = String(adminData(ok(await post(admin, '/totp/enrollment', session))).secret);
     ok(await post(admin, '/complete', session, { code: totpNow(secret) }));
     const found = await admin.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
-    return login({ phone, userId: (found.rows[0] as { user_id: string }).user_id, secret });
+    lastViewerUserId = (found.rows[0] as { user_id: string }).user_id;
+    return login({ phone, userId: lastViewerUserId, secret });
   }
 
   async function login(who: { phone: Phone; userId: string; secret: string }): Promise<AdminLogin> {
@@ -144,6 +146,19 @@ describe('M08.06 — notification administration', () => {
     expect(counters(driverOnly).dead_events).toBe(0);
     expect(counters(driverOnly).goods_cases).toBe(0);
     expect(counters(all).failed_pushes).toBeGreaterThanOrEqual(counters(driverOnly).failed_pushes as number);
+  });
+
+  it('#259: a permission taken away while the session is open closes the work queue at the very next request; a permission added opens only its own app', async () => {
+    const viewer = await viewerWith('DRIVER');
+    const userId = lastViewerUserId;
+    const before = adminData(await get(viewer, '/notifications/work-queue')) as Json;
+    expect((before.counters as Json).failed_pushes).toBeGreaterThanOrEqual(1);
+    expect((await get(viewer, '/notifications?app=FOOD')).status).toBe(403);
+    await admin.pool.query("UPDATE app.admin_app_permissions SET can_view = false WHERE user_id = $1::uuid AND app = 'DRIVER'", [userId]);
+    const after = await get(viewer, '/notifications/work-queue');
+    expect([after.status, adminErrorCode(after)]).toEqual([403, 'ADMIN_FORBIDDEN']);
+    await admin.pool.query("UPDATE app.admin_app_permissions SET can_view = true WHERE user_id = $1::uuid AND app = 'DRIVER'", [userId]);
+    expect((await get(viewer, '/notifications/work-queue')).status).toBe(200);
   });
 
   it('the settings: defaults, any ADMIN reads, only SYSTEM writes with the right version and within bounds; the timers are shown read-only; one audit row', async () => {

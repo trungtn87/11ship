@@ -477,13 +477,27 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     [normalizedPhone],
   );
   // M08 notifications reference the user (ON DELETE RESTRICT): children first (pushes -> reminders -> notifications), then the per-user rows.
-  await pool.query('DELETE FROM app.notification_pushes WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.notification_reminders WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.notifications WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.notification_offer_rounds WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.notification_settings WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.notification_push_tokens WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
-  await pool.query('DELETE FROM app.users WHERE phone_normalized = $1', [normalizedPhone]);
+  // The application's own outbox dispatcher keeps running while a suite tears down and may write a notification for this user (a withdrawal or top-up event consumed
+  // late) between the delete and the user delete: on that one foreign-key error the children are removed again and the user delete is retried.
+  const owner = 'SELECT user_id FROM app.users WHERE phone_normalized = $1';
+  for (let attempt = 1; ; attempt += 1) {
+    await pool.query(`DELETE FROM app.notification_pushes WHERE recipient_user_id IN (${owner})`, [normalizedPhone]);
+    await pool.query(`DELETE FROM app.notification_reminders WHERE recipient_user_id IN (${owner})`, [normalizedPhone]);
+    await pool.query(`DELETE FROM app.notifications WHERE recipient_user_id IN (${owner})`, [normalizedPhone]);
+    await pool.query(`DELETE FROM app.notification_offer_rounds WHERE user_id IN (${owner})`, [normalizedPhone]);
+    await pool.query(`DELETE FROM app.notification_settings WHERE user_id IN (${owner})`, [normalizedPhone]);
+    await pool.query(`DELETE FROM app.notification_push_tokens WHERE user_id IN (${owner})`, [normalizedPhone]);
+    try {
+      await pool.query('DELETE FROM app.users WHERE phone_normalized = $1', [normalizedPhone]);
+      break;
+    } catch (error) {
+      const lateNotification = error instanceof Error && /notifications_recipient_fk|notification_pushes_recipient_fk|notification_reminders_recipient_fk/.test(error.message);
+      if (!lateNotification || attempt >= 5) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+    }
+  }
   await pool.query('DELETE FROM app.verification_proofs WHERE phone_normalized = $1', [normalizedPhone]);
   // Issue #102: SMS jobs reference the challenge.
   await pool.query('DELETE FROM app.sms_jobs WHERE phone_normalized = $1', [normalizedPhone]);
