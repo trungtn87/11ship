@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 
 // Issue #283: the offline place index shipped in the app is exactly what the build script makes from the OpenStreetMap extract in the repository.
 const root = resolve(import.meta.dirname, '../..');
-const builder = join(root, 'ops/m14/search-index/build-search-index.mjs');
+const builder = join(root, 'scripts/places/build-search-index.mjs');
 const committed = join(root, 'mobile/packages/n11_shared/assets/places/caobang-places.json');
 
 test('the committed offline place index is reproducible from ops/m14/data/caobang.osm.pbf', () => {

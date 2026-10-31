@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 
-// Issue #283: the offline place index built from the OpenStreetMap extract (ops/m14/search-index/build-search-index.mjs). These tests read the REAL
+// Issue #283: the offline place index built from the OpenStreetMap extract (scripts/places/build-search-index.mjs). These tests read the REAL
 // generated asset, so they also guard the build output (bounds, shape, no invented coordinates).
 
 OfflinePlaceIndex realIndex() => OfflinePlaceIndex.parse(File('assets/places/caobang-places.json').readAsStringSync());

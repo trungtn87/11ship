@@ -2,7 +2,7 @@
 // Build-time offline place index for the 11Food address search (issue #283). Reads the OSM extract that is already in the repository
 // (ops/m14/data/caobang.osm.pbf, Geofabrik, ODbL) and writes a small JSON the phone loads once: no Internet, no map scan while typing.
 //
-//   node ops/m14/search-index/build-search-index.mjs [input.osm.pbf] [output.json]
+//   node scripts/places/build-search-index.mjs [input.osm.pbf] [output.json]
 //
 // Only what OpenStreetMap really has is indexed: a named place / road / facility and one REAL point of it (a node of the way that lies on it, or the
 // node itself). A road is one entry with a point ON the road. Nothing is invented: no house numbers, no coordinates for an address OSM does not know.
@@ -14,8 +14,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const input = resolve(process.argv[2] ?? resolve(here, '../data/caobang.osm.pbf'));
-const output = resolve(process.argv[3] ?? resolve(here, '../../../mobile/packages/n11_shared/assets/places/caobang-places.json'));
+const input = resolve(process.argv[2] ?? resolve(here, '../../ops/m14/data/caobang.osm.pbf'));
+const output = resolve(process.argv[3] ?? resolve(here, '../../mobile/packages/n11_shared/assets/places/caobang-places.json'));
 const MAP_VERSION = 'caobang-v1.3-2026-10-14';
 const BOUNDS = { minLng: 106.0, minLat: 22.43, maxLng: 106.52, maxLat: 22.91 }; // mobile/gps-test/assets/caobang/manifest.json
 

@@ -6,7 +6,7 @@ import '../m02/m02_format.dart' show foldVietnamese;
 import 'place_search.dart';
 
 // Offline place search for the 11Food address pickers (issue #283). The index is built once, at build time, from the same OpenStreetMap extract as the
-// offline map (ops/m14/search-index/build-search-index.mjs) and shipped as an asset. Typing never touches the network or scans map data: it filters a
+// offline map (scripts/places/build-search-index.mjs) and shipped as an asset. Typing never touches the network or scans map data: it filters a
 // few hundred prepared rows in memory. Every row is a real OpenStreetMap place with a real point; a house number or an address OSM does not know is
 // never given a coordinate. A road/place/river is ONE point on it, so such a result is flagged `approximate` and the person is asked to adjust the pin.
 
