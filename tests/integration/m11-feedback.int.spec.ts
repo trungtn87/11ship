@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { AttachmentJanitor } from '../../apps/backend/src/feedback/attachment-janitor';
 import { dataOf, errorCode } from './support/auth-fixtures';
 import { createShopOwner, completeSetup } from './support/shop-management-fixtures';
 import { Json, M11World, PNG_BASE64, Shipper } from './support/m11-harness';
@@ -355,6 +356,61 @@ describe('M11.02 complaints', () => {
     expect(dataOf(await w.asShipper(s, 'POST', '/driver/complaints', complaint({ delivery_id: id }))).complaint).toMatchObject({ category: 'DELIVERY_RESULT' });
     // The shop does not file the Shipper-only group.
     expect(errorCode(await w.asShop('POST', '/shop/me/complaints', complaint({ category: 'SHIPPER_REVIEW', review_id: review })))).toBe('COMPLAINT_TARGET_NOT_FOUND');
+  });
+
+  it('#261: a SUSPENDED Shipper still reads and answers the feedback files that are THEIRS (reviews, complaints, supplements), but takes no delivery and reads no one else\'s', async () => {
+    const mine = await w.newShipper();
+    const id = await w.completed(mine);
+    const filed = dataOf(await w.asShipper(mine, 'POST', '/driver/complaints', complaint({ delivery_id: id }))) as Json;
+    const complaintId = String((filed.complaint as Json).complaint_id);
+    await w.app.pool.query(`UPDATE app.drivers SET status = 'SUSPENDED', accepting_deliveries = false, updated_at = clock_timestamp() WHERE driver_id = $1::uuid`, [mine.driverId]);
+
+    expect((await w.asShipper(mine, 'GET', '/driver/complaints?scope=open')).status).toBe(200);
+    expect((await w.asShipper(mine, 'GET', `/driver/complaints/${complaintId}`)).status).toBe(200);
+    expect((await w.asShipper(mine, 'GET', '/driver/reviews')).status).toBe(200);
+    const added = await w.asShipper(mine, 'POST', `/driver/complaints/${complaintId}/supplement`, { body: 'Bổ sung: tôi vẫn giữ biên nhận.' });
+    expect(added.status).toBe(200);
+    // Someone else's file is still not found, and the lock gives no right to work: no offers, no accept.
+    expect(errorCode(await w.asShipper(s, 'GET', `/driver/complaints/${complaintId}`))).toBe('COMPLAINT_NOT_FOUND');
+    expect(errorCode(await w.asShipper(mine, 'GET', '/driver/deliveries/offers'))).toBe('ROLE_NOT_AVAILABLE');
+    expect(await w.count(`SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND status = 'SUSPENDED' AND accepting_deliveries = false`, [mine.driverId])).toBe(1);
+  });
+
+  it('#261 janitor (Owner: 24 h): a never-attached picture older than 24 h is removed; a fresh one, and every picture linked to a complaint, stay; the database refuses any other delete', async () => {
+    const shopPicture = async (): Promise<string> => String((dataOf(await upload(w.shop.token, 'shop/me')) as Json).attachment_id);
+    const stale = await shopPicture();
+    const fresh = await shopPicture();
+    const linked = await shopPicture();
+    const id = await w.completed(s);
+    expect((await w.asShop('POST', '/shop/me/complaints', complaint({ delivery_id: id, attachment_ids: [linked] }))).status).toBe(201);
+    // Test-only: backdate the upload time (the application never changes it; the owner lifts the guard for these statements only).
+    const client = await w.app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE app.complaint_attachments DISABLE TRIGGER complaint_attachments_guard');
+      await client.query("UPDATE app.complaint_attachments SET created_at = now() - interval '25 hours' WHERE attachment_id = ANY($1::uuid[])", [[stale, linked]]);
+      await client.query('ALTER TABLE app.complaint_attachments ENABLE TRIGGER complaint_attachments_guard');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const alive = async (attachmentId: string): Promise<boolean> => (await q('SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [attachmentId])).length === 1;
+    // The database itself refuses a delete of a fresh or a linked picture, whoever asks.
+    await expect(w.app.pool.query('DELETE FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [fresh])).rejects.toThrow(/older than 24 hours/);
+    await expect(w.app.pool.query('DELETE FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [linked])).rejects.toThrow(/older than 24 hours/);
+
+    const janitor = w.app.running.app.get(AttachmentJanitor);
+    const first = await janitor.runOnce();
+    expect(first.count).toBeGreaterThanOrEqual(1);
+    expect([await alive(stale), await alive(fresh), await alive(linked)]).toEqual([false, true, true]);
+    // One audit row (counts only) and a second run changes nothing.
+    expect(await w.count("SELECT 1 FROM app.audit_logs WHERE action = 'feedback.orphan_pictures_purged.v1' AND metadata->>'removed' IS NOT NULL")).toBeGreaterThanOrEqual(1);
+    const second = await janitor.runOnce();
+    expect(second.count).toBe(0);
+    expect([await alive(fresh), await alive(linked)]).toEqual([true, true]);
   });
 
   it('the customer complains only about the order their ACCOUNT placed; the order module not connected is said honestly', async () => {
