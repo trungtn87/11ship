@@ -145,13 +145,14 @@ describe('M14 — when the position must keep being shared', () => {
   it.each([
     ['ACTIVE', true, false, true],
     ['ACTIVE', false, false, false],
-    ['ACTIVE', false, true, true],
+    // Issue #265: switching off stops the position even with a delivery in progress; the duty is not affected.
+    ['ACTIVE', false, true, false],
     ['ACTIVE', true, true, true],
     ['CLOSING', true, false, false],
-    ['CLOSING', false, true, true],
+    ['CLOSING', false, true, false],
     ['SUSPENDED', true, false, false],
     ['PENDING', false, false, false],
   ] as const)('%s, switch %s, work in progress %s -> share %s', (status, accepting, work, expected) => {
-    expect(shouldShareLocation({ status, acceptingDeliveries: accepting }, work)).toBe(expected);
+    expect(shouldShareLocation({ status, acceptingDeliveries: accepting })).toBe(expected); // `work` is in the title only: it no longer changes the answer
   });
 });

@@ -55,3 +55,12 @@ Shipper chỉ còn **một nút online**. Bật online tự bật chia sẻ vị
 **Chưa chạy trên máy thật — không suy ra từ build/test:** dịch vụ khi khóa màn hình lâu, chuyển app, vuốt khỏi gần đây, Android tự giết tiến trình rồi dựng lại, force-stop, tiết kiệm pin; quyền "không hỏi lại"; tắt GPS/thông báo; Android 8/12/13/14; xác nhận trên server thật rằng vị trí đều đặn ~1 phút khi khóa màn hình. CI biên dịch Kotlin và chạy unit test JVM nhưng không chứng minh dịch vụ chạy ổn trên thiết bị.
 
 **Cách Owner thử:** bật online, khóa màn hình ≥ 5 phút, xem Admin/shop thấy vị trí cập nhật ~1 phút/lần; vuốt app khỏi gần đây, đợi 3 phút, kiểm tra vị trí vẫn cập nhật; tắt online lúc có đơn (vẫn chia sẻ) rồi hoàn tất đơn (thông báo biến mất); đăng xuất (thông báo biến mất, không còn cập nhật).
+
+## Cập nhật Owner 2026-10-29 (issue #265) — thay thế quy tắc "còn đơn thì vẫn chia sẻ vị trí"
+
+Quy tắc mới của Owner có hiệu lực ưu tiên: **chỉ khi Shipper tắt Online thì app mới hết thu thập GPS**, kể cả khi còn chuyến đang giữ.
+
+- `should_share_location` = `intent_online` **và** hồ sơ `ACTIVE`. `has_active_work` **không còn** giữ GPS; nó vẫn là căn cứ cho nghĩa vụ chuyến, đóng tài khoản, hủy/hoàn tất hàng (M03/M04/M07) và không đổi.
+- Tắt Online khi còn chuyến: dừng thu thập/gửi, gỡ thông báo vị trí; chuyến, phí, hoa hồng, hàng giữ **không bị đụng**; Shipper tự bật lại Online nếu muốn tiếp tục chia sẻ. App không tự bật.
+- Theo dõi (11Food/Admin/Shipper): điểm cuối của Shipper đang Offline **không** được vẽ là LIVE (trả `freshness` tối đa `STALE`, kèm `sharing:false`); không ghi hành trình mới.
+- Giới hạn hệ điều hành (force-stop, mất GPS/mạng, thu hồi phiên) vẫn như cũ: app hiện "không có dữ liệu/quá hạn", không hứa tự khởi động lại.
