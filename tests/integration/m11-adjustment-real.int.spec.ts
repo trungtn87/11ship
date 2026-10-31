@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { adminData, AdminResponse } from './support/admin-fixtures';
+import { adminData, adminErrorCode, AdminResponse } from './support/admin-fixtures';
 import { dataOf } from './support/auth-fixtures';
 import { AdminLogin, Json, M11World, Shipper } from './support/m11-harness';
 
@@ -80,6 +80,94 @@ describe('M11 + M04 — commission adjustment posted by the wallet package', () 
     const charged = await adjust(rich, { direction: 'CHARGE_TO_SHIPPER', amount_vnd: 700 });
     expect(((data(charged).adjustments as Json[])[0] as Json)).toMatchObject({ direction: 'CHARGE_TO_SHIPPER', status: 'EXECUTED' });
     expect(await w.wallet(shipper)).toEqual({ balance: walletBefore.balance - 700, held: walletBefore.held });
+  });
+
+  // ---- PENDING_FINANCE: the same adjustment is retried (G11 / #219) --------------------------------------------------------------
+
+  async function pendingCharge(funds: number): Promise<{ shipper: Shipper; id: string; adjustmentId: string; amount: number }> {
+    const poor = await w.newShipper(funds);
+    const deliveryId = await w.completed(poor);
+    const created = await w.asShop('POST', '/shop/me/complaints', { category: 'MONEY_FEE', body: 'Thu thêm', delivery_id: deliveryId });
+    const c = dataOf(created).complaint as Json;
+    const id = String(c.complaint_id);
+    data(await w.adminPost(system, `/complaints/${id}/actions/receive`, { expected_version: Number(c.version) }));
+    const wallet = await w.wallet(poor);
+    const amount = wallet.balance - wallet.held + 1;
+    const refused = data(await adjust({ id }, { direction: 'CHARGE_TO_SHIPPER', amount_vnd: amount }));
+    const row = (refused.adjustments as Json[])[0] as Json;
+    expect(row).toMatchObject({ status: 'PENDING_FINANCE', pending_reason: 'INSUFFICIENT_BALANCE' });
+    expect(refused.can).toContain('retry-commission');
+    return { shipper: poor, id, adjustmentId: String(row.adjustment_id), amount };
+  }
+  const retry = async (id: string, over: Json = {}, key?: string): Promise<AdminResponse> => {
+    const detail = data(await w.adminGet(system, `/complaints/${id}`));
+    return w.adminPost(system, `/complaints/${id}/actions/retry-commission`, { expected_version: Number((detail.complaint as Json).version), reason: 'Shipper đã nạp thêm', ...over }, key);
+  };
+  const pendingOf = async (s: Shipper): Promise<number> => Number(((await q(`SELECT count(*)::int AS n FROM app.complaint_adjustments WHERE driver_id = $1::uuid AND status = 'PENDING_FINANCE'`, [s.driverId]))[0] as Json).n);
+
+  it('retry of a charge that is still unpayable keeps the SAME record waiting; once the wallet can pay it executes that record exactly once, even after the file was resolved', async () => {
+    const f = await pendingCharge(2_000);
+    expect(await pendingOf(f.shipper)).toBe(1);
+    const before = await w.wallet(f.shipper);
+    const ledger = await w.ledgerCount(f.shipper);
+
+    // Still not enough: the attempt is recorded, nothing moves, the wallet is not negative.
+    const again = data(await retry(f.id));
+    expect((again.adjustments as Json[])).toHaveLength(1);
+    expect(((again.adjustments as Json[])[0] as Json)).toMatchObject({ adjustment_id: f.adjustmentId, status: 'PENDING_FINANCE', pending_reason: 'INSUFFICIENT_BALANCE' });
+    expect(await w.wallet(f.shipper)).toEqual(before);
+    expect(await w.ledgerCount(f.shipper)).toBe(ledger);
+    expect(await pendingOf(f.shipper)).toBe(1);
+
+    // The file is concluded meanwhile: the money obligation stays reachable.
+    const detail = data(await w.adminGet(system, `/complaints/${f.id}`));
+    const concluded = data(await w.adminPost(system, `/complaints/${f.id}/actions/conclude`, { expected_version: Number((detail.complaint as Json).version), conclusion: 'Đã xem xét' }));
+    expect((concluded.complaint as Json).status).toBe('RESOLVED');
+    expect(concluded.can).toContain('retry-commission');
+
+    await w.topUp(f.shipper, 10_000);
+    const funded = await w.wallet(f.shipper);
+    const done = data(await retry(f.id));
+    expect((done.complaint as Json).status).toBe('RESOLVED');
+    expect((done.adjustments as Json[])).toHaveLength(1);
+    expect(((done.adjustments as Json[])[0] as Json)).toMatchObject({ adjustment_id: f.adjustmentId, direction: 'CHARGE_TO_SHIPPER', amount_vnd: f.amount, status: 'EXECUTED', pending_reason: null });
+    expect(done.can).not.toContain('retry-commission');
+    expect(await w.wallet(f.shipper)).toEqual({ balance: funded.balance - f.amount, held: funded.held });
+    expect(await w.ledgerCount(f.shipper)).toBe(ledger + 1 + 1);
+    expect(await q('SELECT 1 FROM app.wallet_adjustments WHERE source_type = $2 AND source_id = $1::uuid', [f.adjustmentId, 'COMPLAINT'])).toHaveLength(1);
+    expect(await pendingOf(f.shipper)).toBe(0);
+
+    // A third press finds nothing waiting: refused, and the money does not move twice.
+    expect(adminErrorCode(await retry(f.id))).toBe('COMPLAINT_STATE_CONFLICT');
+    expect(await w.wallet(f.shipper)).toEqual({ balance: funded.balance - f.amount, held: funded.held });
+    expect(await w.ledgerCount(f.shipper)).toBe(ledger + 1 + 1);
+  });
+
+  it('two administrators pressing retry at the same moment post the money once; the other is refused', async () => {
+    const f = await pendingCharge(2_000);
+    await w.topUp(f.shipper, 10_000);
+    const funded = await w.wallet(f.shipper);
+    const ledger = await w.ledgerCount(f.shipper);
+    const detail = data(await w.adminGet(system, `/complaints/${f.id}`));
+    const version = Number((detail.complaint as Json).version);
+    const body = { expected_version: version, reason: 'Hai người cùng bấm' };
+    const results = await Promise.all([w.adminPost(system, `/complaints/${f.id}/actions/retry-commission`, body, randomUUID()), w.adminPost(system, `/complaints/${f.id}/actions/retry-commission`, body, randomUUID())]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(['VERSION_CONFLICT', 'COMPLAINT_STATE_CONFLICT']).toContain(adminErrorCode(results.find((r) => r.status === 409) as AdminResponse));
+    expect(await w.wallet(f.shipper)).toEqual({ balance: funded.balance - f.amount, held: funded.held });
+    expect(await w.ledgerCount(f.shipper)).toBe(ledger + 1);
+    expect(await q('SELECT 1 FROM app.complaint_adjustments WHERE complaint_id = $1::uuid', [f.id])).toHaveLength(1);
+    expect(await q('SELECT 1 FROM app.wallet_adjustments WHERE source_id = $1::uuid', [f.adjustmentId])).toHaveLength(1);
+  });
+
+  it('the money right is checked at the moment of the press: it is not offered without it and the call is refused', async () => {
+    const f = await pendingCharge(2_000);
+    const plain = await w.adminWith('DRIVER', { review: true });
+    const detail = data(await w.adminGet(plain, `/complaints/${f.id}`));
+    expect(detail.can).not.toContain('retry-commission');
+    const refused = await w.adminPost(plain, `/complaints/${f.id}/actions/retry-commission`, { expected_version: Number((detail.complaint as Json).version), reason: 'Không có quyền tiền' });
+    expect([refused.status, adminErrorCode(refused)]).toEqual([403, 'ADMIN_FORBIDDEN']);
+    expect(await pendingOf(f.shipper)).toBe(1);
   });
 
   it('the database refuses what the application must never do: a ledger row without its record, a record without its ledger row, and any change to a record', async () => {

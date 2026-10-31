@@ -109,6 +109,7 @@ describe('M01.03 — client register', () => {
           'onboarding',
           'onboarding_required',
           'role_selection_required',
+          'phone_verification_status',
           'access_token',
           'session',
         ]);

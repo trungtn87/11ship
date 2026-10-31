@@ -3,6 +3,7 @@
 
 import { failureOf } from './accounts-api.js';
 import { ApiClient, ApiResult, record, str } from './api.js';
+import { ActionQueue, ActionQueueRead, QUEUE_KINDS, QUEUE_LINK_AREAS, QueueItem, QueueKind, QueueLink, QueueLinkArea, QueueQuery, QueueSource } from './action-queue.js';
 import { Metric, MetricGroup, MetricLink, OVERVIEW_RANGES, Overview, OverviewQuery, OverviewRange, OverviewRead, OverviewSource, SuccessRate, TodoItem } from './overview.js';
 
 export const OVERVIEW_BASE = '/v1';
@@ -135,7 +136,116 @@ export function parseOverview(data: Record<string, unknown>): Overview | undefin
   return { generatedAt, period: { range: periodRange, from, to, fromDay, toDay }, groups: parsedGroups, successRate: rate, todo };
 }
 
+const KINDS: readonly string[] = QUEUE_KINDS;
+const scalar = (value: unknown): value is string | number | null => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
+
+function parseQueueLink(value: unknown): QueueLink | undefined {
+  const raw = record(value);
+  const query = record(raw?.query);
+  if (raw === undefined || query === undefined || typeof raw.area !== 'string' || !(QUEUE_LINK_AREAS as readonly string[]).includes(raw.area)) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(query)) {
+    if (typeof entry !== 'string') {
+      return undefined;
+    }
+    out[key] = entry;
+  }
+  return { area: raw.area as QueueLinkArea, query: out };
+}
+
+function parseQueueItem(value: unknown): QueueItem | undefined {
+  const raw = record(value);
+  const detail = record(raw?.detail);
+  const link = parseQueueLink(raw?.link);
+  if (raw === undefined || detail === undefined || link === undefined) {
+    return undefined;
+  }
+  const waitingSince = iso(raw.waiting_since);
+  const ok =
+    typeof raw.key === 'string' && typeof raw.kind === 'string' && KINDS.includes(raw.kind) && typeof raw.code === 'string' && typeof raw.status === 'string' && typeof raw.reason === 'string' &&
+    waitingSince !== undefined && safeInt(raw.age_seconds) && raw.age_seconds >= 0 && (raw.overdue === null || typeof raw.overdue === 'boolean') && (raw.waiting_on === null || typeof raw.waiting_on === 'string') && (raw.action === 'HANDLE' || raw.action === 'VIEW');
+  if (!ok || waitingSince === undefined) {
+    return undefined;
+  }
+  const details: Record<string, string | number | null> = {};
+  for (const [key, entry] of Object.entries(detail)) {
+    if (!scalar(entry)) {
+      return undefined;
+    }
+    details[key] = entry;
+  }
+  return {
+    key: raw.key as string,
+    kind: raw.kind as QueueKind,
+    code: raw.code as string,
+    status: raw.status as string,
+    reason: raw.reason as string,
+    waitingSince,
+    ageSeconds: raw.age_seconds as number,
+    overdue: raw.overdue as boolean | null,
+    waitingOn: raw.waiting_on as string | null,
+    action: raw.action as 'HANDLE' | 'VIEW',
+    link,
+    detail: details,
+  };
+}
+
+function parseQueueSource(value: unknown): QueueSource | undefined {
+  const raw = record(value);
+  if (raw === undefined || typeof raw.kind !== 'string' || !KINDS.includes(raw.kind)) {
+    return undefined;
+  }
+  const kind = raw.kind as QueueKind;
+  if (raw.status === 'FORBIDDEN' || raw.status === 'ERROR') {
+    return { kind, status: raw.status };
+  }
+  return raw.status === 'OK' && safeInt(raw.count) && raw.count >= 0 && typeof raw.truncated === 'boolean' ? { kind, status: 'OK', count: raw.count, truncated: raw.truncated } : undefined;
+}
+
+/** A queue answer is all-or-nothing: one malformed source or row makes the whole answer unknown (the page says so), never a half list. Every kind appears exactly once. */
+export function parseActionQueue(data: Record<string, unknown>): ActionQueue | undefined {
+  const generatedAt = iso(data.generated_at);
+  if (generatedAt === undefined || !Array.isArray(data.sources) || !Array.isArray(data.items) || !safeInt(data.total) || data.total !== data.items.length) {
+    return undefined;
+  }
+  const sources: QueueSource[] = [];
+  for (const entry of data.sources) {
+    const source = parseQueueSource(entry);
+    if (source === undefined || sources.some((known) => known.kind === source.kind)) {
+      return undefined;
+    }
+    sources.push(source);
+  }
+  if (sources.length !== QUEUE_KINDS.length) {
+    return undefined;
+  }
+  const items: QueueItem[] = [];
+  const seen = new Set<string>();
+  for (const entry of data.items) {
+    const item = parseQueueItem(entry);
+    if (item === undefined || seen.has(item.key)) {
+      return undefined;
+    }
+    seen.add(item.key);
+    items.push(item);
+  }
+  return { generatedAt, sources, total: items.length, items };
+}
+
 export class AdminOverviewApi extends ApiClient {
+  actionQueue(query: QueueQuery): Promise<ApiResult<ActionQueue>> {
+    const params = new URLSearchParams();
+    for (const [key, value] of [['kind', query.kind], ['status', query.status], ['from', query.from], ['to', query.to], ['sort', query.sort]] as const) {
+      if (value !== undefined && value !== '') {
+        params.set(key, value);
+      }
+    }
+    const suffix = params.toString();
+    return this.call({ method: 'GET', path: `/admin/overview/action-queue${suffix === '' ? '' : `?${suffix}`}` }, parseActionQueue);
+  }
+
   read(query: OverviewQuery): Promise<ApiResult<Overview>> {
     const params = new URLSearchParams({ range: query.range });
     if (query.range === 'custom') {
@@ -152,6 +262,10 @@ export function createOverviewSource(api: AdminOverviewApi): OverviewSource {
     async read(query): Promise<OverviewRead> {
       const result = await api.read(query);
       return result.kind === 'ok' ? { kind: 'ready', overview: result.data } : failureOf(result);
+    },
+    async actionQueue(query): Promise<ActionQueueRead> {
+      const result = await api.actionQueue(query);
+      return result.kind === 'ok' ? { kind: 'ready', queue: result.data } : failureOf(result);
     },
   };
 }

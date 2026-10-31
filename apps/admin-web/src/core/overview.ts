@@ -4,6 +4,7 @@
 // shown as 0: the page prints "—" and the reason. Period figures and current-state figures are separate groups and labelled so.
 
 import { Failure } from './accounts.js';
+import { ActionQueueRead, QueueQuery } from './action-queue.js';
 
 export const OVERVIEW_RANGES = ['today', 'yesterday', '7d', 'month', 'custom'] as const;
 export type OverviewRange = (typeof OVERVIEW_RANGES)[number];
@@ -60,12 +61,15 @@ export type OverviewRead = { readonly kind: 'ready'; readonly overview: Overview
 
 export interface OverviewSource {
   read(query: OverviewQuery): Promise<OverviewRead>;
+  /** "Việc cần xử lý": the files behind the to-do figures (GET /v1/admin/overview/action-queue). Read-only. */
+  actionQueue(query: QueueQuery): Promise<ActionQueueRead>;
 }
 
 export const NOT_WIRED_OVERVIEW_REASON = 'Tổng quan điều hành chưa được nối với máy chủ. Không có số liệu nào được hiển thị.';
 
 export const NOT_WIRED_OVERVIEW: OverviewSource = {
   read: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_OVERVIEW_REASON }),
+  actionQueue: () => Promise.resolve({ kind: 'not-wired', reason: NOT_WIRED_OVERVIEW_REASON }),
 };
 
 /** Why a figure is not there, in the words an administrator reads. Unknown reasons are shown as a neutral sentence, never as the raw code. */

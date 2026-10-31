@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { OpsCollector } from '../../apps/backend/src/ops/ops-collector';
 import { APP_COMPAT_MATRIX, CompatMatrix } from '../../apps/backend/src/ops/ops-compat';
 import { OPS_DISCORD_CLIENT } from '../../apps/backend/src/ops/ops-discord';
-import { HttpProbeResult, OPS_SYSTEM_PROBE, OpsSystemProbe } from '../../apps/backend/src/ops/ops-system-probe';
+import { HostSnapshot, HttpProbeResult, OPS_SYSTEM_PROBE, OpsSystemProbe } from '../../apps/backend/src/ops/ops-system-probe';
 import { AdminApp, adminData, adminErrorCode, AdminResponse, sessionCookies, startAdminApp } from './support/admin-fixtures';
 import { api, dataOf } from './support/auth-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
@@ -22,6 +22,16 @@ const MATRIX: CompatMatrix = {
 class StubProbe implements OpsSystemProbe {
   self: HttpProbeResult = { ok: true, status: 200, latencyMs: 4, code: null };
   cpuPercent(): number | null { return 10; }
+  hostSnapshot(): HostSnapshot {
+    return {
+      sampledAtMs: Date.now(), uptimeSeconds: 1000, cpuPercent: 10, cpuCores: 2, loadAvg: [0.5, 0.4, 0.3],
+      memory: { totalBytes: 1000, availableBytes: 800, usedBytes: 200, usedPercent: 20 }, swap: { totalBytes: 100, usedBytes: 10, usedPercent: 10 },
+      disks: [{ label: 'root', path: '/', totalBytes: 1000, freeBytes: 500, usedBytes: 500, usedPercent: 50 }], io: { readBytes: 1, writeBytes: 2 },
+      network: { rxBytesTotal: 10, txBytesTotal: 20, rxBytesPerSec: 5, txBytesPerSec: 6 },
+      processesByCpu: [{ pid: 1, name: 'node', cpuPercent: 3, rssBytes: 100, memoryPercent: 10 }], processesByMemory: [{ pid: 1, name: 'node', cpuPercent: 3, rssBytes: 100, memoryPercent: 10 }],
+      backend: { pid: 1, uptimeSeconds: 10, rssBytes: 100, heapUsedBytes: 50, cpuPercent: 1 },
+    };
+  }
   memoryPercent(): number | null { return 20; }
   diskPercent(): number | null { return 50; }
   async selfHealth(): Promise<HttpProbeResult> { return this.self; }

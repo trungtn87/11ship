@@ -27,7 +27,7 @@ export interface StoryDeliveryEvent {
 
 export interface StoryDelivery {
   readonly deliveryId: string;
-  readonly source: 'DIRECT' | 'ORDER';
+  readonly source: 'DIRECT' | 'ORDER' | 'CUSTOMER';
   readonly previousDeliveryId: string | null;
   readonly events: readonly StoryDeliveryEvent[];
   /** The failure of this call as a sentence (from its incident), when it failed. */

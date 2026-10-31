@@ -26,7 +26,7 @@ export type BankState = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
 export type DriverType = 'EXTERNAL' | 'PLATFORM';
 
 /** The one label of a Shipper's standing, from the stored status and review state. */
-export function standing(status: DriverStatus, reviewState: ReviewState): { readonly label: string; readonly tone: 'ok' | 'wait' | 'lock' | 'neutral' } {
+export function standing(status: DriverStatus, reviewState: ReviewState, closureFrom: DriverStatus | null = null): { readonly label: string; readonly tone: 'ok' | 'wait' | 'lock' | 'neutral' } {
   switch (status) {
     case 'PENDING':
       if (reviewState === 'SUBMITTED') {
@@ -38,7 +38,8 @@ export function standing(status: DriverStatus, reviewState: ReviewState): { read
     case 'SUSPENDED':
       return { label: 'Tạm khóa', tone: 'lock' };
     case 'CLOSING':
-      return { label: 'Xin ngừng hoạt động', tone: 'wait' };
+      // From a suspension the account is still locked: it is closing only to give the balance back, never unlocked.
+      return closureFrom === 'SUSPENDED' ? { label: 'Đang đóng để hoàn tiền (vẫn bị khóa)', tone: 'lock' } : { label: 'Xin ngừng hoạt động', tone: 'wait' };
     case 'CLOSED':
       return { label: 'Đã ngừng hoạt động', tone: 'neutral' };
   }
@@ -55,7 +56,8 @@ export const READINESS_LABEL: Record<string, string> = {
   BANK_MISSING: 'Chưa có tài khoản ngân hàng',
   BANK_NOT_VERIFIED: 'Ngân hàng chưa được xác minh',
   WALLET_NOT_AVAILABLE: 'Ví chưa sẵn sàng (chờ module Ví M04)',
-  BALANCE_TOO_LOW: 'Số dư ví chưa đủ điều kiện',
+  BALANCE_TOO_LOW: 'Số dư khả dụng chưa đủ để nhận đơn',
+  FUNDING_TOO_LOW: 'Tổng tiền nạp đã xác nhận chưa đạt mức yêu cầu',
 };
 
 export const EVENT_LABEL: Record<string, string> = {
@@ -127,6 +129,8 @@ export interface ShipperDetail {
   readonly canAccept: boolean;
   readonly closureNote: string | null;
   readonly closureRequestedAt: string | null;
+  /** The status the closure was asked from (ACTIVE or SUSPENDED); null when the account is not closing. */
+  readonly closureFromStatus: DriverStatus | null;
   readonly submittedAt: string | null;
   readonly createdAt: string;
   readonly history: readonly ShipperEvent[];
@@ -214,7 +218,7 @@ export interface WalletSaveCommand {
   readonly key: string;
 }
 
-export const WALLET_PARAMETER_LABEL = { topup_min_vnd: 'Nạp tối thiểu mỗi lần', withdraw_min_vnd: 'Rút tối thiểu mỗi lần' } as const;
+export const WALLET_PARAMETER_LABEL = { topup_min_vnd: 'Nạp tối thiểu mỗi lần', withdraw_min_vnd: 'Rút tối thiểu (tham số lịch sử, không áp dụng)' } as const;
 export const WALLET_MAX_VND = 1_000_000_000;
 
 /** A whole, positive VND amount typed by a person ("100000", "100.000"); undefined for anything else. */

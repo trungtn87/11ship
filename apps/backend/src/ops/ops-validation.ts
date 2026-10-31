@@ -1,3 +1,4 @@
+import { VPS_RANGE_NAMES, VpsRange } from './ops-vps';
 import { BadRequestException } from '@nestjs/common';
 import { shaped } from '../delivery/delivery-validation';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -58,6 +59,12 @@ function isoInstant(value: unknown): number {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return reject();
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : reject();
+}
+
+export function parseVpsQuery(query: unknown): VpsRange {
+  const q = queryStrings(query, ['range']);
+  if (q.range === undefined || q.range === '') return '1h';
+  return (VPS_RANGE_NAMES as readonly string[]).includes(q.range) ? (q.range as VpsRange) : reject();
 }
 
 export function parseNoQuery(query: unknown): void {

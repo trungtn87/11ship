@@ -20,6 +20,7 @@ import { OpsSettingsService } from './ops-settings-service';
 import { OPS_SYSTEM_PROBE, OpsSystemProbe } from './ops-system-probe';
 import { OpsTelemetryRepository } from './ops-telemetry-repository';
 import { OpsSettings, defaultSettings } from './ops-settings';
+import { CHECK_VPS, snapshotValue } from './ops-vps';
 
 /** Probe liveness: no report for this long (after at least one) is its own warning. The probe reports every few minutes (ops/external-probe). */
 export const EXTERNAL_PROBE_STALE_SECONDS = 15 * 60;
@@ -56,6 +57,8 @@ export class OpsCollector {
     maintenance: [],
   };
   #lastHttpsMs = 0;
+  #lastDbLatencyMs: number | null = null;
+  #lastApiLatencyMs: number | null = null;
   #running = false;
 
   constructor(
@@ -97,6 +100,7 @@ export class OpsCollector {
       }
       await this.#step('machine', () => this.#machine());
       await this.#step('api', () => this.#api());
+      await this.#step('vps', () => this.#vps());
       await this.#step('worker', () => this.#worker());
       await this.#step('gateway', () => this.#gateway());
       await this.#step('backup', () => this.#backup());
@@ -132,6 +136,7 @@ export class OpsCollector {
       return false;
     }
     const latency = Date.now() - started;
+    this.#lastDbLatencyMs = latency;
     const outage = this.#outage;
     this.#outage = undefined;
     await this.#step('database', async () => {
@@ -228,10 +233,41 @@ export class OpsCollector {
     });
   }
 
+  // ---- VPS (#247): the wider read-only picture of the host, kept as the latest snapshot plus the history metrics ----
+
+  async #vps(): Promise<void> {
+    const snap = this.probe.hostSnapshot(this.#config.diskPaths);
+    await this.transactions.withTransaction(async (context) => {
+      const db = await this.repo.databaseStats(context);
+      const metrics: [string, number | null | undefined][] = [
+        ['swap_percent', snap.swap?.usedPercent],
+        ['load_1m', snap.loadAvg[0]],
+        ['net_rx_bps', snap.network?.rxBytesPerSec],
+        ['net_tx_bps', snap.network?.txBytesPerSec],
+        ['db_connections', db.activeConnections],
+        ['db_size_bytes', db.sizeBytes],
+      ];
+      for (const [key, value] of metrics) {
+        if (value !== null && value !== undefined) await this.repo.insertMetric(context, key, value);
+      }
+      await this.engine.observe(context, {
+        checkKey: CHECK_VPS,
+        source: 'SERVER',
+        state: 'OK',
+        value: snapshotValue(snap, { postgres: { latencyMs: this.#lastDbLatencyMs, activeConnections: db.activeConnections, sizeBytes: db.sizeBytes }, apiLatencyMs: this.#lastApiLatencyMs }),
+        evidenceCode: 'VPS_SNAPSHOT',
+        staleAfterSeconds: 180,
+        title: 'Bộ thu thập VPS mất tín hiệu',
+        impact: 'Trang Giám sát VPS không còn số liệu mới',
+      });
+    });
+  }
+
   // ---- API ----
 
   async #api(): Promise<void> {
     const result = await this.probe.selfHealth();
+    this.#lastApiLatencyMs = result.ok ? result.latencyMs : null;
     await this.transactions.withTransaction(async (context) => {
       if (result.ok) await this.repo.insertMetric(context, 'api_latency_ms', result.latencyMs);
       await this.engine.observe(context, {

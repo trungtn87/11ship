@@ -16,6 +16,8 @@ export interface OverviewHost {
   readonly login: () => void;
   readonly home: () => void;
   readonly open: (link: MetricLink) => void;
+  /** "Danh sách hồ sơ đang chờ": the page that lists the files behind the to-do figures (Vận hành › Thông báo › Việc cần xử lý). */
+  readonly openQueue: () => void;
   /** The wall clock, for the "no later than today" check of a custom range (the server checks again on its own clock). */
   readonly now?: () => number;
 }
@@ -314,6 +316,9 @@ export class OverviewView {
       }
       return h('li', { class: 'ov-todo-row' }, h('span', { class: 'ov-todo-label' }, label), status, action);
     });
-    return h('section', { class: 'ov-section', 'aria-labelledby': 'ov-todo-title' }, h('h2', { class: 'subtitle', id: 'ov-todo-title' }, 'Việc cần xử lý'), h('ul', { class: 'ov-todo' }, ...rows));
+    const files = secondary('Xem danh sách hồ sơ đang chờ');
+    files.classList.add('btn-inline');
+    files.addEventListener('click', () => this.host.openQueue());
+    return h('section', { class: 'ov-section', 'aria-labelledby': 'ov-todo-title' }, h('h2', { class: 'subtitle', id: 'ov-todo-title' }, 'Việc cần xử lý'), h('ul', { class: 'ov-todo' }, ...rows), h('p', {}, files));
   }
 }

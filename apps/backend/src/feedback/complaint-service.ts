@@ -25,7 +25,7 @@ interface Subject {
   readonly orderId: string | null;
   readonly deliveryId: string | null;
   readonly reviewId: string | null;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly shopName: string;
   readonly driverId: string | null;
   readonly driverName: string | null;
@@ -310,7 +310,7 @@ export class ComplaintService {
     if (party === undefined || c.submitterRole === caller.role) {
       return undefined;
     }
-    const linked = party.role === 'SHOP' ? c.shopId === party.id : c.driverId === party.id;
+    const linked = party.role === 'SHOP' ? (c.shopId !== null && c.shopId === party.id) : c.driverId === party.id;
     return linked && partyHasDisclosure(messages, party.role) ? { kind: 'PARTY', role: party.role } : undefined;
   }
 
@@ -355,28 +355,35 @@ export class ComplaintService {
       throw new AppError('COMPLAINT_TARGET_NOT_FOUND');
     };
     if (caller.role === 'CUSTOMER') {
-      if (input.orderId === null) {
-        return notFound();
+      if (input.orderId !== null) {
+        const order = await this.orders.orderOfCustomer(context, input.orderId, caller.userId);
+        if (order === undefined) {
+          return notFound();
+        }
+        const all = await this.deliveries.listByOrder(context, order.orderId);
+        const latest = all.at(-1);
+        const driver = latest === undefined ? undefined : await this.#driverOf(context, latest);
+        return {
+          orderId: order.orderId,
+          deliveryId: latest?.deliveryId ?? null,
+          reviewId: null,
+          shopId: order.shopId,
+          shopName: order.shopName,
+          driverId: driver?.driverId ?? null,
+          driverName: driver?.name ?? null,
+          driverCode: driver?.code ?? null,
+          relatedCode: order.code.slice(0, 16),
+          scopeKey: order.orderId,
+        };
       }
-      const order = await this.orders.orderOfCustomer(context, input.orderId, caller.userId);
-      if (order === undefined) {
-        return notFound();
+      if (input.deliveryId !== null) {
+        const delivery = await this.deliveries.findOfCustomer(context, input.deliveryId, caller.userId);
+        if (delivery === undefined || delivery.source !== 'CUSTOMER') {
+          return notFound();
+        }
+        return this.#subjectOfDelivery(context, delivery, null);
       }
-      const all = await this.deliveries.listByOrder(context, order.orderId);
-      const latest = all.at(-1);
-      const driver = latest === undefined ? undefined : await this.#driverOf(context, latest);
-      return {
-        orderId: order.orderId,
-        deliveryId: latest?.deliveryId ?? null,
-        reviewId: null,
-        shopId: order.shopId,
-        shopName: order.shopName,
-        driverId: driver?.driverId ?? null,
-        driverName: driver?.name ?? null,
-        driverCode: driver?.code ?? null,
-        relatedCode: order.code.slice(0, 16),
-        scopeKey: order.orderId,
-      };
+      return notFound();
     }
     if (caller.role === 'SHOP') {
       if (input.deliveryId === null) {

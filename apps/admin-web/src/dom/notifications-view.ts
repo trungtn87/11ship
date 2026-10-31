@@ -16,6 +16,7 @@ import {
   SendStatus,
   WorkQueue,
 } from '../core/notifications.js';
+import { ActionQueueHost, ActionQueuePanel } from './action-queue-view.js';
 import { formatDateTime, h, message, primary, secondary, setMessage } from './dom.js';
 import { icon } from './icons.js';
 import { emptyPanel, failurePanel, notWiredPanel, skeleton } from './states.js';
@@ -35,6 +36,8 @@ export interface NotificationHost {
   readonly home: () => void;
   /** "Xem đơn giao": the delivery pages decide the right to read again. */
   readonly openDeliveries: () => void;
+  /** The files behind "Việc cần xử lý" (#216): read-only; a row opens the screen that owns the file. */
+  readonly actionQueue: ActionQueueHost;
   readonly canEdit: boolean;
 }
 
@@ -119,6 +122,7 @@ export class NotificationsView {
   #results: HTMLElement | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #tab: Tab = 'queue';
+  #queuePanel: ActionQueuePanel | undefined;
   #latest = 0;
   #page = 1;
   #disposed = false;
@@ -150,6 +154,7 @@ export class NotificationsView {
   dispose(): void {
     this.#disposed = true;
     clearTimeout(this.#timer);
+    this.#queuePanel?.dispose();
   }
 
   async load(): Promise<void> {
@@ -196,17 +201,23 @@ export class NotificationsView {
 
   async #loadQueue(): Promise<void> {
     const token = ++this.#latest;
-    this.#body.replaceChildren(skeleton(4));
+    // The files that wait (#216) and the notification delivery problems are two reads: one failing never hides the other.
+    this.#queuePanel?.dispose();
+    const panel = new ActionQueuePanel(this.host.actionQueue);
+    this.#queuePanel = panel;
+    const delivery = h('div', { class: 'queue-delivery' }, skeleton(4));
+    this.#body.replaceChildren(panel.element, delivery);
+    void panel.load();
     const read = await this.host.source.workQueue();
     if (this.#disposed || token !== this.#latest) {
       return;
     }
     if (read.kind === 'not-wired') {
-      this.#body.replaceChildren(notWiredPanel(read.reason));
+      delivery.replaceChildren(notWiredPanel(read.reason));
     } else if (read.kind === 'failed') {
-      this.#body.replaceChildren(this.#failed(read, () => void this.#loadQueue()));
+      delivery.replaceChildren(this.#failed(read, () => void this.#loadQueue()));
     } else {
-      this.#body.replaceChildren(...this.#queue(read.queue));
+      delivery.replaceChildren(...this.#queue(read.queue));
     }
   }
 

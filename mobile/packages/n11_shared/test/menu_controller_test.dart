@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
@@ -303,5 +305,43 @@ void main() {
     expect(await c.save(), isFalse);
     expect(await c.setHidden('a', true), isFalse);
     expect(api.arrived.length, before);
+  });
+
+  test('cropper integration: custom cropper crops before upload; cancelling crop keeps old image', () async {
+    final FakeMenuApi api = seeded();
+    final FakeImagePicker picker = FakeImagePicker();
+    final PickedImage croppedResult = PickedImage(bytes: Uint8List.fromList(<int>[1, 2, 3]), contentType: 'image/png');
+    bool cropperCalled = false;
+
+    final MenuListController c = await ready(
+      api,
+      picker: picker,
+    );
+    c.startEdit('a');
+    expect(c.form!.imageRef, 'p1');
+
+    // Pick with cropper that cancels
+    await c.pickImage(customCropper: (PickedImage raw) async {
+      cropperCalled = true;
+      return null;
+    });
+    expect(cropperCalled, isTrue);
+    expect(c.form!.imageRef, 'p1', reason: 'cancelled crop retains old image');
+    expect(c.form!.imageStage, ImageStage.existing);
+
+    // Pick with cropper that applies
+    await c.pickImage(customCropper: (PickedImage raw) async {
+      return croppedResult;
+    });
+    expect(c.form!.picked, croppedResult);
+    expect(c.form!.imageStage, ImageStage.ready);
+    expect(c.form!.imageRef, 'img1');
+    expect(c.form!.rawPickedBytes, picker.next!.bytes);
+
+    // applyCroppedImage directly
+    final PickedImage direct = PickedImage(bytes: Uint8List.fromList(<int>[4, 5, 6]), contentType: 'image/jpeg');
+    await c.applyCroppedImage(direct, rawBytes: Uint8List.fromList(<int>[7, 8]));
+    expect(c.form!.picked, direct);
+    expect(c.form!.rawPickedBytes, Uint8List.fromList(<int>[7, 8]));
   });
 }
