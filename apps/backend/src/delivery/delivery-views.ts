@@ -582,12 +582,16 @@ export class DeliveryViews {
     if (stored === undefined) {
       return null;
     }
+    // Issue #265: a Shipper who switched Online off no longer shares. The last point is history by its time, never drawn as live, whatever its age.
+    const sharing = (await context.query<{ sharing: boolean }>(`SELECT (accepting_deliveries AND status = 'ACTIVE') AS sharing FROM app.drivers WHERE driver_id = $1::uuid`, [driverId])).rows[0]?.sharing === true;
+    const measured = freshnessOf(stored.ageSeconds, locationValid(stored.lat, stored.lng, stored.accuracyM));
     return {
       lat: stored.lat,
       lng: stored.lng,
       recorded_at: iso(stored.recordedAtMs),
       age_seconds: stored.ageSeconds,
-      freshness: freshnessOf(stored.ageSeconds, locationValid(stored.lat, stored.lng, stored.accuracyM)),
+      freshness: !sharing && measured === 'LIVE' ? 'STALE' : measured,
+      sharing,
     };
   }
 }

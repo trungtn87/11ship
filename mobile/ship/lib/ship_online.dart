@@ -226,7 +226,7 @@ class ShipOnline extends ChangeNotifier {
     _problem = LocationProblem.none;
     _message = null;
     _autoBlocked = false;
-    if (p.acceptingDeliveries || (p.presence?.hasActiveWork ?? false)) {
+    if (p.acceptingDeliveries) {
       await reconcile(force: true);
     } else {
       await setOnline(true);
@@ -335,6 +335,8 @@ class ShipOnline extends ChangeNotifier {
     final bool work = hasActiveWork;
     if (!intent && !work) return null;
     final bool shared = reporter.serverHasPosition;
+    // Issue #265: Online off stops the position even while a delivery is held; the delivery itself goes on.
+    if (work && !intent) return 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí';
     if (work) return shared ? 'Đang giao đơn · Vẫn chia sẻ vị trí' : 'Đang giao đơn · Chưa có vị trí';
     if (shared) return 'Đang chia sẻ vị trí';
     if (reporter.sharing && reporter.lastUpload == null && problem == LocationProblem.none) return 'Đang lấy vị trí…';

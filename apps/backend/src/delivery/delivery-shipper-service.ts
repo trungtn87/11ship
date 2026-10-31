@@ -139,7 +139,7 @@ export class DeliveryShipperService {
       await this.locations.upsert(context, caller.driver.driverId, input.lat, input.lng, input.accuracyM);
       // The answer tells the app whether it must keep sharing: a Shipper who is off and has no work left lets it stop by itself.
       const activeWork = await this.settlement.hasActiveWork(context, caller.driver.driverId);
-      return { ok: true, intent_online: caller.driver.acceptingDeliveries, has_active_work: activeWork, should_share_location: shouldShareLocation(caller.driver, activeWork) };
+      return { ok: true, intent_online: caller.driver.acceptingDeliveries, has_active_work: activeWork, should_share_location: shouldShareLocation(caller.driver) };
     });
   }
 

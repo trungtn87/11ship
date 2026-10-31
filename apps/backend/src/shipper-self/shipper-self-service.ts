@@ -91,7 +91,7 @@ export class ShipperSelfService {
         can_receive_orders: intent && canAccept && locationReady,
         paused_reason: pausedReason,
         has_active_work: activeWork,
-        should_share_location: shouldShareLocation(driver, activeWork),
+        should_share_location: shouldShareLocation(driver),
       },
     };
   }

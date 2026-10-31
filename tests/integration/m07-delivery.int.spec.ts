@@ -333,25 +333,28 @@ describe('M07 — delivery flow', () => {
     expect(dataOf(await asShipper(s, 'GET', '/driver/me')).accepting_deliveries).toBe(false);
   });
 
-  it('switching off with a delivery in progress is accepted: new orders stop, the position stays shared until the delivery ends', async () => {
+  it('switching off with a delivery in progress is accepted: new orders stop AND the position stops being shared (issue #265); the delivery and its duty are untouched', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
     const me = dataOf(await asShipper(s, 'GET', '/driver/me')) as Json;
     const off = await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: me.version, accepting: false });
     expect(off.status).toBe(200);
-    expect(dataOf(off)).toMatchObject({ accepting_deliveries: false, status: 'ACTIVE', presence: { intent_online: false, can_receive_orders: false, has_active_work: true, should_share_location: true } });
+    expect(dataOf(off)).toMatchObject({ accepting_deliveries: false, status: 'ACTIVE', presence: { intent_online: false, can_receive_orders: false, has_active_work: true, should_share_location: false } });
     expect(await stateOf(String(view.delivery_id))).toBe('accepted');
     const other = await newDelivery();
     expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${other.delivery_id}/accept`, {}))).toBe('DELIVERY_NOT_ELIGIBLE');
     const picked = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version });
     expect(picked.status).toBe(200);
-    expect(await presenceOf(s)).toMatchObject({ has_active_work: true, should_share_location: true });
+    expect(await presenceOf(s)).toMatchObject({ has_active_work: true, should_share_location: false });
+    // The held delivery is still readable with its last point NOT drawn as live while the Shipper is off.
+    const seen = dataOf(await asShipper(s, 'GET', `/driver/deliveries/${view.delivery_id}`)) as Json;
+    expect(['accepted', 'picked_up', 'delivering']).toContain(String(seen.state));
     const completed = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: dataOf(picked).version });
     expect(completed.status).toBe(200);
     expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: false, should_share_location: false });
   });
 
-  it('goods still with the Shipper after the creator cancels count as work in progress: the position stays shared until the shop takes them back', async () => {
+  it('goods still with the Shipper after the creator cancels count as work in progress for the duty (not for the position, which stays off while the Shipper is off)', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);
     const dest = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/destination`, { expected_version: view.version, lat: 21.0, lng: 105.82, fee_vnd: 15_000 });
@@ -362,7 +365,7 @@ describe('M07 — delivery flow', () => {
     const cancelled = await asShop('POST', `/shop/me/deliveries/${view.delivery_id}/cancel`, { expected_version: picked.version, reason: 'Khách không nhận hàng' });
     expect([cancelled.status, cancelled.text.slice(0, 200)]).toEqual([200, expect.any(String)]);
     expect(await countRows(app.pool, `SELECT 1 FROM app.delivery_assignments WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`, [view.delivery_id])).toBe(0);
-    expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: true, should_share_location: true });
+    expect(await presenceOf(s)).toMatchObject({ intent_online: false, has_active_work: true, should_share_location: false });
   });
 
   it('retrying an accept after a lost answer does not take the commission twice', async () => {
