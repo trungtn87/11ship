@@ -5,7 +5,7 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { ShopRepository } from '../shop/shop-repository';
 import { TransactionContext } from '../transaction/transaction-context';
-import { SHOP_ACTIVATED_EVENT_TYPE, SHOP_SETUP_AUDIT_ACTIONS, SHOP_SETUP_EVENT_SCHEMA_VERSION, SHOP_SETUP_RESOURCE_TYPE } from './shop-setup-constants';
+import { SHOP_ACTIVATED_EVENT_TYPE, SHOP_SETUP_AUDIT_ACTIONS, SHOP_SETUP_REQUEST_CLEARED_EVENT_TYPE, SHOP_SETUP_EVENT_SCHEMA_VERSION, SHOP_SETUP_RESOURCE_TYPE } from './shop-setup-constants';
 import { ShopSetupGate } from './shop-setup-gate';
 
 /**
@@ -28,7 +28,34 @@ export class ShopActivation {
   /** True only for the call that activated the shop. The caller must hold the shop row FOR UPDATE. */
   async reconcile(context: TransactionContext, shopId: string, requestId: string = randomUUID(), trigger = 'owner_change'): Promise<boolean> {
     const snapshot = await this.reader.snapshotOfShop(context, shopId);
-    if (snapshot === undefined || snapshot.status !== 'ACTIVE' || snapshot.activatedAt !== null || snapshot.ownerLocked) {
+    if (snapshot === undefined || snapshot.status !== 'ACTIVE' || snapshot.ownerLocked) {
+      return false;
+    }
+    if (snapshot.activatedAt !== null) {
+      // Issue #252: a shop that WAS activated, lost a condition and got an administrator's request. When the owner restores all four conditions the request is
+      // withdrawn here (request-info only exists for an incomplete setup, so it can only ask for what was missing). activated_at is never reset and
+      // shop.activated is never emitted a second time. clearSetupRequest reports a change once, so a replay or a concurrent call logs nothing.
+      if (snapshot.setupRequest !== null && (await this.gate.evaluate(context, snapshot)).setup.complete && (await this.shops.clearSetupRequest(context, shopId))) {
+        await this.audit.append(context, {
+          requestId,
+          actorType: 'SYSTEM',
+          actorId: null,
+          action: SHOP_SETUP_AUDIT_ACTIONS.requestAutoCleared,
+          resourceType: SHOP_SETUP_RESOURCE_TYPE,
+          resourceId: shopId,
+          resourceVersion: snapshot.version,
+          outcome: 'SUCCESS',
+          metadata: { shop_id: shopId, trigger, reason: 'SETUP_RESTORED', version: snapshot.version },
+        });
+        await this.outbox.append(context, {
+          eventType: SHOP_SETUP_REQUEST_CLEARED_EVENT_TYPE,
+          eventSchemaVersion: SHOP_SETUP_EVENT_SCHEMA_VERSION,
+          resourceType: SHOP_SETUP_RESOURCE_TYPE,
+          resourceId: shopId,
+          resourceVersion: snapshot.version,
+          payload: { shop_id: shopId, version: snapshot.version },
+        });
+      }
       return false;
     }
     const result = await this.gate.evaluate(context, snapshot);

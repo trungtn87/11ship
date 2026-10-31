@@ -20,7 +20,7 @@ const Map<String, String> _stepTitle = <String, String>{
 const Map<String, String> _stepHelp = <String, String>{
   'ACCOUNT': 'Đăng ký số điện thoại và xác thực OTP.',
   'SHOP_INFO': 'Tên quán, địa chỉ, số điện thoại liên hệ và giờ hoạt động.',
-  'LOCATION': 'Lấy vị trí GPS khi đang ở quán. Địa chỉ nhập tay không thay cho GPS.',
+  'LOCATION': 'Chọn vị trí lấy hàng trên bản đồ (không cần đứng tại quán hay bật GPS). Địa chỉ nhập tay không thay cho ghim.',
   'FIRST_ITEM': 'Có ít nhất 1 món đang bán, giá lớn hơn 0. Ảnh không bắt buộc.',
 };
 
@@ -30,7 +30,8 @@ const Map<String, String> _missingText = <String, String>{
   'CONTACT_PHONE': 'số điện thoại liên hệ',
   'SERVICE_AREA': 'khu vực phục vụ',
   'BUSINESS_HOURS': 'giờ hoạt động',
-  'PICKUP_POINT': 'vị trí GPS tại quán',
+  'PICKUP_POINT': 'vị trí lấy hàng trên bản đồ',
+  'PICKUP_OUTSIDE_AREA': 'ghim lấy hàng nằm trong khu vực phục vụ',
   'SELLABLE_ITEM': 'món đang bán có giá hợp lệ',
 };
 
