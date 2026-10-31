@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: —
+> Dữ liệu theo main HEAD `2112b86` · CI main: ⏳ Đang chạy (`RUNNING`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -108,7 +108,7 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2D · Onboarding shipper (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 | **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
-| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `2112b86` | — | Claude triển khai |
 | &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
@@ -327,20 +327,15 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#277](https://github.com/trungtn87/11ship/pull/277) (Nhóm 23) Mini Business: truy cập các tab và xử lý ngoại lệ… | Đã merge (`MERGED`) | — | — | — | `1edb0f0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#278](https://github.com/trungtn87/11ship/pull/278) (Nhóm 24) Phân tích vận hành và gắn cờ hành vi bất thường (… | Đã merge (`MERGED`) | — | — | — | `9ceef02` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#279](https://github.com/trungtn87/11ship/pull/279) (Nhóm 25) Căn chỉnh ảnh món đúng khung thực đơn (#245) | Đã merge (`MERGED`) | — | — | — | `bf55974` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#284](https://github.com/trungtn87/11ship/pull/284) (11Food/M02) Không báo 'Chưa cập nhật' khi chưa có lỗi refr… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `8951dbf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#285](https://github.com/trungtn87/11ship/pull/285) (11Food/UX) Tab Gọi ship cho khách, bỏ logo Trang chủ (#282) | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `db3a880` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#286](https://github.com/trungtn87/11ship/pull/286) (M13) Cập nhật chỉ so sánh phiên bản và thông báo; bỏ khóa… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `4cc8156` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#287](https://github.com/trungtn87/11ship/pull/287) (11Food/M05) Gợi ý địa chỉ tùy chọn, không che bản đồ; Lưu… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `3c88ec7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#288](https://github.com/trungtn87/11ship/pull/288) (M14/M06) Triển khai Valhalla trên VPS: script, loopback ht… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `fc6c2a2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#284](https://github.com/trungtn87/11ship/pull/284) (11Food/M02) Không báo 'Chưa cập nhật' khi chưa có lỗi refr… | Đã merge (`MERGED`) | — | — | — | `8951dbf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#285](https://github.com/trungtn87/11ship/pull/285) (11Food/UX) Tab Gọi ship cho khách, bỏ logo Trang chủ (#282) | Đã merge (`MERGED`) | — | — | — | `db3a880` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#286](https://github.com/trungtn87/11ship/pull/286) (M13) Cập nhật chỉ so sánh phiên bản và thông báo; bỏ khóa… | Đã merge (`MERGED`) | — | — | — | `4cc8156` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#287](https://github.com/trungtn87/11ship/pull/287) (11Food/M05) Gợi ý địa chỉ tùy chọn, không che bản đồ; Lưu… | Đã merge (`MERGED`) | — | — | — | `3c88ec7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#288](https://github.com/trungtn87/11ship/pull/288) (M14/M06) Triển khai Valhalla trên VPS: script, loopback ht… | Đã merge (`MERGED`) | — | — | — | `fc6c2a2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#289](https://github.com/trungtn87/11ship/pull/289) (11Food/M05/M14) Tìm địa điểm offline từ OSM thay Photon kh… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `af57913` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
-- `UNCLASSIFIED_PR` PR #284: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #285: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #286: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #287: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #288: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #289: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
