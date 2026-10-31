@@ -47,7 +47,7 @@ export class BusinessDashboard implements ShellHost {
   private tab():string{return tabs.some(t=>t[0]===location.pathname.split('/')[2])?location.pathname.split('/')[2]!:'overview';}
   private navigate(tab:string,request?:string):void{history.pushState(null,'',`/business/${tab}${request?'?request='+encodeURIComponent(request):''}`);this.detailId=undefined;this.pollRoom=undefined;void this.refresh(true);}
   private current(epoch:number):boolean{return !!this.host&&epoch===this.mountEpoch;}
-  private showError(e:unknown):void{if(!this.host)return;if(e instanceof BusinessApiError&&e.status===403){this.clearSensitiveView();this.content.append(h('section',{class:'business-panel',role:'status'},h('h2',{},'Chưa có quyền xem mục này'),h('p',{},tabNeeds[this.tab()]),h('p',{class:'business-muted'},'Các mục khác vẫn dùng bình thường. Liên hệ quản trị hệ thống nếu cần cấp thêm quyền.')));}this.error.hidden=false;this.error.textContent=businessError(e);}
+  private showError(e:unknown):void{if(!this.host)return;const forbidden=e instanceof BusinessApiError&&e.status===403;if(forbidden)this.clearSensitiveView();this.error.hidden=false;this.error.textContent=businessError(e)+(forbidden?' '+(tabNeeds[this.tab()]??'')+' Các mục khác vẫn dùng bình thường.':'');}
   private async logout():Promise<void>{try{await this.api.call(BASE+'/push/unsubscribe',{});}catch{/* session-bound subscriptions also stop on server logout */}try{const r=await navigator.serviceWorker?.getRegistration('/business/');await(await r?.pushManager.getSubscription())?.unsubscribe();}catch{/* best effort cleanup of this browser endpoint */}await this.auth.logout();}
   private async refresh(force:boolean):Promise<void>{
     if(!this.host||this.busy||document.visibilityState==='hidden')return;
