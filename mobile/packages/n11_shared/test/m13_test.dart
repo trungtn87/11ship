@@ -27,17 +27,9 @@ class _FakePlatform implements UpdatePlatform {
   _FakePlatform(this.dir);
 
   final Directory dir;
-  int storeOpened = 0;
-  bool storeResult = true;
 
   @override
   Future<String> dataDirectory() async => dir.path;
-
-  @override
-  Future<bool> openStore() async {
-    storeOpened += 1;
-    return storeResult;
-  }
 }
 
 /// What the server answers for a build older than the newest published one. The download fields are still sent by today's server; the app ignores them.
@@ -57,13 +49,12 @@ Map<String, Object?> _check({bool required = false, int versionCode = 9, String 
 
 Map<String, Object?> _latest() => <String, Object?>{'status': 'COMPATIBLE', 'update_available': false, 'required': false, 'release': null};
 
-AppUpdateController _controller(_FakeTransport transport, _FakePlatform platform, {int installed = 5, bool playReady = false, DateTime Function()? now}) => AppUpdateController(
+AppUpdateController _controller(_FakeTransport transport, _FakePlatform platform, {int installed = 5, DateTime Function()? now}) => AppUpdateController(
       component: 'SHIP',
       installedVersionCode: installed,
       installedVersionName: '1.0',
       transport: transport,
       platform: platform,
-      playListingReady: playReady,
       now: now,
     );
 
@@ -150,9 +141,8 @@ void main() {
       final _FakePlatform platform = _FakePlatform(dir);
       final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), platform);
       await c.check();
-      expect(c.showNotice, isTrue);
-      expect(await c.openStore(), isFalse, reason: 'no Play listing announced: no button leads anywhere');
-      expect(platform.storeOpened, 0);
+      c.dismiss();
+      expect(c.showNotice, isFalse, reason: 'even a REQUIRED answer can be postponed: nothing waits on it');
     });
 
     test('the same or an older build than the installed one, and a server that says nothing is newer, give no notice and are "up to date"', () async {
@@ -228,17 +218,6 @@ void main() {
       await c.check();
       expect(c.showNotice, isTrue);
     });
-
-    test('with the Play listing announced the button opens the store of this application; a failure to open it is reported, not hidden', () async {
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check())), platform, playReady: true);
-      await c.check();
-      expect(c.canOpenStore, isTrue);
-      expect(await c.openStore(), isTrue);
-      platform.storeResult = false;
-      expect(await c.openStore(), isFalse);
-      expect(platform.storeOpened, 2);
-    });
   });
 
   group('update popup (#280)', () {
@@ -251,7 +230,7 @@ void main() {
       await tester.pump();
       expect(find.byKey(const Key('m13-update-popup')), findsOneWidget);
       expect(find.textContaining('1.9'), findsOneWidget);
-      expect(find.byKey(const Key('m13-update-open-store')), findsNothing, reason: 'no Play listing announced: no button to nowhere');
+      expect(find.byKey(const Key('m13-update-open-store')), findsNothing, reason: 'nothing to download or open: no action button');
       expect(find.textContaining('sau khi xong đơn'), findsNothing);
       await tester.tap(find.byKey(const Key('m13-update-later')));
       await tester.pump();
@@ -266,19 +245,6 @@ void main() {
       await tester.pump();
       await tester.tapAt(const Offset(4, 4));
       await tester.pump();
-      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
-    });
-
-    testWidgets('with the Play listing announced "Cập nhật" opens the store and closes the popup', (WidgetTester tester) async {
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), platform, playReady: true);
-      await tester.pumpWidget(app(c));
-      await tester.runAsync(c.check);
-      await tester.pump();
-      await tester.runAsync(() async => tester.tap(find.byKey(const Key('m13-update-open-store'))));
-      await tester.pump();
-      await tester.pump();
-      expect(platform.storeOpened, 1);
       expect(find.byKey(const Key('m13-update-popup')), findsNothing);
     });
 

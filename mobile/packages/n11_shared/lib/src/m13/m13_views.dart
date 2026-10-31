@@ -4,7 +4,7 @@ import '../tokens.dart';
 import 'm13_update.dart';
 
 // M13 (issue #280): one light popup when a newer build exists. It covers nothing for good (a tap outside or "Để sau" closes it), never depends on a sign-in
-// or on orders, and its "Cập nhật" button exists only when the Google Play listing is announced.
+// or on orders. It has no download or install button: there is nothing to open until the apps are on Google Play.
 
 /// Wraps the app: the app is never rebuilt, the popup is drawn above it while there is a newer build the person has not postponed.
 class AppUpdateGate extends StatelessWidget {
@@ -107,16 +107,6 @@ class AppUpdatePopup extends StatelessWidget {
                         runSpacing: 8,
                         children: <Widget>[
                           TextButton(key: const Key('m13-update-later'), onPressed: controller.dismiss, child: const Text('Để sau')),
-                          if (controller.canOpenStore)
-                            FilledButton(
-                              key: const Key('m13-update-open-store'),
-                              onPressed: () async {
-                                if (await controller.openStore()) {
-                                  controller.dismiss();
-                                }
-                              },
-                              child: const Text('Cập nhật'),
-                            ),
                         ],
                       ),
                     ],

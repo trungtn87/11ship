@@ -7,12 +7,8 @@ import '../account/api_client.dart';
 
 // M13 (Owner decision 31/10/2026, issue #280): the app only COMPARES its build number with the newest one the server announces and tells the person
 // when a newer build exists. It downloads nothing, installs nothing, asks for no install permission and never decides that the person is "in the middle
-// of an order": the notice never blocks an order or a delivery. With a listing on Google Play the person is sent to that listing, which does the
-// download and the update. Until the listing is announced (PLAY_LISTING_READY) the notice has no button that leads anywhere.
-
-/// True only in a build made after both apps are published on Google Play under their own application id and signing key
-/// (`--dart-define=PLAY_LISTING_READY=true`). Never a link that does not exist yet.
-const bool kPlayListingReady = bool.fromEnvironment('PLAY_LISTING_READY');
+// of an order": the notice never blocks an order or a delivery, and it never blocks a hand-installed test build. Until the apps have a Google Play
+// listing there is nothing to open, so the notice has no button.
 
 /// A newer build than the installed one.
 @immutable
@@ -43,12 +39,9 @@ class AppUpdateNotice {
   }
 }
 
-/// What only the phone can do: where the app may keep its own data and opening this app's own Google Play page (Kotlin: N11UpdateChannel).
+/// What only the phone can do: where the app may keep its own data (Kotlin: N11UpdateChannel).
 abstract class UpdatePlatform {
   Future<String> dataDirectory();
-
-  /// Opens the Play listing of THIS application id (never another address). False when it could not be opened.
-  Future<bool> openStore();
 }
 
 class MethodChannelUpdatePlatform implements UpdatePlatform {
@@ -70,17 +63,6 @@ class MethodChannelUpdatePlatform implements UpdatePlatform {
       throw StateError('NO_DIRECTORY');
     }
   }
-
-  @override
-  Future<bool> openStore() async {
-    try {
-      return await _channel.invokeMethod<bool>('openStore') ?? false;
-    } on PlatformException {
-      return false;
-    } on MissingPluginException {
-      return false;
-    }
-  }
 }
 
 enum AppUpdatePhase { idle, checking, upToDate, available, failed }
@@ -93,7 +75,6 @@ class AppUpdateController extends ChangeNotifier {
     required this.installedVersionName,
     required this.transport,
     required this.platform,
-    this.playListingReady = kPlayListingReady,
     this.minInterval = const Duration(minutes: 30),
     this.failureRetryInterval = const Duration(minutes: 2),
     this.enabled = true,
@@ -106,9 +87,6 @@ class AppUpdateController extends ChangeNotifier {
   final String installedVersionName;
   final ApiTransport transport;
   final UpdatePlatform platform;
-
-  /// Whether this build may send the person to Google Play (see [kPlayListingReady]).
-  final bool playListingReady;
   final Duration minInterval;
 
   /// After a check that could not be answered (offline, server error) the next one may come this soon, not after the full [minInterval]:
@@ -131,9 +109,6 @@ class AppUpdateController extends ChangeNotifier {
   /// True when the last check could not be answered. It says nothing about the build: never shown as "up to date".
   bool get lastCheckFailed => _lastCheckFailed;
 
-  /// The person can be sent to Google Play.
-  bool get canOpenStore => playListingReady;
-
   /// The popup is shown for a newer build the person has not postponed ("Để sau" holds until the app is started again or an even newer build appears).
   bool get showNotice => _notice != null && _dismissedCode != _notice!.versionCode;
 
@@ -142,14 +117,6 @@ class AppUpdateController extends ChangeNotifier {
       _dismissedCode = _notice!.versionCode;
       notifyListeners();
     }
-  }
-
-  /// Opens the Play listing. Does nothing while the listing is not announced.
-  Future<bool> openStore() async {
-    if (!playListingReady) {
-      return false;
-    }
-    return platform.openStore();
   }
 
   Future<void> check({bool force = false}) async {
