@@ -92,4 +92,19 @@ export class DeliveryActors {
     }
     throw new AppError('ROLE_NOT_AVAILABLE');
   }
+
+  /**
+   * M11 (issue #261): a Shipper acting on their OWN feedback file (reviews of them, complaints they sent, requests for a second look). A SUSPENDED or
+   * CLOSING Shipper keeps this; it gives no right to take, hold or change a delivery, to go online or to touch a wallet. The session, the 11Ship DRIVER
+   * context and the DRIVER role are checked exactly as for every Shipper command. A PENDING or CLOSED profile is still refused.
+   */
+  async shipperOwnFeedback(context: TransactionContext, principal: AuthPrincipal, mode: 'update' | 'share'): Promise<ShipperCaller> {
+    const actor = await this.authority.lock(context, principal, mode);
+    await this.#assertShipDriver(context, actor);
+    const driver = mode === 'update' ? await this.drivers.lockByUserId(context, actor.userId) : await this.drivers.findByUserId(context, actor.userId);
+    if (driver?.status === 'SUSPENDED') {
+      return { actor, driver };
+    }
+    return { actor, driver: this.#usable(driver, false) };
+  }
 }

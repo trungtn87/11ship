@@ -20,7 +20,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import { AdjustmentRow, AttachmentMeta, ComplaintRepository, ComplaintRow, MessageRow } from '../feedback/complaint-repository';
 import { attachmentView, reconsiderationView } from '../feedback/complaint-views';
 import { COMMISSION_ADJUSTMENT_PORT, CommissionAdjustmentPort } from '../feedback/feedback-finance-port';
-import { CLOSED_STATUSES, OPERATIONS, OPEN_STATUSES } from '../feedback/feedback-constants';
+import { CLOSED_STATUSES, complaintInScope, FeedbackScope, OPERATIONS, OPEN_STATUSES, reviewInScope } from '../feedback/feedback-constants';
 import { FeedbackRecorder } from '../feedback/feedback-recorder';
 import { awaitingTargetValid, correctionDiffers, reconsiderationOpen } from '../feedback/feedback-rules';
 import { ReviewRepository, ReviewRow, ReviewWithReply } from '../feedback/review-repository';
@@ -36,6 +36,9 @@ interface Authorized {
   readonly role: AdminRole;
   readonly actorId: string;
   readonly handle: boolean;
+  /** Issue #261: the parts of M11 (shop, Shipper) this administrator may READ, and may HANDLE (view + review right on that app). Records outside read as not found. */
+  readonly view: FeedbackScope;
+  readonly manage: FeedbackScope;
   /** Reserved for the money right: true for SYSTEM and for an ADMIN whose grant row is GRANTED now. */
   readonly finance: boolean;
 }
@@ -86,9 +89,9 @@ export class AdminFeedbackService {
     const known = await this.actor.precheck(sessionToken, { required: false });
     return this.transactions.withTransaction(async (context): Promise<JsonObject> => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
-      await this.#authorize(context, known, 'view');
-      const page = await this.reviews.listForAdmin(context, { kind: query.kind, stars: query.stars, visibility: query.visibility, q: query.q, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, shipper: query.shipper }, { limit: query.limit, offset: query.offset });
-      const counters = await this.reviews.adminCounters(context);
+      const auth = await this.#authorize(context, known, 'view');
+      const page = await this.reviews.listForAdmin(context, { kind: query.kind, stars: query.stars, visibility: query.visibility, q: query.q, fromMs: query.fromMs, toMs: query.toMs, shop: query.shop, shipper: query.shipper }, { limit: query.limit, offset: query.offset }, auth.view);
+      const counters = await this.reviews.adminCounters(context, auth.view);
       return { items: page.rows.map((r) => this.#reviewLine(r)), total: page.total, limit: query.limit, offset: query.offset, counters: { total: counters.total, hidden: counters.hidden, low: counters.low } };
     });
   }
@@ -99,7 +102,7 @@ export class AdminFeedbackService {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const auth = await this.#authorize(context, known, 'view');
       const review = await this.reviews.findShopReviewWithReply(context, reviewId);
-      if (review === undefined) {
+      if (review === undefined || !reviewInScope(review.kind, auth.view)) {
         throw new AppError('REVIEW_NOT_FOUND');
       }
       return this.#reviewDetail(context, review, auth);
@@ -120,7 +123,7 @@ export class AdminFeedbackService {
       async (context) => {
         const auth = await this.#authorize(context, known, 'handle');
         const review = await this.reviews.lockById(context, reviewId);
-        if (review === undefined) {
+        if (review === undefined || !reviewInScope(review.kind, auth.manage)) {
           throw new AppError('REVIEW_NOT_FOUND');
         }
         if (review.version !== input.expectedVersion) {
@@ -170,7 +173,7 @@ export class AdminFeedbackService {
     const delivery = r.deliveryId === null ? undefined : await this.deliveries.findById(context, r.deliveryId);
     const complaints = await this.complaints.complaintsOfReview(context, r.reviewId);
     const can: string[] = [];
-    if (auth.handle) {
+    if (reviewInScope(r.kind, auth.manage)) {
       can.push(r.visibility === 'VISIBLE' ? 'hide' : 'restore');
     }
     return {
@@ -202,9 +205,10 @@ export class AdminFeedbackService {
         context,
         { q: query.q, status: query.status, category: query.category, submitterRole: query.submitterRole, shop: query.shop, shipper: query.shipper, assignee, fromMs: query.fromMs, toMs: query.toMs },
         { limit: query.limit, offset: query.offset },
+        auth.view,
       );
       const waiting = await this.complaints.pendingReconsiderationIds(context, page.rows.map((c) => c.complaintId));
-      const counters = await this.complaints.adminCounters(context);
+      const counters = await this.complaints.adminCounters(context, auth.view);
       return {
         items: page.rows.map((c) => ({
           complaint_id: c.complaintId,
@@ -245,7 +249,7 @@ export class AdminFeedbackService {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const auth = await this.#authorize(context, known, 'view');
       const complaint = await this.complaints.findById(context, complaintId);
-      if (complaint === undefined) {
+      if (complaint === undefined || !complaintInScope(complaint, auth.view)) {
         throw new AppError('COMPLAINT_NOT_FOUND');
       }
       return this.#complaintDetail(context, complaint, auth);
@@ -257,7 +261,11 @@ export class AdminFeedbackService {
     const known = await this.actor.precheck(sessionToken, { required: false });
     return this.transactions.withTransaction(async (context) => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
-      await this.#authorize(context, known, 'view');
+      const auth = await this.#authorize(context, known, 'view');
+      const owner = await this.complaints.findById(context, complaintId);
+      if (owner === undefined || !complaintInScope(owner, auth.view)) {
+        throw new AppError('COMPLAINT_NOT_FOUND');
+      }
       const attachment = await this.complaints.findAttachment(context, attachmentId);
       if (attachment === undefined || attachment.complaintId !== complaintId) {
         throw new AppError('COMPLAINT_ATTACHMENT_NOT_FOUND');
@@ -300,7 +308,7 @@ export class AdminFeedbackService {
       async (context) => {
         const auth = await this.#authorize(context, known, 'handle');
         const complaint = await this.complaints.lockById(context, complaintId);
-        if (complaint === undefined) {
+        if (complaint === undefined || !complaintInScope(complaint, auth.manage)) {
           throw new AppError('COMPLAINT_NOT_FOUND');
         }
         if (complaint.version !== input.expectedVersion) {
@@ -337,7 +345,7 @@ export class AdminFeedbackService {
         if (!OPEN_STATUSES.includes(c.status)) {
           return conflict();
         }
-        if (input.assignee !== null && !(await this.#mayHandle(context, input.assignee))) {
+        if (input.assignee !== null && !(await this.#mayHandle(context, input.assignee, c))) {
           throw new AppError('ADMIN_INPUT_INVALID');
         }
         if (input.assignee === c.assignedTo) {
@@ -695,7 +703,7 @@ export class AdminFeedbackService {
 
   #can(c: ComplaintRow, auth: Authorized, delivery: DeliveryRow | undefined, adjustments: readonly AdjustmentRow[], reconsiderationPending: boolean): string[] {
     const adjusted = adjustments.map((a) => a.kind);
-    if (!auth.handle) {
+    if (!complaintInScope(c, auth.manage)) {
       return [];
     }
     const open = OPEN_STATUSES.includes(c.status);
@@ -744,7 +752,7 @@ export class AdminFeedbackService {
   }
 
   /** May this administrator take a complaint now? (the assignee must be able to handle it, or the file would be unreachable) */
-  async #mayHandle(context: TransactionContext, userId: string): Promise<boolean> {
+  async #mayHandle(context: TransactionContext, userId: string, c: ComplaintRow): Promise<boolean> {
     if (!isCanonicalUuid(userId)) {
       return false;
     }
@@ -755,7 +763,7 @@ export class AdminFeedbackService {
     if (membership.adminRole === 'SYSTEM') {
       return true;
     }
-    return mayHandle(await this.permissions.permissions(context, userId));
+    return complaintInScope(c, manageScopeOf(await this.permissions.permissions(context, userId)));
   }
 
   // ---- authorization -----------------------------------------------------------------------------------------------------------
@@ -771,16 +779,19 @@ export class AdminFeedbackService {
     const nowMs = await freshClockMs(context);
     this.actor.assertSessionLive(locked, nowMs);
     if (role === 'SYSTEM') {
-      return { role, actorId: known.userId, handle: true, finance: true };
+      const all = { shop: true, driver: true };
+      return { role, actorId: known.userId, handle: true, view: all, manage: all, finance: true };
     }
-    const mayView = rows.some((r) => r.canView && (r.app === 'SHOP' || r.app === 'DRIVER'));
+    const view = viewScopeOf(rows);
+    const manage = manageScopeOf(rows);
+    const mayView = view.shop || view.driver;
     const handle = mayHandle(rows);
     if (!mayView || (right === 'handle' && !handle)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
     // The money right is its own row (read FOR SHARE, kept to the end of the transaction): a revocation waits for a command that already passed.
     const grant = await this.grants.lockForShare(context, known.userId, FINANCE_ADJUSTMENT_RIGHT);
-    return { role, actorId: known.userId, handle, finance: grant?.state === 'GRANTED' };
+    return { role, actorId: known.userId, handle, view, manage, finance: grant?.state === 'GRANTED' };
   }
 
   async #authorizeReplay(context: TransactionContext, guard: JsonObject, known: SessionLookup, right: Right): Promise<true> {
@@ -797,3 +808,13 @@ function mayHandle(rows: readonly PermissionRow[]): boolean {
   return rows.some((r) => r.canView && r.canReviewProfile && (r.app === 'SHOP' || r.app === 'DRIVER'));
 }
 
+
+/** The parts of M11 an ADMIN may read: the SHOP app grant covers shop data, the DRIVER app grant covers Shipper data (issue #261). */
+function viewScopeOf(rows: readonly PermissionRow[]): FeedbackScope {
+  return { shop: rows.some((r) => r.canView && r.app === 'SHOP'), driver: rows.some((r) => r.canView && r.app === 'DRIVER') };
+}
+
+/** ... and may handle: VIEW and the review right on that app. The lock right and the money right are never part of this. */
+function manageScopeOf(rows: readonly PermissionRow[]): FeedbackScope {
+  return { shop: rows.some((r) => r.canView && r.canReviewProfile && r.app === 'SHOP'), driver: rows.some((r) => r.canView && r.canReviewProfile && r.app === 'DRIVER') };
+}

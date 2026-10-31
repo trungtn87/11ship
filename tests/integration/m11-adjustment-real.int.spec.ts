@@ -162,7 +162,7 @@ describe('M11 + M04 — commission adjustment posted by the wallet package', () 
 
   it('the money right is checked at the moment of the press: it is not offered without it and the call is refused', async () => {
     const f = await pendingCharge(2_000);
-    const plain = await w.adminWith('DRIVER', { review: true });
+    const plain = await w.adminWith('BOTH', { review: true });
     const detail = data(await w.adminGet(plain, `/complaints/${f.id}`));
     expect(detail.can).not.toContain('retry-commission');
     const refused = await w.adminPost(plain, `/complaints/${f.id}/actions/retry-commission`, { expected_version: Number((detail.complaint as Json).version), reason: 'Không có quyền tiền' });

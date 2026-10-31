@@ -357,6 +357,24 @@ describe('M11.02 complaints', () => {
     expect(errorCode(await w.asShop('POST', '/shop/me/complaints', complaint({ category: 'SHIPPER_REVIEW', review_id: review })))).toBe('COMPLAINT_TARGET_NOT_FOUND');
   });
 
+  it('#261: a SUSPENDED Shipper still reads and answers the feedback files that are THEIRS (reviews, complaints, supplements), but takes no delivery and reads no one else\'s', async () => {
+    const mine = await w.newShipper();
+    const id = await w.completed(mine);
+    const filed = dataOf(await w.asShipper(mine, 'POST', '/driver/complaints', complaint({ delivery_id: id }))) as Json;
+    const complaintId = String((filed.complaint as Json).complaint_id);
+    await w.app.pool.query(`UPDATE app.drivers SET status = 'SUSPENDED', accepting_deliveries = false, updated_at = clock_timestamp() WHERE driver_id = $1::uuid`, [mine.driverId]);
+
+    expect((await w.asShipper(mine, 'GET', '/driver/complaints?scope=open')).status).toBe(200);
+    expect((await w.asShipper(mine, 'GET', `/driver/complaints/${complaintId}`)).status).toBe(200);
+    expect((await w.asShipper(mine, 'GET', '/driver/reviews')).status).toBe(200);
+    const added = await w.asShipper(mine, 'POST', `/driver/complaints/${complaintId}/supplement`, { body: 'Bổ sung: tôi vẫn giữ biên nhận.' });
+    expect(added.status).toBe(200);
+    // Someone else's file is still not found, and the lock gives no right to work: no offers, no accept.
+    expect(errorCode(await w.asShipper(s, 'GET', `/driver/complaints/${complaintId}`))).toBe('COMPLAINT_NOT_FOUND');
+    expect(errorCode(await w.asShipper(mine, 'GET', '/driver/deliveries/offers'))).toBe('ROLE_NOT_AVAILABLE');
+    expect(await w.count(`SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND status = 'SUSPENDED' AND accepting_deliveries = false`, [mine.driverId])).toBe(1);
+  });
+
   it('the customer complains only about the order their ACCOUNT placed; the order module not connected is said honestly', async () => {
     const customer = await w.newCustomer();
     const other = await w.newCustomer();

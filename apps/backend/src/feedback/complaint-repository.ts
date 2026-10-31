@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { AudienceRole, ComplaintCategory, ComplaintStatus, MessageKind, MessageVisibility, PartyRole } from './feedback-constants';
+import { AudienceRole, ComplaintCategory, ComplaintStatus, FeedbackScope, MessageKind, MessageVisibility, PartyRole } from './feedback-constants';
 import { escapeLike } from './review-repository';
 
 // SQL of app.complaints, app.complaint_messages, app.complaint_attachments, app.complaint_reconsiderations and app.complaint_adjustments (M11 owns the
@@ -465,25 +465,27 @@ export class ComplaintRepository {
 
   // ---- administration ----------------------------------------------------------------------------------------------------------
 
-  async listForAdmin(context: TransactionContext, f: AdminComplaintFilter, page: { limit: number; offset: number }): Promise<{ rows: ComplaintRow[]; total: number }> {
+  async listForAdmin(context: TransactionContext, f: AdminComplaintFilter, page: { limit: number; offset: number }, scope: FeedbackScope): Promise<{ rows: ComplaintRow[]; total: number }> {
     const where = `($1::text = '' OR c.code ILIKE $1::text ESCAPE '!' OR c.related_code ILIKE $1::text ESCAPE '!')
         AND ($2::text IS NULL OR c.status = $2::text) AND ($3::text IS NULL OR c.category = $3::text) AND ($4::text IS NULL OR c.submitter_role = $4::text)
         AND ($5::text = '' OR c.shop_name ILIKE $5::text ESCAPE '!') AND ($6::text = '' OR c.driver_name ILIKE $6::text ESCAPE '!' OR c.driver_code ILIKE $6::text ESCAPE '!')
         AND ($7::text IS NULL OR ($7::text = 'NONE' AND c.assigned_to IS NULL) OR c.assigned_to::text = $7::text)
-        AND ($8::timestamptz IS NULL OR c.created_at >= $8::timestamptz) AND ($9::timestamptz IS NULL OR c.created_at < $9::timestamptz)`;
+        AND ($8::timestamptz IS NULL OR c.created_at >= $8::timestamptz) AND ($9::timestamptz IS NULL OR c.created_at < $9::timestamptz)
+        AND ${complaintScopeSql('c', 10, 11)}`;
     const like = (v: string): string => (v === '' ? '' : `%${escapeLike(v)}%`);
-    const args = [like(f.q), f.status, f.category, f.submitterRole, like(f.shop), like(f.shipper), f.assignee, f.fromMs === null ? null : new Date(f.fromMs), f.toMs === null ? null : new Date(f.toMs)];
+    const args = [like(f.q), f.status, f.category, f.submitterRole, like(f.shop), like(f.shipper), f.assignee, f.fromMs === null ? null : new Date(f.fromMs), f.toMs === null ? null : new Date(f.toMs), scope.shop, scope.driver];
     const total = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.complaints c WHERE ${where}`, args);
-    const result = await context.query<RawComplaint>(`SELECT ${C_COLUMNS} FROM app.complaints c WHERE ${where} ORDER BY c.created_at DESC, c.complaint_id LIMIT $10 OFFSET $11`, [...args, page.limit, page.offset]);
+    const result = await context.query<RawComplaint>(`SELECT ${C_COLUMNS} FROM app.complaints c WHERE ${where} ORDER BY c.created_at DESC, c.complaint_id LIMIT $12 OFFSET $13`, [...args, page.limit, page.offset]);
     return { rows: result.rows.map(toComplaint), total: safe(total.rows[0]?.n ?? '0') };
   }
 
-  async adminCounters(context: TransactionContext): Promise<{ pending: number; inProgress: number; awaitingInfo: number; reconsiderations: number }> {
+  async adminCounters(context: TransactionContext, scope: FeedbackScope): Promise<{ pending: number; inProgress: number; awaitingInfo: number; reconsiderations: number }> {
     const result = await context.query<{ pending: string; in_progress: string; awaiting: string; recon: string }>(
-      `SELECT count(*) FILTER (WHERE status = 'PENDING')::text AS pending, count(*) FILTER (WHERE status = 'IN_PROGRESS')::text AS in_progress,
-              count(*) FILTER (WHERE status = 'AWAITING_INFO')::text AS awaiting,
-              (SELECT count(*) FROM app.complaint_reconsiderations WHERE status = 'PENDING')::text AS recon
-         FROM app.complaints`,
+      `SELECT count(*) FILTER (WHERE c.status = 'PENDING')::text AS pending, count(*) FILTER (WHERE c.status = 'IN_PROGRESS')::text AS in_progress,
+              count(*) FILTER (WHERE c.status = 'AWAITING_INFO')::text AS awaiting,
+              (SELECT count(*) FROM app.complaint_reconsiderations rc JOIN app.complaints c2 ON c2.complaint_id = rc.complaint_id WHERE rc.status = 'PENDING' AND ${complaintScopeSql('c2', 1, 2)})::text AS recon
+         FROM app.complaints c WHERE ${complaintScopeSql('c', 1, 2)}`,
+      [scope.shop, scope.driver],
     );
     const r = result.rows[0];
     return { pending: safe(r?.pending ?? '0'), inProgress: safe(r?.in_progress ?? '0'), awaitingInfo: safe(r?.awaiting ?? '0'), reconsiderations: safe(r?.recon ?? '0') };
@@ -641,3 +643,7 @@ const toAdjustment = (r: RawAdjustment): AdjustmentRow => ({
   updatedAtMs: safe(r.updated_ms),
   version: safe(r.version),
 });
+
+/** The same rule as complaintInScope() in SQL (shop part, driver part as parameters): a file naming both a shop and a Shipper needs both parts. */
+const complaintScopeSql = (alias: string, shopParam: number, driverParam: number): string =>
+  `((${alias}.shop_id IS NULL OR $${String(shopParam)}::boolean) AND (${alias}.driver_id IS NULL OR $${String(driverParam)}::boolean) AND (${alias}.shop_id IS NOT NULL OR ${alias}.driver_id IS NOT NULL OR ($${String(shopParam)}::boolean AND $${String(driverParam)}::boolean)))`;
