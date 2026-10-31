@@ -331,6 +331,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#285](https://github.com/trungtn87/11ship/pull/285) (11Food/UX) Tab Gọi ship cho khách, bỏ logo Trang chủ (#282) | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `db3a880` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#286](https://github.com/trungtn87/11ship/pull/286) (M13) Cập nhật chỉ so sánh phiên bản và thông báo; bỏ khóa… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4cc8156` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#287](https://github.com/trungtn87/11ship/pull/287) (11Food/M05) Gợi ý địa chỉ tùy chọn, không che bản đồ; Lưu… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3c88ec7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#288](https://github.com/trungtn87/11ship/pull/288) (M14/M06) Triển khai Valhalla trên VPS: script, loopback ht… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `7e4802e` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
@@ -338,6 +339,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 - `UNCLASSIFIED_PR` PR #285: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #286: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #287: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
+- `UNCLASSIFIED_PR` PR #288: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
