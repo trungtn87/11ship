@@ -262,6 +262,8 @@ Future<void> _crossRole(
 }
 
 void main() {
+  callShipTabTests();
+  callShipNarrowTest();
   testWidgets(
       'A: CUSTOMER notification switches to SHOP_OWNER inside Food shell',
       (WidgetTester tester) => _crossRole(
@@ -290,8 +292,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CustomerOrderDetailScreen), findsOneWidget);
     expect(f.source.opens, 1);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    // A real Android sequence (the framework asserts on a direct paused -> resumed).
+    for (final AppLifecycleState s in <AppLifecycleState>[AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused, AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+      tester.binding.handleAppLifecycleStateChanged(s);
+    }
     await tester.pumpAndSettle();
     expect(find.byType(CustomerOrderDetailScreen), findsOneWidget);
     expect(find.byType(N11BottomNav), findsOneWidget);
@@ -436,5 +440,50 @@ void main() {
     expect(f.session.identity?.activeRole, 'SHOP_OWNER');
     expect(find.byType(FinanceRequestsScreen), findsOneWidget);
     expect(find.byType(N11BottomNav), findsOneWidget);
+  });
+}
+
+// Issue #282: "Gọi ship" is the third bottom tab in customer mode only, and opens the existing call form in one tap.
+void callShipTabTests() {
+  testWidgets('customer mode: five tabs in order, Gọi ship opens the call form in one tap',
+      (WidgetTester tester) async {
+    final _Fixture f = await _fixture('CUSTOMER');
+    addTearDown(f.dispose);
+    await _pump(tester, f);
+    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.label), <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Quán', 'Tài khoản']);
+    await tester.tap(find.byKey(const Key('tab-call')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m07-c-pickup-addr')), findsOneWidget);
+    expect(find.byType(N11BottomNav), findsOneWidget);
+    // Home is one tap away again.
+    await tester.tap(find.byKey(const Key('tab-home')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('m07-c-pickup-addr')), findsNothing);
+  });
+
+  testWidgets('shop-owner mode has no standalone Gọi ship tab', (WidgetTester tester) async {
+    final _Fixture f = await _fixture('SHOP_OWNER');
+    addTearDown(f.dispose);
+    await _pump(tester, f);
+    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.id), <String>['home', 'orders', 'shop', 'account']);
+    expect(find.byKey(const Key('tab-call')), findsNothing);
+  });
+}
+
+void callShipNarrowTest() {
+  testWidgets('five tabs fit a 320dp phone with large text without overflow', (WidgetTester tester) async {
+    final _Fixture f = await _fixture('CUSTOMER');
+    addTearDown(f.dispose);
+    await _pump(tester, f);
+    tester.view.physicalSize = const Size(640, 1280);
+    tester.view.devicePixelRatio = 2;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const Key('tab-call')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Gọi ship'), findsWidgets);
   });
 }

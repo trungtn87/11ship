@@ -17,7 +17,13 @@ import 'm07_widgets.dart';
 // ---- Customer Call Screen ----------------------------------------------------------------------------------------------------
 
 class CustomerCallScreen extends StatefulWidget {
-  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.initialSenderName, this.initialSenderPhone});
+  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.initialSenderName, this.initialSenderPhone, this.embedded = false, this.onCreated});
+
+  /// True when the form is the root of the "Gọi ship" tab: the shell draws the title bar, so this screen draws none.
+  final bool embedded;
+
+  /// Called with the created delivery instead of replacing this screen by its detail (the tab opens the detail and clears the form afterwards).
+  final Future<void> Function(DeliveryView created)? onCreated;
 
   final CustomerDeliverySource source;
   final M07PinPickerBuilder? pinPicker;
@@ -240,7 +246,9 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
       created = await widget.source.create(input, key: key);
     });
 
-    if (ok && created != null && mounted) {
+    if (ok && created != null && mounted && widget.onCreated != null) {
+      await widget.onCreated!(created!);
+    } else if (ok && created != null && mounted) {
       Navigator.of(context).pushReplacement(
         n11Route(CustomerDeliveryDetailScreen(source: widget.source, deliveryId: created!.deliveryId, mapBuilder: widget.mapBuilder, feedbackSlot: widget.feedbackSlot)),
       );
@@ -250,7 +258,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Gọi shipper giao hàng')),
+      appBar: widget.embedded ? null : AppBar(title: const Text('Gọi shipper giao hàng')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(N11Space.pad),
         child: Form(
@@ -981,6 +989,44 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
           );
         },
       ),
+    );
+  }
+}
+
+// ---- Customer "Gọi ship" tab -------------------------------------------------------------------------------------------------
+
+/// The root of the 11Food "Gọi ship" tab: the same call form as the one under Đơn hàng → Giao hàng, one tap from the bottom bar. After a trip is
+/// created its detail opens on top; coming back shows an empty form again (the trip itself is under Đơn hàng → Giao hàng).
+class CustomerCallTab extends StatefulWidget {
+  const CustomerCallTab({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot});
+
+  final CustomerDeliverySource source;
+  final M07PinPickerBuilder? pinPicker;
+  final M07MapBuilder? mapBuilder;
+  final M07FeedbackSlot? feedbackSlot;
+
+  @override
+  State<CustomerCallTab> createState() => _CustomerCallTabState();
+}
+
+class _CustomerCallTabState extends State<CustomerCallTab> {
+  int _generation = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomerCallScreen(
+      key: ValueKey<int>(_generation),
+      source: widget.source,
+      pinPicker: widget.pinPicker,
+      mapBuilder: widget.mapBuilder,
+      feedbackSlot: widget.feedbackSlot,
+      embedded: true,
+      onCreated: (DeliveryView created) async {
+        await Navigator.of(context).push(
+          n11Route(CustomerDeliveryDetailScreen(source: widget.source, deliveryId: created.deliveryId, mapBuilder: widget.mapBuilder, feedbackSlot: widget.feedbackSlot)),
+        );
+        if (mounted) setState(() => _generation++);
+      },
     );
   }
 }

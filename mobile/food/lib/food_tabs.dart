@@ -187,6 +187,16 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
         title: 'Đơn hàng',
         body: (BuildContext context, ShellActions actions) =>
             _orders(session, flows)),
+    // Customer mode only (a guest included): the shop-owner hat keeps calling a Shipper from its own orders.
+    if (!_shopHat(session))
+      TabSpec(
+          id: 'call',
+          label: 'Gọi ship',
+          icon: Icons.two_wheeler_outlined,
+          title: 'Gọi shipper giao hàng',
+          fullBleed: true,
+          body: (BuildContext context, ShellActions actions) =>
+              _callShip(session, flows)),
     if (session.status == SessionStatus.signedIn &&
         (session.identity?.availableRoles.contains('SHOP_OWNER') == true ||
             session.identity?.shopOnboarding == 'INCOMPLETE' ||
@@ -248,6 +258,42 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
           publicApi: m02.publicApi,
           ratings: flows?.feedback,
           bell: _bell(context, flows, actions)));
+}
+
+// ---- Gọi ship tab (customer mode) -------------------------------------------------------------------------------------
+
+/// The shop-owner hat: a signed-in owner who has not switched to the customer role (the same rule as the Đơn hàng tab).
+bool _shopHat(SessionController session) =>
+    session.status == SessionStatus.signedIn &&
+    session.identity?.availableRoles.contains('SHOP_OWNER') == true &&
+    session.identity?.activeRole != 'CUSTOMER';
+
+Widget _callShip(SessionController session, AppFlows? flows) {
+  final CustomerDeliverySource? source = flows?.customerDeliveries;
+  if (session.status == SessionStatus.signedIn &&
+      session.identity?.customerAccess == true &&
+      source != null) {
+    return CustomerCallTab(
+        source: source,
+        mapBuilder: foodMapBuilder(),
+        pinPicker: foodPinPicker(),
+        feedbackSlot: _customerFeedbackSlot(flows));
+  }
+  return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+          N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
+      child: session.status == SessionStatus.signedIn
+          ? const EmptyState(
+              icon: Icons.two_wheeler_outlined,
+              title: 'Chưa gọi ship được',
+              text: 'Tài khoản này chưa dùng được chức năng gọi shipper.')
+          : vstack(<Widget>[
+              _guestPrompt(session, 'Đăng nhập để gọi shipper giao hàng.', flows),
+              const EmptyState(
+                  icon: Icons.two_wheeler_outlined,
+                  title: 'Gọi shipper giao hàng',
+                  text: 'Sau khi đăng nhập, bạn có thể gọi shipper lấy và giao đồ.'),
+            ]));
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------

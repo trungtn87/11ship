@@ -61,7 +61,7 @@ try:
     subprocess.run(['adb', 'emu', 'geo', 'fix', '106.257', '22.665'], check=False, capture_output=True, text=True)
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
-    wait('11Food')
+    # The brand logo (which exposed the text 11Food) is no longer on the Home (#282); the search field and the shop heading prove the Home.
     wait('Tìm quán hoặc món')
     wait('Quán gần bạn')
     capture('01-food-home-v5-390x844')
