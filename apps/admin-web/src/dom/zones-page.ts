@@ -5,7 +5,7 @@ import { h, primary, secondary, svg } from './dom.js';
 
 // Hệ thống -> Vùng hoạt động (issue #253): the list and one area. SYSTEM creates, edits and switches areas; every administrator reads. The server decides
 // again on every call. Nothing here deletes an area. The admin page loads no third-party tile (its CSP is img-src 'self'), so the circle is drawn as a
-// scaled sketch and the centre can be checked on OpenStreetMap through a plain link.
+// scaled sketch with its centre and radius written out (no third-party call, no external URL).
 
 export interface ZonesHost {
   readonly role: 'SYSTEM' | 'ADMIN';
@@ -54,8 +54,7 @@ export function circleSketch(coverage: CoverageInput | null): HTMLElement {
   const label = svg('text', { x: '140', y: '94', 'font-size': '11', fill: 'currentColor', 'text-anchor': 'middle' });
   label.textContent = coverage.radius_m >= 1000 ? `${(coverage.radius_m / 1000).toLocaleString('vi-VN')} km` : `${coverage.radius_m} m`;
   node.append(label);
-  const link = h('a', { href: `https://www.openstreetmap.org/?mlat=${coverage.lat}&mlon=${coverage.lng}#map=12/${coverage.lat}/${coverage.lng}`, target: '_blank', rel: 'noopener noreferrer', class: 'table-link' }, 'Xem tâm vùng trên OpenStreetMap');
-  return h('div', { class: 'detail-block' }, node as unknown as Node, h('p', { class: 'hint' }, link));
+  return h('div', { class: 'detail-block' }, node as unknown as Node, h('p', { class: 'hint' }, `Tâm ${coverage.lat.toFixed(5)}, ${coverage.lng.toFixed(5)} · bán kính ${coverage.radius_m.toLocaleString('vi-VN')} m`));
 }
 
 function impactBlock(impact: ZoneImpact): HTMLElement {
