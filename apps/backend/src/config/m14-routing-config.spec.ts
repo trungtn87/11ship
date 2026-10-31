@@ -14,9 +14,15 @@ describe('M14 routing configuration', () => {
     expect(parse({ M14_ROUTING_ORIGIN: 'https://routing.example.vn:8443', M14_ROUTING_TIMEOUT_MS: '3000' })).toEqual({ ok: true, config: { origin: 'https://routing.example.vn:8443', timeoutMs: 3000 } });
   });
 
-  it('refuses cleartext except loopback in development / test, and anything that is not a bare origin', () => {
+  it('refuses cleartext except a loopback host (any environment), and anything that is not a bare origin', () => {
     expect(parse({ M14_ROUTING_ORIGIN: 'http://routing.example.vn' })).toEqual({ ok: false, invalid: ['M14_ROUTING_ORIGIN'] });
-    expect(parse({ M14_ROUTING_ORIGIN: 'http://127.0.0.1:8080' }, 'production')).toEqual({ ok: false, invalid: ['M14_ROUTING_ORIGIN'] });
+    expect(parse({ M14_ROUTING_ORIGIN: 'http://127.0.0.1:18014' }, 'production')).toEqual({ ok: true, config: { origin: 'http://127.0.0.1:18014', timeoutMs: 8000 } });
+    expect(parse({ M14_ROUTING_ORIGIN: 'http://localhost:18014' }, 'production')).toMatchObject({ ok: true });
+    expect(parse({ M14_ROUTING_ORIGIN: 'http://[::1]:18014' }, 'production')).toMatchObject({ ok: true });
+    // Only loopback: a private or public address, or a look-alike host name, stays refused over http in production.
+    for (const bad of ['http://10.0.0.5:18014', 'http://103.9.78.67:18014', 'http://127.0.0.1.evil.example', 'http://localhost.example:18014', 'http://0.0.0.0:18014', 'http://127.0.0.1:18014/route', 'http://user:pw@127.0.0.1:18014']) {
+      expect([bad, parse({ M14_ROUTING_ORIGIN: bad }, 'production')]).toEqual([bad, { ok: false, invalid: ['M14_ROUTING_ORIGIN'] }]);
+    }
     expect(parse({ M14_ROUTING_ORIGIN: 'http://127.0.0.1:8080' }, 'development')).toMatchObject({ ok: true, config: { origin: 'http://127.0.0.1:8080' } });
     for (const bad of ['https://u:p@host.example', 'https://host.example/path', 'https://host.example/?q=1', 'https://host.example/#x', 'ftp://host.example', 'not a url']) {
       expect([bad, parse({ M14_ROUTING_ORIGIN: bad })]).toEqual([bad, { ok: false, invalid: ['M14_ROUTING_ORIGIN'] }]);

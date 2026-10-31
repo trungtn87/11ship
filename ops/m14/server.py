@@ -12,7 +12,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BOUNDS = (106.0, 22.43, 106.52, 22.91)
 ENGINE = 'http://127.0.0.1:8002'
-CAPACITY = threading.BoundedSemaphore(2)
+def env_int(name, default, low, high):
+    """A bounded integer limit from the environment; anything else keeps the default (the gateway never starts on a nonsense limit)."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.isdigit() or not low <= int(raw) <= high:
+        return default
+    return int(raw)
+
+
+# Defaults suit the public test service. On the VPS the backend is ONE client address (the container gateway), so its per-address ceiling and the
+# parallel routes it may run are raised through the environment (ops/m14/vps.sh); the routing port is never published beyond 127.0.0.1.
+RATE_PER_MINUTE = env_int('M14_RATE_PER_MIN', 20, 1, 6000)
+MAX_CONCURRENT = env_int('M14_MAX_CONCURRENT', 2, 1, 8)
+CAPACITY = threading.BoundedSemaphore(MAX_CONCURRENT)
 LOCK = threading.Lock()
 REQUESTS = {}
 
@@ -73,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
                     del REQUESTS[k]
             key = self.client_address[0]
             since, count = REQUESTS.get(key, (now, 0))
-            if count >= 20 or len(REQUESTS) >= 256:
+            if count >= RATE_PER_MINUTE or len(REQUESTS) >= 256:
                 return self.reply(429, {'message': 'Dịch vụ đang bận, thử lại sau một phút'})
             REQUESTS[key] = (since, count+1)
         if not CAPACITY.acquire(blocking=False):

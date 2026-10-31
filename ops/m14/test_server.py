@@ -1,6 +1,8 @@
 import math
 import unittest
-from server import validated_request
+import os
+from unittest import mock
+from server import env_int, validated_request
 
 
 class RoutingBoundsTest(unittest.TestCase):
@@ -18,3 +20,14 @@ class RoutingBoundsTest(unittest.TestCase):
         for points in (None, [], [{}], [{}, {}, {}]):
             with self.assertRaises(ValueError):
                 validated_request({'locations': points})
+
+
+class LimitsFromEnvironmentTest(unittest.TestCase):
+    def test_valid_value_is_used_and_nonsense_keeps_the_default(self):
+        with mock.patch.dict(os.environ, {"X": "600"}):
+            self.assertEqual(env_int("X", 20, 1, 6000), 600)
+        for bad in ("0", "-1", "abc", "", "9999999", "1.5"):
+            with self.subTest(bad=bad), mock.patch.dict(os.environ, {"X": bad}):
+                self.assertEqual(env_int("X", 20, 1, 6000), 20)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(env_int("X", 2, 1, 8), 2)
