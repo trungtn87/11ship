@@ -1,3 +1,4 @@
+import { topupTransferCodeOf } from '../wallet-topup/topup-transfer-code';
 import { Inject, Injectable } from '@nestjs/common';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
 import { PROVISIONING_SCOPE_TYPE } from '../admin-provisioning/admin-provisioning-constants';
@@ -256,6 +257,7 @@ export class AdminTopupService {
 function view(row: AdminTopupRow): JsonObject {
   return {
     request_id: row.requestId,
+    transfer_code: topupTransferCodeOf(row.requestId),
     driver_id: row.driverId,
     amount_requested_vnd: Number(row.amountRequestedVnd),
     actual_amount_vnd: row.actualAmountVnd === null ? null : Number(row.actualAmountVnd),

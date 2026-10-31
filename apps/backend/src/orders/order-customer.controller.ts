@@ -7,6 +7,8 @@ import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validat
 import { OrderCustomerDeliveryService } from './order-customer-delivery-service';
 import { OrderCustomerService } from './order-customer-service';
 import { parseCartBody, parseClientRefQuery, parseCustomerCancelBody, parseCustomerListQuery, parseFeeDecisionBody, parseOrderId, parsePlaceBody, parsePreviewBody, parseReasonBody, parseReorderBody } from './order-validation';
+import { AddressChangeService } from '../address-change/address-change-service';
+import { parseCancelAddressChangeBody, parseCreateAddressChangeBody } from '../address-change/address-change-validation';
 
 type Key = string | string[] | undefined;
 
@@ -25,6 +27,7 @@ export class OrderCustomerController {
   constructor(
     private readonly customer: OrderCustomerService,
     private readonly delivery: OrderCustomerDeliveryService,
+    private readonly addressChange: AddressChangeService,
   ) {}
 
   @Get('cart')
@@ -100,6 +103,42 @@ export class OrderCustomerController {
   @HttpCode(200)
   async reorder(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const outcome = await this.customer.reorder(this.#principal(request), parseOrderId(id), parseReorderBody(body), key);
+    return { data: outcome.payload };
+  }
+
+  @Post('orders/:order_id/address-change-request')
+  @HttpCode(200)
+  async requestAddressChange(
+    @Param('order_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.requestOrderChange(
+      this.#principal(request),
+      parseOrderId(id),
+      parseCreateAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
+    return { data: outcome.payload };
+  }
+
+  @Post('orders/:order_id/address-change-request/cancel')
+  @HttpCode(200)
+  async cancelAddressChange(
+    @Param('order_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.cancelOrderChange(
+      this.#principal(request),
+      parseOrderId(id),
+      parseCancelAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
     return { data: outcome.payload };
   }
 

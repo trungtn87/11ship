@@ -230,6 +230,7 @@ export const MENU: readonly MenuGroup[] = [
         access: 'ops',
         children: [
           { id: 'sysops-overview', label: 'Tổng quan', route: { name: 'ops' }, ready: true, access: 'ops' },
+          { id: 'sysops-vps', label: 'Giám sát VPS', route: { name: 'ops-vps' }, ready: true, access: 'ops' },
           { id: 'sysops-incidents', label: 'Sự cố', route: { name: 'ops-incidents' }, ready: true, access: 'ops' },
           { id: 'sysops-gateway', label: 'SMS Gateway', route: { name: 'ops-gateway' }, ready: true, access: 'ops' },
           { id: 'sysops-logs', label: 'Nhật ký', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
@@ -347,6 +348,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'notifications':
       return canSee(role, grants, 'notifications');
     case 'ops':
+    case 'ops-vps':
     case 'ops-incidents':
     case 'ops-incident':
     case 'ops-gateway':
@@ -450,6 +452,8 @@ export function activeMenuId(route: Route): string {
       return 'sysops-releases';
     case 'ops-config':
       return 'sysops-config';
+    case 'ops-vps':
+      return 'sysops-vps';
     case 'administrators':
       return 'administrators';
     case 'access':
@@ -538,6 +542,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'ops':
       return ['Vận hành hệ thống', 'Tổng quan'];
+    case 'ops-vps':
+      return ['Vận hành hệ thống', 'Giám sát VPS'];
     case 'ops-incidents':
       return ['Vận hành hệ thống', 'Sự cố'];
     case 'ops-incident':

@@ -137,6 +137,9 @@ export const APP_ERROR_DEFINITIONS = {
   // Withdrawals (M04-C). Same rule: fixed messages that echo nothing the client sent; a withdrawal of another Shipper reads as not found.
   WITHDRAWAL_AMOUNT_BELOW_MINIMUM: { status: 400, message: 'The withdrawal amount is below the current minimum' },
   WITHDRAWAL_INSUFFICIENT_AVAILABLE: { status: 409, message: 'The available balance is not enough for this withdrawal' },
+  // Owner lock 2026-10-28 (#255): a new withdrawal exists only while the Shipper is CLOSING; a new top-up request does not once the closure is asked (#256).
+  WITHDRAWAL_ONLY_WHEN_CLOSING: { status: 409, message: 'A withdrawal can only be requested while the account is being closed' },
+  TOPUP_NOT_ALLOWED_WHEN_CLOSING: { status: 409, message: 'New top-up requests are not accepted while the account is being closed' },
   WITHDRAWAL_BANK_NOT_VERIFIED: { status: 409, message: 'A verified bank account is needed to withdraw' },
   WITHDRAWAL_NOT_FOUND: { status: 404, message: 'The withdrawal was not found' },
   WITHDRAWAL_STATE_CONFLICT: { status: 409, message: 'The withdrawal is not in a state that allows this action' },
@@ -281,7 +284,9 @@ export const APP_ERROR_DEFINITIONS = {
   USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
   USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
   // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
-  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders or deliveries being processed' },
+  USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
+  // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
+  USER_ACCOUNT_ACTIVITY_UNVERIFIED: { status: 503, message: 'The orders, deliveries and records of the account could not be verified; nothing was changed' },
   USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
 
   // SYSTEM settings (Owner decision 2026-10-14). Fixed messages; nothing the client sent is echoed.
@@ -328,6 +333,13 @@ export const APP_ERROR_DEFINITIONS = {
   RECONSIDERATION_EXPIRED: { status: 409, message: 'The period to ask for another review has ended' },
   RECONSIDERATION_NOT_AVAILABLE: { status: 409, message: 'Another review cannot be requested for this complaint' },
   ADJUSTMENT_HISTORY_REVIEW_REQUIRED: { status: 409, message: 'The whole delivery history must be reviewed before this adjustment' },
+  // Address change requests (#218)
+  ADDRESS_CHANGE_ALREADY_PENDING: { status: 409, message: 'Đang có yêu cầu đổi địa chỉ chờ xử lý' },
+  ADDRESS_CHANGE_NOT_FOUND: { status: 404, message: 'Không tìm thấy yêu cầu đổi địa chỉ' },
+  ADDRESS_CHANGE_NOT_PENDING: { status: 409, message: 'Yêu cầu đổi địa chỉ không còn ở trạng thái chờ' },
+  ADDRESS_CHANGE_NOT_PERMITTED: { status: 403, message: 'Bạn không có quyền thao tác trên yêu cầu này' },
+  CANNOT_CHANGE_AFTER_PICKUP: { status: 409, message: 'Không thể đổi địa chỉ sau khi hàng đã lấy' },
+  ORDER_NOT_CONFIRMED: { status: 409, message: 'Đơn chưa xác nhận' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type AppErrorCode = keyof typeof APP_ERROR_DEFINITIONS;

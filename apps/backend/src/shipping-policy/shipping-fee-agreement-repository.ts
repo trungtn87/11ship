@@ -17,7 +17,7 @@ export interface AgreementEvent {
   readonly requestId: string | null;
   readonly agreementVersion: number;
   readonly onBehalfOf: 'CUSTOMER' | null;
-  readonly feePayer: 'CUSTOMER' | 'SHOP' | null;
+  readonly feePayer: FeePayer | null;
   readonly createdAtMs: number;
 }
 
@@ -200,7 +200,7 @@ export class ShippingFeeAgreementRepository {
       /** 'CUSTOMER' when `actorId` confirmed for the payer, who has no app: the actor stays the person who acted. */
       onBehalfOf: 'CUSTOMER' | null;
       /** Who pays the delivery fee (the agreement's payer), stored on every event. */
-      feePayer: 'CUSTOMER' | 'SHOP' },
+      feePayer: FeePayer },
   ): Promise<void> {
     await context.query(
       `INSERT INTO app.shipping_fee_agreement_events

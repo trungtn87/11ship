@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../account/session_controller.dart';
+import '../m13/m13_ops.dart' show OpsClient;
 import 'm08_source.dart';
 
 // The phone side of push (M08.01): the Android notification permission, the FCM registration token and the tap on a notification, behind one small
@@ -246,8 +247,11 @@ class PushSync {
     try {
       await source.registerPushToken(token);
       _registered = token;
-    } on NotificationFailure {
-      // Not bound: it is tried again at the next resume. Nothing claims the phone will receive pushes until then.
+    } on NotificationFailure catch (error) {
+      // Not bound: it is tried again at the next resume. Nothing claims the phone will receive pushes until then. The token itself is never part of the report.
+      if (error.kind == NotificationFailureKind.server) {
+        OpsClient.report(kind: 'PUSH_ERROR', code: 'PUSH_REGISTER_${error.kind.name.toUpperCase()}', message: 'Push token could not be registered');
+      }
     }
   }
 

@@ -42,9 +42,12 @@ export function shopMayCancel(state: DeliveryState): boolean {
  * After the goods are picked up (Owner decision 2026-10-23) only the CREATOR of the request may cancel: the customer for an ORDER, the shop for a DIRECT
  * call. The shop of an ORDER (the customer's request) and the Shipper never can; the backend decides it here, not the app.
  */
-export function creatorMayCancelAfterPickup(state: DeliveryState, source: 'ORDER' | 'DIRECT', actor: 'SHOP' | 'CUSTOMER'): boolean {
+export function creatorMayCancelAfterPickup(state: DeliveryState, source: 'ORDER' | 'DIRECT' | 'CUSTOMER', actor: 'SHOP' | 'CUSTOMER'): boolean {
   if (state !== 'delivering' && state !== 'picked_up') {
     return false;
+  }
+  if (source === 'CUSTOMER') {
+    return actor === 'CUSTOMER';
   }
   return source === 'ORDER' ? actor === 'CUSTOMER' : actor === 'SHOP';
 }

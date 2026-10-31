@@ -20,8 +20,8 @@ import { TopupRequestRepository } from '../wallet/topup-request-repository';
 export interface OfferDeliveryFacts {
   readonly state: string;
   readonly version: number;
-  readonly pickupLat: number;
-  readonly pickupLng: number;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
   readonly remainingMs: number;
 }
 
@@ -140,8 +140,10 @@ export class NotificationRecipients {
    * Shippers worth asking M06 about: ACTIVE, switched on, with a live 11Ship session and a latest position inside a box around the pickup point. A cheap
    * prefilter only; the eligibility decision (radius, freshness, wallet, load, batching rules) is M06's and is asked afterwards.
    */
-  async candidateShippers(context: TransactionContext, pickupLat: number, pickupLng: number, radiusM: number, limit: number): Promise<{ driverId: string; userId: string }[]> {
-    const near = await this.locations.driversNear(context, pickupLat, pickupLng, radiusM, limit);
+  async candidateShippers(context: TransactionContext, pickupLat: number | null, pickupLng: number | null, radiusM: number, limit: number): Promise<{ driverId: string; userId: string }[]> {
+    const near = pickupLat !== null && pickupLng !== null
+      ? await this.locations.driversNear(context, pickupLat, pickupLng, radiusM, limit)
+      : await this.drivers.listAcceptingIds(context, limit);
     const accepting = await this.drivers.listAcceptingAmong(context, near);
     const byDriver = new Map(accepting.map((a) => [a.driverId, a]));
     const out: { driverId: string; userId: string }[] = [];
@@ -177,7 +179,7 @@ export class NotificationRecipients {
       code: d.code,
       state: d.state,
       searchOpen: d.state === 'waiting_driver' && nowMs < d.searchExpiresAtMs,
-      shopOwner: (await this.shops.ownerUserIdOfShop(context, d.shopId)) ?? null,
+      shopOwner: d.shopId === null ? d.requestedBy : ((await this.shops.ownerUserIdOfShop(context, d.shopId)) ?? null),
       assignmentWaiting: mine !== undefined && mine.status === 'ACTIVE' && mine.pickedUpAtMs === null && (d.state === 'accepted' || d.state === 'location_confirmed'),
       assignmentUser: driver !== undefined && (driver.status === 'ACTIVE' || driver.status === 'CLOSING') ? driver.userId : null,
     };
@@ -191,7 +193,7 @@ export class NotificationRecipients {
     }
     let access = false;
     if (app === 'FOOD') {
-      access = await this.shops.isOwnerOfShop(context, d.shopId, userId);
+      access = d.shopId === null ? d.requestedBy === userId : await this.shops.isOwnerOfShop(context, d.shopId, userId);
     } else {
       for (const assignment of await this.deliveries.listAssignments(context, deliveryId)) {
         if ((await this.drivers.findById(context, assignment.driverId))?.userId === userId) {

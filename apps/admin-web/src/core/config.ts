@@ -85,7 +85,7 @@ export const CONFIG_FIELDS: Record<ConfigKind, readonly FieldSpec[]> = {
   ],
   WALLET: [
     { key: 'topup_min_vnd', label: 'Nạp tối thiểu mỗi yêu cầu', type: 'integer', min: 1, max: 1_000_000_000, unit: 'đ' },
-    { key: 'withdraw_min_vnd', label: 'Rút tối thiểu mỗi yêu cầu', type: 'integer', min: 1, max: 1_000_000_000, unit: 'đ' },
+    { key: 'withdraw_min_vnd', label: 'Rút tối thiểu (tham số lịch sử, không áp dụng khi đóng hoạt động)', type: 'integer', min: 1, max: 1_000_000_000, unit: 'đ' },
   ],
   ELIGIBILITY: [
     { key: 'external_max_deliveries', label: 'Số đơn tối đa shipper ngoài giữ cùng lúc', type: 'integer', min: 1, max: 20, unit: 'đơn' },

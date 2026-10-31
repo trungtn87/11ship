@@ -42,6 +42,12 @@ export class DriverEligibilityReader {
     return { onboarding: ONBOARDING_STATE_OF[row.status], selectable: row.status !== 'CLOSED' };
   }
 
+  /** The id of the user's driver profile in ANY status, or undefined: the account lifecycle resolves the shipper side of an account through this port. */
+  async driverIdOf(context: TransactionContext, userId: string): Promise<string | undefined> {
+    const result = await context.query<{ driver_id: string }>('SELECT driver_id FROM app.drivers WHERE user_id = $1::uuid', [userId]);
+    return result.rows[0]?.driver_id;
+  }
+
   /** Does the user have a driver profile in ANY status? The account lifecycle reads this as "the account has business data" (never deleted, locked). */
   async hasProfile(context: TransactionContext, userId: string): Promise<boolean> {
     const result = await context.query('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid LIMIT 1', [userId]);

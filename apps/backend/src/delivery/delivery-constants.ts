@@ -12,7 +12,7 @@ export const TERMINAL_STATES: readonly DeliveryState[] = ['completed', 'failed',
 export const BEFORE_PICKUP_STATES: readonly DeliveryState[] = ['waiting_driver', 'accepted', 'location_confirmed'];
 
 export type FeeMode = 'STANDARD' | 'AGREED' | 'PICKUP_AGREEMENT';
-export type FeePayer = 'CUSTOMER' | 'SHOP';
+export type FeePayer = 'CUSTOMER' | 'SHOP' | 'SENDER' | 'RECIPIENT';
 export type AssignmentStatus = 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED_BY_SHIPPER' | 'CANCELLED_BY_SHOP' | 'CANCELLED_BY_CUSTOMER' | 'CANCELLED_BY_SYSTEM' | 'RELEASED_BY_ADMIN';
 export type ActorType = 'SHOP' | 'SHIPPER' | 'ADMIN' | 'SYSTEM' | 'CUSTOMER';
 
@@ -66,6 +66,12 @@ export const OPERATIONS = {
   fail: 'delivery.fail.v1',
   cancelAfterPickup: 'delivery.cancel_after_pickup.v1',
   customerFee: 'delivery.fee.customer_decide.v1',
+  customerCreate: 'delivery.customer_create.v1',
+  customerCancel: 'delivery.customer_cancel.v1',
+  customerCancelAfterPickup: 'delivery.customer_cancel_after_pickup.v1',
+  trackingLink: 'delivery.tracking_link.v1',
+  trackingLocation: 'delivery.tracking_location.v1',
+  trackingRevoke: 'delivery.tracking_revoke.v1',
   feeAnswerExpired: 'delivery.fee_answer_expired.v1',
   adminAction: 'admin.delivery.action.v1',
   sweep: 'delivery.sweep.v1',

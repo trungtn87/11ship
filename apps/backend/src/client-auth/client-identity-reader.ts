@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CustomerProfileRepository } from '../auth/customer-profile-repository';
+import { PhoneVerificationStatus, phoneVerificationStatusOf } from '../auth/account-origin';
 import { CUSTOMER_ROLE } from '../auth/auth-constants';
 import { UserRepository } from '../auth/user-repository';
 import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
@@ -19,6 +20,11 @@ export interface ClientIdentity {
   /** The EFFECTIVE active context: the stored one while it is still selectable, otherwise null. */
   readonly active_role: string | null;
   readonly profile: { readonly full_name: string | null; readonly version: number | null };
+  /**
+   * Whether the phone number was proven by an OTP: VERIFIED, UNVERIFIED (made while SYSTEM had the registration OTP off) or UNVERIFIED_TEST.
+   * Read from the stored origin; nothing ever turns UNVERIFIED into VERIFIED except a registration that carried a real proof.
+   */
+  readonly phone_verification_status: PhoneVerificationStatus;
   readonly capabilities: {
     readonly customer_access: boolean;
     readonly shop_profile_read: boolean;
@@ -90,6 +96,7 @@ export class ClientIdentityReader {
         available_roles: [],
         active_role: null,
         profile: { full_name: profile?.fullName ?? null, version: profile?.version ?? null },
+        phone_verification_status: await this.#verificationOf(context, input.userId),
         capabilities: { customer_access: false, shop_profile_read: false, shop_manage: false, driver_profile_read: false },
         onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
         onboarding_required: false,
@@ -119,6 +126,7 @@ export class ClientIdentityReader {
       available_roles: available,
       active_role: activeRole,
       profile: { full_name: profile?.fullName ?? null, version: profile?.version ?? null },
+      phone_verification_status: await this.#verificationOf(context, input.userId),
       capabilities: {
         customer_access: input.enabled && held.has(CUSTOMER_ROLE),
         shop_profile_read: input.enabled && shop.onboarding !== 'NOT_STARTED',
@@ -129,6 +137,12 @@ export class ClientIdentityReader {
       onboarding_required: onboardingRequired,
       role_selection_required: available.length > 0 && activeRole === null,
     };
+  }
+
+  /** The caller holds the user row lock; a missing row cannot be called verified. */
+  async #verificationOf(context: TransactionContext, userId: string): Promise<PhoneVerificationStatus> {
+    const user = await this.users.findById(context, userId);
+    return user === undefined ? 'UNVERIFIED' : phoneVerificationStatusOf(user.accountOrigin);
   }
 }
 

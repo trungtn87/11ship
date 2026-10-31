@@ -6,6 +6,8 @@ import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { DeliveryShipperService } from './delivery-shipper-service';
 import { parseCounterBody, parseDeliveryId, parseDestinationBody, parseEmptyBody, parseLocationBody, parseReasonBody, parseScopeQuery, parseVersionBody } from './delivery-validation';
+import { AddressChangeService } from '../address-change/address-change-service';
+import { parseDecideAddressChangeBody } from '../address-change/address-change-validation';
 
 type Key = string | string[] | undefined;
 
@@ -22,7 +24,10 @@ function requestIdOf(request: { requestId?: string }): string {
 @UseGuards(SessionAuthGuard)
 @Controller('driver')
 export class DeliveryShipperController {
-  constructor(private readonly shipper: DeliveryShipperService) {}
+  constructor(
+    private readonly shipper: DeliveryShipperService,
+    private readonly addressChange: AddressChangeService,
+  ) {}
 
   @Get('deliveries/offers')
   async offers(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
@@ -114,6 +119,24 @@ export class DeliveryShipperController {
   @HttpCode(200)
   async location(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return { data: await this.shipper.reportLocation(this.#principal(request), parseLocationBody(body)) };
+  }
+
+  @Post('deliveries/:delivery_id/address-change-request/decide')
+  @HttpCode(200)
+  async decideAddressChange(
+    @Param('delivery_id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const outcome = await this.addressChange.decideDeliveryChange(
+      this.#principal(request),
+      parseDeliveryId(id),
+      parseDecideAddressChangeBody(body),
+      key,
+      requestIdOf(request),
+    );
+    return { data: outcome.payload };
   }
 
   #principal(request: AuthenticatedRequest): AuthPrincipal {
