@@ -4,13 +4,19 @@ import '../account/session_controller.dart';
 import '../m13/m13_ops.dart' show OpsClient;
 
 class PlaceSearchResult {
-  const PlaceSearchResult({required this.id, required this.name, required this.address, required this.latitude, required this.longitude, required this.inCaoBang});
+  const PlaceSearchResult({required this.id, required this.name, required this.address, required this.latitude, required this.longitude, required this.inCaoBang, this.kind, this.approximate = false});
   final String id;
   final String name;
   final String address;
   final double latitude;
   final double longitude;
   final bool inCaoBang;
+
+  /// What it is in words ("Trường học", "Đường"), when the source says.
+  final String? kind;
+
+  /// One point somewhere on a road / village / river, not where a house is: the person is asked to adjust the pin.
+  final bool approximate;
 }
 
 abstract class PlaceSearchApi {

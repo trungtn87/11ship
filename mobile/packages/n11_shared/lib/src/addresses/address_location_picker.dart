@@ -7,7 +7,7 @@ import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../tokens.dart';
 import '../widgets/form_feedback.dart';
-import '../account/models.dart';
+import 'place_index.dart';
 import 'place_search.dart';
 
 /// Address text and its explicitly selected point are returned together, only on Save.
@@ -119,6 +119,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   bool _searchFailed = false;
   bool _searched = false;
   bool _suggestionsHidden = false;
+  String? _pinHint;
   int _searchRevision = 0;
   bool _programmaticText = false;
   bool _pinTextUnconfirmed = false;
@@ -166,7 +167,10 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     super.dispose();
   }
 
-  PlaceSearchApi? get _searchApi => widget.searchApi ?? (widget.session == null ? null : HttpPlaceSearchApi(widget.session!));
+  /// The offline index by default (no Internet, no sign-in, nothing sent while typing); tests inject their own.
+  PlaceSearchApi get _searchApi => widget.searchApi ?? OfflinePlaceSearchApi.shared;
+
+  bool get _offlineSearch => _searchApi is OfflinePlaceSearchApi;
 
   void _textChanged(String value) {
     if (_programmaticText) return;
@@ -175,17 +179,17 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     final String query = value.trim();
     final int revision = ++_searchRevision;
     _suggestionsHidden = false;
-    if (query.runes.length < 2 || _searchApi == null) {
+    if (query.runes.length < 2) {
       setState(() { _results = const <PlaceSearchResult>[]; _searching = false; _searchFailed = false; _searched = false; });
       return;
     }
     setState(() { _searching = true; _searchFailed = false; _searched = false; });
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
+    _debounce = Timer(Duration(milliseconds: _offlineSearch ? 120 : 500), () async {
       try {
-        final List<PlaceSearchResult> results = await _searchApi!.search(query);
+        final List<PlaceSearchResult> results = await _searchApi.search(query);
         if (!mounted || revision != _searchRevision || _text.text.trim() != query) return;
         setState(() { _results = results; _searching = false; _searched = true; });
-      } on AuthFailure {
+      } on Object {
         if (!mounted || revision != _searchRevision) return;
         setState(() { _results = const <PlaceSearchResult>[]; _searching = false; _searchFailed = true; _searched = true; });
       }
@@ -201,9 +205,10 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     _searchRevision++;
     _results = const <PlaceSearchResult>[];
     _pick(result.latitude, result.longitude);
+    setState(() => _pinHint = result.approximate ? 'Ghim đặt ở một điểm trên "${result.name}", chưa phải đúng nhà bạn. Hãy chạm bản đồ để chỉnh ghim và thêm số nhà vào ô địa chỉ.' : null);
   }
 
-  void _clearPin() => setState(() { _lat = null; _lng = null; _accuracyMeters = null; _currentPosition = false; _pinTextUnconfirmed = false; _pointRevision++; });
+  void _clearPin() => setState(() { _pinHint = null; _lat = null; _lng = null; _accuracyMeters = null; _currentPosition = false; _pinTextUnconfirmed = false; _pointRevision++; });
 
   void _pick(double lat, double lng) {
     if (!mounted ||
@@ -223,6 +228,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       _pinText = _text.text.trim();
       _pinTextUnconfirmed = false;
       _error = null;
+      _pinHint = null;
     });
   }
 
@@ -320,8 +326,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
                     dense: true,
                     leading: const Icon(Icons.place_outlined),
                     title: Text(result.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(result.address, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: result.inCaoBang ? const Text('Cao Bằng') : null,
+                    subtitle: Text(result.kind == null ? result.address : '${result.kind} · ${result.address}', maxLines: 1, overflow: TextOverflow.ellipsis),
                     onTap: () => _selectResult(result),
                   ),
               ],
@@ -370,7 +375,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
               ),
             ),
           ),
-          if (_searching) const LinearProgressIndicator(key: Key('place-search-loading')),
+          if (_searching && !_offlineSearch) const LinearProgressIndicator(key: Key('place-search-loading')),
           if (_searchFailed)
             ListTile(
               key: const Key('place-search-error'),
@@ -408,6 +413,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
                 ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Kiểm tra và chỉnh ghim nếu cần.'
                 : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.',
           ),
+          if (_pinHint != null) Text(_pinHint!, key: const Key('place-approximate-hint'), style: N11Text.caption),
           if (_lat != null && _lng != null)
             Align(alignment: Alignment.centerLeft, child: TextButton(key: const Key('location-clear-pin'), onPressed: _clearPin, child: const Text('Bỏ ghim'))),
           if (_locating)
