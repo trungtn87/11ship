@@ -333,10 +333,11 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#287](https://github.com/trungtn87/11ship/pull/287) (11Food/M05) Gợi ý địa chỉ tùy chọn, không che bản đồ; Lưu… | Đã merge (`MERGED`) | — | — | — | `3c88ec7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#288](https://github.com/trungtn87/11ship/pull/288) (M14/M06) Triển khai Valhalla trên VPS: script, loopback ht… | Đã merge (`MERGED`) | — | — | — | `fc6c2a2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#289](https://github.com/trungtn87/11ship/pull/289) (11Food/M05/M14) Tìm địa điểm offline từ OSM thay Photon kh… | Đã merge (`MERGED`) | — | — | — | `af57913` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#290](https://github.com/trungtn87/11ship/pull/290) (S-00) Bảo toàn file local chưa commit: tls.dart, security-… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `9505c73` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
-Không có vấn đề nào cần chú ý.
+- `UNCLASSIFIED_PR` PR #290: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình
 
