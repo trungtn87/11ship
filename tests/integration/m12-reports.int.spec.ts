@@ -72,7 +72,7 @@ describe('M12-E — reports and exports', () => {
     system = await systemSession(admin);
     hash = await new Argon2idPasswordHasher().hash(ADMIN_PASSWORD);
     full = await activatedAdmin(admin, system, [permission('DRIVER', { view: true, review: true }), permission('SHOP')], `Báo cáo đủ ${tag}`);
-    reader = await activatedAdmin(admin, system, [permission('DRIVER')], `Báo cáo xem ${tag}`);
+    reader = await activatedAdmin(admin, system, [permission('DRIVER'), permission('SHOP')], `Báo cáo xem ${tag}`);
     nobody = await activatedAdmin(admin, system, [permission('DRIVER')], `Không quyền ${tag}`);
     shopId = await createActiveShopFor(admin.pool, system.account.userId);
     shopIds.push(shopId);
@@ -130,6 +130,29 @@ describe('M12-E — reports and exports', () => {
     expect((await report(full, 'deliveries', `range=custom&from=${day}&to=${day}&limit=5000`)).status).toBe(400); // no way to ask for "everything"
     // SYSTEM reads every report without grants.
     expect((await getAs(admin, systemLoginOf(system), `/reports/money?range=custom&from=${day}&to=${day}`)).status).toBe(200);
+  });
+
+  it('#262 scope: report.read opens only the reports whose sides the ADMIN may view (SHOP-only: shops; DRIVER-only: shippers and money; the mixed ones need both); SYSTEM reads all; an export of a closed report is refused', async () => {
+    const driverOnly = await activatedAdmin(admin, system, [permission('DRIVER')], `Báo cáo chỉ shipper ${tag}`);
+    const shopOnly = await activatedAdmin(admin, system, [permission('SHOP')], `Báo cáo chỉ quán ${tag}`);
+    for (const who of [driverOnly, shopOnly]) {
+      await grant(who, 'report.read');
+      await grant(who, 'report.export');
+      await grant(who, 'wallet.read');
+    }
+    const statuses = async (who: ActivatedAdmin): Promise<Record<string, number>> => {
+      const out: Record<string, number> = {};
+      for (const kind of ['deliveries', 'shops', 'shippers', 'quality', 'money']) out[kind] = (await report(who, kind)).status;
+      return out;
+    };
+    expect(await statuses(driverOnly)).toEqual({ deliveries: 403, shops: 403, shippers: 200, quality: 403, money: 200 });
+    expect(await statuses(shopOnly)).toEqual({ deliveries: 403, shops: 200, shippers: 403, quality: 403, money: 403 });
+    expect(await statuses(full)).toEqual({ deliveries: 200, shops: 200, shippers: 200, quality: 200, money: 200 });
+    // Creating an export of a report outside the scope is refused too, and creates no job.
+    const before = (await admin.pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.report_export_jobs WHERE requested_by = $1::uuid', [driverOnly.userId])).rows[0]?.n;
+    const refused = await create(driverOnly, { kind: 'deliveries', format: 'csv', range: 'custom', from: day, to: day });
+    expect(refused.status).toBe(403);
+    expect((await admin.pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.report_export_jobs WHERE requested_by = $1::uuid', [driverOnly.userId])).rows[0]?.n).toBe(before);
   });
 
   it('2. a historic Vietnam day: the day edges decide, a recall is a delivery and not an Order, the tile and the list share one number', async () => {
@@ -359,7 +382,7 @@ describe('M12-E — reports and exports', () => {
     expect((await getAs(admin, nobody.login, '/reports/exports')).status).toBe(403);
 
     // An administrator who may export deliveries but not money.
-    const limited = await activatedAdmin(admin, system, [permission('DRIVER')], `Xuất giới hạn ${tag}`);
+    const limited = await activatedAdmin(admin, system, [permission('DRIVER'), permission('SHOP')], `Xuất giới hạn ${tag}`);
     await grant(limited, 'report.read');
     await grant(limited, 'report.export');
     expect((await create(limited, { ...body, kind: 'money' })).status).toBe(403);
