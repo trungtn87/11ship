@@ -23,6 +23,7 @@ describe('M08.06 — notification administration', () => {
   let driverViewer: AdminLogin;
   let shopViewer: AdminLogin;
   const ids = { ship: randomUUID(), food: randomUUID(), failed: randomUUID() };
+  let lastViewerUserId = '';
 
   async function viewerWith(app: 'DRIVER' | 'SHOP'): Promise<AdminLogin> {
     const phone = randomPhone();
@@ -34,7 +35,8 @@ describe('M08.06 — notification administration', () => {
     const secret = String(adminData(ok(await post(admin, '/totp/enrollment', session))).secret);
     ok(await post(admin, '/complete', session, { code: totpNow(secret) }));
     const found = await admin.pool.query<{ user_id: string }>('SELECT user_id FROM app.users WHERE phone_normalized = $1', [phone.normalized]);
-    return login({ phone, userId: (found.rows[0] as { user_id: string }).user_id, secret });
+    lastViewerUserId = (found.rows[0] as { user_id: string }).user_id;
+    return login({ phone, userId: lastViewerUserId, secret });
   }
 
   async function login(who: { phone: Phone; userId: string; secret: string }): Promise<AdminLogin> {
@@ -129,6 +131,34 @@ describe('M08.06 — notification administration', () => {
     const shopOnly = adminData(await get(shopViewer, '/notifications/work-queue')) as Json;
     expect((shopOnly.failures as Json[]).some((f) => f.notification_id === ids.failed)).toBe(false);
     expect(all.push_provider_configured).toBe(false);
+
+    // Issue #259: the COUNTERS follow the same scope as the lists. The seeded FAILED push and the NO_TOKEN skip belong to SHIP; the Food-only viewer counts neither,
+    // the Shipper-only viewer counts them, and neither single-app viewer is given the system-wide dead-event or goods-case figures.
+    const counters = (r: Json): Json => r.counters as Json;
+    expect(counters(shopOnly).failed_pushes).toBe(0);
+    expect(counters(shopOnly).no_device).toBe(0);
+    expect(counters(shopOnly).dead_events).toBe(0);
+    expect(counters(shopOnly).goods_cases).toBe(0);
+    expect(shopOnly.goods_cases).toEqual([]);
+    const driverOnly = adminData(await get(driverViewer, '/notifications/work-queue')) as Json;
+    expect(counters(driverOnly).failed_pushes).toBeGreaterThanOrEqual(1);
+    expect(counters(driverOnly).no_device).toBeGreaterThanOrEqual(1);
+    expect(counters(driverOnly).dead_events).toBe(0);
+    expect(counters(driverOnly).goods_cases).toBe(0);
+    expect(counters(all).failed_pushes).toBeGreaterThanOrEqual(counters(driverOnly).failed_pushes as number);
+  });
+
+  it('#259: a permission taken away while the session is open closes the work queue at the very next request; a permission added opens only its own app', async () => {
+    const viewer = await viewerWith('DRIVER');
+    const userId = lastViewerUserId;
+    const before = adminData(await get(viewer, '/notifications/work-queue')) as Json;
+    expect((before.counters as Json).failed_pushes).toBeGreaterThanOrEqual(1);
+    expect((await get(viewer, '/notifications?app=FOOD')).status).toBe(403);
+    await admin.pool.query("UPDATE app.admin_app_permissions SET can_view = false WHERE user_id = $1::uuid AND app = 'DRIVER'", [userId]);
+    const after = await get(viewer, '/notifications/work-queue');
+    expect([after.status, adminErrorCode(after)]).toEqual([403, 'ADMIN_FORBIDDEN']);
+    await admin.pool.query("UPDATE app.admin_app_permissions SET can_view = true WHERE user_id = $1::uuid AND app = 'DRIVER'", [userId]);
+    expect((await get(viewer, '/notifications/work-queue')).status).toBe(200);
   });
 
   it('the settings: defaults, any ADMIN reads, only SYSTEM writes with the right version and within bounds; the timers are shown read-only; one audit row', async () => {

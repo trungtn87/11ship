@@ -238,6 +238,18 @@ export function reminderCopy(reminder: 'SEARCH_5' | 'SEARCH_15' | 'PICKUP', coun
 
 export const NEW_OFFERS_COPY = { kind: 'NEW_OFFERS' as const, title: 'Có đơn giao hàng mới', body: 'Xem danh sách đơn có thể nhận.' };
 
+/**
+ * Issue #259: what a Shipper reads for each state of a withdrawal. Only PAID says the money was paid (the Administration confirmed it); every other state
+ * says exactly what it is. No amount, bank or account number: the text may be shown on a lock screen.
+ */
+export const WITHDRAWAL_COPY = {
+  PENDING: { kind: 'WITHDRAWAL_REQUESTED' as const, title: 'Đã nhận yêu cầu rút tiền', body: 'Yêu cầu rút tiền của bạn đang chờ xử lý. Chưa có khoản tiền nào được chuyển. Mở ví để xem chi tiết.' },
+  PROCESSING: { kind: 'WITHDRAWAL_PROCESSING' as const, title: 'Yêu cầu rút tiền đang được xử lý', body: 'Quản trị viên đang xử lý yêu cầu rút tiền của bạn. Chưa xác nhận đã chuyển tiền. Mở ví để xem chi tiết.' },
+  RECONCILIATION: { kind: 'WITHDRAWAL_RECONCILING' as const, title: 'Yêu cầu rút tiền cần đối soát', body: 'Yêu cầu rút tiền của bạn cần được đối soát trước khi có kết quả. Chưa xác nhận đã chuyển tiền. Mở ví để xem chi tiết.' },
+  PAID: { kind: 'WITHDRAWAL_PAID' as const, title: 'Đã xác nhận chuyển tiền rút', body: 'Quản trị viên đã xác nhận chuyển khoản cho yêu cầu rút tiền của bạn. Mở ví để xem chi tiết.' },
+  CANCELLED: { kind: 'WITHDRAWAL_CANCELLED' as const, title: 'Yêu cầu rút tiền đã kết thúc không chuyển tiền', body: 'Yêu cầu rút tiền của bạn đã được hủy, không có khoản tiền nào được chuyển. Mở ví để xem chi tiết.' },
+};
+
 export const TOPUP_COPY = {
   CONFIRMED: { kind: 'TOPUP_CONFIRMED' as const, title: 'Nạp tiền thành công', body: 'Yêu cầu nạp tiền của bạn đã được xác nhận. Mở ví để xem số dư.' },
   REJECTED: { kind: 'TOPUP_REJECTED' as const, title: 'Yêu cầu nạp tiền bị từ chối', body: 'Yêu cầu nạp tiền của bạn chưa được chấp nhận. Mở ví để xem chi tiết.' },

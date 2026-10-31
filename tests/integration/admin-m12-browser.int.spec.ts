@@ -27,6 +27,7 @@ describe('M12 administration web (real browser)', () => {
   let tlsDir = '';
   let shopId = '';
   let viewer: ActivatedAdmin;
+  let driverViewer: ActivatedAdmin; // DRIVER app only (the M12-A "only DRIVER view" case)
   const shots: Array<{ name: string; data: Buffer }> = [];
 
   const shot = async (page: Page, name: string): Promise<void> => {
@@ -61,7 +62,8 @@ describe('M12 administration web (real browser)', () => {
     browser = await launchChrome(spkiHash);
     system = await systemSession(app);
     // Administrators exist before any browser login: a SYSTEM login in the page ends the earlier SYSTEM session.
-    viewer = await activatedAdmin(app, system, [permission('DRIVER')], `Xem điều hành ${tag}`);
+    viewer = await activatedAdmin(app, system, [permission('DRIVER'), permission('SHOP')], `Xem điều hành ${tag}`);
+    driverViewer = await activatedAdmin(app, system, [permission('DRIVER')], `Xem điều hành shipper ${tag}`);
     shopId = await createActiveShopFor(app.pool, system.account.userId);
     await seedDelivery(app.pool, { shopId, userId: system.account.userId });
     await seedDelivery(app.pool, { shopId, userId: system.account.userId, state: 'search_stopped' });
@@ -78,7 +80,7 @@ describe('M12 administration web (real browser)', () => {
     if (app !== undefined) {
       await purgeDeliveriesOfShops(app.pool, [shopId]);
       await purgeBackups(app.pool);
-      await purgeExportJobs(app.pool, [system.account.userId, viewer.userId]);
+      await purgeExportJobs(app.pool, [system.account.userId, viewer.userId, driverViewer.userId]);
       await purgeGrants(app.pool);
       await app.pool.query('DELETE FROM app.shipper_wallet_parameter_changes');
       await app.pool.query('UPDATE app.shipper_wallet_parameters SET updated_by = NULL');
@@ -142,7 +144,7 @@ describe('M12 administration web (real browser)', () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1440, 900, false);
     await page.send('Network.clearBrowserCookies');
-    await signIn(page, { phone: viewer.phone, password: 'Correct-Horse-Battery-9', userId: viewer.userId, secret: viewer.secret });
+    await signIn(page, { phone: driverViewer.phone, password: 'Correct-Horse-Battery-9', userId: driverViewer.userId, secret: driverViewer.secret });
     await page.goto(`${origin}/overview`);
     await page.waitFor(`document.querySelector('#overview-title') && document.querySelectorAll('.ov-card').length >= 10`);
     const all = await cards(page);

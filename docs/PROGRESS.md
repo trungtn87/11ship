@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `5b93b13` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: —
+> Dữ liệu theo main HEAD `2632495` (chưa xác minh CI cho HEAD; không dùng kết quả của commit cũ) · CI main: —
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -108,7 +108,7 @@ flowchart TD
 | &nbsp;&nbsp;M01-A2D · Onboarding shipper (Driver) | ✅ Hoàn thành (`DONE`) | — | [#17](https://github.com/trungtn87/11ship/pull/17) | ✅ Đạt (`PASS`) | `c37082a` | A2S Hoàn thành (DONE) | — |
 | M01-R1 · Sửa sau merge (session, rollback, router, tiến độ) | ✅ Hoàn thành (`DONE`) | — | [#19](https://github.com/trungtn87/11ship/pull/19) | ✅ Đạt (`PASS`) | `cd0e6de` | A2 Hoàn thành (DONE) | — |
 | **M00-D** thiết kế · Render Free + Supabase staging | 🔒 Thiết kế đã khóa (`DESIGN_LOCKED`) | — | [#22](https://github.com/trungtn87/11ship/pull/22) | ✅ Đạt (`PASS`) | `a846a68` | C1C Hoàn thành (DONE) | Tiếp tục các task con |
-| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | mã main `5b93b13` | — | Claude triển khai |
+| &nbsp;&nbsp;M00-D1 · Connection and deploy configuration | 🟦 Sẵn sàng giao Claude (`READY_FOR_CLAUDE`) | Claude | — | — | main HEAD `2632495` | — | Claude triển khai |
 | &nbsp;&nbsp;M00-D2 · Test accounts without real SMS | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D3 · Operations and portability | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D1 Sẵn sàng giao Claude (READY_FOR_CLAUDE) | Chờ D1 |
 | &nbsp;&nbsp;M00-D4 · Remote deployment acceptance | ⛔ Đang chờ công việc trước (`BLOCKED_BY_DEPENDENCY`) | — | — | — | — | D2 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY), D3 Đang chờ công việc trước (BLOCKED_BY_DEPENDENCY) | Chờ D2, D3 |
@@ -317,26 +317,21 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#267](https://github.com/trungtn87/11ship/pull/267) (Nhóm 13) Tài khoản, OTP và khôi phục mật khẩu (#251, #235) | Đã merge (`MERGED`) | — | — | — | `4b9565c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#268](https://github.com/trungtn87/11ship/pull/268) (Nhóm 14) Ghim quán, điều kiện công khai và quản lý vùng (#… | Đã merge (`MERGED`) | — | — | — | `636f280` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#269](https://github.com/trungtn87/11ship/pull/269) (Nhóm 15) Đóng hoạt động shipper, hoàn số dư và đối soát nạ… | Đã merge (`MERGED`) | — | — | — | `cd0e289` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#270](https://github.com/trungtn87/11ship/pull/270) (Nhóm 16) Điều kiện nhận chuyến và xử lý chuyến đang giữ (#… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `9f6fba0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#271](https://github.com/trungtn87/11ship/pull/271) (Nhóm 17) Thông báo rút tiền và phạm vi hộp thông báo (#259) | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `0bb2fbb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#272](https://github.com/trungtn87/11ship/pull/272) (Nhóm 18) Phân quyền phản ánh, đánh giá và ảnh minh chứng (… | Đang mở (`OPEN`) | — | — | ❌ Lỗi (`FAIL`) | `46d0328` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#273](https://github.com/trungtn87/11ship/pull/273) (Nhóm 19) Phân quyền báo cáo, audit và hoàn thiện điều hành… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `da3b934` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#270](https://github.com/trungtn87/11ship/pull/270) (Nhóm 16) Điều kiện nhận chuyến và xử lý chuyến đang giữ (#… | Đã merge (`MERGED`) | — | — | — | `9f6fba0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#271](https://github.com/trungtn87/11ship/pull/271) (Nhóm 17) Thông báo rút tiền và phạm vi hộp thông báo (#259) | Đã merge (`MERGED`) | — | — | — | `0bb2fbb` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#272](https://github.com/trungtn87/11ship/pull/272) (Nhóm 18) Phân quyền phản ánh, đánh giá và ảnh minh chứng (… | Đã merge (`MERGED`) | — | — | — | `ed7a616` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#273](https://github.com/trungtn87/11ship/pull/273) (Nhóm 19) Phân quyền báo cáo, audit và hoàn thiện điều hành… | Đã merge (`MERGED`) | — | — | — | `f79a16d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#274](https://github.com/trungtn87/11ship/pull/274) (Nhóm 20) Giám sát VPS, probe độc lập và báo cáo vận hành (… | Đã merge (`MERGED`) | — | — | — | `e06aa3c` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#275](https://github.com/trungtn87/11ship/pull/275) (Nhóm 21) Online điều khiển GPS nền và chất lượng định tuyế… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `8336c99` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#276](https://github.com/trungtn87/11ship/pull/276) (Nhóm 22) Sửa đơn chờ xác nhận và quán chốt tiền món (#238,… | Bản nháp (`DRAFT`) | — | — | ✅ Đạt (`PASS`) | `01f7f26` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#277](https://github.com/trungtn87/11ship/pull/277) (Nhóm 23) Mini Business: truy cập các tab và xử lý ngoại lệ… | Bản nháp (`DRAFT`) | — | — | ❌ Lỗi (`FAIL`) | `1ab9638` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#278](https://github.com/trungtn87/11ship/pull/278) (Nhóm 24) Phân tích vận hành và gắn cờ hành vi bất thường (… | Bản nháp (`DRAFT`) | — | — | ⏳ Đang chạy (`RUNNING`) | `dcb1152` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#275](https://github.com/trungtn87/11ship/pull/275) (Nhóm 21) Online điều khiển GPS nền và chất lượng định tuyế… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `24c248d` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#276](https://github.com/trungtn87/11ship/pull/276) (Nhóm 22) Sửa đơn chờ xác nhận và quán chốt tiền món (#238,… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `9a315f1` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#277](https://github.com/trungtn87/11ship/pull/277) (Nhóm 23) Mini Business: truy cập các tab và xử lý ngoại lệ… | Đã merge (`MERGED`) | — | — | — | `1edb0f0` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#278](https://github.com/trungtn87/11ship/pull/278) (Nhóm 24) Phân tích vận hành và gắn cờ hành vi bất thường (… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `b023ba7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#279](https://github.com/trungtn87/11ship/pull/279) (Nhóm 25) Căn chỉnh ảnh món đúng khung thực đơn (#245) | Đã merge (`MERGED`) | — | — | — | `bf55974` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
-- `UNCLASSIFIED_PR` PR #270: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #271: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #272: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #273: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #275: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #276: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
-- `UNCLASSIFIED_PR` PR #277: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 - `UNCLASSIFIED_PR` PR #278: thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR không được tính. Trạng thái không bao giờ được suy ra từ tiêu đề, nội dung hoặc tác giả.
 
 ## Quy trình

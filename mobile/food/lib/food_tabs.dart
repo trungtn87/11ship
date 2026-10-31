@@ -292,8 +292,6 @@ Widget _orders(SessionController session, AppFlows? flows) {
         icon: Icons.receipt_long_outlined,
         title: 'Chưa có đơn hàng',
         text: 'Đơn hàng của bạn sẽ hiện ở đây sau khi bạn đặt món.'),
-    // M06 UI: fee, distance and who pays. Not ready in real builds (the screen says what is missing).
-    const ShippingFeeEntry(),
   ]);
 }
 

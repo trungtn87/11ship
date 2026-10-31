@@ -94,7 +94,7 @@ export interface ConditionChange {
 export interface ConditionsState extends ConditionValues {
   readonly version: number;
   readonly updatedAt: string;
-  /** The fixed 5 km search radius: shown read-only, never a setting. */
+  /** The fixed search radius (3 km, from the server): shown read-only, never a setting. */
   readonly searchRadiusM: number;
   readonly history: readonly ConditionChange[];
 }

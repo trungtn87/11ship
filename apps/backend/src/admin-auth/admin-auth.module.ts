@@ -55,6 +55,7 @@ import { AdminRightsReader } from '../admin-m12/admin-rights';
 import { AdminOverviewController } from '../admin-overview/admin-overview.controller';
 import { AdminActionQueueReader } from '../admin-overview/admin-action-queue-reader';
 import { AdminActionQueueService } from '../admin-overview/admin-action-queue-service';
+import { AdminOperationsMapService } from '../admin-overview/admin-operations-map-service';
 import { AdminOverviewService } from '../admin-overview/admin-overview-service';
 import { AdminFeedbackController } from '../admin-feedback/admin-feedback.controller';
 import { AdminFeedbackService } from '../admin-feedback/admin-feedback-service';
@@ -278,6 +279,7 @@ export class AdminAuthModule implements NestModule {
         AdminOverviewService,
         AdminActionQueueReader,
         AdminActionQueueService,
+        AdminOperationsMapService,
         // M13 operations administration (SYSTEM everything; an ADMIN only the scope SYSTEM granted).
         OpsAdminService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { ReviewKind, Visibility } from './feedback-constants';
+import { FeedbackScope, ReviewKind, Visibility } from './feedback-constants';
 import { summarize, Summary } from './feedback-rules';
 
 // SQL of app.reviews, app.review_replies, app.review_reply_history and app.review_moderations (M11 owns the four). Every method takes the caller's
@@ -310,29 +310,34 @@ export class ReviewRepository {
 
   // ---- administration ----------------------------------------------------------------------------------------------------------
 
-  async listForAdmin(context: TransactionContext, f: AdminReviewFilter, page: { limit: number; offset: number }): Promise<{ rows: ReviewWithReply[]; total: number }> {
+  async listForAdmin(context: TransactionContext, f: AdminReviewFilter, page: { limit: number; offset: number }, scope: FeedbackScope): Promise<{ rows: ReviewWithReply[]; total: number }> {
     const where = `($1::text IS NULL OR r.kind = $1::text) AND ($2::int IS NULL OR r.stars = $2::int) AND ($3::text IS NULL OR r.visibility = $3::text)
         AND ($4::text = '' OR r.related_code ILIKE $4::text ESCAPE '!' OR r.review_id::text = $5::text)
         AND ($6::timestamptz IS NULL OR r.created_at >= $6::timestamptz) AND ($7::timestamptz IS NULL OR r.created_at < $7::timestamptz)
-        AND ($8::text = '' OR r.shop_name ILIKE $8::text ESCAPE '!') AND ($9::text = '' OR r.driver_name ILIKE $9::text ESCAPE '!')`;
-    const args = [f.kind, f.stars, f.visibility, f.q === '' ? '' : `%${escapeLike(f.q)}%`, f.q, f.fromMs === null ? null : new Date(f.fromMs), f.toMs === null ? null : new Date(f.toMs), f.shop === '' ? '' : `%${escapeLike(f.shop)}%`, f.shipper === '' ? '' : `%${escapeLike(f.shipper)}%`];
+        AND ($8::text = '' OR r.shop_name ILIKE $8::text ESCAPE '!') AND ($9::text = '' OR r.driver_name ILIKE $9::text ESCAPE '!')
+        AND ${reviewScopeSql(10, 11)}`;
+    const args = [f.kind, f.stars, f.visibility, f.q === '' ? '' : `%${escapeLike(f.q)}%`, f.q, f.fromMs === null ? null : new Date(f.fromMs), f.toMs === null ? null : new Date(f.toMs), f.shop === '' ? '' : `%${escapeLike(f.shop)}%`, f.shipper === '' ? '' : `%${escapeLike(f.shipper)}%`, scope.shop, scope.driver];
     const total = await context.query<{ n: string }>(`SELECT count(*)::text AS n FROM app.reviews r WHERE ${where}`, args);
     const result = await context.query<RawReview & RawReply>(
       `SELECT ${REVIEW_COLUMNS}, ${REPLY_COLUMNS} FROM app.reviews r LEFT JOIN app.review_replies p ON p.review_id = r.review_id WHERE ${where}
-        ORDER BY r.created_at DESC, r.review_id DESC LIMIT $10 OFFSET $11`,
+        ORDER BY r.created_at DESC, r.review_id DESC LIMIT $12 OFFSET $13`,
       [...args, page.limit, page.offset],
     );
     return { rows: result.rows.map((row) => ({ ...map(row), reply: mapReply(row, row.review_id) })), total: safe(total.rows[0]?.n ?? '0') };
   }
 
-  async adminCounters(context: TransactionContext): Promise<{ total: number; hidden: number; low: number }> {
+  async adminCounters(context: TransactionContext, scope: FeedbackScope): Promise<{ total: number; hidden: number; low: number }> {
     const result = await context.query<{ total: string; hidden: string; low: string }>(
-      `SELECT count(*)::text AS total, count(*) FILTER (WHERE visibility = 'HIDDEN')::text AS hidden, count(*) FILTER (WHERE stars <= 2 AND visibility = 'VISIBLE')::text AS low FROM app.reviews`,
+      `SELECT count(*)::text AS total, count(*) FILTER (WHERE visibility = 'HIDDEN')::text AS hidden, count(*) FILTER (WHERE stars <= 2 AND visibility = 'VISIBLE')::text AS low FROM app.reviews r WHERE ${reviewScopeSql(1, 2)}`,
+      [scope.shop, scope.driver],
     );
     const row = result.rows[0];
     return { total: safe(row?.total ?? '0'), hidden: safe(row?.hidden ?? '0'), low: safe(row?.low ?? '0') };
   }
 }
+
+/** The caller's scope as two boolean parameters (shop part, driver part): a review of a shop is the shop part, a review of a Shipper the driver part. */
+const reviewScopeSql = (shopParam: number, driverParam: number): string => `((r.kind = 'SHOP_BY_CUSTOMER' AND $${String(shopParam)}::boolean) OR (r.kind <> 'SHOP_BY_CUSTOMER' AND $${String(driverParam)}::boolean))`;
 
 export function escapeLike(value: string): string {
   return value.replace(/[!%_]/g, (c) => `!${c}`);

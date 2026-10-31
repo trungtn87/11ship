@@ -72,3 +72,17 @@ export const COMPLAINT_RESOURCE = 'complaint';
 export const FEEDBACK_EVENT_SCHEMA = 1;
 export const OUTBOX_COMPLAINT_CHANGED = 'complaint.changed.v1';
 export const OUTBOX_REVIEW_CHANGED = 'review.changed.v1';
+
+/**
+ * Issue #261: which parts of the M11 data an administrator may reach. `shop` / `driver` follow the SHOP / DRIVER app grants (view for reading, view + review for
+ * handling); SYSTEM has both. A review of a shop belongs to the shop part, a review of a Shipper to the driver part. A complaint file that names BOTH a shop and a
+ * Shipper (any delivery) needs BOTH parts: it cannot be redacted per party, so it fails closed; a file that names one party needs that part; a file naming neither
+ * needs both.
+ */
+export interface FeedbackScope {
+  readonly shop: boolean;
+  readonly driver: boolean;
+}
+export const reviewInScope = (kind: string, scope: FeedbackScope): boolean => (kind === 'SHOP_BY_CUSTOMER' ? scope.shop : scope.driver);
+export const complaintInScope = (c: { readonly shopId: string | null; readonly driverId: string | null }, scope: FeedbackScope): boolean =>
+  (c.shopId === null || scope.shop) && (c.driverId === null || scope.driver) && (c.shopId !== null || c.driverId !== null || (scope.shop && scope.driver));

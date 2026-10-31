@@ -1,5 +1,6 @@
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
+import { NotificationEventService } from '../../apps/backend/src/notifications/notification-event-service';
 import { WithdrawalMoneyService } from '../../apps/backend/src/wallet/withdrawal-money-service';
 import { WithdrawalRepository } from '../../apps/backend/src/wallet/withdrawal-repository';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -293,6 +294,43 @@ describe('M04-C — withdrawals: Shipper request, administrator transfer by hand
     expect(dataOf(repeated).withdrawal_id).toBe(dataOf(first).withdrawal_id);
     expect(await wallet(s)).toEqual({ balance: '100000', held: '100000' });
     expect(await debits(s.walletId)).toBe(0);
+  });
+
+  it('#259: each state of a withdrawal reaches ONLY its owner\'s 11Ship inbox once, says PAID only for PAID, opens while CLOSING, and another Shipper cannot open it', async () => {
+    const s = await newShipper(100_000);
+    const other = await newShipper(10_000);
+    expect((await closeAccount(s)).status).toBe(200);
+    const id = await request(s, 100_000);
+    const events = client.running.app.get(NotificationEventService);
+    const event = (state: string, version: number, over: Record<string, unknown> = {}) => ({
+      eventId: randomUUID(), eventType: 'wallet.withdrawal.changed.v1', eventSchemaVersion: 1, resourceType: 'wallet_withdrawal', resourceId: id, resourceVersion: version,
+      occurredAt: new Date().toISOString(), attemptCount: 1, payload: { withdrawal_id: id, state, version, ...over },
+    });
+    const inbox = async (who: Shipper): Promise<Array<{ notification_id: string; kind: string; title: string; body: string }>> =>
+      (dataOf(await client.call('GET', '/notifications?limit=50', { bearer: who.token })).items as Array<{ notification_id: string; kind: string; title: string; body: string }>).filter((i) => i.kind.startsWith('WITHDRAWAL_'));
+
+    const pending = event('PENDING', 1);
+    await events.consume(pending);
+    await events.consume(pending); // redelivery of the same event
+    await events.consume(event('PENDING', 1)); // the same fact under another event id: one entry (same dedupe key)
+    await events.consume(event('PROCESSING', 2));
+    await events.consume(event('RECONCILIATION', 3));
+    await events.consume(event('PAID', 4, { user_id: other.userId })); // a user id in the payload is never believed
+    await events.consume(event('UNKNOWN_STATE', 5)); // not a state of ours: nothing is made up
+    const mine = await inbox(s);
+    expect(mine.map((i) => i.kind).sort()).toEqual(['WITHDRAWAL_PAID', 'WITHDRAWAL_PROCESSING', 'WITHDRAWAL_RECONCILING', 'WITHDRAWAL_REQUESTED']);
+    expect(mine.filter((i) => /đã xác nhận chuyển/i.test(i.title)).map((i) => i.kind)).toEqual(['WITHDRAWAL_PAID']);
+    for (const item of mine) expect(`${item.title} ${item.body}`).not.toMatch(/\d{6,}/); // no amount, account or phone
+    expect(await inbox(other)).toEqual([]);
+
+    const paidItem = mine.find((i) => i.kind === 'WITHDRAWAL_PAID');
+    const opened = await client.call('POST', `/notifications/${paidItem?.notification_id}/open`, { bearer: s.token, body: {} });
+    expect(opened.status).toBe(200);
+    expect((dataOf(opened) as { outcome: string }).outcome).not.toBe('NO_ACCESS');
+    expect(dataOf(opened)).toMatchObject({ target: { type: 'WALLET_TXN', id } });
+    const foreign = await client.call('POST', `/notifications/${paidItem?.notification_id}/open`, { bearer: other.token, body: {} });
+    expect([403, 404]).toContain(foreign.status);
+    expect(await client.pool.query('SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid AND kind LIKE \'WITHDRAWAL_%\'', [other.userId]).then((r) => r.rowCount)).toBe(0);
   });
 
   it('M03: confirmed funding enables activity without a bank; pending topup credits nothing; Admin suspension blocks activity', async () => {
