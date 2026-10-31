@@ -44,6 +44,29 @@ export class ShipperLocationRepository {
     );
   }
 
+  /** The latest positions of several Shippers at once (a Shipper with none is absent). Ages are on the database clock. */
+  async findMany(context: TransactionContext, driverIds: readonly string[]): Promise<Map<string, StoredLocation>> {
+    const out = new Map<string, StoredLocation>();
+    if (driverIds.length === 0) {
+      return out;
+    }
+    const result = await context.query<RawLocation & { driver_id: string }>(
+      `SELECT driver_id::text AS driver_id, lat, lng, accuracy_m, (extract(epoch FROM recorded_at) * 1000)::bigint::text AS recorded_ms,
+              floor(extract(epoch FROM (date_trunc('milliseconds', clock_timestamp()) - recorded_at)))::text AS age_s
+         FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])`,
+      [driverIds],
+    );
+    for (const row of result.rows) {
+      const recordedAtMs = Number(row.recorded_ms);
+      const ageSeconds = Number(row.age_s);
+      if (!Number.isSafeInteger(recordedAtMs) || !Number.isFinite(ageSeconds)) {
+        throw new TechnicalError('internal', 'Database returned an unexpected position');
+      }
+      out.set(row.driver_id, { lat: row.lat, lng: row.lng, accuracyM: row.accuracy_m, recordedAtMs, ageSeconds });
+    }
+    return out;
+  }
+
   /**
    * The Shippers whose latest position lies inside a box around a point and is still fresh (LOCATION_FRESH_MS, the same threshold M06 uses), nearest first.
    * A cheap prefilter: a Shipper whose position went stale is not told about new deliveries; M06 still decides the real radius and freshness.

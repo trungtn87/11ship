@@ -165,9 +165,10 @@ export class AdminOperationsService {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const rights = await this.rights.read(context, known);
       rights.require(PERMISSION_AUDIT_READ);
+      const resourceTypes = auditScopeOf(rights);
       // Default window: the last 7 Vietnam days, today included.
       const period = filter.fromDay === undefined || filter.toDay === undefined ? resolvePeriod('7d', rights.nowMs) : resolvePeriod('custom', rights.nowMs, { from: filter.fromDay, to: filter.toDay });
-      const { rows, more } = await this.repository.audit(context, filter, period.fromMs, period.toMs);
+      const { rows, more } = await this.repository.audit(context, filter, period.fromMs, period.toMs, resourceTypes);
       const last = rows[rows.length - 1];
       return {
         generated_at: iso(rights.nowMs),
@@ -297,4 +298,23 @@ export class AdminOperationsService {
       throw new AppError('ADMIN_FORBIDDEN');
     }
   }
+}
+
+/**
+ * Issue #262: `audit.read` opens the viewer, it does not open every record. SYSTEM reads all. An ADMIN reads only the records whose resource belongs to an app the
+ * administrator may VIEW: the SHOP app covers shops, menu, reviews and orders; the DRIVER app covers Shippers and deliveries. Anything else (accounts, sessions, money,
+ * configuration, operations, complaints that name both parties, rows with no resource) is not classified for an ADMIN and fails closed. No app view: forbidden.
+ */
+const SHOP_AUDIT_TYPES: readonly string[] = ['shop', 'menu_item', 'menu_category', 'review', 'order'];
+const DRIVER_AUDIT_TYPES: readonly string[] = ['driver', 'delivery'];
+
+export function auditScopeOf(rights: { readonly isSystem: boolean; canViewApp(app: 'SHOP' | 'DRIVER'): boolean }): readonly string[] | null {
+  if (rights.isSystem) {
+    return null;
+  }
+  const types = [...(rights.canViewApp('SHOP') ? SHOP_AUDIT_TYPES : []), ...(rights.canViewApp('DRIVER') ? DRIVER_AUDIT_TYPES : [])];
+  if (types.length === 0) {
+    throw new AppError('ADMIN_FORBIDDEN');
+  }
+  return types;
 }

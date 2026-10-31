@@ -14,7 +14,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import { ExportBody, ReportFilter } from './admin-report-validation';
 import { AdminReportRepository, ExportJobRow } from './admin-report-repository';
 import { renderExport } from './export-file';
-import { Report, ReportBuilder, ReportKind, requiredRights } from './report-builder';
+import { mayReadReportData, Report, ReportBuilder, ReportKind, requiredRights } from './report-builder';
 
 /** The screen shows the first 200 rows; the export carries up to 20 000 or fails (it never carries a part and calls it complete). */
 export const SCREEN_ROWS = 200;
@@ -186,7 +186,7 @@ export class AdminReportService {
         const nowMs = Number((await context.query<{ ms: string }>(`SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS ms`)).rows[0]?.ms ?? '0');
         const rights = await this.rights.readForUser(context, job.requestedBy, nowMs);
         const kind = job.kind as ReportKind;
-        if (rights === undefined || !requiredRights(kind).every((right) => rights.has(right)) || !rights.has(PERMISSION_REPORT_EXPORT)) {
+        if (rights === undefined || !requiredRights(kind).every((right) => rights.has(right)) || !mayReadReportData(kind, rights) || !rights.has(PERMISSION_REPORT_EXPORT)) {
           return { ok: false as const, failed: 'PERMISSION_REVOKED' };
         }
         const period = this.#storedPeriod(job);
@@ -219,6 +219,9 @@ export class AdminReportService {
   #requireExport(rights: AdminRights, kind: ReportKind): void {
     for (const right of [...requiredRights(kind), PERMISSION_REPORT_EXPORT]) {
       rights.require(right);
+    }
+    if (!mayReadReportData(kind, rights)) {
+      throw new AppError('ADMIN_FORBIDDEN');
     }
   }
 

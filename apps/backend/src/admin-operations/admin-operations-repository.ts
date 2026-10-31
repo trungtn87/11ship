@@ -95,7 +95,7 @@ const toRestore = (row: Record<string, string | null>): RestoreRow => ({
 /** SQL of the audit viewer, the backup history and the restore requests (M12-F). The audit log is only READ here (the table grant has no UPDATE or DELETE). */
 @Injectable()
 export class AdminOperationsRepository {
-  async audit(context: TransactionContext, filter: AuditFilter, fromMs: number, toMs: number): Promise<{ rows: AuditRow[]; more: boolean }> {
+  async audit(context: TransactionContext, filter: AuditFilter, fromMs: number, toMs: number, resourceTypes: readonly string[] | null = null): Promise<{ rows: AuditRow[]; more: boolean }> {
     const where: string[] = ['occurred_at >= to_timestamp($1::bigint / 1000.0)', 'occurred_at < to_timestamp($2::bigint / 1000.0)'];
     const values: unknown[] = [fromMs, toMs];
     const add = (sql: string, value: unknown): void => {
@@ -106,6 +106,8 @@ export class AdminOperationsRepository {
       // A prefix on the dotted name: "admin.report" finds every report action; the pattern characters of LIKE cannot appear (the parser allows [a-z0-9_.] and _ is escaped).
       add(`action LIKE ? ESCAPE '\\'`, `${filter.action.replace(/[\\%_]/g, '\\$&')}%`);
     }
+    // Issue #262: an ADMIN reads only the resource types of the apps granted; SYSTEM (null) reads everything. A row without a resource type is never in scope for an ADMIN.
+    if (resourceTypes !== null) add('resource_type = ANY(?::text[])', [...resourceTypes]);
     if (filter.actorId !== undefined) add('actor_id = ?', filter.actorId);
     if (filter.resourceType !== undefined) add('resource_type = ?', filter.resourceType);
     if (filter.resourceId !== undefined) add('resource_id = ?', filter.resourceId);

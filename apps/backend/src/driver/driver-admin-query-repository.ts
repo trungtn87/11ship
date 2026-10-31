@@ -110,6 +110,15 @@ export class DriverAdminQueryRepository {
     const result = await context.query<{ phone_normalized: string }>('SELECT phone_normalized FROM app.users WHERE user_id = $1::uuid', [userId]);
     return result.rows[0]?.phone_normalized;
   }
+
+  /** Issue #262: the Shippers who are ACTIVE and switched Online, for the operations map (id, code, name only; the position comes from M14). */
+  async onlineForMap(context: TransactionContext, limit: number): Promise<{ driverId: string; shipperCode: string | null; fullName: string }[]> {
+    const result = await context.query<{ driver_id: string; shipper_code: string | null; full_name: string }>(
+      `SELECT d.driver_id::text AS driver_id, d.shipper_code, d.full_name FROM app.drivers d WHERE d.status = 'ACTIVE' AND d.accepting_deliveries ORDER BY d.driver_id LIMIT $1::int`,
+      [limit],
+    );
+    return result.rows.map((r) => ({ driverId: r.driver_id, shipperCode: r.shipper_code, fullName: r.full_name }));
+  }
 }
 
 function rowOf(raw: RawListRow): ShipperListRow {
