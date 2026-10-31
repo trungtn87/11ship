@@ -5,7 +5,7 @@
 > **TỰ ĐỘNG TẠO — KHÔNG SỬA THỦ CÔNG**
 >
 > Kế hoạch nằm trong [`docs/progress/plan.yml`](progress/plan.yml); trạng thái được suy ra từ GitHub (PR đã merge, draft/open/closed, label, head SHA, required check và dependency). Không ai, kể cả người hay AI, có thể tự ghi một task thành HOÀN THÀNH. Xem [cách suy ra trạng thái](progress/README.md).
-> Dữ liệu theo mã main `6731fc6` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ❌ Lỗi (`FAIL`)
+> Dữ liệu theo mã main `6731fc6` (HEAD là commit progress-bot chỉ sửa tài liệu; CI được đọc từ commit mã này) · CI main: ⏳ Đang chạy (`RUNNING`)
 
 ## 🎯 VIỆC ĐANG LÀM
 
@@ -333,7 +333,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#287](https://github.com/trungtn87/11ship/pull/287) (11Food/M05) Gợi ý địa chỉ tùy chọn, không che bản đồ; Lưu… | Đã merge (`MERGED`) | — | — | — | `3c88ec7` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#288](https://github.com/trungtn87/11ship/pull/288) (M14/M06) Triển khai Valhalla trên VPS: script, loopback ht… | Đã merge (`MERGED`) | — | — | — | `fc6c2a2` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#289](https://github.com/trungtn87/11ship/pull/289) (11Food/M05/M14) Tìm địa điểm offline từ OSM thay Photon kh… | Đã merge (`MERGED`) | — | — | — | `af57913` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#290](https://github.com/trungtn87/11ship/pull/290) (S-00) Bảo toàn file local chưa commit: tls.dart, security-… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `9505c73` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#290](https://github.com/trungtn87/11ship/pull/290) (S-00) Bảo toàn file local chưa commit: tls.dart, security-… | Đang mở (`OPEN`) | — | — | ✅ Đạt (`PASS`) | `9505c73` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#291](https://github.com/trungtn87/11ship/pull/291) (S-08) Deploy VPS chỉ chạy khi CI main xanh trên đúng SHA c… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `6ae5e75` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#292](https://github.com/trungtn87/11ship/pull/292) (S-02) Chặn skip-ci lọt vào main; tạm dừng bot progress push | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `3692fdd` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
