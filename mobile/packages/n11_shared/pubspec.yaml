@@ -27,6 +27,7 @@ flutter:
     - assets/brand/logo-11-ui.png
     - assets/brand/logo-11food-ui.png
     - assets/brand/logo-11ship-ui.png
+    - assets/places/caobang-places.json
   fonts:
     - family: PlusJakartaSans
       fonts:
