@@ -4,7 +4,7 @@ import { TechnicalError } from '../common/app-errors';
 import { TERMINAL_STATES } from '../delivery/delivery-constants';
 import { ENDED_STATUSES } from '../orders/order-constants';
 import { evaluateAvailability } from '../shop/shop-availability-reader';
-import { hasHoursSql, hasPickupPointSql, inHoursSql, localTimeCtes, PRODUCTION_CLOCK } from '../shop/shop-availability-sql';
+import { hasHoursSql, hasPickupPointSql, inHoursSql, localTimeCtes, pinInAreaSql, PRODUCTION_CLOCK } from '../shop/shop-availability-sql';
 import { sellableItemExistsSql } from '../menu/menu-readiness-sql';
 import { effectiveAvailability, evaluateSetup, SetupEvaluation, SetupState } from '../shop-setup/shop-setup-rules';
 import { ShopAvailability, ShopStatus } from '../shop/shop-types';
@@ -136,6 +136,7 @@ interface RawList {
   total: string;
   contact_phone_normalized: string;
   has_pickup_point: boolean;
+  pickup_in_area: boolean;
   has_sellable: boolean;
   activated_ms: string | null;
   request_note: string | null;
@@ -167,7 +168,7 @@ export class AdminShopReadRepository {
    * detail (inHoursSql + evaluateAvailability). `total` counts every row the filter matches, not only the page.
    */
   async list(context: TransactionContext, filter: ShopFilter, limit: number, offset: number): Promise<{ rows: ShopListRow[]; total: number }> {
-    const online = `(s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND COALESCE(ou.status = 'ACTIVE', true) AND h.has_hours AND h.in_hours AND ${hasPickupPointSql('s')} AND ${sellableItemExistsSql('s.shop_id')})`;
+    const online = `(s.status = 'ACTIVE' AND a.status = 'ACTIVE' AND COALESCE(ou.status = 'ACTIVE', true) AND h.has_hours AND h.in_hours AND ${hasPickupPointSql('s')} AND ${pinInAreaSql('s', 'a')} AND ${sellableItemExistsSql('s.shop_id')})`;
     const result = await context.query<RawList>(
       `${localTimeCtes(PRODUCTION_CLOCK)},
        base AS (
@@ -179,6 +180,7 @@ export class AdminShopReadRepository {
                 COALESCE(i.visible, 0) AS items_visible, COALESCE(i.total, 0) AS items_total,
                 ${online} AS is_online,
                 ${hasPickupPointSql('s')} AS has_pickup_point,
+                ${pinInAreaSql('s', 'a')} AS pickup_in_area,
                 ${sellableItemExistsSql('s.shop_id')} AS has_sellable,
                 ${epochMs('s.activated_at')} AS activated_ms,
                 s.setup_request_note AS request_note, ${epochMs('s.setup_request_at')} AS request_ms,
@@ -198,7 +200,7 @@ export class AdminShopReadRepository {
        staged AS (
          SELECT b.*,
                 (b.name <> '' AND b.address_text <> '' AND b.contact_phone_normalized <> '' AND b.area_id IS NOT NULL AND b.area_status = 'ACTIVE'
-                 AND b.has_hours AND b.has_pickup_point AND b.has_sellable) AS setup_complete
+                 AND b.has_hours AND b.has_pickup_point AND b.pickup_in_area AND b.has_sellable) AS setup_complete
            FROM base b
        ),
        classified AS (
@@ -246,7 +248,7 @@ export class AdminShopReadRepository {
         areaName: row.area_name,
         status: asStatus(row.status),
         version: toSafeInteger(row.version),
-        availability: effectiveAvailability(evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point), row.has_sellable),
+        availability: effectiveAvailability(evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point, row.pickup_in_area), row.has_sellable),
         itemsVisible: toSafeInteger(row.items_visible),
         itemsTotal: toSafeInteger(row.items_total),
         setup: evaluateSetup({
@@ -259,6 +261,7 @@ export class AdminShopReadRepository {
           areaStatus: row.area_status,
           hasHours: row.has_hours,
           hasPickupPoint: row.has_pickup_point,
+          pickupInArea: row.pickup_in_area,
           hasSellableItem: row.has_sellable,
           activatedAt: row.activated_ms,
           requestPending: row.request_note !== null,

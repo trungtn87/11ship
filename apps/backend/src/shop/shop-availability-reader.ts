@@ -28,6 +28,8 @@ export interface RawShopSnapshot {
   in_hours: boolean;
   /** Issue #190 columns (optional so a test row built before them still maps). */
   has_pickup_point?: boolean;
+  /** Issue #252 column (optional: a row built without it means the pin is not known to be outside). */
+  pickup_in_area?: boolean;
   activated_at?: string | null;
   setup_request_note?: string | null;
   setup_request_at?: string | null;
@@ -56,6 +58,8 @@ export interface ShopSnapshot {
   readonly availability: ShopAvailability;
   /** A real pickup point is stored (issue #190); the same fact the availability reason NO_PICKUP_POINT is built on. */
   readonly hasPickupPoint: boolean;
+  /** Issue #252: false only when the area HAS a configured circle and the stored pin lies outside it. */
+  readonly pickupInArea?: boolean;
   /** ISO 8601 UTC: when the system first activated the shop, or null while it has not been set up completely. */
   readonly activatedAt: string | null;
   /** The administrator's pending request to complete the setup, or null. */
@@ -108,6 +112,7 @@ export function evaluateAvailability(
   evaluatedAt: string,
   ownerLocked = false,
   hasPickupPoint = true,
+  pickupInArea = true,
 ): ShopAvailability {
   if (!isShopStatus(status) || !EVALUATED_AT_PATTERN.test(evaluatedAt)) {
     return broken();
@@ -128,7 +133,8 @@ export function evaluateAvailability(
   if (!hasHours) {
     return { online: false, reason: 'NO_BUSINESS_HOURS', evaluatedAt };
   }
-  if (!hasPickupPoint) {
+  // A pin outside the configured area is a pickup point that does not count (issue #252): the shop is not set up, never "online in the wrong area".
+  if (!hasPickupPoint || !pickupInArea) {
     return { online: false, reason: 'NO_PICKUP_POINT', evaluatedAt };
   }
   if (!inHours) {
@@ -156,8 +162,9 @@ export function toShopSnapshot(row: RawShopSnapshot): ShopSnapshot {
     status: row.status,
     version: toSafeInteger(row.version),
     hours: parseHours(row.hours),
-    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point ?? (row.pickup_lat !== null && row.pickup_lng !== null)),
+    availability: evaluateAvailability(row.status, row.area_status, row.has_hours, row.in_hours, row.evaluated_at, row.owner_locked === true, row.has_pickup_point ?? (row.pickup_lat !== null && row.pickup_lng !== null), row.pickup_in_area ?? true),
     hasPickupPoint: row.has_pickup_point ?? (row.pickup_lat !== null && row.pickup_lng !== null),
+    pickupInArea: row.pickup_in_area ?? true,
     activatedAt: row.activated_at ?? null,
     setupRequest: row.setup_request_note == null || row.setup_request_at == null ? null : { note: row.setup_request_note, at: row.setup_request_at },
     ownerLocked: row.owner_locked === true,
