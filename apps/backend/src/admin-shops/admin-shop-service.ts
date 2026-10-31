@@ -39,7 +39,7 @@ const EVENT: Readonly<Record<ShopStatusCommand, string>> = {
 const RESOURCE = 'shop';
 
 /** Reasons the audit rows carry; the screen turns the operation name into a sentence. */
-export const SHOP_ADMIN_AUDIT_ACTIONS: readonly string[] = [OPERATION.disable, OPERATION.enable, SHOP_SETUP_AUDIT_ACTIONS.requestInfo, SHOP_SETUP_AUDIT_ACTIONS.clearRequest, SHOP_SETUP_AUDIT_ACTIONS.autoActivated];
+export const SHOP_ADMIN_AUDIT_ACTIONS: readonly string[] = [OPERATION.disable, OPERATION.enable, SHOP_SETUP_AUDIT_ACTIONS.requestInfo, SHOP_SETUP_AUDIT_ACTIONS.clearRequest, SHOP_SETUP_AUDIT_ACTIONS.autoActivated, SHOP_SETUP_AUDIT_ACTIONS.requestAutoCleared];
 
 export type ShopSetupCommand = 'request-info' | 'clear-request';
 

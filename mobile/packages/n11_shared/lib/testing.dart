@@ -312,6 +312,9 @@ class FakeShopOpsServer {
   int reads = 0;
   bool loseAnswerOnce = false;
 
+  /// When set, a profile save is refused with this code (HTTP 400) and nothing is stored (issue #252: PICKUP_OUTSIDE_SERVICE_AREA).
+  String? profileRefusal;
+
   /// Every write that reached the server and had an effect (a replay does not add one).
   final List<Map<String, Object?>> effects = <Map<String, Object?>>[];
 
@@ -380,6 +383,9 @@ class FakeShopOpsServer {
   Future<ApiResponse> _write(Map<String, String> headers, String body, String kind, void Function(Map<String, Object?> body) apply) async {
     final String key = headers['idempotency-key'] ?? '';
     arrived.add('$kind:$key');
+    if (kind == 'profile' && profileRefusal != null) {
+      return apiError(400, profileRefusal!);
+    }
     final ApiResponse? stored = _byKey[key];
     if (stored != null) {
       if (_bodyOfKey[key] != body) {

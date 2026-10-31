@@ -23,6 +23,11 @@ describe('admin web routes', () => {
     expect(parseRoute('/accounts/administrators')).toEqual({ name: 'administrators' });
     expect(parseRoute('/system/settings')).toEqual({ name: 'settings' });
     expect(parseRoute('/system/parameters/otp')).toEqual({ name: 'otp-policy' });
+    expect(parseRoute('/system/zones')).toEqual({ name: 'zones' });
+    expect(parseRoute(`/system/zones/${INVITATION_ID}`)).toEqual({ name: 'zone', id: INVITATION_ID });
+    expect(parseRoute('/system/zones/not-a-uuid')).toEqual({ name: 'home' });
+    expect(formatRoute({ name: 'zones' })).toBe('/system/zones');
+    expect(formatRoute({ name: 'zone', id: INVITATION_ID })).toBe(`/system/zones/${INVITATION_ID}`);
     expect(formatRoute({ name: 'otp-policy' })).toBe('/system/parameters/otp');
     expect(parseRoute('/catalog/categories')).toEqual({ name: 'categories' });
     expect(parseRoute('/catalog/categories/')).toEqual({ name: 'categories' });
