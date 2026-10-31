@@ -287,7 +287,7 @@ describe('native device binding (fixture attestation)', () => {
       const { response, userId, bindingId, token } = await registerFood();
       const data = dataOf(response);
       expect(Object.keys(data).sort()).toEqual(
-        ['access_token', 'active_role', 'available_roles', 'capabilities', 'onboarding', 'onboarding_required', 'phone_normalized', 'profile', 'role_selection_required', 'session', 'user_id'].sort(),
+        ['access_token', 'active_role', 'available_roles', 'capabilities', 'onboarding', 'onboarding_required', 'phone_normalized', 'phone_verification_status', 'profile', 'role_selection_required', 'session', 'user_id'].sort(),
       );
       expect(data.available_roles).toEqual(['CUSTOMER']);
       expect(response.headers.get('x-device-binding-generation')).toBe('1');

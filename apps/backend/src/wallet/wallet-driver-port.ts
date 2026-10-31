@@ -40,7 +40,7 @@ export class WalletDriverPort implements DriverWalletPort {
     if (driver?.initialFundingRequired) {
       const funding = await this.reads.fundingOfDriver(context, driverId);
       const minimum = BigInt((await this.limits.limits(context)).topupMinVnd);
-      if (funding.confirmedTopupVnd < minimum) return { ready: false, reason: 'BALANCE_TOO_LOW' };
+      if (funding.confirmedTopupVnd < minimum) return { ready: false, reason: 'FUNDING_TOO_LOW' };
     }
     const policy = await this.policies.current(context);
     return wallet.availableVnd > 0n && wallet.availableVnd >= policy.amountVnd ? { ready: true } : { ready: false, reason: 'BALANCE_TOO_LOW' };

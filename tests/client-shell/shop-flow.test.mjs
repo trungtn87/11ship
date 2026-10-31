@@ -37,6 +37,8 @@ const identity = (over = {}) => ({
   onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
   onboarding_required: false,
   role_selection_required: false,
+
+  phone_verification_status: 'VERIFIED',
   ...over,
 });
 const signInBody = { data: { ...identity(), access_token: TOKEN, session: { expires_at: expiresIn(86_400_000) } } };

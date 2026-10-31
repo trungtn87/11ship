@@ -65,6 +65,7 @@ export function shaped(value: unknown, required: readonly string[], optional: re
   return value as Record<string, unknown>;
 }
 
+export const MAX_COD_VND = 10_000_000;
 const MAX_FEE_VND = 10_000_000;
 const MAX_MONEY_VND = 9_007_199_254_740_991;
 
@@ -280,4 +281,87 @@ export function parseDeliveryId(value: unknown): string {
     return reject();
   }
   return value;
+}
+
+export interface CreateCustomerDeliveryInput {
+  readonly senderName: string;
+  readonly senderPhone: string | null;
+  readonly pickupAddressText: string;
+  readonly pickupLat: number | null;
+  readonly pickupLng: number | null;
+  readonly recipientName: string;
+  readonly recipientPhone: string;
+  readonly dropoffAddressText: string;
+  readonly dropoffLat: number | null;
+  readonly dropoffLng: number | null;
+  readonly goodsDescription: string;
+  readonly goodsValueVnd: number;
+  readonly codVnd: number;
+  readonly feePayer: FeePayer;
+  readonly note: string | null;
+  readonly agreedFee: AgreedFeeInput | null;
+}
+
+export function parseCustomerCreateBody(body: unknown): CreateCustomerDeliveryInput {
+  const b = shaped(
+    body,
+    ['recipient_name', 'recipient_phone', 'dropoff_address_text', 'goods_description', 'pickup_address_text'],
+    ['sender_name', 'sender_phone', 'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng', 'goods_value_vnd', 'cod_vnd', 'fee_payer', 'note', 'agreed_fee']
+  );
+  const recipientPhone = normalizeVietnamPhone(b.recipient_phone);
+  if (recipientPhone === undefined) return reject();
+  const hasSenderPhone = b.sender_phone !== undefined && b.sender_phone !== null && String(b.sender_phone).trim() !== '';
+  const senderPhone = hasSenderPhone ? normalizeVietnamPhone(b.sender_phone) : undefined;
+  if (hasSenderPhone && senderPhone === undefined) return reject();
+
+  const hasPickupLat = b.pickup_lat !== undefined && b.pickup_lat !== null;
+  const hasPickupLng = b.pickup_lng !== undefined && b.pickup_lng !== null;
+  if (hasPickupLat !== hasPickupLng) return reject();
+
+  const hasDropoffLat = b.dropoff_lat !== undefined && b.dropoff_lat !== null;
+  const hasDropoffLng = b.dropoff_lng !== undefined && b.dropoff_lng !== null;
+  if (hasDropoffLat !== hasDropoffLng) return reject();
+
+  const goodsValueVnd = b.goods_value_vnd !== undefined ? whole(b.goods_value_vnd, 0, MAX_MONEY_VND) : 0;
+  const codVnd = b.cod_vnd !== undefined ? whole(b.cod_vnd, 0, MAX_COD_VND) : 0;
+
+  const feePayer = (b.fee_payer as FeePayer) ?? 'SENDER';
+  if (feePayer !== 'SENDER' && feePayer !== 'RECIPIENT') {
+    return reject();
+  }
+
+  let agreedFee: AgreedFeeInput | null = null;
+  if (b.agreed_fee !== undefined && b.agreed_fee !== null) {
+    const f = shaped(b.agreed_fee, ['amount_vnd'], ['reason_code', 'reason_note']);
+    const reasonCode = (f.reason_code && (AGREEMENT_REASONS as readonly string[]).includes(f.reason_code as string))
+      ? (f.reason_code as AgreementReason)
+      : 'OTHER';
+    const reasonNote = optionalText(f.reason_note, 200) ?? (reasonCode === 'OTHER' ? 'Khách tự thỏa thuận phí' : null);
+    agreedFee = { reasonCode, reasonNote, amountVnd: whole(f.amount_vnd, 1, MAX_FEE_VND) };
+  }
+
+  return {
+    senderName: b.sender_name !== undefined ? text(b.sender_name, 1, 80) : 'Khách gửi hàng',
+    senderPhone: senderPhone ?? null,
+    pickupAddressText: text(b.pickup_address_text, 1, 300),
+    pickupLat: hasPickupLat ? coordinate(b.pickup_lat, 90) : null,
+    pickupLng: hasPickupLng ? coordinate(b.pickup_lng, 180) : null,
+    recipientName: text(b.recipient_name, 1, 80),
+    recipientPhone,
+    dropoffAddressText: text(b.dropoff_address_text, 1, 300),
+    dropoffLat: hasDropoffLat ? coordinate(b.dropoff_lat, 90) : null,
+    dropoffLng: hasDropoffLng ? coordinate(b.dropoff_lng, 180) : null,
+    goodsDescription: text(b.goods_description, 1, 120),
+    goodsValueVnd,
+    codVnd,
+    feePayer,
+    note: optionalText(b.note, 200),
+    agreedFee,
+  };
+}
+
+export function parseToggleLocationBody(body: unknown): { shareLocation: boolean } {
+  const b = shaped(body, ['share_location']);
+  if (typeof b.share_location !== 'boolean') return reject();
+  return { shareLocation: b.share_location };
 }

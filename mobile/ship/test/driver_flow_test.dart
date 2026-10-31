@@ -54,4 +54,50 @@ void main() {
     expect(find.byKey(const Key('driver-bank-number')), findsOneWidget);
     expect(api.to('POST', '/v1/driver/me/submit'), isEmpty);
   });
+
+  testWidgets('M03: a locked (SUSPENDED) Shipper still sees the way to close and get the balance back, stays locked, and the old review wording is gone', (WidgetTester tester) async {
+    final FakeApiTransport api = FakeApiTransport();
+    installAccountRoutes(api);
+    FakeDriverServer(api).profile = <String, Object?>{
+        'driver_id': '55555555-5555-4555-8555-555555555555',
+        'user_id': '11111111-1111-4111-8111-111111111111',
+        'shipper_code': 'SH000002',
+        'full_name': 'Trần Văn Khóa',
+        'phone': '+84901234567',
+        'plate_number': null,
+        'status': 'SUSPENDED',
+        'review_state': 'APPROVED',
+        'suspension_reason': 'Khiếu nại giao hàng',
+        'accepting_deliveries': false,
+        'version': 1,
+      };
+    final SessionController session = createSessionController(ClientApp.ship, config, transport: api, bridge: FakeDeviceBridge());
+    await session.start();
+    await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+    final DriverController driver = DriverController(session: session);
+    await tester.pumpWidget(MaterialApp(home: DriverProfileScreen(controller: driver)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('driver-suspended')), findsOneWidget);
+    expect(find.textContaining('không cần mở khóa'), findsWidgets);
+    await tester.ensureVisible(find.byKey(const Key('driver-activity-entry')));
+    await tester.tap(find.byKey(const Key('driver-activity-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('driver-closure-suspended-note')), findsOneWidget);
+    expect(tester.widget<Switch>(find.byKey(const Key('driver-accepting-switch'))).onChanged, isNull, reason: 'a locked Shipper cannot receive orders');
+    await tester.ensureVisible(find.byKey(const Key('driver-closure-request')));
+    await tester.tap(find.byKey(const Key('driver-closure-request')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('driver-closure-confirm')));
+    await tester.pumpAndSettle();
+    expect(driver.profile!.status, 'CLOSING');
+    expect(driver.profile!.closure!.fromSuspended, isTrue);
+    expect(find.byKey(const Key('driver-closure-pending')), findsOneWidget);
+    expect(find.textContaining('quay lại trạng thái khóa'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('driver-closure-undo')));
+    await tester.tap(find.byKey(const Key('driver-closure-undo')));
+    await tester.pumpAndSettle();
+    expect(driver.profile!.status, 'SUSPENDED');
+    expect(driver.profile!.suspensionReason, 'Khiếu nại giao hàng');
+    expect(driver.profile!.acceptingDeliveries, isFalse);
+  });
 }

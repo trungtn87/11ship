@@ -375,6 +375,30 @@ export class M11World {
     }
   }
 
+  /** Test-only top-up of an existing wallet: one more adjustment credit through the same gate as the first funding, in ONE transaction (money-in itself is not under test). */
+  async topUp(s: Shipper, amount: number): Promise<void> {
+    const client = await this.app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const wallet = (await client.query<{ balance_vnd: string }>('SELECT balance_vnd FROM app.driver_wallets WHERE wallet_id = $1::uuid FOR UPDATE', [s.walletId])).rows[0];
+      const last = (await client.query<{ n: string }>('SELECT sequence_no::text AS n FROM app.wallet_ledger_entries WHERE wallet_id = $1::uuid ORDER BY sequence_no DESC LIMIT 1', [s.walletId])).rows[0];
+      const balance = Number(wallet?.balance_vnd) + amount;
+      const adjustmentId = randomUUID();
+      await client.query(
+        `INSERT INTO app.wallet_adjustments (adjustment_id, wallet_id, source_type, source_id, direction, amount_vnd, posted_by, created_at) VALUES ($1::uuid, $2::uuid, 'COMPLAINT', $3::uuid, 'REFUND_TO_SHIPPER', $4, $5::uuid, now())`,
+        [adjustmentId, s.walletId, randomUUID(), amount, this.shop.userId],
+      );
+      await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at, adjustment_id) VALUES ($1::uuid, $2::uuid, $3, 'ADJUSTMENT_CREDIT', $4, $5, now(), $6::uuid)`, [randomUUID(), s.walletId, Number(last?.n) + 1, amount, balance, adjustmentId]);
+      await client.query('UPDATE app.driver_wallets SET balance_vnd = $2, version = version + 1 WHERE wallet_id = $1::uuid', [s.walletId, balance]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   wallet = async (s: Shipper): Promise<{ balance: number; held: number }> => {
     const row = (await this.app.pool.query<{ balance_vnd: string; held_vnd: string }>('SELECT balance_vnd, held_vnd FROM app.driver_wallets WHERE wallet_id = $1::uuid', [s.walletId])).rows[0];
     return { balance: Number(row?.balance_vnd), held: Number(row?.held_vnd) };
