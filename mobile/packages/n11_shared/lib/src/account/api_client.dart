@@ -121,6 +121,8 @@ AuthFailure failureOf(ApiResponse response, {String? endpoint}) {
       kind = AuthFailureKind.stateConflict;
     case 'INVALID_SERVICE_AREA':
       kind = AuthFailureKind.invalidServiceArea;
+    case 'PICKUP_OUTSIDE_SERVICE_AREA':
+      kind = AuthFailureKind.pickupOutsideArea;
     case 'ROLE_NOT_AVAILABLE':
       kind = AuthFailureKind.roleNotAvailable;
     case 'AUTH_REGISTRATION_UNAVAILABLE':

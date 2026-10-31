@@ -4,7 +4,8 @@ import { AvailabilityReason, ShopAvailability } from '../shop/shop-types';
 // Shop setup readiness (issue #190, Owner decision 2026-10-24). The server decides from the REAL rows; nothing the app sends counts:
 //   1 ACCOUNT    the owner account exists (registration with the OTP succeeded: a shop only exists behind it)
 //   2 SHOP_INFO  name, typed address, contact phone, an ACTIVE service area, and a weekly schedule
-//   3 LOCATION   a stored pickup point (GPS); a typed address is never a point
+//   3 LOCATION   a stored pickup point (the pin the owner confirmed on the map; no phone GPS or presence at the shop is needed) lying inside the circle
+//                the server configured for the chosen area (issue #252); a typed address is never a point
 //   4 FIRST_ITEM one dish on sale with a price > 0 (picture optional; Owner change 2026-10-25)
 // All four met, the shop ACTIVE and its owner not locked => the shop is publicly visible and takes orders (when open). Readiness is derived on every
 // read, never stored, so losing a condition later (no dish on sale, no point) blocks NEW orders at once and touches no order already created.
@@ -12,7 +13,7 @@ import { AvailabilityReason, ShopAvailability } from '../shop/shop-types';
 export const SETUP_STEP_KEYS = ['ACCOUNT', 'SHOP_INFO', 'LOCATION', 'FIRST_ITEM'] as const;
 export type SetupStepKey = (typeof SETUP_STEP_KEYS)[number];
 
-export const SETUP_MISSING_CODES = ['NAME', 'ADDRESS', 'CONTACT_PHONE', 'SERVICE_AREA', 'BUSINESS_HOURS', 'PICKUP_POINT', 'SELLABLE_ITEM'] as const;
+export const SETUP_MISSING_CODES = ['NAME', 'ADDRESS', 'CONTACT_PHONE', 'SERVICE_AREA', 'BUSINESS_HOURS', 'PICKUP_POINT', 'PICKUP_OUTSIDE_AREA', 'SELLABLE_ITEM'] as const;
 export type SetupMissingCode = (typeof SETUP_MISSING_CODES)[number];
 
 /** INCOMPLETE = not set up yet; ACTIVATED = set up (public); LOCKED = disabled by an administrator or the owner account is locked; NEEDS_REVIEW = was set up but lost a condition, or an administrator asked for a completion. */
@@ -29,6 +30,8 @@ export interface SetupFacts {
   readonly areaStatus: string | null;
   readonly hasHours: boolean;
   readonly hasPickupPoint: boolean;
+  /** Issue #252: false when the area has a configured circle and the pin lies outside it. Optional: absent means not known to be outside. */
+  readonly pickupInArea?: boolean;
   readonly hasSellableItem: boolean;
   readonly activatedAt: string | null;
   readonly requestPending: boolean;
@@ -58,10 +61,12 @@ export function evaluateSetup(facts: SetupFacts): SetupEvaluation {
   if (facts.contactPhone.trim() === '') info.push('CONTACT_PHONE');
   if (facts.serviceAreaId === null || facts.areaStatus !== 'ACTIVE') info.push('SERVICE_AREA');
   if (!facts.hasHours) info.push('BUSINESS_HOURS');
+  const locationDone = facts.hasPickupPoint && facts.pickupInArea !== false;
+  const locationMissing: SetupMissingCode[] = !facts.hasPickupPoint ? ['PICKUP_POINT'] : locationDone ? [] : ['PICKUP_OUTSIDE_AREA'];
   const steps: SetupStep[] = [
     { key: 'ACCOUNT', done: true, missing: [] },
     { key: 'SHOP_INFO', done: info.length === 0, missing: info },
-    { key: 'LOCATION', done: facts.hasPickupPoint, missing: facts.hasPickupPoint ? [] : ['PICKUP_POINT'] },
+    { key: 'LOCATION', done: locationDone, missing: locationMissing },
     { key: 'FIRST_ITEM', done: facts.hasSellableItem, missing: facts.hasSellableItem ? [] : ['SELLABLE_ITEM'] },
   ];
   const complete = steps.every((step) => step.done);
@@ -91,6 +96,7 @@ export function factsOf(snapshot: ShopSnapshot, hasSellableItem: boolean): Setup
     areaStatus: snapshot.areaStatus,
     hasHours: snapshot.hours.length > 0,
     hasPickupPoint: snapshot.hasPickupPoint,
+    pickupInArea: snapshot.pickupInArea,
     hasSellableItem,
     activatedAt: snapshot.activatedAt,
     requestPending: snapshot.setupRequest !== null,

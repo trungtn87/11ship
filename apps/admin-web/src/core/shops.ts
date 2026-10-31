@@ -50,7 +50,8 @@ export const SETUP_MISSING_LABEL: Record<string, string> = {
   CONTACT_PHONE: 'Thiếu số điện thoại liên hệ',
   SERVICE_AREA: 'Thiếu khu vực phục vụ đang hoạt động',
   BUSINESS_HOURS: 'Chưa cài giờ hoạt động',
-  PICKUP_POINT: 'Chưa có vị trí GPS của quán',
+  PICKUP_POINT: 'Chưa có vị trí lấy hàng (ghim trên bản đồ)',
+  PICKUP_OUTSIDE_AREA: 'Ghim lấy hàng nằm ngoài vùng phục vụ đã chọn',
   SELLABLE_ITEM: 'Chưa có món đang bán hợp lệ (giá > 0, có ảnh)',
 };
 export const LOCK_KIND_LABEL: Record<string, string> = { ADMIN: 'Quản trị viên đã vô hiệu hóa quán', OWNER_ACCOUNT: 'Tài khoản chủ quán đang bị khóa' };
@@ -81,7 +82,7 @@ export const AVAILABILITY_LABEL: Record<AvailabilityReason, { readonly label: st
   ONLINE: { label: 'Đang mở', tone: 'ok' },
   OUTSIDE_BUSINESS_HOURS: { label: 'Đóng · ngoài giờ', tone: 'neutral' },
   NO_BUSINESS_HOURS: { label: 'Chưa thiết lập · chưa có lịch', tone: 'wait' },
-  NO_PICKUP_POINT: { label: 'Chưa thiết lập · chưa có vị trí GPS', tone: 'wait' },
+  NO_PICKUP_POINT: { label: 'Chưa thiết lập · vị trí lấy hàng chưa hợp lệ', tone: 'wait' },
   NO_SELLABLE_ITEM: { label: 'Chưa thiết lập · chưa có món bán', tone: 'wait' },
   SERVICE_AREA_INACTIVE: { label: 'Đóng · khu vực tạm ngưng', tone: 'wait' },
   SHOP_INCOMPLETE: { label: 'Đóng · hồ sơ nháp', tone: 'wait' },

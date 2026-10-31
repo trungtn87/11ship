@@ -276,7 +276,8 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
             N11Field(key: _feedback.key('phone'), hint: _error('phone'), tone: _error('phone') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             const SizedBox(height: N11Space.gap1),
             const N11Steps(count: 2, current: 2, label: 'Vị trí'),
-            KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('shop-address'), error: _error('address'), label: 'Địa chỉ lấy hàng', text: _address.text,
+            KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('shop-address'), error: _error('address') ?? (c.failure?.kind == AuthFailureKind.pickupOutsideArea ? failureMessage(c.failure!) : null), label: 'Chọn vị trí lấy hàng trên bản đồ', text: _address.text,
+              pinSummary: (c.fix?.latitude ?? profile?.pickupLat) == null || (c.fix?.longitude ?? profile?.pickupLng) == null ? 'Chưa chọn ghim trên bản đồ.' : 'Ghim đã chọn: ${(c.fix?.latitude ?? profile!.pickupLat!).toStringAsFixed(5)}, ${(c.fix?.longitude ?? profile!.pickupLng!).toStringAsFixed(5)}',
               onTap: busy || locked || c.hasPendingWrite ? null : () async {
                 _push();
                 final int epoch = c.session.sessionEpoch;
