@@ -329,7 +329,7 @@ Cách hệ thống xử lý từng PR. PR chỉ được tính qua metadata rõ 
 | [#279](https://github.com/trungtn87/11ship/pull/279) (Nhóm 25) Căn chỉnh ảnh món đúng khung thực đơn (#245) | Đã merge (`MERGED`) | — | — | — | `bf55974` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#284](https://github.com/trungtn87/11ship/pull/284) (11Food/M02) Không báo 'Chưa cập nhật' khi chưa có lỗi refr… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `8951dbf` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 | [#285](https://github.com/trungtn87/11ship/pull/285) (11Food/UX) Tab Gọi ship cho khách, bỏ logo Trang chủ (#282) | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `db3a880` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
-| [#286](https://github.com/trungtn87/11ship/pull/286) (M13) Cập nhật chỉ so sánh phiên bản và thông báo; bỏ khóa… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `47492ab` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
+| [#286](https://github.com/trungtn87/11ship/pull/286) (M13) Cập nhật chỉ so sánh phiên bản và thông báo; bỏ khóa… | Đang mở (`OPEN`) | — | — | ⏳ Đang chạy (`RUNNING`) | `4cc8156` | ⚠️ không tính — thiếu metadata hợp lệ (thiếu module:&lt;task id&gt;, type:design¦implementation¦review-fix, agent:*); PR khôn… |
 
 ## ⚠️ Cần chú ý
 
