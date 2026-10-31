@@ -578,6 +578,73 @@ describe('admin order chat (real browser)', () => {
     } finally {await page.close();}
   },180000);
 
+  it('#237: an ADMIN that may only view the SHOP app keeps the whole PWA: a tab it may not read says which grant is missing and the other tabs still open', async () => {
+    const page = await (browser as Browser).newPage();
+    try {
+      await page.viewport(390, 844, true);
+      await page.send('Network.clearBrowserCookies');
+      await asViewer(page);
+      await page.goto(origin + '/business/overview');
+      await page.waitFor(`document.querySelector('.business-nav') && document.querySelector('.business-error') && !document.querySelector('.business-error').hidden && document.querySelector('.business-error').textContent.includes('report.read')`);
+      const refusal = await page.evaluate<string>(`document.querySelector('.business-error').textContent`);
+      expect(refusal).toContain('chưa được cấp quyền');
+      expect(refusal).toContain('report.read');
+      expect(refusal).toContain('Các mục khác vẫn dùng bình thường');
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(5);
+      // Another tab on the same session still opens: the refusal of one tab is not a blank application.
+      await page.goto(origin + '/business/finance');
+      await page.waitFor(`document.querySelector('.business-error') && !document.querySelector('.business-error').hidden && document.querySelector('.business-error').textContent.includes('wallet.read')`);
+      await page.goto(origin + '/business/orders');
+      await page.waitFor(`document.querySelector('.business-content h2') && document.querySelector('.business-content h2').textContent.startsWith('Đơn món') && document.querySelector('.business-error') && document.querySelector('.business-error').hidden`);
+      expect(await page.evaluate<boolean>(`document.querySelector('.business-error').hidden`)).toBe(true);
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(5);
+    } finally {
+      await page.close();
+    }
+  }, 180000);
+
+  it('#236: the order detail of the Mini Business offers only the exception actions the SERVER allows: a viewer sees "Chỉ xem"; SYSTEM cancels with a mandatory reason and the page reloads from the server', async () => {
+    const order = await confirmedOrder();
+    const id = String(order.order_id);
+    const open = `(() => { [...document.querySelectorAll('.business-request')][0].click(); return true; })()`;
+    const viewerPage = await (browser as Browser).newPage();
+    try {
+      await viewerPage.viewport(390, 844, true);
+      await viewerPage.send('Network.clearBrowserCookies');
+      await asViewer(viewerPage);
+      await viewerPage.goto(origin + '/business/orders');
+      await viewerPage.waitFor(`document.querySelectorAll('.business-request').length > 0`);
+      await viewerPage.evaluate(open);
+      await viewerPage.waitFor(`[...document.querySelectorAll('.business-content p')].some((p) => p.textContent.includes('Chỉ xem'))`);
+      expect(await viewerPage.evaluate<number>(`[...document.querySelectorAll('.business-content button')].filter((b) => b.textContent.includes('Hủy đơn món') || b.textContent.includes('Không hoàn tất')).length`)).toBe(0);
+    } finally {
+      await viewerPage.close();
+    }
+    const page = await (browser as Browser).newPage();
+    try {
+      await page.viewport(390, 844, true);
+      await page.send('Network.clearBrowserCookies');
+      await asSystem(page);
+      await page.goto(origin + '/business/orders');
+      await page.waitFor(`document.querySelectorAll('.business-request').length > 0`);
+      await page.evaluate(open);
+      await page.waitFor(`[...document.querySelectorAll('.business-content button')].some((b) => b.textContent.includes('Hủy đơn món'))`);
+      // No reason: refused before anything is sent. With a reason and the confirmation: sent once, then the detail is read again from the server.
+      await page.evaluate(`window.confirm = () => true; true`);
+      expect(await press(page, 'Xác nhận: Hủy đơn món')).toBe(true);
+      expect(await page.evaluate<string>(`document.querySelector('.business-error').textContent`)).toContain('Lý do là bắt buộc');
+      expect((await app.pool.query('SELECT status FROM app.orders WHERE order_id = $1::uuid', [id])).rows[0]?.status).toBe('PREPARING');
+      await page.fill('textarea[aria-label="Lý do cho Hủy đơn món"]', 'Quán hết nguyên liệu');
+      expect(await press(page, 'Xác nhận: Hủy đơn món')).toBe(true);
+      await page.waitFor(`document.querySelector('.business-error') && document.querySelector('.business-error').textContent.includes('Đã cập nhật')`);
+      const row = (await app.pool.query('SELECT status, end_reason FROM app.orders WHERE order_id = $1::uuid', [id])).rows[0];
+      expect(row?.status).toBe('CANCELLED_BY_SHOP');
+      expect(row?.end_reason).toBe('Quán hết nguyên liệu');
+    } finally {
+      await page.close();
+    }
+  }, 240000);
+
   it('a delayed finance response cannot restore another account\'s requests after logout and login in the same PWA',async()=>{
     const requestId=randomUUID();
     await app.pool.query(`INSERT INTO app.business_finance_requests(request_id,kind,owner_user_id,shop_id,amount_requested_vnd,state) VALUES($1,'SHOP_PAYMENT',$2,$3,29000,'PENDING')`,[requestId,shop.userId,shop.shopId]);
