@@ -73,6 +73,17 @@ export class DeliveryActors {
     return { actor, driver: this.#usable(driver, false) };
   }
 
+  /**
+   * Read-only access to the Shipper's OWN assignments (issue #258): a SUSPENDED Shipper may no longer take or change work, but must still read the
+   * delivery they already hold (the shop to call, the address, the state). Every caller filters by this driver id; nothing is ever written through it.
+   */
+  async shipperHolderReader(context: TransactionContext, principal: AuthPrincipal): Promise<ShipperCaller> {
+    const actor = await this.authority.lock(context, principal, 'share');
+    await this.#assertShipDriver(context, actor);
+    const driver = await this.drivers.findByUserId(context, actor.userId);
+    return { actor, driver: driver?.status === 'SUSPENDED' ? driver : this.#usable(driver, false) };
+  }
+
   /** The 11Ship app, the DRIVER hat on the locked session AND the DRIVER role still held now (read under the user lock already taken). */
   async #assertShipDriver(context: TransactionContext, actor: ClientActor): Promise<void> {
     if (actor.app !== 'SHIP' || actor.storedActiveRole !== 'DRIVER' || !(await this.users.hasRole(context, actor.userId, 'DRIVER'))) {

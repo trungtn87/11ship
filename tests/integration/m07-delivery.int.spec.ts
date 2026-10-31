@@ -436,6 +436,26 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
   });
 
+  it('#258: an Admin lock (SUSPENDED) stops new orders but the Shipper still READS the delivery already held; nothing is cancelled, completed or taken again', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const other = await newDelivery();
+    await app.pool.query(`UPDATE app.drivers SET status = 'SUSPENDED', accepting_deliveries = false, updated_at = clock_timestamp() WHERE driver_id = $1::uuid`, [s.driverId]);
+
+    const mineList = await asShipper(s, 'GET', '/driver/deliveries/mine?scope=active');
+    expect(mineList.status).toBe(200);
+    expect(((dataOf(mineList) as Json).deliveries as Json[]).map((d) => d.delivery_id)).toContain(view.delivery_id);
+    expect((await asShipper(s, 'GET', `/driver/deliveries/${view.delivery_id}`)).status).toBe(200);
+    // Another Shipper's delivery stays unreadable.
+    expect((await asShipper(s, 'GET', `/driver/deliveries/${other.delivery_id}`)).status).toBe(404);
+
+    // No new work: no offers, no accept, no position report; nothing else changed.
+    expect(codeOf(await asShipper(s, 'GET', '/driver/deliveries/offers'))).toBe('ROLE_NOT_AVAILABLE');
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${other.delivery_id}/accept`, {}))).toBe('ROLE_NOT_AVAILABLE');
+    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    expect(await app.pool.query(`SELECT status, accepting_deliveries FROM app.drivers WHERE driver_id = $1::uuid`, [s.driverId]).then((r) => r.rows[0])).toEqual({ status: 'SUSPENDED', accepting_deliveries: false });
+  });
+
   it('PASSWORD Android full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
     const s = await newShipper(50_000, true, true);
     const view = await acceptNew(s);

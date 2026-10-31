@@ -249,7 +249,7 @@ export const DELIVERY_REFUSAL_MESSAGE: Record<string, string> = {
   ADMIN_ACTION_NOT_ALLOWED: 'Thao tác này không áp dụng cho yêu cầu giao ở trạng thái hiện tại.',
   FEE_LOCKED: 'Phí đã khóa sau khi nhận hàng. Chỉ chỉnh được bằng thao tác "Điều chỉnh sau lấy hàng" có lý do.',
   ADMIN_INPUT_INVALID: 'Thông tin gửi lên không hợp lệ (lý do bắt buộc, tối đa 500 ký tự).',
-  M11_NOT_AVAILABLE: 'Module Phản ánh (M11) chưa sẵn sàng; hệ thống chỉ ghi dấu đã chuyển, chưa tạo phiếu.',
+  M11_NOT_AVAILABLE: 'Chỉ đánh dấu cần theo dõi; hệ thống không tạo phiếu phản ánh thay khách hay shipper.',
 };
 
 export const REASON_MAX = 500;

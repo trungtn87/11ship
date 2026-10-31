@@ -104,7 +104,7 @@ export class DeliveryShipperService {
 
   async mine(principal: AuthPrincipal, scope: 'active' | 'history'): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
-      const caller = await this.actors.shipperReader(context, principal);
+      const caller = await this.actors.shipperHolderReader(context, principal);
       const nowMs = await freshClockMs(context);
       const assignments = scope === 'active' ? await this.deliveries.listActiveOfDriver(context, caller.driver.driverId) : await this.deliveries.listEndedOfDriver(context, caller.driver.driverId, HISTORY_LIMIT);
       const out: JsonObject[] = [];
@@ -120,7 +120,7 @@ export class DeliveryShipperService {
 
   async read(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
-      const caller = await this.actors.shipperReader(context, principal);
+      const caller = await this.actors.shipperHolderReader(context, principal);
       const mine = (await this.deliveries.listAssignments(context, deliveryId)).filter((assignment) => assignment.driverId === caller.driver.driverId);
       const latest = mine[mine.length - 1];
       const delivery = latest === undefined ? undefined : await this.deliveries.findById(context, deliveryId);
