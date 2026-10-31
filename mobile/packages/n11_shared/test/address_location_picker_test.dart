@@ -6,6 +6,7 @@ import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 
 void main() {
+  addressPickerUxTests();
   testWidgets('place search debounces and a late older response cannot replace the latest results', (WidgetTester tester) async {
     final _PendingSearch search = _PendingSearch();
     await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
@@ -282,4 +283,114 @@ class _PendingSearch implements PlaceSearchApi {
     answers.add(answer);
     return answer.future;
   }
+}
+
+// Issue #283 (UX): suggestions are optional help; typed text and Save always work.
+class _FixedSearch implements PlaceSearchApi {
+  _FixedSearch(this.results, {this.fail = false});
+  final List<PlaceSearchResult> results;
+  final bool fail;
+
+  @override
+  Future<List<PlaceSearchResult>> search(String query) async {
+    if (fail) throw const AuthFailure(AuthFailureKind.unknownOutcome);
+    return results;
+  }
+}
+
+void addressPickerUxTests() {
+  Future<AddressLocation?> openPicker(WidgetTester tester, PlaceSearchApi? search, {AddressLocation initial = const AddressLocation('')}) async {
+    AddressLocation? saved;
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
+      child: const Text('Open'),
+      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
+        initial: initial, requirePoint: false, searchApi: search,
+        mapBuilder: (_, lat, lng, onPick) => const SizedBox(key: Key('test-map'), height: 320),
+      ))),
+    ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    return saved;
+  }
+
+  List<PlaceSearchResult> many() => <PlaceSearchResult>[
+        for (int i = 0; i < 6; i++) PlaceSearchResult(id: 'p$i', name: 'Nhà $i', address: 'Nhà $i, Cao Bằng', latitude: 22.66 + i / 1000, longitude: 106.25, inCaoBang: true),
+      ];
+
+  testWidgets('free text is saved as typed with no pin, without choosing any suggestion', (WidgetTester tester) async {
+    AddressLocation? saved;
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
+      child: const Text('Open'),
+      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
+        initial: const AddressLocation(''), requirePoint: false, searchApi: _FixedSearch(many()),
+        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
+      ))),
+    ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà số 12, ngõ 8, Cao Bằng');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    expect(find.byKey(const Key('place-result-p0')), findsOneWidget, reason: 'suggestions appear but are not chosen for the person');
+    expect(find.text('Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'nhà số 12, ngõ 8, Cao Bằng');
+    expect(saved?.latitude, isNull);
+    expect(saved?.longitude, isNull);
+  });
+
+  testWidgets('six suggestions never push the map and Save out of reach; they can be hidden', (WidgetTester tester) async {
+    await openPicker(tester, _FixedSearch(many()));
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    expect(tester.getSize(find.byKey(const Key('place-suggestions-box'))).height, lessThanOrEqualTo(208));
+    expect(find.byKey(const Key('location-save')).hitTestable(), findsOneWidget);
+    await tester.tap(find.byKey(const Key('place-suggestions-toggle')));
+    await tester.pump();
+    expect(find.byKey(const Key('place-suggestions-box')), findsNothing);
+    expect(find.byKey(const Key('location-address-text')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('place-suggestions-toggle')));
+    await tester.pump();
+    expect(find.byKey(const Key('place-suggestions-box')), findsOneWidget);
+  });
+
+  testWidgets('choosing a suggestion pins its point and saves it; a failed search does not stop typing or Save', (WidgetTester tester) async {
+    await openPicker(tester, _FixedSearch(many()));
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('place-result-p2')));
+    await tester.pump();
+    expect(find.text('Sẽ lưu địa chỉ cùng vị trí đã ghim.'), findsOneWidget);
+  });
+
+  testWidgets('a failed search keeps the typed draft and Save still works', (WidgetTester tester) async {
+    AddressLocation? saved;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
+      child: const Text('Open'),
+      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
+        initial: const AddressLocation(''), requirePoint: false, searchApi: _FixedSearch(const <PlaceSearchResult>[], fail: true),
+        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
+      ))),
+    ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-address-text')), 'xóm Nà Lạn');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    expect(find.byKey(const Key('place-search-error')), findsOneWidget);
+    expect(tester.widget<TextField>(find.byKey(const Key('location-address-text'))).controller!.text, 'xóm Nà Lạn');
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'xóm Nà Lạn');
+    expect(saved?.latitude, isNull);
+  });
 }

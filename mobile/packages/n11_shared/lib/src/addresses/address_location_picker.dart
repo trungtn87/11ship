@@ -118,6 +118,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   bool _searching = false;
   bool _searchFailed = false;
   bool _searched = false;
+  bool _suggestionsHidden = false;
   int _searchRevision = 0;
   bool _programmaticText = false;
   bool _pinTextUnconfirmed = false;
@@ -173,6 +174,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     _debounce?.cancel();
     final String query = value.trim();
     final int revision = ++_searchRevision;
+    _suggestionsHidden = false;
     if (query.runes.length < 2 || _searchApi == null) {
       setState(() { _results = const <PlaceSearchResult>[]; _searching = false; _searchFailed = false; _searched = false; });
       return;
@@ -289,6 +291,46 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     ).pop(AddressLocation(_text.text.trim(), latitude: _lat, longitude: _lng));
   }
 
+  /// Suggestions are optional help: a short scrollable box (shorter while the keyboard is open) that can be hidden, so the map and Save stay in reach.
+  Widget _suggestions(BuildContext context) {
+    final bool keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            const Expanded(child: Text('Gợi ý (không bắt buộc chọn)', key: Key('place-suggestions-title'), style: N11Text.caption)),
+            TextButton(
+              key: const Key('place-suggestions-toggle'),
+              onPressed: () => setState(() => _suggestionsHidden = !_suggestionsHidden),
+              child: Text(_suggestionsHidden ? 'Hiện gợi ý' : 'Ẩn gợi ý'),
+            ),
+          ],
+        ),
+        if (!_suggestionsHidden)
+          ConstrainedBox(
+            key: const Key('place-suggestions-box'),
+            constraints: BoxConstraints(maxHeight: keyboard ? 128 : 208),
+            child: ListView(
+              shrinkWrap: true,
+              children: <Widget>[
+                for (final PlaceSearchResult result in _results)
+                  ListTile(
+                    key: Key('place-result-${result.id}'),
+                    dense: true,
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(result.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(result.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: result.inCaoBang ? const Text('Cao Bằng') : null,
+                    onTap: () => _selectResult(result),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Chọn địa chỉ')),
@@ -337,15 +379,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             ),
           if (_searched && !_searching && !_searchFailed && _text.text.trim().runes.length >= 2 && _results.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Không có kết quả phù hợp. Có thể tiếp tục nhập địa chỉ chữ.')),
-          for (final PlaceSearchResult result in _results)
-            ListTile(
-              key: Key('place-result-${result.id}'),
-              leading: const Icon(Icons.place_outlined),
-              title: Text(result.name),
-              subtitle: Text(result.address),
-              trailing: result.inCaoBang ? const Text('Cao Bằng') : null,
-              onTap: () => _selectResult(result),
-            ),
+          if (_results.isNotEmpty) _suggestions(context),
           if (_pinTextUnconfirmed && _lat != null && _lng != null)
             Card(
               key: const Key('pin-text-confirmation'),
@@ -361,6 +395,12 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
               ),
             ),
           const SizedBox(height: 12),
+          if (!widget.requirePoint)
+            Text(
+              _lat == null ? 'Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.' : 'Sẽ lưu địa chỉ cùng vị trí đã ghim.',
+              key: const Key('address-save-mode'),
+              style: N11Text.bodyStrong,
+            ),
           Text(
             _lat == null
                 ? 'Chạm bản đồ để ghim đúng vị trí.'
