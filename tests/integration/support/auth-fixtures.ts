@@ -476,6 +476,13 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     'DELETE FROM app.user_roles WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
   );
+  // M08 notifications reference the user (ON DELETE RESTRICT): children first (pushes -> reminders -> notifications), then the per-user rows.
+  await pool.query('DELETE FROM app.notification_pushes WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
+  await pool.query('DELETE FROM app.notification_reminders WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
+  await pool.query('DELETE FROM app.notifications WHERE recipient_user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
+  await pool.query('DELETE FROM app.notification_offer_rounds WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
+  await pool.query('DELETE FROM app.notification_settings WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
+  await pool.query('DELETE FROM app.notification_push_tokens WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [normalizedPhone]);
   await pool.query('DELETE FROM app.users WHERE phone_normalized = $1', [normalizedPhone]);
   await pool.query('DELETE FROM app.verification_proofs WHERE phone_normalized = $1', [normalizedPhone]);
   // Issue #102: SMS jobs reference the challenge.
