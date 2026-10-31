@@ -456,6 +456,60 @@ describe('M07 — delivery flow', () => {
     expect(await app.pool.query(`SELECT status, accepting_deliveries FROM app.drivers WHERE driver_id = $1::uuid`, [s.driverId]).then((r) => r.rows[0])).toEqual({ status: 'SUSPENDED', accepting_deliveries: false });
   });
 
+  const suspend = (s: Shipper): Promise<unknown> => app.pool.query(`UPDATE app.drivers SET status = 'SUSPENDED', accepting_deliveries = false, updated_at = clock_timestamp() WHERE driver_id = $1::uuid`, [s.driverId]);
+  const driverStatus = async (s: Shipper): Promise<Json> => (await app.pool.query('SELECT status, accepting_deliveries FROM app.drivers WHERE driver_id = $1::uuid', [s.driverId])).rows[0] as Json;
+
+  it('#258 (Owner 2026-10-31): SUSPENDED BEFORE pickup cannot pick up but may give the delivery back; the hold is released once and the suspension stays', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    await suspend(s);
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version }))).toBe('ROLE_NOT_AVAILABLE');
+    expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+    const released = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/release`, { expected_version: view.version, reason: 'Tài khoản bị khóa, trả đơn' });
+    expect(released.status).toBe(200);
+    expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    expect(await driverStatus(s)).toEqual({ status: 'SUSPENDED', accepting_deliveries: false });
+    // Nothing new: no offers, and the released delivery cannot be accepted again by the locked Shipper.
+    expect(codeOf(await asShipper(s, 'GET', '/driver/deliveries/offers'))).toBe('ROLE_NOT_AVAILABLE');
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/accept`, {}))).toBe('ROLE_NOT_AVAILABLE');
+  });
+
+  it('#258 (Owner 2026-10-31): SUSPENDED AFTER pickup may only deliver: the commission is captured once, an idempotent retry changes nothing, release is refused, and the account stays SUSPENDED', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const picked = dataOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version })) as Json;
+    await suspend(s);
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/release`, { expected_version: picked.version, reason: 'bỏ' }))).toBe('AFTER_PICKUP_NO_CANCEL');
+    expect(codeOf(await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/fail`, { expected_version: picked.version, reason: 'x' }))).toBeDefined();
+    const key = randomUUID();
+    const done = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: picked.version }, key);
+    expect([done.status, done.text.slice(0, 200)]).toEqual([200, expect.any(String)]);
+    const again = await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: picked.version }, key);
+    expect(again.status).toBe(200);
+    expect(await stateOf(String(view.delivery_id))).toBe('completed');
+    expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
+    expect(await countRows(app.pool, `SELECT 1 FROM app.wallet_ledger_entries WHERE wallet_id = $1::uuid AND delta_vnd = -1000`, [s.walletId])).toBe(1);
+    expect(await driverStatus(s)).toEqual({ status: 'SUSPENDED', accepting_deliveries: false });
+  });
+
+  it('#258 race: an Admin lock and a pickup at the same moment leave one consistent outcome (picked up and still completable, or refused and still releasable); the suspension always holds', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const [pick] = await Promise.all([asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/pickup`, { expected_version: view.version }), suspend(s)]);
+    expect((await driverStatus(s)).status).toBe('SUSPENDED');
+    if (pick.status === 200) {
+      const v = dataOf(pick) as Json;
+      expect(await stateOf(String(view.delivery_id))).not.toBe('accepted');
+      expect((await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/complete`, { expected_version: v.version })).status).toBe(200);
+      expect(await wallet(s)).toEqual({ balance: 49_000, held: 0 });
+    } else {
+      expect(codeOf(pick)).toBe('ROLE_NOT_AVAILABLE');
+      expect(await stateOf(String(view.delivery_id))).toBe('accepted');
+      expect((await asShipper(s, 'POST', `/driver/deliveries/${view.delivery_id}/release`, { expected_version: view.version, reason: 'khóa' })).status).toBe(200);
+      expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    }
+  });
+
   it('PASSWORD Android full path: accept, pickup, complete: the commission is captured once and the delivery is completed', async () => {
     const s = await newShipper(50_000, true, true);
     const view = await acceptNew(s);

@@ -84,6 +84,18 @@ export class DeliveryActors {
     return { actor, driver: driver?.status === 'SUSPENDED' ? driver : this.#usable(driver, false) };
   }
 
+  /**
+   * The writer of a Shipper whose account may be SUSPENDED but who still HOLDS a delivery (issue #258, Owner 2026-10-31): only the two steps that end that hold may use it
+   * (give the delivery back before pickup; deliver it after pickup). Taking, picking up and everything else keep `shipperWriter`, which refuses SUSPENDED. The status is never
+   * written here, so a suspension survives the completion untouched.
+   */
+  async shipperHolderWriter(context: TransactionContext, principal: AuthPrincipal): Promise<ShipperCaller> {
+    const actor = await this.authority.lock(context, principal, 'update');
+    await this.#assertShipDriver(context, actor);
+    const driver = await this.drivers.lockByUserId(context, actor.userId);
+    return { actor, driver: driver?.status === 'SUSPENDED' ? driver : this.#usable(driver, false) };
+  }
+
   /** The 11Ship app, the DRIVER hat on the locked session AND the DRIVER role still held now (read under the user lock already taken). */
   async #assertShipDriver(context: TransactionContext, actor: ClientActor): Promise<void> {
     if (actor.app !== 'SHIP' || actor.storedActiveRole !== 'DRIVER' || !(await this.users.hasRole(context, actor.userId, 'DRIVER'))) {

@@ -257,10 +257,10 @@ export class DeliveryShipperService {
         operationId: OPERATIONS.release,
         idempotencyKey: key,
         logicalRequest: { delivery_id: deliveryId, reason: input.reason, expected_version: input.expectedVersion },
-        replay: this.#replay(principal, false),
+        replay: this.#replay(principal, false, true),
       },
       async (context) => {
-        const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion);
+        const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion, true);
         if (delivery.state === 'delivering' || delivery.state === 'picked_up') {
           throw new AppError('AFTER_PICKUP_NO_CANCEL');
         }
@@ -545,9 +545,9 @@ export class DeliveryShipperService {
    */
   async complete(principal: AuthPrincipal, deliveryId: string, input: VersionInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
     return this.executor.execute(
-      { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATIONS.complete, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, expected_version: input.expectedVersion }, replay: this.#replay(principal, false) },
+      { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATIONS.complete, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, expected_version: input.expectedVersion }, replay: this.#replay(principal, false, true) },
       async (context) => {
-        const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion);
+        const { caller, delivery, assignment } = await this.#mine(context, principal, deliveryId, input.expectedVersion, true);
         if (delivery.state !== 'delivering') {
           throw new AppError('DELIVERY_STATE_CONFLICT');
         }
@@ -588,8 +588,8 @@ export class DeliveryShipperService {
   // ---- shared ----------------------------------------------------------------------------------------------------------------
 
   /** The Shipper (driver row FOR UPDATE), then the delivery, and this Shipper's ACTIVE assignment on it. Anything else: not found. */
-  async #mine(context: TransactionContext, principal: AuthPrincipal, deliveryId: string, expectedVersion: number): Promise<{ caller: ShipperCaller; delivery: DeliveryRow; assignment: AssignmentRow }> {
-    const caller = await this.actors.shipperWriter(context, principal, { acceptNew: false });
+  async #mine(context: TransactionContext, principal: AuthPrincipal, deliveryId: string, expectedVersion: number, holder = false): Promise<{ caller: ShipperCaller; delivery: DeliveryRow; assignment: AssignmentRow }> {
+    const caller = holder ? await this.actors.shipperHolderWriter(context, principal) : await this.actors.shipperWriter(context, principal, { acceptNew: false });
     const delivery = await this.deliveries.lockById(context, deliveryId);
     const assignment = delivery === undefined ? undefined : await this.deliveries.lockActiveAssignment(context, deliveryId);
     if (delivery === undefined || assignment === undefined || assignment.driverId !== caller.driver.driverId) {
@@ -649,14 +649,18 @@ export class DeliveryShipperService {
   }
 
   /** A replay answers only after the CURRENT session, the 11Ship DRIVER context and the Shipper profile are authorized again under the same locks. */
-  #replay(principal: AuthPrincipal, acceptNew: boolean) {
+  #replay(principal: AuthPrincipal, acceptNew: boolean, holder = false) {
     return {
       kind: 'sensitive' as const,
       authorize: async (context: TransactionContext, guard: JsonObject): Promise<true> => {
         if (!isCanonicalUuid(guard.user_id) || guard.user_id !== principal.userId) {
           throw new TechnicalError('internal', 'Invalid replay guard');
         }
-        await this.actors.shipperWriter(context, principal, { acceptNew });
+        if (holder) {
+          await this.actors.shipperHolderWriter(context, principal);
+        } else {
+          await this.actors.shipperWriter(context, principal, { acceptNew });
+        }
         return true;
       },
     };
