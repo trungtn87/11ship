@@ -25,6 +25,9 @@ import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient } from './m14-route-client';
 import { ShipperSettlementReader } from '../shipper-settlement/shipper-settlement-reader';
 import { ShipperLocationRepository, shouldShareLocation } from './shipper-location';
+
+/** Reports arriving within this long after the switch went OFF (or the account changed) are not stored as a live position. */
+const LATE_UPLOAD_AFTER_OFF_MS = 20_000;
 import { AddressChangeRepository } from '../address-change/address-change-repository';
 
 const OFFER_LIMIT = 30;
@@ -136,7 +139,12 @@ export class DeliveryShipperService {
   async reportLocation(principal: AuthPrincipal, input: LocationInput): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
       const caller = await this.actors.shipperReader(context, principal);
-      await this.locations.upsert(context, caller.driver.driverId, input.lat, input.lng, input.accuracyM);
+      // Issue #265 (Owner 2026-10-31): a report that reaches the server just after the Shipper switched Online OFF is a late upload: it must not become a live position. The first
+      // fix of a turn-on (sent while the switch is still off, long after the last change) is kept, as the turn-on needs it. The answer says "stop" either way.
+      const lateAfterOff = !shouldShareLocation(caller.driver) && (await freshClockMs(context)) - caller.driver.updatedAtMs < LATE_UPLOAD_AFTER_OFF_MS;
+      if (!lateAfterOff) {
+        await this.locations.upsert(context, caller.driver.driverId, input.lat, input.lng, input.accuracyM);
+      }
       // The answer tells the app whether it must keep sharing: a Shipper who is off and has no work left lets it stop by itself.
       const activeWork = await this.settlement.hasActiveWork(context, caller.driver.driverId);
       return { ok: true, intent_online: caller.driver.acceptingDeliveries, has_active_work: activeWork, should_share_location: shouldShareLocation(caller.driver) };

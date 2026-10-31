@@ -321,6 +321,26 @@ describe('M07 — delivery flow', () => {
     });
   });
 
+  it('#265 late upload: a report reaching the server right after Online went OFF stores nothing and says stop; the first fix of a later turn-on is kept; the held delivery is shown as not live', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const me = dataOf(await asShipper(s, 'GET', '/driver/me')) as Json;
+    expect((await asShipper(s, 'POST', '/driver/me/accepting', { expected_version: me.version, accepting: false })).status).toBe(200);
+    const positionAt = async (): Promise<string> => String((await app.pool.query('SELECT recorded_at::text AS at FROM app.shipper_latest_locations WHERE driver_id = $1::uuid', [s.driverId])).rows[0]?.at);
+    const before = await positionAt();
+    const late = await asShipper(s, 'PUT', '/driver/location', { lat: 21.0009, lng: 105.8009, accuracy_m: 20 });
+    expect(late.status).toBe(200);
+    expect(dataOf(late)).toMatchObject({ should_share_location: false, intent_online: false });
+    expect(await positionAt()).toBe(before);
+    // The delivery the Shipper still holds is readable and its last point is not drawn as live while the Shipper is off.
+    const seen = dataOf(await asShipper(s, 'GET', `/driver/deliveries/${view.delivery_id}`)) as Json;
+    expect(['accepted', 'location_confirmed']).toContain(String(seen.state));
+    // Quiet for a while (the change is older than the guard window): the position is kept again, as the first fix of a turn-on must be.
+    await app.pool.query("UPDATE app.drivers SET created_at = clock_timestamp() - interval '1 hour', updated_at = clock_timestamp() - interval '2 minutes' WHERE driver_id = $1::uuid", [s.driverId]);
+    expect((await asShipper(s, 'PUT', '/driver/location', { lat: 21.0009, lng: 105.8009, accuracy_m: 20 })).status).toBe(200);
+    expect(await positionAt()).not.toBe(before);
+  });
+
   it('a Shipper who switched off never comes back online by reporting a position, and gets no new order', async () => {
     const s = await newShipper();
     const version = ((dataOf(await asShipper(s, 'GET', '/driver/me')) as Json).version);
