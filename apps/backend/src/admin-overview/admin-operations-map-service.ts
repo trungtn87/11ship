@@ -10,22 +10,13 @@ import { locationValid } from '../delivery/delivery-rules';
 import { ShipperLocationRepository } from '../delivery/shipper-location';
 import { DriverAdminQueryRepository } from '../driver/driver-admin-query-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
+import { ShopRepository } from '../shop/shop-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { Inject } from '@nestjs/common';
 
 /** Points drawn per kind. One more is read to learn whether more exist; the answer then says `truncated`, it never silently cuts. */
 const MAP_LIMIT = 300;
-
-interface RawShopPin {
-  shop_id: string;
-  name: string;
-  pickup_lat: number | string;
-  pickup_lng: number | string;
-  service_area_id: string | null;
-}
-
-const num = (value: number | string): number => (typeof value === 'number' ? value : Number(value));
 
 /**
  * Issue #262 (IV): the operations map of the Administration. It hands the web the real coordinates the system holds (the service-area circles, the pins of the active
@@ -45,6 +36,7 @@ export class AdminOperationsMapService {
     private readonly zones: AdminServiceAreaRepository,
     private readonly drivers: DriverAdminQueryRepository,
     private readonly locations: ShipperLocationRepository,
+    private readonly shopRepository: ShopRepository,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
@@ -118,20 +110,11 @@ export class AdminOperationsMapService {
   }
 
   async #shops(context: TransactionContext): Promise<{ pins: JsonObject[]; withoutPin: number; truncated: boolean }> {
-    const rows = await context.query<RawShopPin>(
-      `SELECT shop_id::text AS shop_id, name, pickup_lat, pickup_lng, service_area_id::text AS service_area_id
-         FROM app.shops
-        WHERE status = 'ACTIVE' AND pickup_lat IS NOT NULL AND pickup_lng IS NOT NULL AND NOT (pickup_lat = 0 AND pickup_lng = 0)
-        ORDER BY shop_id LIMIT $1::int`,
-      [MAP_LIMIT + 1],
-    );
-    const missing = await context.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM app.shops WHERE status = 'ACTIVE' AND (pickup_lat IS NULL OR pickup_lng IS NULL OR (pickup_lat = 0 AND pickup_lng = 0))`,
-    );
+    const read = await this.shopRepository.mapPins(context, MAP_LIMIT + 1);
     return {
-      pins: rows.rows.slice(0, MAP_LIMIT).map((r) => ({ shop_id: r.shop_id, name: r.name, lat: num(r.pickup_lat), lng: num(r.pickup_lng), service_area_id: r.service_area_id })),
-      withoutPin: Number(missing.rows[0]?.n ?? '0'),
-      truncated: rows.rows.length > MAP_LIMIT,
+      pins: read.pins.slice(0, MAP_LIMIT).map((p) => ({ shop_id: p.shopId, name: p.name, lat: p.lat, lng: p.lng, service_area_id: p.serviceAreaId })),
+      withoutPin: read.withoutPin,
+      truncated: read.pins.length > MAP_LIMIT,
     };
   }
 }
