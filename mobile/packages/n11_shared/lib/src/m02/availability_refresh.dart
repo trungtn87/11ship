@@ -4,7 +4,9 @@ import 'package:flutter/widgets.dart';
 /// A server-relative one-shot alarm, never a device-clock decision about opening.
 /// A failed read keeps data stale and retries with bounded backoff. No background polling.
 class AvailabilityRefresh with WidgetsBindingObserver {
-  AvailabilityRefresh({required this.refresh, required this.invalidate});
+  /// [invalidate] marks the shown data untrusted the moment the app leaves the foreground or a reload starts. Omit it when a pending or
+  /// not-yet-failed refresh must not be reported as stale: the owner then flags staleness only from a refresh that really failed.
+  AvailabilityRefresh({required this.refresh, this.invalidate});
   WidgetsBinding? _binding;
 
   /// Called by mounted screens; controller-only tests need no Flutter binding.
@@ -14,7 +16,7 @@ class AvailabilityRefresh with WidgetsBindingObserver {
     _binding!.addObserver(this);
   }
   final Future<void> Function() refresh;
-  final VoidCallback invalidate;
+  final VoidCallback? invalidate;
   Timer? _timer;
   bool _disposed = false;
   bool _paused = false;
@@ -42,7 +44,7 @@ class AvailabilityRefresh with WidgetsBindingObserver {
     if (_disposed || _paused || _running) return;
     _timer?.cancel();
     _running = true;
-    invalidate();
+    invalidate?.call();
     try {
       await refresh();
     } finally {
@@ -55,7 +57,7 @@ class AvailabilityRefresh with WidgetsBindingObserver {
     _paused = state != AppLifecycleState.resumed;
     if (_paused) {
       _timer?.cancel();
-      invalidate();
+      invalidate?.call();
     } else {
       unawaited(reload());
     }
