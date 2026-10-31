@@ -207,6 +207,7 @@ describe('AllExceptionsFilter', () => {
         'ADMIN_TOTP_INVALID',
         'ADMIN_VERSION_CONFLICT',
         'AFTER_PICKUP_NO_CANCEL',
+        'ANOMALY_CASE_NOT_FOUND',
         'AUTH_REGISTRATION_UNAVAILABLE',
         'AUTH_RESULT_NOT_REPLAYABLE',
         'BACKUP_RUN_OPEN',

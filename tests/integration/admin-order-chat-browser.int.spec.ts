@@ -558,7 +558,7 @@ describe('admin order chat (real browser)', () => {
       await page.goto(origin+'/business/');
       await page.waitFor(`document.querySelector('.business-nav') && document.querySelector('.business-tile strong')`);
       expect(await noSideways(page)).toBe(true);
-      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(5);
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(6);
       expect(await page.evaluate<boolean>(`document.querySelector('.business-error').hidden`)).toBe(true);
       await shot(page,'business-overview-phone');
       await page.goto(origin+'/business/chat?request='+requestId);
@@ -590,14 +590,14 @@ describe('admin order chat (real browser)', () => {
       expect(refusal).toContain('chưa được cấp quyền');
       expect(refusal).toContain('report.read');
       expect(refusal).toContain('Các mục khác vẫn dùng bình thường');
-      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(5);
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(6);
       // Another tab on the same session still opens: the refusal of one tab is not a blank application.
       await page.goto(origin + '/business/finance');
       await page.waitFor(`document.querySelector('.business-error') && !document.querySelector('.business-error').hidden && document.querySelector('.business-error').textContent.includes('wallet.read')`);
       await page.goto(origin + '/business/orders');
       await page.waitFor(`document.querySelector('.business-content h2') && document.querySelector('.business-content h2').textContent.startsWith('Đơn món') && document.querySelector('.business-error') && document.querySelector('.business-error').hidden`);
       expect(await page.evaluate<boolean>(`document.querySelector('.business-error').hidden`)).toBe(true);
-      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(5);
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(6);
     } finally {
       await page.close();
     }
@@ -642,6 +642,36 @@ describe('admin order chat (real browser)', () => {
       expect(row?.end_reason).toBe('Quán hết nguyên liệu');
     } finally {
       await page.close();
+    }
+  }, 240000);
+
+  it('#241/#242: the "Vận hành" tab shows the four questions with honest empty states, never 0 % for no data, the anomaly list says it is for review only; an ADMIN without report.read is told it has no right', async () => {
+    const page = await (browser as Browser).newPage();
+    try {
+      await page.viewport(390, 844, true);
+      await page.send('Network.clearBrowserCookies');
+      await asSystem(page);
+      await page.goto(origin + '/business/ops');
+      await page.waitFor(`document.querySelectorAll('.business-ops [data-block]').length >= 5`);
+      expect(await page.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(6);
+      expect(await noSideways(page)).toBe(true);
+      const text = await page.evaluate<string>(`document.querySelector('.business-ops').textContent`);
+      for (const part of ['1 · Không tìm được shipper', '2 · Quán xác nhận chậm', '3 · Giờ nghi thiếu shipper', '4 · Đơn bị hủy nhiều nhất ở bước nào', 'không tự khóa, hạn chế, trừ tiền hay đổi quyền nhận chuyến']) expect(text).toContain(part);
+      expect(text).not.toContain('(0/0)');
+      await shot(page, 'business-ops-phone');
+    } finally {
+      await page.close();
+    }
+    const denied = await (browser as Browser).newPage();
+    try {
+      await denied.viewport(390, 844, true);
+      await denied.send('Network.clearBrowserCookies');
+      await asViewer(denied);
+      await denied.goto(origin + '/business/ops');
+      await denied.waitFor(`document.querySelector('.business-error') && !document.querySelector('.business-error').hidden && document.querySelector('.business-error').textContent.includes('chưa được cấp quyền')`);
+      expect(await denied.evaluate<number>(`document.querySelectorAll('.business-nav button').length`)).toBe(6);
+    } finally {
+      await denied.close();
     }
   }, 240000);
 

@@ -96,7 +96,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
  */
 export function publicAdminAsset(pathname: string): string | undefined {
   if (pathname === '/business.html') return 'business.html';
-  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications|reset)?)?\/?$/.test(pathname)) return 'business.html';
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications|ops|reset)?)?\/?$/.test(pathname)) return 'business.html';
   if (['/business-sw.js','/business.webmanifest','/business.css'].includes(pathname)) return pathname.slice(1);
   if (pathname === '/' || pathname === '/index.html') {
     return 'index.html';
