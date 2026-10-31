@@ -95,6 +95,12 @@ export class DriverAdminQueryRepository {
     return new Map(result.rows.map((row) => [row.driver_id, { shipperCode: row.shipper_code, fullName: row.full_name, status: row.status, phone: row.phone }]));
   }
 
+  /** Issue #241: the ids of the Shippers who are ACTIVE and switched Online (the 15-minute count; ids stay in memory, only the counts are stored). */
+  async onlineDriverIds(context: TransactionContext, limit: number): Promise<string[]> {
+    const result = await context.query<{ driver_id: string }>("SELECT d.driver_id::text AS driver_id FROM app.drivers d WHERE d.status = 'ACTIVE' AND d.accepting_deliveries ORDER BY d.driver_id LIMIT $1::int", [limit]);
+    return result.rows.map((row) => row.driver_id);
+  }
+
   /** The driver ids matching a search pattern (Shipper code, folded name or phone), at most `limit`. */
   async searchIds(context: TransactionContext, pattern: NonNullable<ShipperListFilter['pattern']>, limit: number): Promise<string[]> {
     const { clause, params } = where({ pattern, status: null });

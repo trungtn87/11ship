@@ -4,9 +4,10 @@ import { BusinessApi, BusinessApiError, businessError, BusinessReports, Entitlem
 import { ShellLayout } from './shell-layout.js';
 import { ShellHost } from './view.js';
 import { h, svg } from './dom.js';
+import { BusinessOps } from './business-ops.js';
 const BASE='/v1/admin/business';
 const stateText:Record<string,string>={PENDING:'Chờ kiểm tra',CONFIRMED:'Đã xác nhận',REJECTED:'Từ chối',CANCELLED:'Đã hủy'};
-const tabs=[['overview','Tổng quan','◫'],['finance','Tài chính','₫'],['orders','Đơn hàng','▤'],['chat','Chat','◌'],['notifications','Thông báo','♧']] as const;
+const tabs=[['overview','Tổng quan','◫'],['finance','Tài chính','₫'],['orders','Đơn hàng','▤'],['chat','Chat','◌'],['notifications','Thông báo','♧'],['ops','Vận hành','◇']] as const;
 const time=(s:string)=>new Date(s).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
 const money=(n:number)=>n.toLocaleString('vi-VN')+' đ';
 function button(label:string,run:()=>void,kind=''):HTMLButtonElement{const b=h('button',{type:'button',class:'business-button '+kind},label);b.onclick=run;return b;}
@@ -60,7 +61,7 @@ export class BusinessDashboard implements ShellHost {
       else if(tab==='finance'||tab==='chat'){
         const request=new URLSearchParams(location.search).get('request');
         if(request&&/^[0-9a-f-]{36}$/.test(request))await this.room(request,force);else await this.requests(tab==='finance');
-      }else if(tab==='orders')await this.orders();else await this.notifications();
+      }else if(tab==='orders')await this.orders();else if(tab==='ops')await this.opsTab(epoch);else await this.notifications();
       if(this.host&&gen===this.generation)this.updated.textContent='Cập nhật '+new Date().toLocaleTimeString('vi-VN');
     }catch(e){if(this.current(epoch))this.showError(e);}finally{if(this.current(epoch))this.busy=false;}
     if(!this.current(epoch))return;
@@ -204,6 +205,8 @@ export class BusinessDashboard implements ShellHost {
     if(!d.items.length)panel.append(h('p',{},'Chưa có thông báo.'));if(d.next_before)panel.append(button('Xem tiếp',()=>void this.notifications(d.next_before!,true).catch(e=>this.showError(e))));
     if(append)this.content.append(panel);else this.content.replaceChildren(panel);
   }
+  private ops?:BusinessOps;
+  private async opsTab(epoch:number):Promise<void>{this.ops=new BusinessOps({api:this.api,content:this.content,current:()=>this.current(epoch),fail:e=>this.showError(e),isSystem:()=>this.isSystem});await this.ops.load();}
   private async orders(offset=0,append=false):Promise<void>{
     const epoch=this.mountEpoch;
     const d=await this.api.call<{items:{order_id:string;display_code?:string;shop_name:string;items_total_vnd:number;display_status?:string;status:string}[];total:number}>('/v1/admin/orders?limit=20&offset='+offset);if(!this.current(epoch))return;

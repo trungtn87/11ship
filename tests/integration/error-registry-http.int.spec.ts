@@ -135,8 +135,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 6 address change & guidance codes (#218: ADDRESS_CHANGE_ALREADY_PENDING, ADDRESS_CHANGE_NOT_FOUND, ADDRESS_CHANGE_NOT_PENDING, ADDRESS_CHANGE_NOT_PERMITTED, CANNOT_CHANGE_AFTER_PICKUP, ORDER_NOT_CONFIRMED)
     // + 4 service area codes (#252/#253: PICKUP_OUTSIDE_SERVICE_AREA, SERVICE_AREA_NOT_FOUND, SERVICE_AREA_CODE_CONFLICT, SERVICE_AREA_IMPACT_CONFIRM_REQUIRED)
     // + 2 Nhóm 15 codes (#255/#256: WITHDRAWAL_ONLY_WHEN_CLOSING, TOPUP_NOT_ALLOWED_WHEN_CLOSING)
+    // + 1 operations analytics code (#242: ANOMALY_CASE_NOT_FOUND)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(236);
+    expect(codes).toHaveLength(237);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);

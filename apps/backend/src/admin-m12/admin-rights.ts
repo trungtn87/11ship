@@ -39,6 +39,11 @@ export class AdminRights {
     return this.isSystem || ((this.apps.get(app)?.canView ?? false) && (this.apps.get(app)?.canReviewProfile ?? false));
   }
 
+  /** Disable / enable a shop (the SHOP app's can_manage_shops): the right to manage shop objects, used to close an anomaly case about shops (issue #242). */
+  get canManageShops(): boolean {
+    return this.isSystem || ((this.apps.get('SHOP')?.canView ?? false) && (this.apps.get('SHOP')?.canManageShops ?? false));
+  }
+
   /** The delivery list and detail: VIEW on the SHOP or the DRIVER app, exactly as M07.07 decides it. */
   get canViewDeliveries(): boolean {
     return this.canViewApp('SHOP') || this.canViewApp('DRIVER');
