@@ -37,6 +37,10 @@ describe('finance API (B3a) - parsers', () => {
     for (const bad of [topup({ state: 'DONE' }), topup({ amount_requested_vnd: 1.5 }), topup({ amount_requested_vnd: '100000' }), topup({ request_id: 'x' }), topup({ version: 0 }), topup({ created_at: 'never' }), null]) {
       expect(parseTopup(bad)).toBeUndefined();
     }
+    // The transfer content tied to the request is carried only in its exact shape; an older server without it, or an odd value, shows none.
+    expect(parseTopup(topup({ transfer_code: 'NAP0A1B2C3D4E' }))).toMatchObject({ transferCode: 'NAP0A1B2C3D4E' });
+    expect(parseTopup(topup())?.transferCode).toBeUndefined();
+    expect(parseTopup(topup({ transfer_code: '0987654321' }))?.transferCode).toBeUndefined();
     expect(parseTopupPage({ items: [topup()], next_cursor: null })?.items).toHaveLength(1);
     expect(parseTopupPage({ items: [topup(), { x: 1 }], next_cursor: null })).toBeUndefined();
     expect(parseTopupPage({ items: [], next_cursor: 5 })).toBeUndefined();

@@ -38,6 +38,9 @@ export type Route =
   | { readonly name: 'complaints' }
   | { readonly name: 'wallet-parameters' }
   | { readonly name: 'otp-policy' }
+  // Issue #253: Hệ thống › Vùng hoạt động (the list and one area).
+  | { readonly name: 'zones' }
+  | { readonly name: 'zone'; readonly id: string }
   | { readonly name: 'shipping-policy' }
   | { readonly name: 'settings' }
   | { readonly name: 'config' }
@@ -59,6 +62,7 @@ export type Route =
   | { readonly name: 'wallet-params' }
   // M13 "Vận hành hệ thống": overview, incidents (list and one), SMS Gateway, log, versions & updates, configuration & maintenance.
   | { readonly name: 'ops' }
+  | { readonly name: 'ops-vps' }
   | { readonly name: 'ops-incidents' }
   | { readonly name: 'ops-incident'; readonly ref: string }
   | { readonly name: 'ops-gateway' }
@@ -194,6 +198,13 @@ export function parseRoute(pathname: string, search = ''): Route {
     }
     return { name: 'shops', ...filters };
   }
+  if (path === '/system/zones') {
+    return { name: 'zones' };
+  }
+  const zone = /^\/system\/zones\/([^/]+)$/.exec(path);
+  if (zone !== null && isUuid(zone[1])) {
+    return { name: 'zone', id: zone[1] };
+  }
   const shop = /^\/operations\/shops\/([^/]+)$/.exec(path);
   if (shop !== null && isUuid(shop[1])) {
     const tab = new URLSearchParams(search).get('tab');
@@ -249,6 +260,8 @@ function parseOpsRoute(path: string): Route | undefined {
   switch (path) {
     case '/system-ops':
       return { name: 'ops' };
+    case '/system-ops/vps':
+      return { name: 'ops-vps' };
     case '/system-ops/incidents':
       return { name: 'ops-incidents' };
     case '/system-ops/gateway':
@@ -367,6 +380,10 @@ export function formatRoute(route: Route): string {
       return '/system/monitoring/errors';
     case 'otp-policy':
       return '/system/parameters/otp';
+    case 'zones':
+      return '/system/zones';
+    case 'zone':
+      return `/system/zones/${route.id}`;
     case 'wallet-parameters':
       return '/system/parameters/shipper-wallet';
     case 'shipping-policy':
@@ -422,6 +439,8 @@ export function formatRoute(route: Route): string {
       return '/system/parameters/wallet';
     case 'ops':
       return '/system-ops';
+    case 'ops-vps':
+      return '/system-ops/vps';
     case 'ops-incidents':
       return '/system-ops/incidents';
     case 'ops-incident':

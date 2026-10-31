@@ -56,6 +56,25 @@ export function hasPickupPointSql(shopAlias: string): string {
   return `(${shopAlias}.pickup_lat IS NOT NULL AND ${shopAlias}.pickup_lng IS NOT NULL AND NOT (${shopAlias}.pickup_lat = 0 AND ${shopAlias}.pickup_lng = 0))`;
 }
 
+/** Radius of the sphere every distance of the service areas uses (the resolver, the pin guard and the SQL below). */
+export const EARTH_RADIUS_M = 6371008.8;
+
+/**
+ * SQL twin of `placeOfPin`, for the public reads: true when the area has no geometry (not provable, legacy-compatible), the shop has no pin yet (the
+ * pickup-point rule answers that one) or the pin lies inside the circle. Same sphere radius and formula, so a list never disagrees with a save.
+ */
+export function pinInAreaSql(shopAlias: string, areaAlias: string): string {
+  return `(${areaAlias}.coverage_radius_m IS NULL OR ${shopAlias}.pickup_lat IS NULL OR ${shopAlias}.pickup_lng IS NULL
+     OR ${pinInCircleSql(shopAlias, `${areaAlias}.coverage_lat`, `${areaAlias}.coverage_lng`, `${areaAlias}.coverage_radius_m`)})`;
+}
+
+/** True when the shop's pin lies within `radiusExpr` metres of the given centre expressions (haversine, the sphere radius of the resolver). */
+export function pinInCircleSql(shopAlias: string, latExpr: string, lngExpr: string, radiusExpr: string): string {
+  return `(${EARTH_RADIUS_M} * 2 * asin(sqrt(least(1.0, greatest(0.0,
+          power(sin(radians(${shopAlias}.pickup_lat - ${latExpr}) / 2), 2)
+          + cos(radians(${shopAlias}.pickup_lat)) * cos(radians(${latExpr})) * power(sin(radians(${shopAlias}.pickup_lng - ${lngExpr}) / 2), 2))))) <= ${radiusExpr})`;
+}
+
 /** The statement prefix every availability statement starts with: the clock (sampled once) and the local week minute. */
 export function localTimeCtes(clockExpression: string): string {
   return `WITH clock AS MATERIALIZED (
@@ -76,6 +95,8 @@ SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook
        s.service_area_id, s.status, s.version,
        a.status AS area_status,
        ${hasPickupPointSql('s')} AS has_pickup_point,
+       -- Issue #252: the pin lies inside the circle configured for the area (true while the area has no geometry: not provable, legacy-compatible).
+       ${pinInAreaSql('s', 'a')} AS pickup_in_area,
        to_char(date_trunc('milliseconds', s.activated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS activated_at,
        s.setup_request_note,
        to_char(date_trunc('milliseconds', s.setup_request_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS setup_request_at,

@@ -128,7 +128,6 @@ export interface MenuGroup {
   readonly items: readonly MenuItem[];
 }
 
-const soon = (id: string, label: string, icon: IconName, access: GrantId): MenuItem => ({ id, label, icon, ready: false, access });
 
 export const MENU: readonly MenuGroup[] = [
   {
@@ -230,6 +229,7 @@ export const MENU: readonly MenuGroup[] = [
         access: 'ops',
         children: [
           { id: 'sysops-overview', label: 'Tổng quan', route: { name: 'ops' }, ready: true, access: 'ops' },
+          { id: 'sysops-vps', label: 'Giám sát VPS', route: { name: 'ops-vps' }, ready: true, access: 'ops' },
           { id: 'sysops-incidents', label: 'Sự cố', route: { name: 'ops-incidents' }, ready: true, access: 'ops' },
           { id: 'sysops-gateway', label: 'SMS Gateway', route: { name: 'ops-gateway' }, ready: true, access: 'ops' },
           { id: 'sysops-logs', label: 'Nhật ký', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
@@ -248,7 +248,8 @@ export const MENU: readonly MenuGroup[] = [
       // M12-D: every group of configuration in one place (every administrator reads; only SYSTEM changes, and each owner decides again).
       { id: 'config', label: 'Cấu hình tập trung', icon: 'gear', route: { name: 'config' }, ready: true, access: 'any' },
       { id:'order-timeouts',label:'Thời hạn xử lý đơn',icon:'gear',route:{name:'order-timeouts'},ready:true,access:'order-timeouts' },
-      soon('zones', 'Vùng hoạt động', 'map-pin', 'zones'),
+      // Issue #253: every administrator reads the areas; only SYSTEM changes them (the server decides again).
+      { id: 'zones', label: 'Vùng hoạt động', icon: 'map-pin', route: { name: 'zones' }, ready: true, access: 'any' },
       // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
       // (Owner decision 2026-10-17; the server decides again on every call).
       {
@@ -327,6 +328,8 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'reset':
     case 'wallet-parameters':
     case 'otp-policy':
+    case 'zones':
+    case 'zone':
     case 'shipping-policy':
       return true;
     case 'users':
@@ -347,6 +350,7 @@ export function canOpenRoute(role: AdminRole, grants: Grants, route: Route): boo
     case 'notifications':
       return canSee(role, grants, 'notifications');
     case 'ops':
+    case 'ops-vps':
     case 'ops-incidents':
     case 'ops-incident':
     case 'ops-gateway':
@@ -417,6 +421,9 @@ export function activeMenuId(route: Route): string {
       return 'parameters-shipper-wallet';
     case 'otp-policy':
       return 'parameters-otp';
+    case 'zones':
+    case 'zone':
+      return 'zones';
     case 'shipping-policy':
       return 'shipping-policy';
     case 'finance':
@@ -450,6 +457,8 @@ export function activeMenuId(route: Route): string {
       return 'sysops-releases';
     case 'ops-config':
       return 'sysops-config';
+    case 'ops-vps':
+      return 'sysops-vps';
     case 'administrators':
       return 'administrators';
     case 'access':
@@ -514,6 +523,10 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'otp-policy':
       return ['Cài đặt', 'Tham số hệ thống', 'SMS & OTP'];
+    case 'zones':
+      return ['Hệ thống', 'Vùng hoạt động'];
+    case 'zone':
+      return ['Hệ thống', 'Vùng hoạt động', 'Chi tiết'];
     case 'shipping-policy':
       return ['Cài đặt', 'Phí & điều kiện giao'];
     case 'finance':
@@ -538,6 +551,8 @@ export function breadcrumb(route: Route): readonly string[] {
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'ops':
       return ['Vận hành hệ thống', 'Tổng quan'];
+    case 'ops-vps':
+      return ['Vận hành hệ thống', 'Giám sát VPS'];
     case 'ops-incidents':
       return ['Vận hành hệ thống', 'Sự cố'];
     case 'ops-incident':

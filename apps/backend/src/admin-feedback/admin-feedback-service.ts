@@ -17,7 +17,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { AttachmentMeta, ComplaintRepository, ComplaintRow, MessageRow } from '../feedback/complaint-repository';
+import { AdjustmentRow, AttachmentMeta, ComplaintRepository, ComplaintRow, MessageRow } from '../feedback/complaint-repository';
 import { attachmentView, reconsiderationView } from '../feedback/complaint-views';
 import { COMMISSION_ADJUSTMENT_PORT, CommissionAdjustmentPort } from '../feedback/feedback-finance-port';
 import { CLOSED_STATUSES, OPERATIONS, OPEN_STATUSES } from '../feedback/feedback-constants';
@@ -415,6 +415,8 @@ export class AdminFeedbackService {
         return this.#adjustResult(context, auth, c, input, audit);
       case 'adjust-commission':
         return this.#adjustCommission(context, auth, c, input, audit);
+      case 'retry-commission':
+        return this.#retryCommission(context, auth, c, input, audit);
     }
   }
 
@@ -552,6 +554,50 @@ export class AdminFeedbackService {
     return after;
   }
 
+  /**
+   * The money of a commission adjustment that stayed PENDING_FINANCE, requested from M04 AGAIN on the SAME adjustment (same id, same direction, amount and
+   * Shipper: nothing is re-created and nothing is edited). M04 is idempotent on the adjustment id, so a repeat can never write a second ledger row. The
+   * complaint's own conclusion is not reopened: the money is owed (or refunded) whether the file is open or already resolved. A wallet that still cannot
+   * pay keeps the row PENDING_FINANCE with the reason; the attempt is recorded either way.
+   */
+  async #retryCommission(context: TransactionContext, auth: Authorized, c: ComplaintRow, input: ComplaintActionInput, audit: { requestId: string; actorType: 'ADMIN'; actorId: string; action: string }): Promise<ComplaintRow> {
+    if (!auth.finance) {
+      throw new AppError('ADMIN_FORBIDDEN');
+    }
+    const current = await this.complaints.lockAdjustment(context, c.complaintId, 'COMMISSION');
+    if (current === undefined || current.status !== 'PENDING_FINANCE' || current.direction === null || current.amountVnd === null || current.driverId === null || current.assignmentId === null) {
+      // Nothing waiting (never adjusted, or already executed by this or another administrator): never a second posting.
+      throw new AppError('COMPLAINT_STATE_CONFLICT');
+    }
+    const result = await this.finance.post(context, { adjustmentId: current.adjustmentId, complaintId: c.complaintId, driverId: current.driverId, assignmentId: current.assignmentId, direction: current.direction, amountVnd: current.amountVnd, actorUserId: auth.actorId });
+    const posted = result.kind === 'POSTED';
+    const reason = result.kind === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'M04_UNAVAILABLE';
+    if (!(await this.complaints.setAdjustmentMoney(context, current.adjustmentId, current.version, posted ? 'EXECUTED' : 'PENDING_FINANCE', posted ? null : reason))) {
+      throw new AppError('VERSION_CONFLICT');
+    }
+    const label = this.#retryLabel(result.kind);
+    await this.complaints.appendMessage(context, {
+      messageId: randomUUID(),
+      complaintId: c.complaintId,
+      kind: 'ADJUSTMENT',
+      visibility: 'INTERNAL',
+      audienceRole: null,
+      authorType: 'ADMIN',
+      authorUserId: auth.actorId,
+      body: `Xử lý lại điều chỉnh tài chính ${current.direction === 'REFUND_TO_SHIPPER' ? 'hoàn cho shipper' : 'thu thêm từ shipper'} ${String(current.amountVnd)}đ: ${label}. ${input.body as string}`,
+    });
+    const after = await this.complaints.setStatus(context, c.complaintId, c.version, { status: c.status, awaitingFrom: c.awaitingFrom });
+    if (after === undefined) {
+      throw new AppError('VERSION_CONFLICT');
+    }
+    await this.recorder.complaint(context, { ...audit, metadata: { adjustment_id: current.adjustmentId, kind: 'COMMISSION', direction: current.direction, amount_vnd: current.amountVnd, finance_outcome: result.kind, status: posted ? 'EXECUTED' : 'PENDING_FINANCE' } }, after, posted ? 'commission_executed' : 'commission_retry_pending');
+    return after;
+  }
+
+  #retryLabel(kind: 'POSTED' | 'INSUFFICIENT_BALANCE' | 'UNAVAILABLE'): string {
+    return kind === 'POSTED' ? 'đã thực hiện' : kind === 'INSUFFICIENT_BALANCE' ? 'vẫn chờ xử lý tài chính (số dư khả dụng chưa đủ)' : 'vẫn chờ xử lý tài chính (chưa thực hiện được)';
+  }
+
   /** The delivery a correction applies to: the complaint's own, ended (completed or failed), and the file in a state where a conclusion is being made or was made. */
   async #adjustableDelivery(context: TransactionContext, c: ComplaintRow): Promise<DeliveryRow> {
     if (c.deliveryId === null || (c.status !== 'IN_PROGRESS' && c.status !== 'AWAITING_INFO' && c.status !== 'RESOLVED')) {
@@ -584,7 +630,7 @@ export class AdminFeedbackService {
     const handlers = await this.#handlers(context);
     const assignee = c.assignedTo === null ? null : { user_id: c.assignedTo, name: handlers.find((h) => h.user_id === c.assignedTo)?.name ?? '—' };
     const pending = reconsiderations.find((r) => r.closureNo === c.closureNo && r.status === 'PENDING');
-    const can = this.#can(c, auth, delivery, adjustments.map((a) => a.kind), pending !== undefined);
+    const can = this.#can(c, auth, delivery, adjustments, pending !== undefined);
     return {
       complaint: {
         complaint_id: c.complaintId,
@@ -640,13 +686,15 @@ export class AdminFeedbackService {
         successor_delivery_ids: [...a.successorDeliveryIds],
         reason: a.reason,
         created_at: iso(a.createdAtMs),
+        updated_at: iso(a.updatedAtMs),
       })),
       finance: { allowed: auth.finance, integrated: this.finance.integrated },
       can,
     };
   }
 
-  #can(c: ComplaintRow, auth: Authorized, delivery: DeliveryRow | undefined, adjusted: readonly string[], reconsiderationPending: boolean): string[] {
+  #can(c: ComplaintRow, auth: Authorized, delivery: DeliveryRow | undefined, adjustments: readonly AdjustmentRow[], reconsiderationPending: boolean): string[] {
+    const adjusted = adjustments.map((a) => a.kind);
     if (!auth.handle) {
       return [];
     }
@@ -671,6 +719,10 @@ export class AdminFeedbackService {
     }
     if (adjustable && auth.finance && !adjusted.includes('COMMISSION')) {
       can.push('adjust-commission');
+    }
+    // The waiting money does not depend on the file's state (it may be resolved long ago) nor on the delivery: only on the two rights and on the row still waiting.
+    if (auth.finance && adjustments.some((a) => a.kind === 'COMMISSION' && a.status === 'PENDING_FINANCE')) {
+      can.push('retry-commission');
     }
     return can;
   }

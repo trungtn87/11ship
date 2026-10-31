@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../account/api_client.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../m13/m13_ops.dart' show OpsClient;
 import '../m07/m07_source.dart';
 import 'm10_models.dart';
 import 'm10_source.dart';
@@ -50,7 +51,14 @@ Future<Object?> _call(SessionController session, String method, String path, {Ob
     }
     return response.data;
   } on Object catch (error) {
-    throw _failureOf(error);
+    final M07Failure failure = _failureOf(error);
+    // A write the server answered with an error (or with something the app cannot read) is reported; a lost connection, a refusal such as "already taken" and
+    // an ended session are expected outcomes and are not.
+    final bool serverFault = failure.kind == M07FailureKind.server || (error is AuthFailure && !error.outcomeUnknown && (error.status ?? 0) >= 500);
+    if (method != 'GET' && serverFault) {
+      OpsClient.reportActionFailure(method, path, reason: error is AuthFailure ? 'HTTP ${error.status ?? 0}' : (failure.code ?? 'SERVER'));
+    }
+    throw failure;
   }
 }
 
@@ -58,6 +66,7 @@ T _parse<T>(Object? data, T Function(Object?) parse) {
   try {
     return parse(data);
   } on FormatException {
+    OpsClient.report(kind: 'ACTION_ERROR', code: 'ORDER_BAD_RESPONSE', message: 'The order answer could not be read');
     throw const M07Failure(M07FailureKind.server, code: 'BAD_RESPONSE');
   }
 }
@@ -75,6 +84,7 @@ Map<String, Object?> _draftBody(CheckoutDraft d, {required bool withPrice}) => <
       'recipient_phone': d.recipientPhone,
       'address': d.address.toJson(),
       if (d.scheduledFor != null) 'scheduled_for': d.scheduledFor!.toUtc().toIso8601String(),
+      'tip_vnd': d.tipVnd,
     };
 
 class HttpCustomerOrderSource extends CustomerOrderSource {
@@ -147,6 +157,50 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/delivery/fee', body: <String, Object?>{'decision': accept ? 'ACCEPT' : 'REJECT', 'expected_version': deliveryVersion}, key: key));
 
   @override
+  @override
+  Future<OrderView> requestAddressChange(
+    String id, {
+    required String recipientName,
+    required String recipientPhone,
+    required String addressText,
+    double? lat,
+    double? lng,
+    String? note,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        '/v1/customers/me/orders/$id/address-change-request',
+        body: <String, Object?>{
+          'recipient_name': recipientName,
+          'recipient_phone': recipientPhone,
+          'address_text': addressText,
+          if (lat != null && lng != null) 'lat': lat,
+          if (lat != null && lng != null) 'lng': lng,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+        ok: const <int>{200, 201},
+      ));
+
+  @override
+  Future<OrderView> cancelAddressChange(
+    String id, {
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        '/v1/customers/me/orders/$id/address-change-request/cancel',
+        body: <String, Object?>{'expected_version': expectedVersion},
+        key: key,
+      ));
+
+  @override
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key}) async {
     final Object? data = await _call(session, 'POST', '/v1/customers/me/orders/$id/reorder', body: <String, Object?>{if (replaceCart) 'replace_cart': true}, key: key);
     return _parse<ReorderResult>(data, (Object? d) {
@@ -212,6 +266,27 @@ class HttpShopOrderSource extends ShopOrderSource {
   Future<OrderView> closeNotCompleted(String id, {required String reason, required int expectedVersion, required String key}) async => _order(await _call(session, 'POST', _path(id, '/close-not-completed'), body: <String, Object?>{'expected_version': expectedVersion, 'reason': reason}, key: key));
 
   @override
+  @override
+  Future<OrderView> decideAddressChange(
+    String id, {
+    required bool accept,
+    String? reason,
+    required int expectedVersion,
+    required String key,
+  }) async =>
+      _order(await _call(
+        session,
+        'POST',
+        _path(id, '/address-change-request/decide'),
+        body: <String, Object?>{
+          'accept': accept,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+          'expected_version': expectedVersion,
+        },
+        key: key,
+      ));
+
+  @override
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key}) async {
     await _call(session, 'POST', '/v1/shop/me/deliveries/$deliveryId/custody', body: <String, Object?>{'resolution': resolution, if (note != null && note.trim().isNotEmpty) 'note': note.trim()}, key: key);
   }
@@ -229,6 +304,7 @@ class HttpOrderChatApi extends OrderChatApi {
 
   static String pathOf(ChatRoomRef room) => switch (room.door) {
         ChatDoor.customerOrder => '/v1/customers/me/orders/${room.id}/chat',
+        ChatDoor.customerDelivery => '/v1/customers/me/deliveries/${room.id}/chat',
         ChatDoor.shopOrder => '/v1/shop/me/orders/${room.id}/chat',
         ChatDoor.shopDirect => '/v1/shop/me/deliveries/${room.id}/chat',
         ChatDoor.shipperDelivery => '/v1/driver/deliveries/${room.id}/chat',

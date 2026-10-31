@@ -86,7 +86,26 @@ jobs:
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: bash scripts/deploy/github-vps-approve-m01-shop-codes.sh
+      - name: Report deploy start to M13 (needs OPS_DEPLOY_INGEST_TOKEN; never blocks the deploy)
+        id: ops_start
+        continue-on-error: true
+        env:
+          OPS_DEPLOY_INGEST_TOKEN: ${{ secrets.OPS_DEPLOY_INGEST_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          if [ -z "$OPS_DEPLOY_INGEST_TOKEN" ]; then
+            echo '### M13 deploy report' >> "$GITHUB_STEP_SUMMARY"
+            echo 'OPS_DEPLOY_INGEST_TOKEN is not configured for environment vps-production: this deploy is NOT recorded in Web Admin (Phiên bản & cập nhật). The deploy itself is unaffected.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export OPS_INGEST_TOKEN="$OPS_DEPLOY_INGEST_TOKEN"
+          export OPS_INGEST_BASE="$(node -p "require('./config/endpoints.json').api_origin")/v1/ops/ingest"
+          OUT=$(node scripts/ops-report.mjs deploy-start --component BACKEND --to "${SOURCE_SHA:0:12}" --note "main $SOURCE_SHA") || { echo '::warning::M13 deploy-start report was not delivered; the deploy continues.'; exit 0; }
+          echo "$OUT"
+          ID=$(printf '%s' "$OUT" | sed -n 's/.*deploy id \([0-9a-f-]\{36\}\).*/\1/p')
+          if [ -n "$ID" ]; then echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"; fi
       - name: Deploy over verified SSH
+        id: deploy
         env:
           APPROVE_REVIEWED_MIGRATIONS: ${{ inputs.approve_reviewed_migrations }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
@@ -122,3 +141,16 @@ jobs:
             echo 'Target: https://103.9.78.67.sslip.io'
             echo 'Existing updater verified HTTPS/API/Admin/Android readiness; no device acceptance claimed.'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Report deploy result to M13 (always runs; never fails the job)
+        if: ${{ always() && steps.ops_start.outputs.deploy_id != '' }}
+        continue-on-error: true
+        env:
+          OPS_INGEST_TOKEN: ${{ secrets.OPS_DEPLOY_INGEST_TOKEN }}
+          DEPLOY_ID: ${{ steps.ops_start.outputs.deploy_id }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          export OPS_INGEST_BASE="$(node -p "require('./config/endpoints.json').api_origin")/v1/ops/ingest"
+          if [ "$JOB_STATUS" = success ]; then STATUS=SUCCEEDED; else STATUS=FAILED; fi
+          if [ "$DEPLOY_OUTCOME" = success ]; then HEALTH=PASSED; else HEALTH=FAILED; fi
+          node scripts/ops-report.mjs deploy-finish --id "$DEPLOY_ID" --status "$STATUS" --health "$HEALTH" --detail "updater health check $HEALTH" || echo '::warning::M13 deploy-finish report was not delivered.'

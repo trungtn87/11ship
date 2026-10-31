@@ -16,7 +16,7 @@ class Harness {
   final FakeMenuApi menuApi;
 }
 
-Future<Harness> harness(WidgetTester tester, {double width = 390, double height = 800, FakeMenuApi? menu, PublicShopApi? publicApi}) async {
+Future<Harness> harness(WidgetTester tester, {double width = 390, double height = 800, FakeMenuApi? menu, PublicShopApi? publicApi, DishImageCropperPort? cropper}) async {
   tester.view.physicalSize = Size(width * 3, height * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -28,7 +28,7 @@ Future<Harness> harness(WidgetTester tester, {double width = 390, double height 
   await session.login(phone: '0901234567', password: 'Correct-Horse-9');
   final FakeLocationProvider gps = FakeLocationProvider();
   final FakeMenuApi menuApi = menu ?? FakeMenuApi();
-  final M02Flows flows = createM02Flows(session: session, location: gps, menuApi: menuApi, publicApi: publicApi ?? FakePublicShopApi(null), picker: FakeImagePicker(), pollEvery: Duration.zero);
+  final M02Flows flows = createM02Flows(session: session, location: gps, menuApi: menuApi, publicApi: publicApi ?? FakePublicShopApi(null), picker: FakeImagePicker(), cropper: cropper ?? ((PickedImage raw) async => raw), pollEvery: Duration.zero);
   addTearDown(flows.dispose);
   return Harness(api, server, session, flows, gps, menuApi);
 }
@@ -142,6 +142,21 @@ void main() {
       expect(find.text('Số điện thoại chưa hợp lệ.'), findsOneWidget);
       expect(h.server.arrived, isEmpty);
       expect(tester.widget<TextField>(find.byKey(const Key('profile-field-phone'))).controller!.text, '12');
+    });
+
+    testWidgets('a pin outside the service area is refused beside the picker, the typed data is kept and nothing is stored', (WidgetTester tester) async {
+      final Harness h = await harness(tester);
+      h.server.profileRefusal = 'PICKUP_OUTSIDE_SERVICE_AREA';
+      h.gps.failure = LocationFailure.denied;
+      await show(tester, ShopProfileScreen(flows: h.flows, startEditing: true));
+      expect(find.text('Chọn vị trí lấy hàng trên bản đồ'), findsOneWidget);
+      expect(find.byKey(const Key('address-pin-summary')), findsOneWidget, reason: 'the pin is shown for review before saving');
+      await tester.enterText(find.byKey(const Key('profile-field-name')), 'Tên đã gõ');
+      await tester.pump();
+      await tapKey(tester, 'profile-save');
+      expect(find.textContaining('ngoài khu vực phục vụ'), findsWidgets);
+      expect(h.server.effects, isEmpty);
+      expect(tester.widget<TextField>(find.byKey(const Key('profile-field-name'))).controller!.text, 'Tên đã gõ');
     });
 
     testWidgets('a DISABLED shop is read-only: no edit button, a reason, nothing to save', (WidgetTester tester) async {

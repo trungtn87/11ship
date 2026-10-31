@@ -63,6 +63,9 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   /^\/operations\/(?:orders|deliveries|notifications)$/,
   // M02 dish groups (Danh mục › Nhóm món): a reload or a bookmark of the page opens the app.
   /^\/catalog\/categories$/,
+  // Issue #253 Hệ thống › Vùng hoạt động: the list and one area (a UUID, nothing else).
+  /^\/system\/zones$/,
+  new RegExp(`^/system/zones/${UUID}$`),
   // M02 shop management (Vận hành › Quán): the list and one shop, so a reload or a bookmark of either opens the app.
   /^\/operations\/shops$/,
   new RegExp(`^/operations/shops/${UUID}$`),
@@ -82,7 +85,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
   new RegExp(`^/finance/(?:topups|withdrawals)/${UUID}$`),
   /^\/system\/parameters\/wallet$/,
   // M13 Vận hành hệ thống: six screens and an incident by its code (SC-13) or id.
-  /^\/system-ops(?:\/(?:incidents|gateway|logs|releases|config))?$/,
+  /^\/system-ops(?:\/(?:vps|incidents|gateway|logs|releases|config))?$/,
   new RegExp(`^/system-ops/incidents/(?:SC-\\d{1,9}|${UUID})$`, 'i'),
 ]);
 
@@ -93,7 +96,7 @@ const SPA_ROUTES: readonly RegExp[] = Object.freeze([
  */
 export function publicAdminAsset(pathname: string): string | undefined {
   if (pathname === '/business.html') return 'business.html';
-  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications)?)?\/?$/.test(pathname)) return 'business.html';
+  if (/^\/business(?:\/(?:overview|finance|orders|chat|notifications|reset)?)?\/?$/.test(pathname)) return 'business.html';
   if (['/business-sw.js','/business.webmanifest','/business.css'].includes(pathname)) return pathname.slice(1);
   if (pathname === '/' || pathname === '/index.html') {
     return 'index.html';

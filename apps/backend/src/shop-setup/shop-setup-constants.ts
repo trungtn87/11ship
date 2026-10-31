@@ -6,6 +6,8 @@ export const SHOP_SETUP_AUDIT_ACTIONS = {
   autoActivated: 'shop.auto_activated.v1',
   requestInfo: 'admin.shop.request_info.v1',
   clearRequest: 'admin.shop.clear_request.v1',
+  /** Issue #252: the SYSTEM withdrew the administrator's completion request because the owner restored all four conditions of an already activated shop. */
+  requestAutoCleared: 'shop.setup_request_auto_cleared.v1',
 } as const;
 
 export const SHOP_ACTIVATED_EVENT_TYPE = 'shop.activated.v1';

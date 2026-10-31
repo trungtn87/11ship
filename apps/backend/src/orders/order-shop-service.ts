@@ -19,6 +19,7 @@ import { OrderRepository, OrderRow } from './order-repository';
 import { goodsDescriptionOf, totalOf } from './order-rules';
 import { CallInput, ConfirmInput, EditInput, PaymentInput, ReasonInput, ShopListQuery, VersionInput } from './order-validation';
 import { OrderViews } from './order-views';
+import { AddressChangeRepository } from '../address-change/address-change-repository';
 
 /**
  * The shop's side of M10 (11Food): the list and detail of the Orders, editing before confirmation, confirming or refusing, the paid amount,
@@ -42,6 +43,7 @@ export class OrderShopService {
     private readonly deliveries: DeliveryRepository,
     private readonly deliveryShop: DeliveryShopService,
     private readonly cancelling: DeliveryCancel,
+    private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
   // ---- reads -----------------------------------------------------------------------------------------------------------------
@@ -216,7 +218,18 @@ export class OrderShopService {
     return this.#command(principal, orderId, ORDER_OPERATIONS.callShipper, key, { expected_version: input.expectedVersion, fee_payer: input.feePayer, agreed: input.agreedFee }, async (context, caller, order) => {
       this.#expect(order, input.expectedVersion, 'PREPARING');
       requireActiveShop(caller.shop);
-      if (input.agreedFee === null && routeResult.reason !== undefined) throw new AppError(routeResult.reason);
+
+      if (this.addressChanges) {
+        const activeReq = await this.addressChanges.lockActiveByOrderId(context, orderId);
+        if (activeReq !== undefined) {
+          const nowMs = await freshClockMs(context);
+          if (nowMs >= activeReq.expiresAtMs) {
+            await this.addressChanges.resolve(context, activeReq.changeRequestId, 'EXPIRED', null, 'Hết hạn phản hồi', activeReq.version);
+          } else {
+            throw new AppError('ADDRESS_CHANGE_ALREADY_PENDING');
+          }
+        }
+      }
       const all = await this.deliveries.listOfOrder(context, orderId);
       if (all.some((d) => ACTIVE_STATES.includes(d.state))) {
         throw new AppError('ORDER_STATE_CONFLICT');
@@ -229,6 +242,16 @@ export class OrderShopService {
         }
       }
       const items = (await this.orders.listItems(context, orderId)).filter((i) => i.removedAtMs === null);
+      const quoteFeeVnd = order.feeQuoteVnd ?? null;
+      const customerRaisedFee = quoteFeeVnd !== null && order.feeEstimateVnd !== null && order.feeEstimateVnd > quoteFeeVnd;
+      if (input.agreedFee === null && routeResult.reason !== undefined && !customerRaisedFee) throw new AppError(routeResult.reason);
+      if (customerRaisedFee && input.feePayer !== 'CUSTOMER') {
+        // A customer's voluntary increase cannot silently become a shop expense.
+        throw new AppError('ORDER_INPUT_INVALID');
+      }
+      const agreedFee = customerRaisedFee
+        ? { reasonCode: 'OTHER' as const, reasonNote: 'Khách tự nguyện đề xuất phí giao khi đặt đơn', amountVnd: order.feeEstimateVnd as number }
+        : input.agreedFee;
       const delivery = await this.deliveryShop.createForOrder(context, caller, {
         orderId,
         previousDeliveryId: latest?.deliveryId ?? null,
@@ -243,7 +266,7 @@ export class OrderShopService {
         feePayer: input.feePayer,
         note: order.note,
         dropoffNote: order.deliveryNote,
-        agreedFee: input.agreedFee,
+        agreedFee,
         estimatedDistanceM: order.feeEstimateDistanceM,
         route: routeResult.route?.leg,
         routeFrom: routeResult.route?.from,

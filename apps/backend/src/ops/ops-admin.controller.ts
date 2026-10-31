@@ -23,6 +23,7 @@ import {
   parseSnoozeBody,
   parseTopupNoteBody,
   parseUuidParam,
+  parseVpsQuery,
 } from './ops-validation';
 
 /**
@@ -56,6 +57,12 @@ export class OpsAdminController {
     const token = this.#transport.read(request);
     parseNoQuery(query);
     return { data: await this.ops.overview(token) };
+  }
+
+  @Get('vps')
+  async vps(@Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    return { data: await this.ops.vps(token, parseVpsQuery(query)) };
   }
 
   @Get('incidents')

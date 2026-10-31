@@ -7,8 +7,6 @@ import { AdminProvisioningApi, PROVISIONING_BASE } from '../core/provisioning-ap
 import { ProvisioningController } from '../core/provisioning-controller.js';
 import { parseRoute, tokenFromFragment } from '../core/routes.js';
 import { ActivationPage } from './activation-view.js';
-import { RecoveryController } from '../core/recovery-controller.js';
-import { AdminRecoveryApi, RECOVERY_BASE } from '../core/recovery-api.js';
 import { AdminCatalogApi, CATALOG_BASE, createCatalogSource } from '../core/catalog-api.js';
 import { AdminFinanceApi, createFinanceAdminSource, FINANCE_BASE } from '../core/finance-api.js';
 import { AdminFinanceOpsApi, createFinanceOpsSource } from '../core/finance-ops-api.js';
@@ -27,7 +25,7 @@ import { ACCESS_BASE, AdminAccessApi, createAccessSource } from '../core/access-
 import { AdminOverviewApi, createOverviewSource, OVERVIEW_BASE } from '../core/overview-api.js';
 import { createShippingPolicySource, SHIPPING_POLICY_BASE, ShippingPolicyApi } from '../core/shipping-policy-api.js';
 import { AdminSettingsApi, createSettingsSource, SETTINGS_BASE } from '../core/settings-api.js';
-import { ResetPage } from './reset-view.js';
+import { startReset } from './reset-start.js';
 import { ShellApp } from './shell-app.js';
 import { AdminView } from './view.js';
 
@@ -84,30 +82,6 @@ function startActivation(host: HTMLElement): void {
     return;
   }
   void controller.begin(token);
-}
-
-/**
- * The public "forgot password" page of an ADMIN (M01-RESET, issue #102): the server's mode decides (GET /config); phone -> SMS code ->
- * new password. Closed or unknown mode: no form, nothing is sent.
- */
-function startReset(host: HTMLElement): void {
-  const controller = new RecoveryController(new AdminRecoveryApi(fetchTransport(window.fetch.bind(window), { base: RECOVERY_BASE })), () => window.crypto.randomUUID());
-  const page = new ResetPage(host, {
-    wired: true,
-    retryConfig: () => void controller.start(),
-    sendCode: (phone) => void controller.sendCode(phone),
-    verify: (code) => void controller.verify(code),
-    // "Gửi lại mã" asks again for the number the code was requested for (the controller keeps it).
-    resend: () => void controller.resend(),
-    setPassword: (password) => void controller.setPassword(password),
-    toLogin: () => {
-      controller.leave();
-      window.location.assign('/');
-    },
-  });
-  controller.subscribe((screen) => page.render(screen));
-  page.render(controller.screen);
-  void controller.start();
 }
 
 function startAdmin(host: HTMLElement): void {
@@ -227,7 +201,7 @@ if (root !== null) {
   if (entry === 'activate') {
     startActivation(root);
   } else if (entry === 'reset') {
-    startReset(root);
+    startReset(root, '/');
   } else {
     startAdmin(root);
   }

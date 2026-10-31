@@ -60,7 +60,7 @@ export interface NewComplaint {
   readonly orderId: string | null;
   readonly deliveryId: string | null;
   readonly reviewId: string | null;
-  readonly shopId: string;
+  readonly shopId: string | null;
   readonly driverId: string | null;
   readonly relatedCode: string;
   readonly shopName: string;
@@ -124,6 +124,7 @@ export interface AdjustmentRow {
   readonly reason: string;
   readonly createdBy: string;
   readonly createdAtMs: number;
+  readonly updatedAtMs: number;
   readonly version: number;
 }
 
@@ -518,7 +519,7 @@ export class ComplaintRepository {
 
   // ---- adjustments -------------------------------------------------------------------------------------------------------------
 
-  async insertAdjustment(context: TransactionContext, a: Omit<AdjustmentRow, 'createdAtMs' | 'version'>): Promise<boolean> {
+  async insertAdjustment(context: TransactionContext, a: Omit<AdjustmentRow, 'createdAtMs' | 'updatedAtMs' | 'version'>): Promise<boolean> {
     const result = await context.query(
       `INSERT INTO app.complaint_adjustments (adjustment_id, complaint_id, kind, delivery_id, assignment_id, driver_id, original_state, original_assignment_status, corrected_result, direction,
          amount_vnd, status, pending_reason, history_reviewed, successor_delivery_ids, reason, created_by, created_at, updated_at, version)
@@ -611,11 +612,12 @@ interface RawAdjustment {
   reason: string;
   created_by: string;
   created_ms: string;
+  updated_ms: string;
   version: string;
 }
 const A_COLUMNS = `a.adjustment_id::text AS adjustment_id, a.complaint_id::text AS complaint_id, a.kind, a.delivery_id::text AS delivery_id, a.assignment_id::text AS assignment_id,
   a.driver_id::text AS driver_id, a.original_state, a.original_assignment_status, a.corrected_result, a.direction, a.amount_vnd::text AS amount_vnd, a.status, a.pending_reason,
-  a.history_reviewed, ARRAY(SELECT x::text FROM unnest(a.successor_delivery_ids) AS x) AS successors, a.reason, a.created_by::text AS created_by, ${ms('a.created_at', 'created_ms')},
+  a.history_reviewed, ARRAY(SELECT x::text FROM unnest(a.successor_delivery_ids) AS x) AS successors, a.reason, a.created_by::text AS created_by, ${ms('a.created_at', 'created_ms')}, ${ms('a.updated_at', 'updated_ms')},
   a.version::text AS version`;
 const toAdjustment = (r: RawAdjustment): AdjustmentRow => ({
   adjustmentId: r.adjustment_id,
@@ -636,5 +638,6 @@ const toAdjustment = (r: RawAdjustment): AdjustmentRow => ({
   reason: r.reason,
   createdBy: r.created_by,
   createdAtMs: safe(r.created_ms),
+  updatedAtMs: safe(r.updated_ms),
   version: safe(r.version),
 });

@@ -53,6 +53,8 @@ import { AdminOperationsRepository } from '../admin-operations/admin-operations-
 import { AdminOperationsService } from '../admin-operations/admin-operations-service';
 import { AdminRightsReader } from '../admin-m12/admin-rights';
 import { AdminOverviewController } from '../admin-overview/admin-overview.controller';
+import { AdminActionQueueReader } from '../admin-overview/admin-action-queue-reader';
+import { AdminActionQueueService } from '../admin-overview/admin-action-queue-service';
 import { AdminOverviewService } from '../admin-overview/admin-overview-service';
 import { AdminFeedbackController } from '../admin-feedback/admin-feedback.controller';
 import { AdminFeedbackService } from '../admin-feedback/admin-feedback-service';
@@ -84,6 +86,9 @@ import { WalletModule } from '../wallet/wallet.module';
 import { AdminShopController } from '../admin-shops/admin-shop.controller';
 import { AdminShopReadRepository } from '../admin-shops/admin-shop-read-repository';
 import { AdminShopService } from '../admin-shops/admin-shop-service';
+import { AdminServiceAreaController } from '../admin-service-areas/admin-service-area.controller';
+import { AdminServiceAreaRepository } from '../admin-service-areas/admin-service-area-repository';
+import { AdminServiceAreaService } from '../admin-service-areas/admin-service-area-service';
 import { AdminMenuCategoryService } from '../admin-menu-categories/admin-menu-category-service';
 import { AdminMenuCategoryController } from '../admin-menu-categories/admin-menu-category.controller';
 import { MenuCategoryAdminRepository } from '../menu/menu-category-admin-repository';
@@ -178,7 +183,7 @@ export class AdminAuthModule implements NestModule {
       ],
       // M01-D-ADMIN-1B: the SYSTEM invitation routes under /v1/admin ride on the same, conditionally wired module.
       // M01-D-ADMIN-1C: the activation routes under /v1/admin-activation exist only when explicitly enabled.
-      controllers: [BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
+      controllers: [BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShopController, AdminServiceAreaController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminFeedbackController, AdminOrderController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController, ...(activation === undefined ? [] : [AdminActivationController])],
       providers: [ShopEntitlements,BusinessFinanceService, BusinessFinanceRepository, BusinessReportService, BusinessPushService,
         adminAuthConfigProvider,
         {
@@ -225,6 +230,9 @@ export class AdminAuthModule implements NestModule {
         // M02 shop management (Quản lý quán): the read projections, the service and (through ShopModule) the status change of the Shop module.
         AdminShopReadRepository,
         AdminShopService,
+        // Issue #253: Hệ thống -> Vùng hoạt động (SYSTEM writes, any ADMIN reads).
+        AdminServiceAreaRepository,
+        AdminServiceAreaService,
         // M03 Shipper management (SYSTEM, or an ADMIN with the DRIVER permissions) and the SYSTEM-only Shipper wallet parameters.
         AdminShipperService,
         ShipperWalletParametersService,
@@ -268,6 +276,8 @@ export class AdminAuthModule implements NestModule {
         AdminConfigService,
         AdminAccessService,
         AdminOverviewService,
+        AdminActionQueueReader,
+        AdminActionQueueService,
         // M13 operations administration (SYSTEM everything; an ADMIN only the scope SYSTEM granted).
         OpsAdminService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.
@@ -292,7 +302,7 @@ export class AdminAuthModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStoreMiddleware).forRoutes(BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
+    consumer.apply(noStoreMiddleware).forRoutes(BusinessAdminController, BusinessClientController, AdminAuthController, AdminProvisioningController, AdminAccountReadController, AdminPermissionsController, AdminErrorLogsController, AdminAccountLockController, SystemSettingsController, OtpPolicyController, AdminMenuCategoryController, AdminServiceAreaController, AdminShipperController, ShipperWalletParametersController, ShippingFeePolicyController, ShippingEligibilityPolicyController, OrderParametersController, FinanceAccessController, AdminTopupController, AdminFinanceController, AdminDeliveryController, AdminNotificationController, AdminOverviewController, AdminAccessController, AdminConfigController, AdminReportController, AdminOperationsController, OpsAdminController);
     // The activation transport headers are an application-level middleware in configureApp (app.setup.ts): it must precede
     // the body parser, which module middleware does not.
   }

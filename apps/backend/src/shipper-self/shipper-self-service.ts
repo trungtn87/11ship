@@ -125,8 +125,9 @@ export class ShipperSelfService {
       }
       const nameChanged = input.fullName !== driver.fullName;
       const plateChanged = input.plateNumber !== driver.plateNumber;
-      if (nameChanged && !(driver.status === 'PENDING' && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED'))) {
-        // The name is what the bank holder must match and what the reviewer approved: it is not edited while under review or afterwards.
+      if (nameChanged && !(driver.status === 'ACTIVE' || (driver.status === 'PENDING' && (driver.reviewState === 'DRAFT' || driver.reviewState === 'REJECTED')))) {
+        // An ACTIVE Shipper can correct a mistyped name (the verified bank account is reset below; a withdrawal already made keeps its own snapshot).
+        // The name is not edited while suspended, under review, closing or closed.
         throw new AppError('DRIVER_PROFILE_LOCKED');
       }
       if (!nameChanged && !plateChanged) {
@@ -221,18 +222,20 @@ export class ShipperSelfService {
 
   requestClosure(principal: AuthPrincipal, input: ClosureRequestInput, key: string | readonly string[] | undefined, requestId: string) {
     return this.#command(principal, 'closure_request', { expected_version: input.expectedVersion, note: input.note }, key, requestId, input.expectedVersion, async (context, driver) => {
-      if (driver.status !== 'ACTIVE') {
+      // A SUSPENDED Shipper may close and take the balance back WITHOUT being unlocked (Owner lock 2026-10-28). The suspension reason and time stay as they
+      // are (drivers_suspension_reason_ck allows them while status_before_closing = 'SUSPENDED') and the status returns with them on cancel or rejection.
+      if (driver.status !== 'ACTIVE' && driver.status !== 'SUSPENDED') {
         throw new AppError('DRIVER_STATE_CONFLICT');
       }
       // New orders stop at once; orders in progress are finished (nothing is cancelled); the wallet is untouched.
       const updated = await this.#write(context, driver, {
         status: 'CLOSING',
         acceptingDeliveries: false,
-        statusBeforeClosing: 'ACTIVE',
+        statusBeforeClosing: driver.status,
         closureRequestedAt: NOW,
         closureNote: input.note,
       });
-      return { driver: updated, change: 'closure_requested', detail: { accepting_stopped: driver.acceptingDeliveries } };
+      return { driver: updated, change: 'closure_requested', detail: { accepting_stopped: driver.acceptingDeliveries, from_status: driver.status } };
     });
   }
 
@@ -242,7 +245,7 @@ export class ShipperSelfService {
         throw new AppError('DRIVER_STATE_CONFLICT');
       }
       if ((await this.walletReads.openWithdrawalCountOfDriver(context, driver.driverId)) > 0) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
-      // Back to ACTIVE with the switch off: the Shipper turns receiving on again on purpose.
+      // Back to the status it came from with the switch off (a SUSPENDED Shipper is still SUSPENDED, same reason and time): receiving is turned on on purpose.
       const updated = await this.#write(context, driver, { status: driver.statusBeforeClosing, statusBeforeClosing: null, closureRequestedAt: null, closureNote: null });
       return { driver: updated, change: 'closure_cancelled' };
     });

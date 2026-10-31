@@ -8,7 +8,7 @@ import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-exec
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { canonicalizeBusinessHours, toWire } from '../shop/business-hours';
-import { ServiceAreaRepository } from '../shop/service-area-repository';
+import { assertPinInArea, ServiceAreaRepository } from '../shop/service-area-repository';
 import { AVAILABILITY_TIME_ZONE } from '../shop/shop-availability-sql';
 import { ShopAvailabilityReader, ShopSnapshot } from '../shop/shop-availability-reader';
 import { ShopBusinessHoursRepository } from '../shop/shop-business-hours-repository';
@@ -162,6 +162,7 @@ export class ShopManagementService {
     if (area === undefined || area.status !== 'ACTIVE') {
       throw new AppError('INVALID_SERVICE_AREA');
     }
+    assertPinInArea(area, profile.pickupLat, profile.pickupLng);
 
     const version = await this.shops.updateActiveProfile(context, shop.shopId, shop.version, profile);
     if (profile.logo !== undefined) await this.shops.saveLogo(context, shop.shopId, profile.logo);

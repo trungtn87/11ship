@@ -34,11 +34,15 @@ class AddressLocationField extends StatelessWidget {
     required this.text,
     required this.onTap,
     this.error,
+    this.pinSummary,
   });
   final String label;
   final String text;
   final VoidCallback? onTap;
   final String? error;
+
+  /// The confirmed pin as the person reviews it before saving ("Ghim: lat, lng"), or null when the caller shows none.
+  final String? pinSummary;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -61,6 +65,11 @@ class AddressLocationField extends StatelessWidget {
           onTap: onTap,
         ),
       ),
+      if (pinSummary != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(pinSummary!, key: const Key('address-pin-summary')),
+        ),
       if (error != null)
         Padding(
           padding: const EdgeInsets.only(top: 6),

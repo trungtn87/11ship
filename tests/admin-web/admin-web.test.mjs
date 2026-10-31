@@ -29,17 +29,17 @@ describe('menu by permission', () => {
   it('ADMIN without grants sees Tổng quan and the (read-only) system parameters, nothing else', async () => {
     const m = await load(real, 'core/menu.js');
     // Owner decision 2026-10-17: every administrator may READ the system parameters (SYSTEM alone edits them).
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home', 'overview', 'reports', 'config', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home', 'overview', 'reports', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
   });
   it('ADMIN with a grant sees that entry, never administrators, invitations or the system settings', async () => {
     const m = await load(real, 'core/menu.js');
     const seen = ids(m.visibleMenu('ADMIN', new Set(['users', 'shops'])));
-    assert.deepEqual(seen, ['home', 'overview', 'reports', 'users', 'users-list', 'users-locked', 'shops', 'config', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(seen, ['home', 'overview', 'reports', 'users', 'users-list', 'users-locked', 'shops', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
     assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
   it('"Danh mục › Nhóm món" needs the catalog grant (SHOP VIEW + the catalog right); SYSTEM always sees it', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'overview', 'reports', 'catalog', 'catalog-categories', 'config', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'overview', 'reports', 'catalog', 'catalog-categories', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers']))).includes('catalog-categories'));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('catalog-categories'));
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops']), { name: 'categories' }), false);
@@ -110,18 +110,18 @@ describe('menu by permission', () => {
 });
 
 describe('M13 "Vận hành hệ thống" menu and pages', () => {
-  const OPS = ['sysops', 'sysops-overview', 'sysops-incidents', 'sysops-gateway', 'sysops-logs', 'sysops-releases', 'sysops-config'];
+  const OPS = ['sysops', 'sysops-overview', 'sysops-vps', 'sysops-incidents', 'sysops-gateway', 'sysops-logs', 'sysops-releases', 'sysops-config'];
   it('SYSTEM sees all six entries; an ADMIN sees them only with the server-given "ops" access, never from application grants', async () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(ids(m.visibleMenu('SYSTEM')).filter((id) => id.startsWith('sysops')), OPS);
     assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers', 'deliveries', 'notifications']))).filter((id) => id.startsWith('sysops')), []);
     assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['ops']))).filter((id) => id.startsWith('sysops')), OPS);
-    assert.deepEqual(m.MENU.find((g) => g.id === 'sysops').items[0].children.map((c) => c.label), ['Tổng quan', 'Sự cố', 'SMS Gateway', 'Nhật ký', 'Phiên bản & cập nhật', 'Cấu hình']);
+    assert.deepEqual(m.MENU.find((g) => g.id === 'sysops').items[0].children.map((c) => c.label), ['Tổng quan', 'Giám sát VPS', 'Sự cố', 'SMS Gateway', 'Nhật ký', 'Phiên bản & cập nhật', 'Cấu hình']);
   });
   it('routes parse, format and are guarded like the menu', async () => {
     const m = await load(real, 'core/menu.js');
     const r = await load(real, 'core/routes.js');
-    for (const [path, name] of [['/system-ops', 'ops'], ['/system-ops/incidents', 'ops-incidents'], ['/system-ops/gateway', 'ops-gateway'], ['/system-ops/logs', 'ops-logs'], ['/system-ops/releases', 'ops-releases'], ['/system-ops/config', 'ops-config']]) {
+    for (const [path, name] of [['/system-ops', 'ops'], ['/system-ops/vps', 'ops-vps'], ['/system-ops/incidents', 'ops-incidents'], ['/system-ops/gateway', 'ops-gateway'], ['/system-ops/logs', 'ops-logs'], ['/system-ops/releases', 'ops-releases'], ['/system-ops/config', 'ops-config']]) {
       const route = r.parseRoute(path);
       assert.equal(route.name, name);
       assert.equal(r.formatRoute(route), path);
@@ -133,6 +133,8 @@ describe('M13 "Vận hành hệ thống" menu and pages', () => {
     assert.equal(r.parseRoute('/system-ops/incidents/not-a-code').name, 'home');
     assert.equal(r.formatRoute({ name: 'ops-incident', ref: 'SC-013' }), '/system-ops/incidents/SC-013');
     assert.equal(m.activeMenuId({ name: 'ops-incident', ref: 'SC-013' }), 'sysops-incidents');
+    assert.equal(m.activeMenuId({ name: 'ops-vps' }), 'sysops-vps');
+    assert.deepEqual(m.breadcrumb({ name: 'ops-vps' }), ['Vận hành hệ thống', 'Giám sát VPS']);
     assert.deepEqual(m.breadcrumb({ name: 'ops-releases' }), ['Vận hành hệ thống', 'Phiên bản & cập nhật']);
   });
   it('the real build carries no sample operations data and no way to run a command, a path or a deploy', () => {
@@ -143,6 +145,11 @@ describe('M13 "Vận hành hệ thống" menu and pages', () => {
     }
     const view = readFileSync(join(real, 'js', 'dom/ops-view.js'), 'utf8');
     assert.ok(!view.includes('Đăng nhập'), 'the OTP queue is for "Đăng ký / Quên mật khẩu" only');
+    // G20-C (Owner: no Deploy button on Web Admin): the disabled control is gone, and a server APK is told apart from what devices report running.
+    assert.ok(!view.includes('Triển khai (SYSTEM)'), 'no Deploy button');
+    assert.ok(view.includes('APK đã phát hành trên máy chủ (PUBLISHED)') && view.includes('Thiết bị đã báo đang chạy (60 ngày qua)'));
+    // G20-A: the VPS page reads only; no restart, SSH or command control exists.
+    assert.ok(!/Khởi động lại|restart|ssh/i.test(view.slice(view.indexOf('class OpsVpsView'), view.indexOf('class SysOpsOverviewView'))));
   });
 });
 

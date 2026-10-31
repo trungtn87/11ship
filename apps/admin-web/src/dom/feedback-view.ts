@@ -471,6 +471,7 @@ const ACTION_LABEL: Record<ComplaintActionName, string> = {
   'decide-reconsideration': 'Quyết định xem xét lại',
   'adjust-result': 'Điều chỉnh kết quả giao',
   'adjust-commission': 'Điều chỉnh tài chính',
+  'retry-commission': 'Xử lý lại điều chỉnh tài chính',
 };
 
 const ACTION_TEXT: Record<ComplaintActionName, string> = {
@@ -483,6 +484,7 @@ const ACTION_TEXT: Record<ComplaintActionName, string> = {
   'decide-reconsideration': 'Người gửi xin xem xét lại trong 7 ngày sau khi đóng. Mở lại hoặc giữ nguyên đều cần lý do.',
   'adjust-result': 'Ghi bản điều chỉnh tham chiếu kết quả gốc. Không tạo lại hoàn thành/thu hoa hồng, không hồi sinh yêu cầu giao đã kết thúc.',
   'adjust-commission': 'Gửi yêu cầu điều chỉnh tài chính. Cần quyền tiền riêng. Thiếu số dư hoặc chưa thực hiện được thì chờ xử lý tài chính, không âm ví hay dùng tiền đang giữ.',
+  'retry-commission': 'Gửi lại yêu cầu cho ĐÚNG điều chỉnh đang chờ (cùng mã, hướng và số tiền; không tạo điều chỉnh mới). Chỉ thực hiện khi số dư khả dụng của ví đủ; nếu chưa đủ thì vẫn chờ xử lý tài chính. Không mở lại kết luận của hồ sơ.',
 };
 
 export class ComplaintListView extends Page {
@@ -723,14 +725,14 @@ export class ComplaintListView extends Page {
       h('h3', { class: 'subtitle' }, 'Điều chỉnh'),
       c.adjustments.length === 0
         ? h('p', { class: 'empty' }, 'Chưa có điều chỉnh.')
-        : h('ul', { class: 'plain-list' }, ...c.adjustments.map((a) => h('li', {}, adjustmentText(a), ' ', badge(a.status === 'EXECUTED' ? 'Đã thực hiện' : a.status === 'RECORDED' ? 'Đã ghi nhận' : 'Chờ xử lý tài chính', a.status === 'PENDING_FINANCE' ? 'wait' : 'ok')))),
+        : h('ul', { class: 'plain-list' }, ...c.adjustments.map((a) => h('li', {}, adjustmentText(a), ' ', badge(a.status === 'EXECUTED' ? 'Đã thực hiện' : a.status === 'RECORDED' ? 'Đã ghi nhận' : 'Chờ xử lý tài chính', a.status === 'PENDING_FINANCE' ? 'wait' : 'ok'), ...(a.kind === 'COMMISSION' ? [h('div', { class: 'hint' }, adjustmentMeta(a))] : [])))),
       h('p', { class: 'hint' }, c.financeAllowed ? 'Tài khoản này có quyền điều chỉnh tài chính. Hệ thống chỉ gửi yêu cầu; ví và sổ cái do phân hệ Ví xử lý.' : 'Điều chỉnh tài chính yêu cầu quyền riêng; tài khoản này chưa được cấp.'),
     );
   }
 
   #ask(c: ComplaintDetail, name: ComplaintActionName): void {
     const key = this.host.newKey();
-    const text = h('textarea', { id: 'complaint-text', class: 'textarea', rows: '4', maxlength: String(name === 'adjust-result' || name === 'adjust-commission' ? NOTE_MAX : TEXT_MAX), 'aria-label': 'Nội dung' });
+    const text = h('textarea', { id: 'complaint-text', class: 'textarea', rows: '4', maxlength: String(name === 'adjust-result' || name === 'adjust-commission' || name === 'retry-commission' ? NOTE_MAX : TEXT_MAX), 'aria-label': 'Nội dung' });
     const fields: Node[] = [];
     const base = (over: Partial<ComplaintActionRequest>): ComplaintActionRequest => ({ id: c.id, name, version: c.version, key, ...over });
     const labelled = (label: string, control: HTMLElement, id: string): void => {
@@ -744,6 +746,7 @@ export class ComplaintListView extends Page {
       'decide-reconsideration': 'Lý do quyết định (bắt buộc)',
       'adjust-result': 'Lý do điều chỉnh (bắt buộc, ghi vào nhật ký)',
       'adjust-commission': 'Lý do điều chỉnh (bắt buộc, ghi vào nhật ký)',
+      'retry-commission': 'Ghi chú nội bộ (bắt buộc, ghi vào nhật ký)',
     };
     const from = h('select', { id: 'complaint-from-role', class: 'select', 'aria-label': 'Yêu cầu từ' }, h('option', { value: 'SUBMITTER' }, 'Người gửi'), h('option', { value: 'SHOP' }, 'Quán'), ...(c.shipperName === null ? [] : [h('option', { value: 'SHIPPER' }, 'Shipper')]));
     const decision = h('select', { id: 'complaint-decision', class: 'select', 'aria-label': 'Quyết định' }, h('option', { value: 'REOPEN' }, 'Mở lại hồ sơ'), h('option', { value: 'REJECT' }, 'Giữ nguyên kết quả'));
@@ -837,6 +840,27 @@ const THREAD_LABEL: Record<string, string> = {
   NOTE: 'Ghi chú',
   ADJUSTMENT: 'Điều chỉnh',
 };
+
+const PENDING_REASON_TEXT: Record<string, string> = {
+  INSUFFICIENT_BALANCE: 'Số dư khả dụng của ví tài xế chưa đủ',
+  M04_UNAVAILABLE: 'Phân hệ Ví chưa xử lý được yêu cầu',
+};
+
+/** Code, kind, direction, amount, status, why it waits, when it was made and when it was last tried: what finance needs to see about one adjustment. */
+function adjustmentMeta(a: AdjustmentRecord): string {
+  const parts = [
+    `Mã điều chỉnh: ${a.id}`,
+    `Loại: ${a.kind}`,
+    `Hướng: ${a.direction ?? '—'}`,
+    `Số tiền: ${a.amountVnd === null ? '—' : formatVnd(a.amountVnd)}`,
+    `Trạng thái: ${a.status}`,
+  ];
+  if (a.status === 'PENDING_FINANCE') {
+    parts.push(`Lý do chờ: ${a.pendingReason === null ? '—' : (PENDING_REASON_TEXT[a.pendingReason] ?? a.pendingReason)}`);
+  }
+  parts.push(`Lập lúc: ${formatDateTime(a.createdAt)}`, `Xử lý gần nhất: ${formatDateTime(a.updatedAt)}`);
+  return parts.join(' · ');
+}
 
 function adjustmentText(a: AdjustmentRecord): string {
   if (a.kind === 'DELIVERY_RESULT') {

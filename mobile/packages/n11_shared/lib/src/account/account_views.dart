@@ -76,6 +76,8 @@ String _failureMessage(AuthFailure failure) {
       return 'Hồ sơ đã ở trạng thái khác trên máy chủ. Hãy tải lại để xem bản hiện tại.';
     case AuthFailureKind.invalidServiceArea:
       return 'Khu vực đã chọn không còn hợp lệ. Hãy tải lại danh sách khu vực và chọn lại.';
+    case AuthFailureKind.pickupOutsideArea:
+      return 'Ghim vị trí lấy hàng nằm ngoài khu vực phục vụ đã chọn. Hãy chọn lại ghim trên bản đồ; thông tin bạn đã nhập được giữ nguyên.';
     case AuthFailureKind.roleNotAvailable:
       return 'Tài khoản chưa dùng được chế độ này.';
     case AuthFailureKind.otpInvalid:
@@ -1147,6 +1149,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             if (_message != null) N11Banner(key: const Key('profile-message'), kind: _messageOk ? BannerKind.success : BannerKind.error, title: _message!),
             N11Field(requiredInput: true, fieldKey: const Key('profile-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !session.busy && !_loading, onChanged: () => setState(() {})),
             Text('Số điện thoại: ${session.identity?.maskedPhone ?? ''}', key: const Key('profile-phone'), style: N11Text.caption),
+            if (session.identity?.phoneUnverified ?? false)
+              const N11Banner(
+                key: Key('profile-phone-unverified'),
+                kind: BannerKind.info,
+                title: 'Số điện thoại chưa được xác minh bằng mã SMS',
+                text: 'Tài khoản được tạo khi chưa yêu cầu mã xác minh. Một số chức năng có thể cần số điện thoại đã xác minh.',
+              ),
             N11Button(
               key: const Key('profile-save'), validate: true,
               label: session.busy ? 'Đang lưu…' : 'Lưu',

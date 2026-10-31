@@ -14,6 +14,7 @@ import { DeliveryReadModule } from './delivery-read.module';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryViews } from './delivery-views';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
+import { AddressChangeReadModule } from '../address-change/address-change-read.module';
 import { ShipperLocationModule } from './shipper-location.module';
 
 /**
@@ -26,9 +27,9 @@ export class DeliveryCoreModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryCoreModule,
-      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule],
+      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule, AddressChangeReadModule],
       providers: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry],
-      exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule],
+      exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule, AddressChangeReadModule],
     };
   }
 }
