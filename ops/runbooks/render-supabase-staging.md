@@ -202,6 +202,10 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | backup_records | SELECT (M12-F: written by the backup job with the owner role; the application only reads it; never deleted) |
 | restore_requests | SELECT, INSERT, UPDATE (M12-F: SYSTEM's request to restore a verified backup, cancelled by SYSTEM, moved on by an operator; never deleted, the application never performs a restore) |
 | backup_jobs | SELECT, INSERT (M12-F: "Sao lưu ngay" queues one job; the backup job moves it on with the owner role; never deleted) |
+| ops_online_snapshots | SELECT, INSERT, DELETE (#241: the 15-minute count of Online Shippers; inserted by the snapshot runtime, pruned after the retention window) |
+| ops_anomaly_cases | SELECT, INSERT, UPDATE (#242: flag-only review cases; never deleted, never changes an account) |
+| ops_anomaly_case_events | SELECT, INSERT (#242: append-only trail of a case) |
+| ops_anomaly_settings | SELECT, UPDATE (#242: one seeded row of thresholds, changed by SYSTEM with a reason) |
 | business_finance_requests | SELECT, INSERT, UPDATE |
 | business_finance_reads | SELECT, INSERT, UPDATE |
 | business_push_subscriptions | SELECT, INSERT, UPDATE |

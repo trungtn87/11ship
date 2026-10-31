@@ -197,6 +197,13 @@ GRANT SELECT, INSERT, UPDATE ON app.restore_requests TO ship11_app;
 -- "Sao lưu ngay": the application only queues a job (INSERT) and reads it; the backup job moves it on with the owner role. Never deleted (trigger).
 GRANT SELECT, INSERT ON app.backup_jobs TO ship11_app;
 
+-- Operations analytics and flag-only anomaly cases (#241/#242): the 15-minute Online snapshots are inserted and pruned by the retention step; the cases are created and moved
+-- along review states; the case trail is append-only; the settings are one seeded row that SYSTEM updates (never inserted or deleted by the application).
+GRANT SELECT, INSERT, DELETE ON app.ops_online_snapshots TO ship11_app;
+GRANT SELECT, INSERT, UPDATE ON app.ops_anomaly_cases TO ship11_app;
+GRANT SELECT, INSERT ON app.ops_anomaly_case_events TO ship11_app;
+GRANT SELECT, UPDATE ON app.ops_anomaly_settings TO ship11_app;
+
 -- Business Dashboard: scoped operational rows and append-only financial evidence.
 GRANT SELECT, INSERT, UPDATE ON app.business_finance_requests TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.business_finance_reads TO ship11_app;
