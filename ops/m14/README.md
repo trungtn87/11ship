@@ -1,6 +1,8 @@
-# Valhalla M14 — test Render, triển khai VPS sau
+# Valhalla M14: định tuyến đường bộ cho phí giao
 
-Service test riêng: https://one1ship-m14-routing.onrender.com. Gói Render **free**, không DB, không disk trả phí; tự ngủ khi không dùng nên yêu cầu đầu tiên có thể chậm. Không sửa các service Render khác. Auto-deploy tắt để thay đổi nhánh không tự triển khai.
+**Cập nhật 31/10/2026:** service thử nghiệm Render (`one1ship-m14-routing.onrender.com`) không còn tồn tại (404). Triển khai thật nằm trên VPS VinaHost, xem [ops/runbooks/m14-valhalla-vps.md](../runbooks/m14-valhalla-vps.md) và `ops/m14/vps.sh`; CI `routing-smoke` build image và chạy cục bộ. Phần dưới là mô tả gốc của bản Render, giữ để tham khảo.
+
+Service test Render (đã mất):
 
 `Dockerfile` pin Valhalla 3.9.1 theo digest; build graph từ PBF Geofabrik đi kèm nhánh, một luồng build. Graph bbox `[105.85,22.25,106.70,23.08]` rộng hơn vùng map để có đường vòng. Không tải dữ liệu trong mỗi lần khởi động runtime. API chỉ có `GET /health` và `POST /route`, ép motorcycle/kilometers, đúng hai điểm trong vùng phủ; không fallback đường thẳng. Giới hạn hai request đồng thời và 20 request/phút theo IP nhìn thấy tại gateway. Không có API upload lịch sử hay ghi log tọa độ. HTTPS do Render cấp; engine chỉ nghe loopback trong container.
 

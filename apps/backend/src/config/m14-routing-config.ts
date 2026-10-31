@@ -2,8 +2,9 @@
 // validation: nothing here reads the environment by itself and only the NAMES of invalid variables are reported.
 //
 //   M14_ROUTING_ORIGIN       unset (default: routing is NOT available, a fee that needs a route stays unknown) | an HTTPS origin such as
-//                            https://routing.example.vn (no path, query, fragment or credentials). `http://` is accepted only for a loopback
-//                            host in development / test (a local routing container).
+//                            https://routing.example.vn (no path, query, fragment or credentials). `http://` is accepted ONLY for a loopback
+//                            host (localhost, 127.0.0.1, [::1]) in every environment, production included: the routing container on the same VPS
+//                            publishes its port on 127.0.0.1 only, so that traffic never leaves the machine. Any other host must be https.
 //   M14_ROUTING_TIMEOUT_MS   default 8000, 500..20000. A route that takes longer is "unavailable": never replaced by a straight line.
 
 export const M14_ROUTING_ORIGIN_ENV = 'M14_ROUTING_ORIGIN';
@@ -39,7 +40,7 @@ export function parseM14Routing(input: { readonly env: Readonly<Record<string, s
   try {
     const url = new URL(raw);
     const local = LOOPBACK.has(url.hostname);
-    const schemeOk = url.protocol === 'https:' || (url.protocol === 'http:' && local && (input.appEnv === 'development' || input.appEnv === 'test'));
+    const schemeOk = url.protocol === 'https:' || (url.protocol === 'http:' && local);
     const bare = url.username === '' && url.password === '' && (url.pathname === '/' || url.pathname === '') && url.search === '' && url.hash === '';
     if (schemeOk && bare) {
       origin = url.origin;
