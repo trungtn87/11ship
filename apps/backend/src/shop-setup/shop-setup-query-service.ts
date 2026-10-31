@@ -70,9 +70,11 @@ export class ShopSetupQueryService {
         return null;
       }
       let gate = await this.gate.evaluate(context, snapshot);
-      if (snapshot.status === 'ACTIVE' && snapshot.activatedAt === null && gate.setup.complete && !snapshot.ownerLocked) {
+      if (snapshot.status === 'ACTIVE' && (snapshot.activatedAt === null || snapshot.setupRequest !== null) && gate.setup.complete && !snapshot.ownerLocked) {
         await this.shops.lockOwnedShop(context, actor.userId);
-        if (await this.activation.reconcile(context, snapshot.shopId, requestId, 'owner_read')) {
+        const activatedNow = await this.activation.reconcile(context, snapshot.shopId, requestId, 'owner_read');
+        // An already activated shop only gets its administrator request withdrawn (issue #252): re-read so this response already shows it.
+        if (activatedNow || snapshot.activatedAt !== null) {
           const again = await this.reader.snapshotOfOwner(context, actor.userId);
           if (again !== undefined) {
             snapshot = again;
