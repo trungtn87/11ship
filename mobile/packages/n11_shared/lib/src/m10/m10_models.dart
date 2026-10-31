@@ -350,6 +350,7 @@ class OrderView {
     required this.money,
     required this.edited,
     required this.changeReason,
+    this.customerEditCount = 0,
     required this.confirmedAt,
     required this.endedAt,
     required this.endReason,
@@ -386,6 +387,7 @@ class OrderView {
       money: OrderMoney.fromJson(m['money']),
       edited: _bool(m['edited']),
       changeReason: _strOrNull(m['change_reason']),
+      customerEditCount: m['customer_edit_count'] is int ? m['customer_edit_count']! as int : 0,
       confirmedAt: _timeOrNull(m['confirmed_at']),
       endedAt: _timeOrNull(m['ended_at']),
       endReason: _strOrNull(m['end_reason']),
@@ -413,6 +415,10 @@ class OrderView {
   final String status;
   final DisplayStatus display;
   final int version;
+
+  /// Issue #238: how many times the customer replaced the content while the Order waited for the shop (the shop is told "Khách vừa cập nhật đơn hàng").
+  final int customerEditCount;
+  bool get customerEdited => customerEditCount > 0;
   final OrderShop shop;
   final OrderRecipient recipient;
   final String? note;
@@ -697,4 +703,18 @@ class ReorderResult {
 
   final CartView? cart;
   final List<String> skipped;
+}
+
+/// A dish the customer may add while editing an Order that waits for the shop (the shop's dishes on sale now, at today's price).
+class EditDish {
+  const EditDish({required this.itemId, required this.name, required this.priceVnd});
+
+  factory EditDish.fromJson(Object? raw) {
+    final Map<String, Object?> m = _obj(raw);
+    return EditDish(itemId: _str(m['item_id']), name: _str(m['name']), priceVnd: _int(m['price_vnd']));
+  }
+
+  final String itemId;
+  final String name;
+  final int priceVnd;
 }

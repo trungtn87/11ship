@@ -272,6 +272,8 @@ export interface OrderChangePayload {
   readonly change: string;
   readonly status: string;
   readonly version: number;
+  /** The shop confirmed with a dish money different from the first one (issue #260). Carries no amount. */
+  readonly priceChanged?: boolean;
 }
 
 const order = (p: OrderChangePayload, audience: 'SHOP' | 'CUSTOMER', kind: NotificationKind, title: string, body: string, pushTtlMs: number = PUSH_TTL_MS.result): Draft => ({
@@ -309,8 +311,14 @@ export function composeOrderChange(p: OrderChangePayload): Draft[] {
       return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code}: khách đã hủy khi shipper đang giao. Hàng đang ở shipper.`)];
     case 'schedule_reminder':
       return [order(p, 'SHOP', 'ORDER_SCHEDULE_REMINDER', 'Sắp đến giờ hẹn', `Đơn hẹn ${code} sắp đến giờ nhận món. Hãy chuẩn bị và gọi shipper.`, PUSH_TTL_MS.reminder)];
+    case 'customer_edited':
+      return [order(p, 'SHOP', 'ORDER_EDITED_BY_CUSTOMER', 'Khách cập nhật đơn hàng', `Đơn ${code}: khách vừa cập nhật nội dung đơn. Mở đơn để xem bản mới trước khi xác nhận.`)];
     case 'confirmed':
-      return [order(p, 'CUSTOMER', 'ORDER_CONFIRMED', 'Quán đã xác nhận đơn', `Đơn ${code} đang được chuẩn bị.`)];
+      return [
+        p.priceChanged === true
+          ? order(p, 'CUSTOMER', 'ORDER_CONFIRMED', 'Quán đã xác nhận đơn với giá trị cập nhật', `Đơn ${code} đang được chuẩn bị với giá trị món đã được quán cập nhật. Mở ứng dụng để xem giá gốc, giá mới và lý do.`)
+          : order(p, 'CUSTOMER', 'ORDER_CONFIRMED', 'Quán đã xác nhận đơn', `Đơn ${code} đang được chuẩn bị.`),
+      ];
     case 'rejected':
       return [order(p, 'CUSTOMER', 'ORDER_REJECTED', 'Quán không nhận đơn', `Đơn ${code} chưa được quán nhận. Mở ứng dụng để xem lý do.`)];
     case 'cancelled_by_shop':

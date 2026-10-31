@@ -33,6 +33,7 @@ export const ORDER_OPERATIONS = {
   cartReplace: 'order.cart.replace.v1',
   place: 'order.place.v1',
   readyCompat: 'order.ready_compat.v1',
+  customerEdit: 'order.customer_edit.v1',
   customerCancel: 'order.cancel_by_customer.v1',
   customerCancelAfterPickup: 'order.cancel_by_customer_after_pickup.v1',
   edit: 'order.edit.v1',

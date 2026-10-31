@@ -6,7 +6,7 @@ import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { OrderCustomerDeliveryService } from './order-customer-delivery-service';
 import { OrderCustomerService } from './order-customer-service';
-import { parseCartBody, parseClientRefQuery, parseCustomerCancelBody, parseCustomerListQuery, parseFeeDecisionBody, parseOrderId, parsePlaceBody, parsePreviewBody, parseReasonBody, parseReorderBody } from './order-validation';
+import { parseCartBody, parseClientRefQuery, parseCustomerCancelBody, parseCustomerEditBody, parseCustomerListQuery, parseFeeDecisionBody, parseOrderId, parsePlaceBody, parsePreviewBody, parseReasonBody, parseReorderBody } from './order-validation';
 import { AddressChangeService } from '../address-change/address-change-service';
 import { parseCancelAddressChangeBody, parseCreateAddressChangeBody } from '../address-change/address-change-validation';
 
@@ -74,6 +74,21 @@ export class OrderCustomerController {
   async read(@Param('order_id') id: string, @Req() request: AuthenticatedRequest, @Query() query: unknown) {
     rejectBodyAndQuery(request, query);
     return { data: await this.customer.read(this.#principal(request), parseOrderId(id)) };
+  }
+
+  /** Issue #238: the customer replaces the content of an Order that still waits for the shop. */
+  @Post('orders/:order_id/edit')
+  @HttpCode(200)
+  async edit(@Param('order_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.customer.edit(this.#principal(request), parseOrderId(id), parseCustomerEditBody(body), key, requestIdOf(request));
+    return { data: outcome.payload };
+  }
+
+  /** The shop's dishes on sale now, for the editor's "Thêm món". */
+  @Get('orders/:order_id/edit-menu')
+  async editMenu(@Param('order_id') id: string, @Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    rejectBodyAndQuery(request, query);
+    return { data: await this.customer.editMenu(this.#principal(request), parseOrderId(id)) };
   }
 
   @Post('orders/:order_id/cancel')

@@ -55,6 +55,9 @@ export interface OrderRow {
   readonly feeEstimateReason?: string | null;
   readonly editedAtMs: number | null;
   readonly changeReason: string | null;
+  /** Issue #238: when the customer last replaced the content of the Order while it waited for the shop, and how many times (0 = never). */
+  readonly customerEditedAtMs: number | null;
+  readonly customerEditCount: number;
   readonly confirmedAtMs: number | null;
   readonly readyAtMs: number | null;
   readonly scheduleRemindedAtMs: number | null;
@@ -95,6 +98,8 @@ interface RawOrder {
   fee_estimate_reason: string | null;
   edited_ms: string | null;
   change_reason: string | null;
+  customer_edited_ms: string | null;
+  customer_edit_count: number;
   confirmed_ms: string | null;
   ready_ms: string | null;
   reminded_ms: string | null;
@@ -110,9 +115,9 @@ export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, app.shop_dis
   o.source_address_id::text AS source_address_id, o.note, o.delivery_note, ${ms('o.scheduled_for', 'scheduled_ms')},
   o.items_original_total_vnd::text AS items_original_total_vnd, o.items_total_vnd::text AS items_total_vnd, o.paid_vnd::text AS paid_vnd,
   o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m,
-  (SELECT e.details->>'quote_fee_vnd' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type = 'order.placed' ORDER BY e.at, e.event_id LIMIT 1) AS fee_quote_vnd,
-  (SELECT e.details->>'quote_reason' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type = 'order.placed' ORDER BY e.at, e.event_id LIMIT 1) AS fee_estimate_reason,
-  ${ms('o.edited_at', 'edited_ms')}, o.change_reason,
+  (SELECT e.details->>'quote_fee_vnd' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type IN ('order.placed', 'order.customer_edited') ORDER BY e.at DESC, e.event_id DESC LIMIT 1) AS fee_quote_vnd,
+  (SELECT e.details->>'quote_reason' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type IN ('order.placed', 'order.customer_edited') ORDER BY e.at DESC, e.event_id DESC LIMIT 1) AS fee_estimate_reason,
+  ${ms('o.edited_at', 'edited_ms')}, o.change_reason, ${ms('o.customer_edited_at', 'customer_edited_ms')}, o.customer_edit_count,
   ${ms('o.confirmed_at', 'confirmed_ms')}, ${ms('o.ready_at', 'ready_ms')}, ${ms('o.schedule_reminded_at', 'reminded_ms')}, ${ms('o.ended_at', 'ended_ms')}, o.end_actor, o.end_reason,
   ${ms('o.created_at', 'created_ms')}, ${ms('o.updated_at', 'updated_ms')}`;
 
@@ -147,6 +152,8 @@ function toOrder(row: RawOrder): OrderRow {
     feeEstimateReason: row.fee_estimate_reason,
     editedAtMs: safeOrNull(row.edited_ms),
     changeReason: row.change_reason,
+    customerEditedAtMs: row.customer_edited_ms === null ? null : safe(row.customer_edited_ms),
+    customerEditCount: row.customer_edit_count,
     confirmedAtMs: safeOrNull(row.confirmed_ms),
     readyAtMs: safeOrNull(row.ready_ms),
     scheduleRemindedAtMs: safeOrNull(row.reminded_ms),
@@ -294,7 +301,7 @@ export interface AdminListFilter {
 }
 
 const LATEST = `LEFT JOIN LATERAL (SELECT d.state FROM app.deliveries d WHERE d.order_id = o.order_id ORDER BY d.created_at DESC, d.delivery_id DESC LIMIT 1) ld ON true`;
-const LINE_COUNT = `(SELECT count(*)::int FROM app.order_items i WHERE i.order_id = o.order_id AND i.removed_at IS NULL) AS line_count`;
+const LINE_COUNT = `(SELECT count(*)::int FROM app.order_items i WHERE i.order_id = o.order_id AND i.removed_at IS NULL AND i.superseded_at IS NULL) AS line_count`;
 const ENDED = `('COMPLETED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SHOP','CANCELLED_BY_SYSTEM', 'REJECTED_BY_SHOP', 'NOT_COMPLETED')`;
 
 type RawListItem = RawOrder & { latest_state: DeliveryState | null; line_count: number };
@@ -539,7 +546,7 @@ export class OrderRepository {
   // ---- items ------------------------------------------------------------------------------------------------------------------
 
   async listItems(context: TransactionContext, orderId: string): Promise<ItemRow[]> {
-    const result = await context.query<RawItem>(`SELECT ${ITEM_COLUMNS} FROM app.order_items i WHERE i.order_id = $1::uuid ORDER BY i.line_no`, [orderId]);
+    const result = await context.query<RawItem>(`SELECT ${ITEM_COLUMNS} FROM app.order_items i WHERE i.order_id = $1::uuid AND i.superseded_at IS NULL ORDER BY i.line_no`, [orderId]);
     return result.rows.map(toItem);
   }
 
@@ -562,6 +569,69 @@ export class OrderRepository {
       return;
     }
     await context.query(`UPDATE app.order_items SET ${sets.join(', ')} WHERE line_id = $1::uuid`, values);
+  }
+
+  /** The highest line number ever used on the Order (replaced lines included): a new version of the dishes continues after it. */
+  async maxLineNo(context: TransactionContext, orderId: string): Promise<number> {
+    const result = await context.query<{ n: number | null }>('SELECT max(line_no)::int AS n FROM app.order_items WHERE order_id = $1::uuid', [orderId]);
+    return result.rows[0]?.n ?? 0;
+  }
+
+  /** Issue #238: marks every current line as replaced by the customer's new version (the rows stay as history; the database refuses anything but this one-way change). */
+  async supersedeLines(context: TransactionContext, orderId: string): Promise<void> {
+    await context.query(`UPDATE app.order_items SET superseded_at = ${CLOCK} WHERE order_id = $1::uuid AND superseded_at IS NULL`, [orderId]);
+  }
+
+  /** Inserts the dishes of the customer's new version (the original = the current of these lines). */
+  async addLines(context: TransactionContext, orderId: string, items: readonly NewItem[]): Promise<void> {
+    for (const item of items) {
+      await context.query(
+        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, note, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
+         SELECT $1::uuid, $2::uuid, $3::smallint, $4::uuid, $5, $6, $7::bigint, $8::int, $7::bigint, $8::int, clock.t FROM (SELECT ${CLOCK} AS t) AS clock`,
+        [item.lineId, orderId, item.lineNo, item.menuItemId, item.name, item.note, item.unitPriceVnd, item.quantity],
+      );
+    }
+  }
+
+  /**
+   * The customer's edit of an Order that waits for the shop (issue #238): replaces the content the customer sent (recipient, address, notes, amounts, the fee estimate
+   * shown) and counts the edit. Runs with the database switch that lets the snapshot change ONLY here; the version is checked in the statement. The shop's own price
+   * edits are void (the lines were replaced), the wait clock (created_at, timeout fields) is untouched. Undefined when no row matched.
+   */
+  async customerEdit(
+    context: TransactionContext,
+    orderId: string,
+    expectedVersion: number,
+    c: {
+      recipientName: string;
+      recipientPhone: string;
+      addressText: string;
+      addressLat: number | null;
+      addressLng: number | null;
+      sourceAddressId: string | null;
+      note: string | null;
+      deliveryNote: string | null;
+      itemsTotalVnd: number;
+      feeEstimateVnd: number | null;
+      feeEstimateDistanceM: number | null;
+    },
+  ): Promise<OrderRow | undefined> {
+    await context.query("SELECT set_config('app.customer_order_edit', 'on', true)");
+    try {
+      const result = await context.query<RawOrder>(
+        `UPDATE app.orders o SET recipient_name = $3, recipient_phone = $4, address_text = $5, address_lat = $6::float8, address_lng = $7::float8, source_address_id = $8::uuid,
+                note = $9, delivery_note = $10, items_original_total_vnd = $11::bigint, items_total_vnd = $11::bigint, fee_estimate_vnd = $12::bigint, fee_estimate_distance_m = $13::int,
+                edited_at = NULL, change_reason = NULL, customer_edited_at = ${CLOCK}, customer_edit_count = o.customer_edit_count + 1,
+                version = o.version + 1, updated_at = GREATEST(${CLOCK}, o.updated_at)
+          WHERE o.order_id = $1::uuid AND o.version = $2::bigint
+          RETURNING ${ORDER_COLUMNS}`,
+        [orderId, expectedVersion, c.recipientName, c.recipientPhone, c.addressText, c.addressLat, c.addressLng, c.sourceAddressId, c.note, c.deliveryNote, c.itemsTotalVnd, c.feeEstimateVnd, c.feeEstimateDistanceM],
+      );
+      const row = result.rows[0];
+      return row === undefined ? undefined : toOrder(row);
+    } finally {
+      await context.query("SELECT set_config('app.customer_order_edit', 'off', true)");
+    }
   }
 
   // ---- events -----------------------------------------------------------------------------------------------------------------

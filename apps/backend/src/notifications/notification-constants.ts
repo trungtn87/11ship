@@ -41,6 +41,7 @@ export const KINDS = [
   'COMPLAINT_UPDATED',
   // M10 food orders: the shop is told of a new / cancelled order and of the wanted time; the customer of every step of the Order.
   'ORDER_PLACED',
+  'ORDER_EDITED_BY_CUSTOMER',
   'ORDER_CANCELLED_BY_CUSTOMER',
   'ORDER_CANCELLED_BY_ADMIN',
   'ORDER_SCHEDULE_REMINDER',
@@ -147,6 +148,7 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   COMPLAINT_UPDATED: 'ORDERS',
   ORDER_PLACED: 'ORDERS',
   ORDER_CANCELLED_BY_CUSTOMER: 'ORDERS',
+  ORDER_EDITED_BY_CUSTOMER: 'ORDERS',
   ORDER_CANCELLED_BY_ADMIN: 'ORDERS',
   ORDER_SCHEDULE_REMINDER: 'REMINDERS',
   ORDER_CONFIRMED: 'ORDERS',

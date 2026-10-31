@@ -105,6 +105,10 @@ export class OrderViews {
       money: moneyView(o, latest),
       edited: o.editedAtMs !== null,
       change_reason: o.changeReason,
+      // Issue #238: the customer replaced the content while the Order waited; the shop sees "Khách vừa cập nhật đơn hàng" and a confirm must use the newest version.
+      customer_edited: o.customerEditCount > 0,
+      customer_edit_count: o.customerEditCount,
+      customer_edited_at: iso(o.customerEditedAtMs),
       confirmed_at: iso(o.confirmedAtMs),
       ended_at: iso(o.endedAtMs),
       end_actor: o.endActor,
@@ -178,7 +182,7 @@ export class OrderViews {
     const canRequestAddressChange = o.status === 'PREPARING' && (latest === undefined || (!['picked_up', 'delivering', 'completed', 'failed'].includes(latest.state) && latest.pickedUpAtMs === null)) && (activeAddressChange === undefined || nowMs >= activeAddressChange.expiresAtMs);
     const canCancelAddressChange = activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs;
     // After pickup the customer (who created an ORDER) may cancel; the Shipper is told to call the shop and the goods stay with them until the shop settles them.
-    view.can = { cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true, request_address_change: canRequestAddressChange, cancel_address_change: canCancelAddressChange };
+    view.can = { edit: o.status === 'PENDING_CONFIRMATION', cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true, request_address_change: canRequestAddressChange, cancel_address_change: canCancelAddressChange };
     if (detail) {
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');

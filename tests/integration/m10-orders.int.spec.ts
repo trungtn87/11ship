@@ -456,6 +456,130 @@ describe('M10 — food orders', () => {
     expect(seen.can.cancel).toBe(false);
   });
 
+  // ---- issue #238: the customer edits the Order while it waits for the shop -----------------------------------------------------------
+
+  const editBody = (order: Json, lines: Json[], over: Json = {}): Json => ({
+    expected_version: order.version,
+    lines,
+    items_total_vnd: totalOf(lines),
+    recipient_name: 'Người nhận mới',
+    recipient_phone: '0987654321',
+    address: ADDRESS,
+    expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21,105.82' },
+    ...over,
+  });
+  const edit = (c: Customer, order: Json, lines: Json[], over: Json = {}, key?: string): Promise<ApiResponse> => asCustomer(c, 'POST', `/customers/me/orders/${order.order_id}/edit`, editBody(order, lines, over), key);
+
+  it('#238: the customer replaces dishes, notes, recipient and address of an Order that waits; the original stays in the history, the wait clock and the money roles do not move, a retry is one edit', async () => {
+    const order = await place(alice, [line(pho, 2), line(tea, 1)]);
+    const id = String(order.order_id);
+    const before = await orderRow(id);
+    expect(order.can).toMatchObject({ edit: true });
+    const lines = [line(pho, 1), line(bun, 1)];
+    const key = randomUUID();
+    const editRes = await edit(alice, order, lines, { note: 'Ít hành', delivery_note: 'Gọi trước khi đến' }, key);
+    const edited = ok(editRes);
+    expect(edited).toMatchObject({ version: 2, customer_edited: true, customer_edit_count: 1, edited: false, status: 'PENDING_CONFIRMATION' });
+    expect(edited.money).toMatchObject({ items_total_vnd: 85_000, items_original_total_vnd: 85_000 });
+    expect(edited.items.map((i: Json) => [i.name, i.quantity])).toEqual([['Phở bò', 1], ['Bún chả', 1]]);
+    expect(edited.recipient).toMatchObject({ name: 'Người nhận mới', phone: '+84987654321' });
+    expect(edited.note).toBe('Ít hành');
+    // The same key is the same edit: nothing happens twice.
+    expect(ok(await edit(alice, order, lines, { note: 'Ít hành', delivery_note: 'Gọi trước khi đến' }, key)).version).toBe(2);
+    const row = await orderRow(id);
+    expect(row.customer_edit_count).toBe(1);
+    // The wait clock, the identity and the payment side are untouched.
+    for (const column of ['created_at', 'code', 'client_ref', 'shop_id', 'scheduled_for', 'timeout_snapshot', 'timeout_next_reminder_at', 'paid_vnd']) {
+      expect([column, row[column]]).toEqual([column, before[column]]);
+    }
+    // The first version is not lost: the dishes of both versions are in the table, the replaced ones are history, and the event keeps before / after.
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.order_items WHERE order_id = $1::uuid', [id])).toBe(4);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.order_items WHERE order_id = $1::uuid AND superseded_at IS NOT NULL', [id])).toBe(2);
+    const seen = await customerView(alice, id);
+    const event = seen.timeline.find((e: Json) => e.type === 'order.customer_edited');
+    expect(event.details.before).toMatchObject({ items_total_vnd: 95_000 });
+    expect(event.details).toMatchObject({ items_total_vnd: 85_000, edit_no: 1 });
+    expect(seen.timeline.find((e: Json) => e.type === 'order.placed').details.items_total_vnd).toBe(95_000);
+    // Not the customer's Order: not found, nothing written.
+    expect(refused(await edit(bob, edited, lines))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
+    expect(await countRows(app.pool, "SELECT 1 FROM app.order_events WHERE order_id = $1::uuid AND type = 'order.customer_edited'", [id])).toBe(1);
+  });
+
+  it('#238: a stale version, a changed price, a hidden dish, a stale quote or a missing quote is refused and writes nothing; the "add dish" list is the shop\'s dishes on sale', async () => {
+    const order = await place(alice, [line(pho, 1)]);
+    const id = String(order.order_id);
+    expect(refused(await edit(alice, { ...order, version: 7 }, [line(pho, 2)]))).toEqual({ status: 409, code: 'VERSION_CONFLICT' });
+    expect(refused(await edit(alice, order, [line(pho, 2, undefined, 40_000)]))).toEqual({ status: 409, code: 'ORDER_CART_CHANGED' });
+    expect(refused(await edit(alice, order, [line(pho, 2)], { expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 15_000, reason: null, policy_version: policyVersion, snapshot: '21,105.8>21,105.82' } }))).toEqual({ status: 409, code: 'ORDER_QUOTE_CHANGED' });
+    expect(refused(await edit(alice, order, [line(pho, 2)], { expected_quote: { status: 'PRICED', distance_m: 2500, fee_vnd: 10_000, snapshot: '21,105.8>21,105.82' } }))).toEqual({ status: 409, code: 'ORDER_QUOTE_REQUIRED' });
+    const menu = ok(await asCustomer(alice, 'GET', `/customers/me/orders/${id}/edit-menu`));
+    expect((menu.items as Json[]).map((i) => i.name).sort()).toEqual(expect.arrayContaining(['Bún chả', 'Phở bò', 'Trà đá']));
+    expect(refused(await asCustomer(bob, 'GET', `/customers/me/orders/${id}/edit-menu`))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
+    const gone = await newDish(app, shop.token, 'Món sắp ẩn', 30_000);
+    await hideDish(app, gone.itemId);
+    expect(refused(await edit(alice, order, [line(pho, 1), line(gone, 1)]))).toEqual({ status: 409, code: 'ORDER_CART_CHANGED' });
+    expect((await orderRow(id)).customer_edit_count).toBe(0);
+    expect((await orderRow(id)).version).toBe('1');
+  });
+
+  it('#238: after the shop confirmed nothing can be edited ("contact the shop"); a shop that looked at the old version cannot confirm it; the shop\'s own price edits end with the customer\'s new version', async () => {
+    const first = await place(alice, [line(pho, 1)]);
+    const confirmedOrder = await confirm(first);
+    expect(refused(await edit(alice, confirmedOrder, [line(pho, 3)]))).toEqual({ status: 409, code: 'ORDER_EDIT_LOCKED' });
+    expect(refused(await asCustomer(alice, 'GET', `/customers/me/orders/${first.order_id}/edit-menu`))).toEqual({ status: 409, code: 'ORDER_EDIT_LOCKED' });
+    expect((await orderRow(String(first.order_id))).customer_edit_count).toBe(0);
+    await expect(app.pool.query('UPDATE app.order_items SET superseded_at = now() WHERE order_id = $1::uuid', [first.order_id])).rejects.toThrow(/ORDER_ITEMS_LOCKED/u);
+
+    const second = await place(alice, [line(pho, 2)]);
+    const afterShopEdit = ok(await asShop('POST', `/shop/me/orders/${second.order_id}/edit`, { expected_version: 1, changes: [{ line_id: (second.items as Json[])[0]?.line_id, unit_price_vnd: 50_000 }] }));
+    expect(afterShopEdit).toMatchObject({ edited: true, version: 2 });
+    const edited = ok(await edit(alice, afterShopEdit, [line(pho, 1)]));
+    expect(edited).toMatchObject({ edited: false, customer_edited: true, version: 3, change_reason: null });
+    // The shop's screen still showed version 2: it must load the new one first.
+    expect(refused(await asShop('POST', `/shop/me/orders/${second.order_id}/confirm`, { expected_version: 2 }))).toEqual({ status: 409, code: 'VERSION_CONFLICT' });
+    const seenByShop = await shopView(String(second.order_id));
+    expect(seenByShop).toMatchObject({ customer_edited: true, customer_edit_count: 1 });
+    expect(ok(await asShop('POST', `/shop/me/orders/${second.order_id}/confirm`, { expected_version: 3 }))).toMatchObject({ status: 'PREPARING' });
+    expect((await orderRow(String(second.order_id))).paid_vnd).toBe('0');
+  });
+
+  it('#238 race: the customer\'s edit and the shop\'s confirm, reject or the customer\'s own cancel at the same moment leave exactly one winner and a consistent Order', async () => {
+    for (const rival of ['confirm', 'reject', 'cancel'] as const) {
+      const order = await place(alice, [line(pho, 1)]);
+      const id = String(order.order_id);
+      const rivalCall =
+        rival === 'confirm'
+          ? asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: 1 })
+          : rival === 'reject'
+            ? asShop('POST', `/shop/me/orders/${id}/reject`, { expected_version: 1, reason: 'Hết món' })
+            : asCustomer(alice, 'POST', `/customers/me/orders/${id}/cancel`, { expected_version: 1 });
+      const [mine, theirs] = await Promise.all([edit(alice, order, [line(pho, 3)]), rivalCall]);
+      const row = await orderRow(id);
+      const editWon = mine.status === 200;
+      expect([mine.status === 200, theirs.status === 200]).not.toEqual([true, true]);
+      if (editWon) {
+        expect(row).toMatchObject({ status: 'PENDING_CONFIRMATION', customer_edit_count: 1 });
+        expect(['VERSION_CONFLICT', 'ORDER_STATE_CONFLICT']).toContain(codeOf(theirs));
+      } else {
+        expect(row.customer_edit_count).toBe(0);
+        expect(['ORDER_EDIT_LOCKED', 'VERSION_CONFLICT']).toContain(codeOf(mine));
+        expect(row.status).not.toBe('PENDING_CONFIRMATION');
+      }
+      expect(Number(row.items_total_vnd)).toBe(editWon ? 135_000 : 45_000);
+    }
+  });
+
+  it('#238: the shop owner is told once per edit ("Khách cập nhật đơn hàng") and the notification opens the Order', async () => {
+    const order = await place(alice, [line(pho, 1)]);
+    const id = String(order.order_id);
+    ok(await edit(alice, order, [line(pho, 2)]));
+    for (let pass = 0; pass < 50 && (await runtime().dispatcher.dispatchOnce()).claimed > 0; pass += 1) {
+      // drained
+    }
+    const rows = await app.pool.query("SELECT title, target_type, target_id::text AS target_id FROM app.notifications WHERE recipient_user_id = $1::uuid AND kind = 'ORDER_EDITED_BY_CUSTOMER' AND target_id = $2::uuid", [shop.userId, id]);
+    expect(rows.rows).toEqual([{ title: 'Khách cập nhật đơn hàng', target_type: 'ORDER', target_id: id }]);
+  });
+
   it('the customer cancels only before the shop confirms; afterwards the Order is the shop\'s to cancel', async () => {
     const order = await place(alice);
     const cancelled = ok(await asCustomer(alice, 'POST', `/customers/me/orders/${String(order.order_id)}/cancel`, { expected_version: 1, reason: 'Đổi ý' }));

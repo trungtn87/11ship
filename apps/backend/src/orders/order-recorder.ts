@@ -27,6 +27,8 @@ export interface OrderChange {
   readonly metadata?: JsonObject;
   /** False for a step that tells nobody (an edit before confirmation, a payment note). Default true. */
   readonly notify?: boolean;
+  /** Issue #260: the confirmed dish money differs from the first one (told to the customer without any amount). */
+  readonly priceChanged?: boolean;
 }
 
 @Injectable()
@@ -68,7 +70,7 @@ export class OrderRecorder {
         resourceType: ORDER_RESOURCE,
         resourceId: o.orderId,
         resourceVersion: o.version,
-        payload: { order_id: o.orderId, code: o.displayCode ?? o.code, shop_id: o.shopId, customer_user_id: o.customerUserId, change: change.type, status: o.status, version: o.version },
+        payload: { order_id: o.orderId, code: o.displayCode ?? o.code, shop_id: o.shopId, customer_user_id: o.customerUserId, change: change.type, status: o.status, version: o.version, ...(change.priceChanged === true ? { price_changed: true } : {}) },
       });
     }
   }
