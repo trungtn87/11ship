@@ -17,6 +17,7 @@ import { SmsGatewayOpsReader } from '../sms-gateway/sms-gateway-ops-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CHECK_API, CHECK_BACKUP, CHECK_CPU, CHECK_DATABASE, CHECK_EXTERNAL_PROBE, CHECK_HTTPS, CHECK_M14, CHECK_MEMORY, CHECK_NOTIFICATIONS, CHECK_OTP_SEND, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, CHECK_WORKER, COMPONENT_LABEL, GATEWAY_FACETS, gatewayCheckKey, IngestKeyScope, SOURCE_LABEL } from './ops-constants';
+import { EXTERNAL_PROBE_STALE_SECONDS } from './ops-collector';
 import { OpsDiscordDispatcher } from './ops-discord';
 import { Actor, OpsEngine } from './ops-engine';
 import { IncidentRow, OpsIncidentRepository, incidentCode } from './ops-incident-repository';
@@ -27,6 +28,7 @@ import { APP_COMPAT, APP_COMPAT_MATRIX, CompatMatrix, artifactReady, evaluateApp
 import type { ReleaseRow } from './ops-release-repository';
 import { OpsSettingsService } from './ops-settings-service';
 import { OpsTelemetryRepository } from './ops-telemetry-repository';
+import { CHECK_VPS, COLLECTOR_STALE_SECONDS, VPS_RANGES, VpsRange, buildSeries, collectorSignal, vpsMetricKeys } from './ops-vps';
 import { ConfigBody, IncidentListQuery, LogQuery, MaintenanceBody, ReleaseBody } from './ops-validation';
 import { DisplayState, STATE_LABEL, checkView, deployView, displayState, eventView, evidenceText, incidentView, iso, maintenanceView, notificationView, releaseView, worstState } from './ops-views';
 import { redactNote } from './ops-redact';
@@ -63,6 +65,7 @@ const hashRef = (userId: string, app: string): string => createHash('sha256').up
 @Injectable()
 export class OpsAdminService {
   readonly #lockTimeoutMs: number;
+  readonly #diskPaths: readonly { readonly label: string; readonly path: string }[];
   readonly #artifactDir: string | undefined;
   readonly #environment: string;
   readonly #compat: CompatMatrix;
@@ -87,6 +90,7 @@ export class OpsAdminService {
     this.#compat = compat ?? APP_COMPAT;
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#artifactDir = (appConfig.ops ?? DEFAULT_OPS_CONFIG).artifactDir;
+    this.#diskPaths = (appConfig.ops ?? DEFAULT_OPS_CONFIG).diskPaths;
     this.#environment = appConfig.appEnv;
   }
 
@@ -220,9 +224,7 @@ export class OpsAdminService {
         component('worker', 'Worker / hàng đợi', [CHECK_WORKER, 'outbox']),
         component('https', 'HTTPS', [CHECK_HTTPS]),
       ];
-      const probeRow = byKey.get(CHECK_EXTERNAL_PROBE);
-      const probeReported = typeof probeRow?.value.reported_at === 'string' ? Date.parse(probeRow.value.reported_at as string) : Number.NaN;
-      const publicRow = byKey.get(CHECK_PUBLIC_API);
+      const externalProbe = await this.#externalProbe(context, byKey, now, ds);
       const counts = await this.incidents.counts(context);
       const live = await this.incidents.search(context, { severity: null, source: null, statuses: ['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS'], assigneeUserId: null, unassigned: false, fromMs: null, toMs: null, codeSeq: null }, { limit: 10, offset: 0 });
       const labels = await this.repo.userLabels(context, live.rows.flatMap((i) => (i.assigneeUserId === null ? [] : [i.assigneeUserId])));
@@ -235,17 +237,102 @@ export class OpsAdminService {
         data_note: rows.length === 0 ? 'Chưa có dữ liệu: bộ thu thập chưa ghi lần đo nào.' : null,
         components,
         incidents: { open: counts.open, critical: counts.critical, unacknowledged: counts.unacknowledged, items: live.rows.map((i) => incidentView(i, { assigneeLabel: i.assigneeUserId === null ? null : (labels.get(i.assigneeUserId) ?? null), checkState: ds(i.checkKey), nowMs: now })) },
-        external_probe: {
-          activated: Number.isFinite(probeReported),
-          state: Number.isFinite(probeReported) ? ds(CHECK_EXTERNAL_PROBE) : 'NO_DATA',
-          label: Number.isFinite(probeReported) ? STATE_LABEL[ds(CHECK_EXTERNAL_PROBE)] : 'Chưa kích hoạt',
-          last_report_at: Number.isFinite(probeReported) ? new Date(probeReported).toISOString() : null,
-          public_api: publicRow === undefined ? null : checkView(publicRow, now, 'API công khai'),
-          note: Number.isFinite(probeReported) ? 'Kiểm tra định kỳ từ hệ thống giám sát bên ngoài' : 'Chưa có báo cáo từ môi trường giám sát độc lập. Xem hướng dẫn cài đặt trong runbook.',
-        },
+        external_probe: externalProbe,
+        vps: this.#vpsSummary(byKey.get(CHECK_VPS), now),
         discord: { enabled: eff.discordEnabled, configured: eff.webhookConfigured, pending: stats.pending, failed_7d: stats.failed, last_sent_at: iso(stats.lastSentAtMs) },
         maintenance_active: maintenance,
         last_update: lastDeploy === undefined ? null : deployView(lastDeploy),
+        viewer: { level: access.level },
+      };
+    });
+  }
+
+  /**
+   * What the independent probe is, said truthfully (#264): never "configured" without an active PROBE key, never "active" without a recent report. The probe's own
+   * Discord webhook lives on the probe machine only, so this server can neither show nor verify it.
+   */
+  async #externalProbe(context: TransactionContext, byKey: ReadonlyMap<string, CheckRow>, nowMs: number, ds: ((key: string) => DisplayState) | null): Promise<JsonObject> {
+    const keys = (await this.releases.listIngestKeys(context)).filter((k) => k.scope === 'PROBE' && k.status === 'ACTIVE');
+    const row = byKey.get(CHECK_EXTERNAL_PROBE);
+    const reported = typeof row?.value.reported_at === 'string' ? Date.parse(row.value.reported_at) : Number.NaN;
+    const lastKeyUse = keys.reduce<number | null>((m, k) => (k.lastUsedAtMs === null ? m : Math.max(m ?? 0, k.lastUsedAtMs)), null);
+    let status: 'NOT_CONFIGURED' | 'WAITING_FIRST_REPORT' | 'ACTIVE' | 'STALE';
+    if (keys.length === 0) status = 'NOT_CONFIGURED';
+    else if (!Number.isFinite(reported)) status = 'WAITING_FIRST_REPORT';
+    else status = nowMs - reported <= EXTERNAL_PROBE_STALE_SECONDS * 1000 ? 'ACTIVE' : 'STALE';
+    const publicRow = byKey.get(CHECK_PUBLIC_API);
+    const labels = { NOT_CONFIGURED: 'Chưa cấu hình', WAITING_FIRST_REPORT: 'Đã tạo khóa, chờ báo cáo đầu tiên', ACTIVE: 'Đang hoạt động', STALE: 'Quá 15 phút không báo cáo' } as const;
+    const notes = {
+      NOT_CONFIGURED: 'Chưa có khóa PROBE đang hoạt động: chưa có giám sát độc lập ngoài VPS. Tạo khóa trong Cấu hình và cài đặt theo runbook.',
+      WAITING_FIRST_REPORT: 'Đã có khóa PROBE nhưng máy probe chưa báo cáo lần nào. Kiểm tra cài đặt trên máy probe theo runbook.',
+      ACTIVE: 'Kiểm tra định kỳ từ hệ thống giám sát bên ngoài.',
+      STALE: 'Máy probe đã ngừng báo cáo: nếu VPS ngừng hoạt động lúc này sẽ không có cảnh báo từ bên ngoài.',
+    } as const;
+    return {
+      status,
+      label: labels[status],
+      activated: status === 'ACTIVE' || status === 'STALE',
+      state: ds === null || !Number.isFinite(reported) ? null : ds(CHECK_EXTERNAL_PROBE),
+      active_key_count: keys.length,
+      last_report_at: Number.isFinite(reported) ? new Date(reported).toISOString() : null,
+      last_key_used_at: iso(lastKeyUse),
+      last_public_api_status: publicRow === undefined ? null : publicRow.state,
+      last_outage_at: iso(await this.repo.lastProbeOutageMs(context)),
+      public_api: publicRow === undefined || ds === null ? null : checkView(publicRow, nowMs, 'API công khai'),
+      runbook_path: 'ops/runbooks/m13-external-probe-20261023.md',
+      discord_webhook_status: 'EXTERNAL_HOST_ONLY',
+      note: notes[status],
+      webhook_note: 'Webhook Discord của probe được lưu riêng trên máy probe (quyền 0600) để báo động cả khi VPS sập. VPS không lưu và không tự xác minh secret này.',
+    };
+  }
+
+  #vpsSummary(row: CheckRow | undefined, nowMs: number): JsonObject {
+    const sampled = row === undefined ? Number.NaN : Date.parse(String(row.value.sampled_at));
+    const signal = collectorSignal(Number.isFinite(sampled) ? sampled : null, nowMs);
+    const host = (row?.value.host ?? null) as { cpu_percent?: number | null; memory?: { used_percent?: number } | null; disks?: { used_percent: number }[]; uptime_seconds?: number } | null;
+    const pg = (row?.value.postgres ?? null) as { active_connections?: number | null; database_size_bytes?: number | null } | null;
+    return {
+      collector_stale: signal.collectorStale,
+      collector_state: signal.state,
+      last_sample_at: signal.lastSampleAt,
+      cpu_percent: host?.cpu_percent ?? null,
+      memory_percent: host?.memory?.used_percent ?? null,
+      disk_percent: host?.disks?.[0]?.used_percent ?? null,
+      uptime_seconds: host?.uptime_seconds ?? null,
+      db_connections: pg?.active_connections ?? null,
+      db_size_bytes: pg?.database_size_bytes ?? null,
+    };
+  }
+
+  /** GET /vps: the latest host snapshot, Backend and PostgreSQL apart, and the history of the requested range with its holes marked. Read only. */
+  async vps(token: string | undefined, range: VpsRange): Promise<JsonObject> {
+    return this.#read(token, 'VIEW', async (context, access) => {
+      const now = access.nowMs;
+      const spec = VPS_RANGES[range];
+      const byKey = new Map((await this.repo.listChecks(context)).map((r) => [r.checkKey, r]));
+      const snapshot = byKey.get(CHECK_VPS);
+      const sampled = snapshot === undefined ? Number.NaN : Date.parse(String(snapshot.value.sampled_at));
+      const signal = collectorSignal(Number.isFinite(sampled) ? sampled : null, now);
+      const statusOf = (key: string): 'OK' | 'WARN' | 'CRITICAL' | 'UNKNOWN' => {
+        const s = displayState(byKey.get(key), now);
+        return s === 'OK' ? 'OK' : s === 'WARNING' ? 'WARN' : s === 'CRITICAL' ? 'CRITICAL' : 'UNKNOWN';
+      };
+      const keys = vpsMetricKeys(this.#diskPaths);
+      const history = buildSeries(await this.repo.bucketedMetrics(context, keys, now - spec.windowMs, spec.stepSeconds, spec.source), keys, spec, now);
+      const value = snapshot?.value ?? {};
+      return {
+        updated_at: iso(now),
+        range,
+        expected_step_seconds: history.expectedStepSeconds,
+        gap_count: history.gaps.length,
+        gaps: history.gaps,
+        collector: { state: signal.state, collector_stale: signal.collectorStale, last_sample_at: signal.lastSampleAt, stale_after_seconds: COLLECTOR_STALE_SECONDS, message: signal.message },
+        host: (value.host ?? null) as JsonObject | null,
+        backend: { status: statusOf(CHECK_API), ...((value.backend ?? {}) as JsonObject) },
+        postgres: { status: statusOf(CHECK_DATABASE), ...((value.postgres ?? {}) as JsonObject) },
+        processes_by_cpu: (value.processes_by_cpu ?? []) as JsonObject[],
+        processes_by_memory: (value.processes_by_memory ?? []) as JsonObject[],
+        series: history.series as unknown as JsonObject,
         viewer: { level: access.level },
       };
     });
@@ -502,6 +589,7 @@ export class OpsAdminService {
         maintenance,
         access: access.level === 'SYSTEM' ? keys.map((k) => ({ user_id: k.userId, label: labels.get(k.userId) ?? null, level: k.level, version: k.version, updated_at: iso(k.updatedAtMs) })) : null,
         ingest_keys: ingest,
+        external_probe: await this.#externalProbe(context, new Map((await this.repo.listChecks(context)).map((r) => [r.checkKey, r])), access.nowMs, null),
         viewer: { level: access.level },
       };
     });

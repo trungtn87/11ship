@@ -1,3 +1,4 @@
+import '../address_change/address_change_models.dart';
 import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
 
@@ -134,11 +135,11 @@ class OrderLine {
 }
 
 class OrderFee {
-  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
+  const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.customerProposed = false, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
 
   factory OrderFee.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
-    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']), reason: _strOrNull(m['reason']), snapshot: _strOrNull(m['snapshot']), policyVersion: _intOrNull(m['policy_version']), quotedAt: _timeOrNull(m['quoted_at']));
+    return OrderFee(payer: _str(m['payer']), amountVnd: _intOrNull(m['amount_vnd']), estimateVnd: _intOrNull(m['estimate_vnd']), status: _str(m['status']), distanceM: _intOrNull(m['distance_m']), customerProposed: m['customer_proposed'] == true, reason: _strOrNull(m['reason']), snapshot: _strOrNull(m['snapshot']), policyVersion: _intOrNull(m['policy_version']), quotedAt: _timeOrNull(m['quoted_at']));
   }
 
   final String payer;
@@ -152,6 +153,8 @@ class OrderFee {
   /// FINAL / ESTIMATE / UNKNOWN.
   final String status;
   final int? distanceM;
+  /// The customer deliberately raised the checkout fee (currently the voluntary tip flow).
+  final bool customerProposed;
   final String? reason;
   final String? snapshot;
   final int? policyVersion;
@@ -360,6 +363,7 @@ class OrderView {
     required this.can,
     required this.timeline,
     this.story = const <StoryEntry>[],
+    this.addressChange,
   });
 
   factory OrderView.fromJson(Object? raw) {
@@ -400,6 +404,7 @@ class OrderView {
           : const <String, bool>{},
       timeline: m['timeline'] == null ? const <OrderEvent>[] : <OrderEvent>[for (final Object? e in _list(m['timeline'])) OrderEvent.fromJson(e)],
       story: storyOf(m['story']),
+      addressChange: m['address_change_request'] != null ? AddressChangeView.fromJson(m['address_change_request']) : null,
     );
   }
 
@@ -438,6 +443,7 @@ class OrderView {
 
   /// "Diễn biến" in plain words, order and every call for a Shipper together (what the screen draws). [timeline] is the raw log.
   final List<StoryEntry> story;
+  final AddressChangeView? addressChange;
 
   bool get isScheduled => scheduledFor != null;
   bool get ended => display.ended;
@@ -599,7 +605,7 @@ class DraftAddress {
 }
 
 class CheckoutDraft {
-  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, this.deliveryNote, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor});
+  const CheckoutDraft({required this.shopId, required this.shopName, required this.lines, required this.note, this.deliveryNote, required this.recipientName, required this.recipientPhone, required this.address, required this.scheduledFor, this.tipVnd = 0});
 
   final String shopId;
   final String shopName;
@@ -610,12 +616,13 @@ class CheckoutDraft {
   final String recipientPhone;
   final DraftAddress address;
   final DateTime? scheduledFor;
+  final int tipVnd;
 
   int get itemsVnd => lines.fold(0, (int sum, DraftLine l) => sum + l.totalVnd);
 }
 
 class CheckoutPreview {
-  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs});
+  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs});
 
   factory CheckoutPreview.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -629,6 +636,7 @@ class CheckoutPreview {
       feeEstimateVnd: _intOrNull(fee['estimate_vnd']),
       feeDistanceM: _intOrNull(fee['distance_m']),
       expectedTotalVnd: _intOrNull(m['expected_total_vnd']),
+      tipVnd: _int(m['tip_vnd'] ?? 0),
       feeStatus: _str(fee['status']),
       feeReason: _strOrNull(fee['reason']),
       quoteSnapshot: _strOrNull(fee['snapshot']) ?? '',
@@ -649,6 +657,7 @@ class CheckoutPreview {
   final int? feeEstimateVnd;
   final int? feeDistanceM;
   final int? expectedTotalVnd;
+  final int tipVnd;
   final String feeStatus;
   final String? feeReason;
   final String quoteSnapshot;

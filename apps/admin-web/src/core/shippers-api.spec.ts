@@ -132,6 +132,20 @@ describe('admin web Shippers - model, routes and menu', () => {
     expect(standing('SUSPENDED', 'APPROVED').label).toBe('Tạm khóa');
   });
 
+  it('tells a closure asked from a suspension apart: still locked, closing only to hand the balance back', () => {
+    expect(standing('CLOSING', 'APPROVED').label).toBe('Xin ngừng hoạt động');
+    expect(standing('CLOSING', 'APPROVED', 'ACTIVE').label).toBe('Xin ngừng hoạt động');
+    expect(standing('CLOSING', 'APPROVED', 'SUSPENDED')).toEqual({ label: 'Đang đóng để hoàn tiền (vẫn bị khóa)', tone: 'lock' });
+  });
+
+  it('reads where the closure was asked from and keeps the suspension reason of a locked Shipper that is closing', () => {
+    const from = (status: unknown) => parseDetail(detail({ status: 'CLOSING', suspension_reason: 'Khiếu nại', closure: { requested_at: '2026-10-18T03:00:00.000Z', note: null, can_cancel: true, from_status: status } }));
+    expect(from('SUSPENDED')).toMatchObject({ status: 'CLOSING', closureFromStatus: 'SUSPENDED', suspensionReason: 'Khiếu nại' });
+    expect(from('ACTIVE')?.closureFromStatus).toBe('ACTIVE');
+    expect(from('CLOSED')?.closureFromStatus).toBeNull();
+    expect(parseDetail(detail())?.closureFromStatus).toBeNull();
+  });
+
   it('parses and formats the routes', () => {
     expect(parseRoute('/operations/shippers')).toEqual({ name: 'shippers' });
     expect(parseRoute('/operations/shippers', '?status=SUBMITTED')).toEqual({ name: 'shippers', status: 'SUBMITTED' });

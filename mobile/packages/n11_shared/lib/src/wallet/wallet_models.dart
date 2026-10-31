@@ -44,10 +44,16 @@ String walletShortCode(String code) => RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-'
 
 /// B = total, H = held, A = B - H. The available figure is ALWAYS computed here, never taken from a separate field.
 class Wallet {
-  const Wallet({required this.total, required this.held});
+  const Wallet({required this.total, required this.held, this.driverStatus});
 
   final int total;
   final int held;
+
+  /// The Shipper profile status the server answered with the wallet (ACTIVE, SUSPENDED, CLOSING...); null when the source has none.
+  final String? driverStatus;
+
+  /// New top-up requests are refused by the server once the closure is asked or done; the app only mirrors it.
+  bool get topupBlocked => driverStatus == 'CLOSING' || driverStatus == 'CLOSED';
 
   int get available => total - held;
 }
@@ -94,7 +100,7 @@ class ReceivingAccount {
 }
 
 class TopupRequest {
-  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version});
+  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.transferCode});
 
   /// The identifier the app opens the request by (the server's request id for a real source).
   final String code;
@@ -106,6 +112,9 @@ class TopupRequest {
 
   /// A short code a person can read out ("MÃ A1B2C3D4"); [code] when the source has none.
   final String? displayCode;
+
+  /// The transfer content that ties a bank payment to THIS request (server-derived, stable, no phone or name in it); null for a source that has none.
+  final String? transferCode;
 
   /// The record version the server answered (a cancel carries it).
   final int? version;

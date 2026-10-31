@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { normalizeVietnamPhone } from '../auth/phone';
 import { shaped, text } from '../delivery/delivery-validation';
 import { AGREEMENT_REASONS, AgreementReason } from '../shipping-policy/shipping-fee-agreement';
+import { MAX_FEE_VND } from '../shipping-policy/shipping-fee-policy';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { MAX_CART_LINES, MAX_ITEM_NOTE, MAX_LINE_QUANTITY, MAX_ORDER_NOTE, MAX_REASON } from './order-constants';
 
@@ -111,6 +112,8 @@ export interface CheckoutInput {
   readonly recipientPhone: string;
   readonly address: AddressInput;
   readonly scheduledForMs: number | null;
+  /** Voluntary amount added to the single proposed delivery fee. It is never a separate payment. */
+  readonly tipVnd: number;
 }
 
 function address(value: unknown): AddressInput {
@@ -140,12 +143,13 @@ function checkout(b: Record<string, unknown>, withPrice: boolean): CheckoutInput
     recipientPhone: phone,
     address: address(b.address),
     scheduledForMs: b.scheduled_for === undefined || b.scheduled_for === null ? null : instant(b.scheduled_for),
+    tipVnd: b.tip_vnd === undefined ? 0 : whole(b.tip_vnd, 0, MAX_FEE_VND),
   };
 }
 
 /** POST /v1/customers/me/orders/preview : what the checkout shows before sending (no prices from the client). */
 export function parsePreviewBody(body: unknown): CheckoutInput {
-  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'delivery_note', 'scheduled_for']), false);
+  return checkout(shaped(body, ['shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address'], ['note', 'delivery_note', 'scheduled_for', 'tip_vnd']), false);
 }
 
 export interface PlaceInput extends CheckoutInput {
@@ -157,7 +161,7 @@ export interface PlaceInput extends CheckoutInput {
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
 export function parsePlaceBody(body: unknown): PlaceInput {
-  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'delivery_note', 'scheduled_for', 'expected_quote']);
+  const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'delivery_note', 'scheduled_for', 'expected_quote', 'tip_vnd']);
   let expectedQuote: PlaceInput['expectedQuote'] = null;
   if (b.expected_quote !== undefined) {
     const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version']);

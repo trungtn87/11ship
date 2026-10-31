@@ -63,6 +63,8 @@ export interface TopupItem {
   readonly createdAt: string;
   readonly resolvedAt: string | null;
   readonly receivedAt: string | null;
+  /** The transfer content tied to this request (NAP + ten characters). The bank statement line carrying it is the evidence to check; absent from older servers. */
+  readonly transferCode?: string | null;
 }
 export interface TopupPage {
   readonly items: readonly TopupItem[];

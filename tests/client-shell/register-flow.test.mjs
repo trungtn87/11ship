@@ -40,6 +40,8 @@ const identity = () => ({
   onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
   onboarding_required: false,
   role_selection_required: false,
+
+  phone_verification_status: 'VERIFIED',
 });
 const signIn = () => ({ data: { ...identity(), access_token: ACCESS, session: { expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() } } });
 const issued = (id = CHALLENGE_1, expires = 180, resend = 60) => ({ data: { verification_id: id, expires_in_seconds: expires, resend_after_seconds: resend } });

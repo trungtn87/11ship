@@ -3,6 +3,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { ClientPasswordService } from '../client-auth/client-password-service';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
+import { AccountRecordReader } from '../account-lifecycle/account-record-reader';
 import { AuditModule } from '../audit/audit.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { ClientAuthController } from '../client-auth/client-auth.controller';
@@ -156,6 +157,7 @@ export class AuthModule {
         SystemSettingsRepository,
         SystemSettingsReader,
         // The business-data and active-work checks the account lifecycle (delete / lock) asks; later modules register theirs.
+        AccountRecordReader,
         AccountActivityRegistry,
         VerificationService,
         RegistrationService,

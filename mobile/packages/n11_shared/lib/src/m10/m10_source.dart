@@ -107,6 +107,22 @@ abstract class CustomerOrderSource {
   /// The customer, as the payer, answers the delivery fee the Shipper proposed. [deliveryVersion] is `OrderDelivery.version`.
   Future<OrderView> decideFee(String id, {required bool accept, required int deliveryVersion, required String key});
   Future<ReorderResult> reorder(String id, {required bool replaceCart, required String key});
+  Future<OrderView> requestAddressChange(
+    String id, {
+    required String recipientName,
+    required String recipientPhone,
+    required String addressText,
+    double? lat,
+    double? lng,
+    String? note,
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
+  Future<OrderView> cancelAddressChange(
+    String id, {
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
 }
 
 /// The shop side (11Food).
@@ -135,4 +151,11 @@ abstract class ShopOrderSource {
 
   /// After a failed delivery (goods): the existing M07 command.
   Future<void> resolveCustody(String deliveryId, {required String resolution, String? note, required String key});
+  Future<OrderView> decideAddressChange(
+    String id, {
+    required bool accept,
+    String? reason,
+    required int expectedVersion,
+    required String key,
+  }) => throw UnimplementedError();
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { Transport, TransportRequest, TransportResponse } from './api';
-import { AdminOpsApi, createOpsSource, parseConfig, parseGateway, parseIncidentDetail, parseLogs, parseOverview, parseReleases } from './ops-api';
-import { DEFAULT_INCIDENT_QUERY, NOT_WIRED_OPS, STATE_LABEL } from './ops';
+import { AdminOpsApi, createOpsSource, parseConfig, parseVps, parseGateway, parseIncidentDetail, parseLogs, parseOverview, parseReleases } from './ops-api';
+import { DEFAULT_INCIDENT_QUERY, NOT_WIRED_OPS, STATE_LABEL, formatBytes, formatUptime, splitSegments } from './ops';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const AT = '2026-10-18T06:50:00.000Z';
@@ -12,9 +12,10 @@ const incident = (over: Record<string, unknown> = {}) => ({
   first_seen_at: AT, last_seen_at: AT, occurrences: 2, assignee_label: null, acknowledged_at: null, first_viewed_at: null, recovered_at: null, closed_at: null, closed_while_failing: false,
   snoozed_until: null, in_maintenance: false, check_state: 'CRITICAL', version: 1, ...over,
 });
+const probe = (over: Record<string, unknown> = {}) => ({ status: 'NOT_CONFIGURED', activated: false, state: null, label: 'Chưa cấu hình', active_key_count: 0, last_report_at: null, last_key_used_at: null, last_outage_at: null, last_public_api_status: null, public_api: null, runbook_path: 'ops/runbooks/m13-external-probe-20261023.md', discord_webhook_status: 'EXTERNAL_HOST_ONLY', note: 'n', webhook_note: 'Webhook Discord của probe lưu riêng trên máy probe', ...over });
 const overview = (over: Record<string, unknown> = {}) => ({
   updated_at: AT, data_note: null, components: [{ key: 'api', label: 'API', state: 'OK', state_label: 'Hoạt động', detail: null, note: null, observed_at: AT }, { key: 'backup', label: 'Sao lưu', state: 'NO_DATA', detail: null, note: null, observed_at: null }],
-  incidents: { open: 1, critical: 1, unacknowledged: 1, items: [incident()] }, external_probe: { activated: false, state: 'NO_DATA', label: 'Chưa kích hoạt', last_report_at: null, note: 'n' },
+  incidents: { open: 1, critical: 1, unacknowledged: 1, items: [incident()] }, external_probe: probe(), vps: null,
   discord: { enabled: false, configured: false, pending: 0, failed_7d: 0, last_sent_at: null }, maintenance_active: [], last_update: null, viewer: { level: 'SYSTEM' }, ...over,
 });
 function scripted(...answers: (TransportResponse | 'throw')[]): { transport: Transport; requests: TransportRequest[] } {
@@ -28,12 +29,59 @@ describe('M13 operations administration client', () => {
     const parsed = parseOverview(overview());
     expect(parsed?.components.map((c) => c.state)).toEqual(['OK', 'NO_DATA']);
     expect(STATE_LABEL.NO_DATA).toBe('Chưa có dữ liệu');
-    expect(parsed?.probe).toMatchObject({ activated: false, label: 'Chưa kích hoạt' });
+    expect(parsed?.probe).toMatchObject({ status: 'NOT_CONFIGURED', activated: false, activeKeyCount: 0, runbookPath: 'ops/runbooks/m13-external-probe-20261023.md' });
+    expect(parsed?.vps).toBeNull();
     expect(parseOverview(overview({ components: [{ key: 'api', label: 'API', state: 'FINE' }] }))).toBeUndefined();
     expect(parseOverview(overview({ incidents: { open: 1, critical: 1, unacknowledged: 1, items: [incident({ status: 'WEIRD' })] } }))).toBeUndefined();
     expect(parseOverview(overview({ viewer: { level: 'ROOT' } }))).toBeUndefined();
     expect(parseOverview({})).toBeUndefined();
   });
+
+  it('G20-B: the probe has exactly four honest states, and an unknown one is refused instead of shown as configured', () => {
+    for (const status of ['NOT_CONFIGURED', 'WAITING_FIRST_REPORT', 'ACTIVE', 'STALE']) {
+      expect(parseOverview(overview({ external_probe: probe({ status, activated: status === 'ACTIVE' || status === 'STALE', active_key_count: 1, last_report_at: AT, last_outage_at: AT }) }))?.probe).toMatchObject({ status, lastReportAt: AT, lastOutageAt: AT });
+    }
+    expect(parseOverview(overview({ external_probe: probe({ status: 'CONFIGURED' }) }))).toBeUndefined();
+    expect(parseOverview(overview({ external_probe: probe({ last_report_at: 'not a date' }) }))).toBeUndefined();
+    const withCard = parseOverview(overview({ vps: { collector_stale: true, collector_state: 'STALE', last_sample_at: AT, cpu_percent: 12.5, memory_percent: 40, disk_percent: 55, uptime_seconds: 90, db_connections: 4, db_size_bytes: 2048 } }));
+    expect(withCard?.vps).toMatchObject({ collectorStale: true, collectorState: 'STALE', cpuPercent: 12.5, dbConnections: 4 });
+    expect(parseConfig({ updated_at: AT, viewer: { level: 'VIEW' }, maintenance: [], access: null, external_probe: probe({ status: 'WAITING_FIRST_REPORT' }), config: { version: 1, editable: false, settings: [], discord: null } })?.probe?.status).toBe('WAITING_FIRST_REPORT');
+  });
+
+  it('G20-A: the VPS page is parsed strictly and its request carries only the documented range', async () => {
+    const page = {
+      updated_at: AT, range: '1h', expected_step_seconds: 60, gap_count: 1, gaps: [{ from: AT, to: AT }], viewer: { level: 'VIEW' },
+      collector: { state: 'STALE', collector_stale: true, last_sample_at: AT, stale_after_seconds: 180, message: 'Mất tín hiệu bộ thu thập > 3 phút' },
+      host: { uptime_seconds: 100, cpu_percent: 5, cpu_cores: 2, load_avg: [0.1, 0.2, 0.3], memory: { total_bytes: 10, available_bytes: 4, used_bytes: 6, used_percent: 60 }, swap: null, disks: [{ label: 'root', path: '/', total_bytes: 10, free_bytes: 5, used_bytes: 5, used_percent: 50 }], io: null, network: { rx_bytes_total: 1, tx_bytes_total: 2, rx_bytes_per_sec: null, tx_bytes_per_sec: 4 } },
+      backend: { status: 'OK', pid: 7, uptime_seconds: 9, rss_bytes: 1, heap_used_bytes: 1, cpu_percent: null, self_health_latency_ms: 3 },
+      postgres: { status: 'CRITICAL', latency_ms: null, active_connections: 2, database_size_bytes: 99 },
+      processes_by_cpu: [{ pid: 1, name: 'node', cpu_percent: null, rss_bytes: 10, memory_percent: 1 }], processes_by_memory: [],
+      series: { cpu_percent: [{ at: AT, value: 5, max: 6 }] },
+    };
+    const parsed = parseVps(page);
+    expect(parsed).toMatchObject({ range: '1h', gapCount: 1, collector: { stale: true }, backend: { status: 'OK' }, postgres: { status: 'CRITICAL', latencyMs: null }, host: { cpuCores: 2, network: { rxBytesPerSec: null, txBytesPerSec: 4 } } });
+    expect(parsed?.series.cpu_percent).toEqual([{ at: AT, value: 5 }]);
+    expect(parseVps({ ...page, range: '2d' })).toBeUndefined();
+    expect(parseVps({ ...page, series: { cpu_percent: [{ at: AT, value: 'x' }] } })).toBeUndefined();
+    expect(parseVps({ ...page, processes_by_cpu: [{ pid: 1 }] })).toBeUndefined();
+    const { transport, requests } = scripted(reply(200, { data: page }), reply(403, err('ADMIN_FORBIDDEN')));
+    const source = createOpsSource(new AdminOpsApi(transport));
+    expect((await source.vps('24h')).kind).toBe('ready');
+    expect(requests[0]).toMatchObject({ method: 'GET', path: '/admin/ops/vps?range=24h' });
+    expect(await source.vps('7d')).toEqual({ kind: 'failed', failure: 'forbidden' });
+    expect(await NOT_WIRED_OPS.vps('1h')).toEqual({ kind: 'failed', failure: 'unknown' });
+  });
+
+  it('G20-A: a chart line stops at a hole in the samples and formats stay readable', () => {
+    const at = (m: number) => ({ at: new Date(Date.UTC(2026, 9, 30, 12, m)).toISOString(), value: m });
+    expect(splitSegments([at(0), at(1), at(2), at(9), at(10)], 60).map((run) => run.length)).toEqual([3, 2]);
+    expect(splitSegments([at(0), at(1), at(2)], 60)).toHaveLength(1);
+    expect(splitSegments([], 60)).toEqual([]);
+    expect(formatBytes(null)).toBe('—');
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatUptime(90_000)).toBe('1 ngày 1 giờ');
+  });
+
 
   it('parses an incident detail with timeline, Discord history, the real check state and the allowed actions', () => {
     const detail = {

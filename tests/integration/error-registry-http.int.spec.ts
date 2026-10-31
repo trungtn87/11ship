@@ -104,6 +104,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 6 menu/discovery codes (M02: MENU_ITEM_NOT_FOUND, MENU_CATEGORY_NOT_AVAILABLE, INVALID_MENU_IMAGE, MENU_LIMIT_REACHED, MENU_IMAGE_NOT_FOUND, SHOP_UNAVAILABLE)
     // + 6 account lifecycle codes (M01 final package: SYSTEM_SETTING_VERSION_CONFLICT, PHONE_VERIFICATION_NOT_REQUIRED, PHONE_VERIFICATION_REQUIRED,
     //   PASSWORD_RESET_DISABLED, ACCOUNT_RECOVERY_AVAILABLE, USER_ACCOUNT_HAS_ACTIVE_WORK)
+    // + 1 account activity code (Nhóm 13 M01-LOCK-01: USER_ACCOUNT_ACTIVITY_UNVERIFIED)
     // + 4 dish-group management codes (M02 Admin: MENU_CATEGORY_NOT_FOUND, MENU_CATEGORY_NAME_TAKEN, MENU_CATEGORY_NAME_TAKEN_INACTIVE, MENU_CATEGORY_VERSION_CONFLICT)
     // + 12 Shipper management codes (M03: DRIVER_NOT_FOUND, DRIVER_STATE_CONFLICT, DRIVER_PROFILE_LOCKED, DRIVER_PROFILE_INCOMPLETE, BANK_HOLDER_MISMATCH,
     //   DRIVER_BANK_NOT_VERIFIED, DRIVER_NOT_ACTIVE, DRIVER_WALLET_NOT_READY, DRIVER_HAS_ACTIVE_WORK, DRIVER_WALLET_NOT_SETTLED,
@@ -131,8 +132,10 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 2 shop finance codes (#198/#199: BUSINESS_CHAT_RATE_LIMITED, MENU_VISIBLE_LIMIT_REACHED)
     // + 8 canonical delivery quote codes (#211/#239: quote required/changed, missing pins,
     //   route unavailable/timeout, fee range and policy availability)
+    // + 6 address change & guidance codes (#218: ADDRESS_CHANGE_ALREADY_PENDING, ADDRESS_CHANGE_NOT_FOUND, ADDRESS_CHANGE_NOT_PENDING, ADDRESS_CHANGE_NOT_PERMITTED, CANNOT_CHANGE_AFTER_PICKUP, ORDER_NOT_CONFIRMED)
+    // + 2 Nhóm 15 codes (#255/#256: WITHDRAWAL_ONLY_WHEN_CLOSING, TOPUP_NOT_ALLOWED_WHEN_CLOSING)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(223);
+    expect(codes).toHaveLength(232);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);

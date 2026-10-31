@@ -14,6 +14,7 @@ import {
   LockReasonKind,
   LockResult,
   PageState,
+  UserConsent,
   UserDetail,
   UserDetailState,
   UserFilter,
@@ -130,6 +131,40 @@ export function parseUserPage(data: Record<string, unknown>): UserPage | undefin
   return { items, nextCursor, roleFilters };
 }
 
+const VERSION_TOKEN = /^[A-Za-z0-9._-]{1,64}$/;
+
+function consentOf(value: unknown): UserConsent | undefined | null {
+  // undefined = not sent (older server); null = sent but not the documented shape (the whole detail is then refused).
+  if (value === undefined) {
+    return undefined;
+  }
+  const raw = record(value);
+  if (raw === undefined || !Array.isArray(raw.history) || raw.history.length > 20 || (raw.accepted_current !== null && typeof raw.accepted_current !== 'boolean')) {
+    return null;
+  }
+  const pair = (entry: unknown): { termsVersion: string; privacyVersion: string } | undefined => {
+    const item = record(entry);
+    return item !== undefined && typeof item.terms_version === 'string' && VERSION_TOKEN.test(item.terms_version) && typeof item.privacy_version === 'string' && VERSION_TOKEN.test(item.privacy_version)
+      ? { termsVersion: item.terms_version, privacyVersion: item.privacy_version }
+      : undefined;
+  };
+  const current = raw.current === null ? null : pair(raw.current);
+  if (current === undefined) {
+    return null;
+  }
+  const history: UserConsent['history'][number][] = [];
+  for (const entry of raw.history) {
+    const versions = pair(entry);
+    const item = record(entry);
+    const acceptedAt = isoOf(item?.accepted_at);
+    if (versions === undefined || acceptedAt === undefined || typeof item?.client_app !== 'string' || !/^[A-Z]{1,8}$/.test(item.client_app)) {
+      return null;
+    }
+    history.push({ ...versions, acceptedAt, clientApp: item.client_app });
+  }
+  return { current, acceptedCurrent: raw.accepted_current, history };
+}
+
 export function parseUserDetail(data: Record<string, unknown>): UserDetail | undefined {
   const base = summaryOf(data);
   const version = data.version;
@@ -139,7 +174,8 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
   }
   const actions = allowedActionsOf(data.allowed_actions);
   const lifecycle = lifecycleOf(data.lifecycle);
-  if (actions === undefined || lifecycle === undefined || typeof data.phone_verified !== 'boolean') {
+  const consent = consentOf(data.consent);
+  if (actions === undefined || lifecycle === undefined || consent === null || typeof data.phone_verified !== 'boolean') {
     return undefined;
   }
   const customer = profiles.customer === undefined ? undefined : record(profiles.customer);
@@ -169,6 +205,7 @@ export function parseUserDetail(data: Record<string, unknown>): UserDetail | und
     allowedActions: actions,
     phoneVerified: data.phone_verified,
     lifecycle,
+    ...(consent === undefined ? {} : { consent }),
   };
 }
 
@@ -420,6 +457,10 @@ export function createAccountsSource(api: AdminAccountsApi, session?: CsrfPort):
       const result = await api.changeLock(csrf, command);
       if (result.kind === 'ok') {
         return result.data.result === 'DELETED' ? { kind: 'deleted' } : { kind: 'ok' };
+      }
+      // A definitive refusal although it is a 503: the server rolled everything back because it could not verify the account's records.
+      if (result.kind === 'error' && result.code === 'USER_ACCOUNT_ACTIVITY_UNVERIFIED') {
+        return { kind: 'unverified' };
       }
       // No usable answer, or a server fault (503 TRANSACTION_OUTCOME_UNKNOWN included): the command may have been executed.
       if (result.kind === 'network' || result.status >= 500) {

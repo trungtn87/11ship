@@ -51,6 +51,25 @@ export class CustomerOrderChatController extends ChatRoutes {
 }
 
 @UseGuards(SessionAuthGuard)
+@Controller('customers/me/deliveries/:delivery_id/chat')
+export class CustomerDeliveryChatController extends ChatRoutes {
+  constructor(chat: OrderChatService) {
+    super(chat);
+  }
+
+  @Get()
+  read(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    return this.readRoom(request, 'CUSTOMER_DIRECT', id, query);
+  }
+
+  @Post()
+  @HttpCode(201)
+  send(@Param('delivery_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    return this.sendTo(request, 'CUSTOMER_DIRECT', id, body, key);
+  }
+}
+
+@UseGuards(SessionAuthGuard)
 @Controller('shop/me')
 export class ShopOrderChatController extends ChatRoutes {
   constructor(chat: OrderChatService) {
