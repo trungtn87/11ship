@@ -7,6 +7,8 @@ import { h, svg } from './dom.js';
 const BASE='/v1/admin/business';
 const stateText:Record<string,string>={PENDING:'Chờ kiểm tra',CONFIRMED:'Đã xác nhận',REJECTED:'Từ chối',CANCELLED:'Đã hủy'};
 const tabs=[['overview','Tổng quan','◫'],['finance','Tài chính','₫'],['orders','Đơn hàng','▤'],['chat','Chat','◌'],['notifications','Thông báo','♧']] as const;
+/** Issue #237: what each tab needs, so a 403 says WHICH grant is missing (the server decides again on every call). */
+const tabNeeds:Record<string,string>={overview:'Tổng quan cần quyền chức năng "Báo cáo" (report.read) và quyền xem ứng dụng Quán/Shipper tương ứng với từng báo cáo.',finance:'Tài chính cần quyền chức năng "Ví / tài chính" (wallet.read).',orders:'Đơn hàng cần quyền xem ứng dụng Quán hoặc Shipper.',chat:'Chat cần quyền chức năng "Ví / tài chính" (wallet.read).',notifications:'Thông báo cần quyền chức năng "Ví / tài chính" (wallet.read).'};
 const time=(s:string)=>new Date(s).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
 const money=(n:number)=>n.toLocaleString('vi-VN')+' đ';
 function button(label:string,run:()=>void,kind=''):HTMLButtonElement{const b=h('button',{type:'button',class:'business-button '+kind},label);b.onclick=run;return b;}
@@ -45,7 +47,7 @@ export class BusinessDashboard implements ShellHost {
   private tab():string{return tabs.some(t=>t[0]===location.pathname.split('/')[2])?location.pathname.split('/')[2]!:'overview';}
   private navigate(tab:string,request?:string):void{history.pushState(null,'',`/business/${tab}${request?'?request='+encodeURIComponent(request):''}`);this.detailId=undefined;this.pollRoom=undefined;void this.refresh(true);}
   private current(epoch:number):boolean{return !!this.host&&epoch===this.mountEpoch;}
-  private showError(e:unknown):void{if(!this.host)return;if(e instanceof BusinessApiError&&e.status===403)this.clearSensitiveView();this.error.hidden=false;this.error.textContent=businessError(e);}
+  private showError(e:unknown):void{if(!this.host)return;if(e instanceof BusinessApiError&&e.status===403){this.clearSensitiveView();this.content.append(h('section',{class:'business-panel',role:'status'},h('h2',{},'Chưa có quyền xem mục này'),h('p',{},tabNeeds[this.tab()]),h('p',{class:'business-muted'},'Các mục khác vẫn dùng bình thường. Liên hệ quản trị hệ thống nếu cần cấp thêm quyền.')));}this.error.hidden=false;this.error.textContent=businessError(e);}
   private async logout():Promise<void>{try{await this.api.call(BASE+'/push/unsubscribe',{});}catch{/* session-bound subscriptions also stop on server logout */}try{const r=await navigator.serviceWorker?.getRegistration('/business/');await(await r?.pushManager.getSubscription())?.unsubscribe();}catch{/* best effort cleanup of this browser endpoint */}await this.auth.logout();}
   private async refresh(force:boolean):Promise<void>{
     if(!this.host||this.busy||document.visibilityState==='hidden')return;
@@ -213,11 +215,33 @@ export class BusinessDashboard implements ShellHost {
   }
   private async orderDetail(id:string):Promise<void>{
     const epoch=this.mountEpoch;
-    const d=await this.api.call<{shop:{name:string};recipient:{name:string;address_text:string};money:{items_total_vnd:number;fee:{amount_vnd:number|null}};display_status:string;created_at:string;items:{name:string;quantity:number;unit_price_vnd:number}[]}>('/v1/admin/orders/'+id);if(!this.current(epoch))return;
+    const d=await this.api.call<{shop:{name:string};recipient:{name:string;address_text:string};money:{items_total_vnd:number;fee:{amount_vnd:number|null}};display_status:string;created_at:string;version:number;can?:string[];items:{name:string;quantity:number;unit_price_vnd:number}[]}>('/v1/admin/orders/'+id);if(!this.current(epoch))return;
     const panel=h('section',{class:'business-panel'},button('← Đơn hàng',()=>void this.orders()),h('h2',{},'Chi tiết đơn hàng'));
     panel.append(h('p',{},d.shop.name),h('p',{},d.display_status),h('p',{},d.recipient.name+' · '+d.recipient.address_text),h('p',{},'Tiền hàng: '+money(d.money.items_total_vnd)),h('p',{},'Phí vận chuyển: '+format(d.money.fee.amount_vnd,'vnd')),h('p',{},time(d.created_at)));
     for(const item of d.items)panel.append(h('p',{},`${item.quantity} × ${item.name} · ${money(item.unit_price_vnd)}`));
+    const allowed=(d.can??[]).filter((name):name is 'cancel-order'|'close-not-completed'=>name==='cancel-order'||name==='close-not-completed');
+    if(allowed.length)panel.append(this.orderActions(id,d.version,allowed));
+    else panel.append(h('p',{class:'business-muted'},'Chỉ xem: tài khoản này không có thao tác xử lý đơn ở trạng thái hiện tại.'));
     panel.append(h('a',{href:'/operations/orders'},'Mở quản lý đơn hàng trong Web Admin'));this.content.replaceChildren(panel);
+  }
+  /** Issue #236: only the actions the SERVER put in `can` for this actor, state and right. The reason is mandatory and one key belongs to one intent (a retry reuses it). */
+  private orderActions(id:string,version:number,names:('cancel-order'|'close-not-completed')[]):HTMLElement{
+    const label={'cancel-order':'Hủy đơn món','close-not-completed':'Đóng "Không hoàn tất"'} as const;
+    const hint={'cancel-order':'Chỉ hủy được khi shipper chưa lấy hàng. Việc này kết thúc lần giao đang chạy và được ghi vào nhật ký kiểm toán.','close-not-completed':'Chỉ đóng khi giao thất bại và hàng đã về quán hoặc đã được xử lý. Không tự bồi thường hay hoàn tiền.'} as const;
+    const box=h('section',{class:'business-panel'},h('h3',{},'Xử lý ngoại lệ'));
+    for(const name of names){
+      const reason=h('textarea',{rows:'3',maxlength:'300','aria-label':'Lý do cho '+label[name],placeholder:'Lý do (bắt buộc)'}) as HTMLTextAreaElement;
+      const submit=button('Xác nhận: '+label[name],()=>{},'business-danger') as HTMLButtonElement;
+      submit.onclick=()=>{
+        const text=reason.value.normalize('NFC').replace(/\s+/gu,' ').trim();
+        if(!text||[...text].length>300){this.error.hidden=false;this.error.textContent=!text?'Lý do là bắt buộc.':'Lý do tối đa 300 ký tự.';return;}
+        if(!window.confirm(label[name]+'?\n'+hint[name]))return;
+        submit.disabled=true;
+        void this.api.call(`/v1/admin/orders/${id}/actions/${name}`,{expected_version:version,reason:text}).then(()=>{this.error.hidden=false;this.error.textContent='Đã cập nhật.';return this.orderDetail(id);}).catch(error=>{if(error instanceof BusinessApiError&&(error.code==='VERSION_CONFLICT'||error.code==='ORDER_STATE_CONFLICT'||error.code==='ADMIN_ACTION_NOT_ALLOWED'||error.code==='AFTER_PICKUP_NO_CANCEL'||error.code==='RECALL_BLOCKED_GOODS_OUT')){this.showError(error);void this.orderDetail(id).catch(()=>undefined).then(()=>{this.error.hidden=false;this.error.textContent=error.code==='AFTER_PICKUP_NO_CANCEL'?'Shipper đã lấy hàng nên không hủy đơn món được nữa.':'Trạng thái đơn đã thay đổi; đã tải lại. Kiểm tra rồi thử lại nếu còn phù hợp.';});return;}this.showError(error);}).finally(()=>{submit.disabled=false;});
+      };
+      box.append(h('p',{},hint[name]),reason,submit);
+    }
+    return box;
   }
   private async registerWorker():Promise<ServiceWorkerRegistration|undefined>{if(!('serviceWorker'in navigator)||!window.isSecureContext)return;return navigator.serviceWorker.register('/business-sw.js',{scope:'/business/'}).catch(()=>undefined);}
   private async restorePush():Promise<void>{
