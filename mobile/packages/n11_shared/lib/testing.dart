@@ -820,7 +820,7 @@ class FakeDriverServer {
       locationReady = true;
       final bool intent = profile?['accepting_deliveries'] == true;
       return json(200, <String, Object?>{
-        'data': <String, Object?>{'ok': true, 'intent_online': intent, 'has_active_work': hasActiveWork, 'should_share_location': (intent && profile?['status'] == 'ACTIVE') || hasActiveWork},
+        'data': <String, Object?>{'ok': true, 'intent_online': intent, 'has_active_work': hasActiveWork, 'should_share_location': intent && profile?['status'] == 'ACTIVE'},
       });
     };
   }
@@ -867,7 +867,7 @@ class FakeDriverServer {
           'can_receive_orders': stored['accepting_deliveries'] == true && status == 'ACTIVE' && walletReady && locationReady,
           'paused_reason': stored['accepting_deliveries'] == true && !locationReady ? 'LOCATION_STALE' : null,
           'has_active_work': hasActiveWork,
-          'should_share_location': (stored['accepting_deliveries'] == true && status == 'ACTIVE') || hasActiveWork,
+          'should_share_location': stored['accepting_deliveries'] == true && status == 'ACTIVE',
         },
     };
   }

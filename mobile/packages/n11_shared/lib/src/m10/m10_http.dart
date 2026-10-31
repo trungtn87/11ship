@@ -127,6 +127,21 @@ class HttpCustomerOrderSource extends CustomerOrderSource {
   Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) async => _order(await _call(session, 'POST', '/v1/customers/me/orders', body: <String, Object?>{..._draftBody(draft, withPrice: true), 'client_ref': clientRef, 'items_total_vnd': draft.itemsVnd, 'expected_quote': preview.expectedQuoteJson}, key: key, ok: const <int>{200, 201}));
 
   @override
+  Future<OrderView> editOrder(String id, CheckoutDraft draft, {required CheckoutPreview preview, required int expectedVersion, required String key}) async {
+    // The shop and the wanted time are the Order's own: the edit body carries neither.
+    final Map<String, Object?> body = <String, Object?>{..._draftBody(draft, withPrice: true)}
+      ..remove('shop_id')
+      ..remove('scheduled_for');
+    return _order(await _call(session, 'POST', '/v1/customers/me/orders/$id/edit', body: <String, Object?>{...body, 'expected_version': expectedVersion, 'items_total_vnd': draft.itemsVnd, 'expected_quote': preview.expectedQuoteJson}, key: key));
+  }
+
+  @override
+  Future<List<EditDish>> editMenu(String id) async {
+    final Object? data = await _call(session, 'GET', '/v1/customers/me/orders/$id/edit-menu');
+    return _parse<List<EditDish>>(data, (Object? d) => <EditDish>[for (final Object? o in (d! as Map<String, Object?>)['items']! as List<Object?>) EditDish.fromJson(o)]);
+  }
+
+  @override
   Future<OrderView?> lookup(String clientRef) async {
     try {
       return _order(await _call(session, 'GET', '/v1/customers/me/orders/lookup?client_ref=$clientRef'));

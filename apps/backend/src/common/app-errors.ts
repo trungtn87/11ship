@@ -215,6 +215,7 @@ export const APP_ERROR_DEFINITIONS = {
   // DELIVERY_* / ADMIN_* codes (above) are reused unchanged.
   ORDER_NOT_FOUND: { status: 404, message: 'The order was not found' },
   ANOMALY_CASE_NOT_FOUND: { status: 404, message: 'The anomaly case was not found' },
+  ORDER_EDIT_LOCKED: { status: 409, message: 'The shop already confirmed this order; contact the shop to change it' },
   ORDER_STATE_CONFLICT: { status: 409, message: 'The order is not in a state that allows this action' },
   // #191, the order chat. A room the caller may not see answers like a missing order / delivery (ORDER_NOT_FOUND / DELIVERY_NOT_FOUND).
   ORDER_CHAT_CLOSED: { status: 409, message: 'The order has ended; the conversation can only be read' },

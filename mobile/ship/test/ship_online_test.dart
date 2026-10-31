@@ -339,23 +339,21 @@ void main() {
       expect(t.server.locationReports, sent, reason: 'nothing is sent after stopping');
     });
 
-    test('with a delivery in progress it stops new orders but keeps sharing, then stops by itself when the delivery ends', () async {
+    test('with a delivery in progress, switching off stops new orders AND the position at once (#265); the delivery is untouched and the Shipper decides alone to share again', () async {
       final t = await _build();
       await t.driver.setAccepting(true);
       t.server.hasActiveWork = true;
       expect(await t.driver.setAccepting(false), isTrue);
+      await settle();
       expect(t.driver.profile!.acceptingDeliveries, isFalse);
-      expect(t.reporter.sharing, isTrue);
-      expect(t.feed.stops, 0);
-      expect(t.online.statusLine, 'Đang giao đơn · Vẫn chia sẻ vị trí');
-      // The delivery ends on the server; the next report's answer tells the app nothing needs the position any more.
-      t.server.hasActiveWork = false;
+      expect(t.reporter.sharing, isFalse, reason: 'Online off ends the collection even while a delivery is held');
+      expect(t.feed.stops, 1);
+      expect(t.driver.profile!.presence!.hasActiveWork, isTrue, reason: 'the duty to the delivery does not change');
+      expect(t.online.statusLine, 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí');
+      // Later reports do not bring the service back, and nothing switches the account on by itself.
       t.advance(const Duration(minutes: 1));
-      await t.report();
       await settle();
       expect(t.reporter.sharing, isFalse);
-      expect(t.feed.stops, 1);
-      expect(t.online.statusLine, isNull);
       expect(t.driver.profile!.acceptingDeliveries, isFalse, reason: 'never switched back on');
     });
 
@@ -456,7 +454,7 @@ void main() {
       expect(t.reporter.sharing, isFalse);
     });
 
-    test('switch off but a delivery is in progress: sharing is restored for it', () async {
+    test('switch off but a delivery is in progress: nothing starts (#265); the delivery stays and the line says the position is not shared', () async {
       final f = FakeApiTransport();
       f.requests.clear();
       final t = await _build(attach: false);
@@ -464,9 +462,9 @@ void main() {
       t.online.attach();
       await t.driver.load();
       await settle();
-      expect(t.feed.starts, 1);
+      expect(t.feed.starts, 0);
       expect(t.accepting, isEmpty);
-      expect(t.online.statusLine, anyOf('Đang lấy vị trí…', 'Đang giao đơn · Vẫn chia sẻ vị trí'));
+      expect(t.online.statusLine, 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí');
     });
 
     test('permission taken away meanwhile: one clear problem, no prompt loop; "Thử lại" tries again', () async {

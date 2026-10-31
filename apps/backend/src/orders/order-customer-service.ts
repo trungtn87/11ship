@@ -23,7 +23,7 @@ import { IssueCode, MAX_LINE_QUANTITY, ORDER_OPERATIONS, ORDER_SCOPE_TYPE } from
 import { OrderRecorder } from './order-recorder';
 import { NewItem, OrderRepository, OrderRow } from './order-repository';
 import { customerMayCancel, mergeCartLines, newOrderCode, scheduleInWindow, totalOf } from './order-rules';
-import { CancelInput, CartInput, CheckoutInput, CustomerListQuery, LineInput, PlaceInput, ReorderInput } from './order-validation';
+import { CancelInput, CartInput, CheckoutInput, CustomerEditInput, CustomerListQuery, LineInput, PlaceInput, ReorderInput } from './order-validation';
 import { OrderViews } from './order-views';
 
 interface ResolvedLine {
@@ -548,6 +548,170 @@ export class OrderCustomerService {
         const after = await this.#update(context, locked, { status: 'CANCELLED_BY_CUSTOMER', endedNow: 'CUSTOMER', endReason: input.reason });
         await this.recorder.record(context, { order: after, type: 'cancelled_by_customer', actorType: 'CUSTOMER', actorId: actor.userId, note: input.reason, operation: ORDER_OPERATIONS.customerCancel, requestId });
         return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, after, true) };
+      },
+    );
+  }
+
+  // ---- editing the Order while the shop has not confirmed (issue #238) -----------------------------------------------------------
+
+  /** The shop's dishes on sale NOW, for the editor's "Thêm món". Only for the customer's own Order that still waits for the shop. */
+  async editMenu(principal: AuthPrincipal, orderId: string): Promise<JsonObject> {
+    return this.transactions.withTransaction(async (context) => {
+      const actor = await this.#customer(context, principal, 'share');
+      const order = await this.orders.findById(context, orderId);
+      if (order === undefined || order.customerUserId !== actor.userId) {
+        throw new AppError('ORDER_NOT_FOUND');
+      }
+      if (order.status !== 'PENDING_CONFIRMATION') {
+        throw new AppError('ORDER_EDIT_LOCKED');
+      }
+      const dishes = await this.menu.listPublicItems(context, order.shopId);
+      return { items: dishes.map((d) => ({ item_id: d.itemId, name: d.name, price_vnd: d.priceVnd })) };
+    });
+  }
+
+  /**
+   * POST /v1/customers/me/orders/:id/edit. Replaces the content the customer sent (dishes, note, recipient, address) while the Order still waits for the shop.
+   * Same rules as sending: the server re-reads the dishes and prices, prices the route again and refuses a difference from what the customer saw (ORDER_CART_CHANGED /
+   * ORDER_QUOTE_CHANGED). Under the Order's lock with the shop's confirm / reject / the customer's cancel / the timeout: whichever commits first wins; after the shop confirmed
+   * nothing is written and the answer is ORDER_EDIT_LOCKED. The wait clock is not moved. The previous version stays in the event history (before / after).
+   */
+  async edit(principal: AuthPrincipal, orderId: string, input: CustomerEditInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
+    const target = await this.transactions.withTransaction(async (context) => {
+      const actor = await this.#customer(context, principal, 'share');
+      const order = await this.orders.findById(context, orderId);
+      if (order === undefined || order.customerUserId !== actor.userId) {
+        throw new AppError('ORDER_NOT_FOUND');
+      }
+      return order;
+    });
+    const checkout: CheckoutInput = { ...input, shopId: target.shopId, scheduledForMs: null };
+    const prepared = await this.#prepare(principal, checkout);
+    const leg = await this.#route(prepared);
+    return this.executor.execute(
+      {
+        scopeType: ORDER_SCOPE_TYPE,
+        scopeId: principal.userId,
+        operationId: ORDER_OPERATIONS.customerEdit,
+        idempotencyKey: key,
+        logicalRequest: {
+          order_id: orderId,
+          expected_version: input.expectedVersion,
+          lines: input.lines.map((l) => ({ item_id: l.itemId, quantity: l.quantity, note: l.note, price: l.expectedPriceVnd })),
+          items_total_vnd: input.expectedItemsTotalVnd,
+          tip_vnd: input.tipVnd,
+          expected_quote: input.expectedQuote,
+          note: input.note,
+          delivery_note: input.deliveryNote,
+          recipient_name: input.recipientName,
+          recipient_phone: input.recipientPhone,
+          address_id: input.address.addressId,
+          address_text: input.address.addressText,
+          lat: input.address.lat,
+          lng: input.address.lng,
+        },
+        replay: this.#replay(principal),
+      },
+      async (context) => {
+        const actor = await this.#customer(context, principal, 'update');
+        const locked = await this.orders.lockById(context, orderId);
+        if (locked === undefined || locked.customerUserId !== actor.userId) {
+          throw new AppError('ORDER_NOT_FOUND');
+        }
+        // The shop confirmed (or the Order ended) first: nothing is written. The customer is told to contact the shop.
+        if (locked.status !== 'PENDING_CONFIRMATION') {
+          throw new AppError('ORDER_EDIT_LOCKED');
+        }
+        if (locked.version !== input.expectedVersion) {
+          throw new AppError('VERSION_CONFLICT');
+        }
+        const lockedShop = await this.shopRepo.lockShopShared(context, locked.shopId);
+        if (lockedShop === undefined) {
+          throw new AppError('ORDER_SHOP_NOT_OPEN');
+        }
+        const expected = new Map<string, number>();
+        for (const line of input.lines) {
+          if (line.expectedPriceVnd !== null) {
+            expected.set(line.itemId, line.expectedPriceVnd);
+          }
+        }
+        const checked = await this.#check(context, actor, { ...checkout, shopId: locked.shopId }, expected, true);
+        // The Order already exists at this shop: its opening hours do not matter for the edit (the shop confirms or refuses it as before). Dishes and address do.
+        if (checked.shop === undefined) {
+          throw new AppError('ORDER_SHOP_NOT_OPEN');
+        }
+        if (checked.blockers.includes('ADDRESS_NOT_FOUND') || checked.address === null) {
+          throw new AppError('ORDER_ADDRESS_INVALID');
+        }
+        if (checked.lines.some((l) => l.issue !== null)) {
+          throw new AppError('ORDER_CART_CHANGED');
+        }
+        if (input.expectedQuote === null || !input.expectedQuote.complete) {
+          throw new AppError('ORDER_QUOTE_REQUIRED');
+        }
+        const priced = checked.lines.map((l) => ({ ...l, priceVnd: l.priceVnd as number }));
+        const total = totalOf(priced.map((l) => ({ unitPriceVnd: l.priceVnd, quantity: l.quantity })));
+        if (total !== input.expectedItemsTotalVnd) {
+          throw new AppError('ORDER_CART_CHANGED');
+        }
+        const shop = checked.shop;
+        const currentPickup = shop.pickupLat != null && shop.pickupLng != null ? { lat: shop.pickupLat, lng: shop.pickupLng } : null;
+        const currentPoint = checked.address.lat != null && checked.address.lng != null ? { lat: checked.address.lat, lng: checked.address.lng } : null;
+        if (
+          ((prepared.pickup !== null || currentPickup !== null) && !this.#samePoint(prepared.pickup, currentPickup)) ||
+          ((prepared.point !== null || currentPoint !== null) && !this.#samePoint(prepared.point, currentPoint))
+        ) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
+        const estimate = await this.#estimate(context, shop, checked.address, prepared, leg);
+        if (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.reason !== estimate.reason || input.expectedQuote.snapshot !== estimate.snapshot) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
+        const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
+        const before = await this.orders.listItems(context, orderId);
+        const base = await this.orders.maxLineNo(context, orderId);
+        const items: NewItem[] = priced.map((l, index) => ({ lineId: randomUUID(), lineNo: base + index + 1, menuItemId: l.itemId, name: l.name as string, note: l.note, unitPriceVnd: l.priceVnd, quantity: l.quantity }));
+        await this.orders.supersedeLines(context, orderId);
+        await this.orders.addLines(context, orderId, items);
+        const after = await this.orders.customerEdit(context, orderId, locked.version, {
+          recipientName: input.recipientName,
+          recipientPhone: input.recipientPhone,
+          addressText: checked.address.text,
+          addressLat: checked.address.lat,
+          addressLng: checked.address.lng,
+          sourceAddressId: checked.address.sourceId,
+          note: input.note,
+          deliveryNote: input.deliveryNote,
+          itemsTotalVnd: total,
+          feeEstimateVnd: proposedFee,
+          feeEstimateDistanceM: estimate.distanceM,
+        });
+        if (after === undefined) {
+          throw new AppError('VERSION_CONFLICT');
+        }
+        await this.recorder.record(context, {
+          order: after,
+          type: 'customer_edited',
+          actorType: 'CUSTOMER',
+          actorId: actor.userId,
+          operation: ORDER_OPERATIONS.customerEdit,
+          requestId,
+          details: {
+            before: {
+              items: before.filter((i) => i.removedAtMs === null).map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })),
+              items_total_vnd: locked.itemsTotalVnd,
+              fee_estimate_vnd: locked.feeEstimateVnd,
+              fee_estimate_distance_m: locked.feeEstimateDistanceM,
+            },
+            items: items.map((i) => ({ name: i.name, quantity: i.quantity, unit_price_vnd: i.unitPriceVnd, note: i.note })),
+            items_total_vnd: total,
+            quote_fee_vnd: estimate.feeVnd,
+            quote_reason: estimate.status === 'UNAVAILABLE' ? estimate.reason : null,
+            edit_no: after.customerEditCount,
+          },
+        });
+        const reread = await this.#reread(context, orderId);
+        return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, reread, true) };
       },
     );
   }

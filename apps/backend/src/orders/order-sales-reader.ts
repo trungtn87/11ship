@@ -11,7 +11,7 @@ export class OrderSalesReader {
       `SELECT i.menu_item_id AS item_id, sum(i.quantity)::text AS sold_count
          FROM app.order_items i
          JOIN app.orders o ON o.order_id = i.order_id
-        WHERE i.menu_item_id = ANY($1::uuid[]) AND i.removed_at IS NULL AND o.status = 'COMPLETED'
+        WHERE i.menu_item_id = ANY($1::uuid[]) AND i.removed_at IS NULL AND i.superseded_at IS NULL AND o.status = 'COMPLETED'
         GROUP BY i.menu_item_id`,
       [[...itemIds]],
     );

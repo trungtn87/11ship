@@ -320,6 +320,7 @@ describe('AllExceptionsFilter', () => {
         'ORDER_CHAT_EXPIRED',
         'ORDER_CHAT_NOT_PARTICIPANT',
         'ORDER_CHAT_RATE_LIMITED',
+        'ORDER_EDIT_LOCKED',
         'ORDER_EMPTY',
         'ORDER_INPUT_INVALID',
         'ORDER_NOT_CONFIRMED',

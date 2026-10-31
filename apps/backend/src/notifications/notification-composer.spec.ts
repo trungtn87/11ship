@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { composeDeliveryChange, DeliveryChangePayload, Draft, reminderCopy } from './notification-composer';
+import { composeDeliveryChange, composeOrderChange, DeliveryChangePayload, Draft, OrderChangePayload, reminderCopy } from './notification-composer';
 
 const base: DeliveryChangePayload = { deliveryId: '11111111-1111-4111-8111-111111111111', code: 'DG-1024', shopId: '22222222-2222-4222-8222-222222222222', change: 'accepted', state: 'accepted', version: 3, assignmentId: null, driverId: '33333333-3333-4333-8333-333333333333' };
 const notifies = (drafts: Draft[]) => drafts.flatMap((d) => (d.type === 'NOTIFY' ? [d.draft] : []));
@@ -77,5 +77,17 @@ describe('M08 composer', () => {
     // Approving a new fee after the Shipper took the delivery says "go and pick it up", not "you may take it".
     const approved = notifies(composeDeliveryChange({ ...base, change: 'fee_counter_accepted', state: 'accepted' })).find((d) => d.audience === 'DRIVER_OF_AGREEMENT');
     expect(approved?.body).toContain('đến lấy hàng');
+  });
+});
+
+describe('M08 composer — order confirmed with an updated dish money (issue #260)', () => {
+  const order: OrderChangePayload = { orderId: '44444444-4444-4444-8444-444444444444', code: 'DH-77', shopId: '22222222-2222-4222-8222-222222222222', customerUserId: '55555555-5555-4555-8555-555555555555', change: 'confirmed', status: 'PREPARING', version: 4 };
+  it('tells the customer the value was updated only when the shop changed it, never with an amount, and opens the same order either way', () => {
+    const plain = notifies(composeOrderChange(order));
+    const updated = notifies(composeOrderChange({ ...order, priceChanged: true }));
+    expect(plain).toMatchObject([{ audience: 'CUSTOMER', kind: 'ORDER_CONFIRMED', title: 'Quán đã xác nhận đơn', targetType: 'ORDER', targetId: order.orderId }]);
+    expect(updated).toMatchObject([{ audience: 'CUSTOMER', kind: 'ORDER_CONFIRMED', title: 'Quán đã xác nhận đơn với giá trị cập nhật', targetType: 'ORDER', targetId: order.orderId }]);
+    expect(`${updated[0]?.title} ${updated[0]?.body}`).not.toMatch(/d{3,}/);
+    expect(updated[0]?.dedupeKey).toBe(plain[0]?.dedupeKey);
   });
 });

@@ -124,8 +124,9 @@ export class ShipperLocationReader implements ShipperLocationPort {
 }
 
 /**
- * Whether the app must keep sharing the position: the Shipper wants orders (switch on while ACTIVE) or still has work to finish. Both the profile
- * (`presence`) and every position report answer with this, so the app starts and stops its location service from the server's word.
+ * Whether the app must keep sharing the position (issue #265, Owner 2026-10-29, supersedes the M14 rule of 2026-10-24): ONLY while the Shipper has switched
+ * Online on an ACTIVE profile. Switching Online off stops the collection even with a delivery still held; the delivery, its fee, commission and custody are
+ * untouched (that duty is tracked elsewhere through `has_active_work`). Both the profile (`presence`) and every position report answer with this, so the app
+ * starts and stops its location service from the server's word.
  */
-export const shouldShareLocation = (driver: { readonly status: string; readonly acceptingDeliveries: boolean }, hasActiveWork: boolean): boolean =>
-  (driver.acceptingDeliveries && driver.status === 'ACTIVE') || hasActiveWork;
+export const shouldShareLocation = (driver: { readonly status: string; readonly acceptingDeliveries: boolean }): boolean => driver.acceptingDeliveries && driver.status === 'ACTIVE';
