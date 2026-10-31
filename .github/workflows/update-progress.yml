@@ -31,6 +31,10 @@ name: Update progress
 #   - `push` ignores changes that only touch docs/PROGRESS.md;
 #   - `workflow_run` listens to "CI" only, never to this workflow;
 #   - a commit is made only when the generated file actually changed.
+# * Pushing to main is OFF by default (S-02): a bot commit carrying the CI-skip marker lands on main
+#   without a CI run and blinds the main-branch signal. The commit step runs only when the repository
+#   variable PROGRESS_PUBLISH is exactly 'true'. The generator still runs (and the preview job still
+#   shows the dashboard); nothing is written to main otherwise.
 # * The generator has no npm dependencies, so no `npm ci` (and no lifecycle scripts) runs next to
 #   the write token.
 
@@ -179,7 +183,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/generate-progress.mjs
 
-      - name: Commit when changed
+      - name: Commit when changed (only while repository variable PROGRESS_PUBLISH is 'true')
+        if: ${{ vars.PROGRESS_PUBLISH == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
