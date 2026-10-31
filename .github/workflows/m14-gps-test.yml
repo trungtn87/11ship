@@ -111,15 +111,30 @@ jobs:
           fi
 
   routing-smoke:
+    # The public Render test service no longer exists (404, no-server). The gateway image is built here and run with the limits ops/m14/vps.sh gives the VPS
+    # (600 routes/minute, 4 in parallel, 512 MB, 0.5 CPU, read-only, loopback port), so the Dockerfile, the graph, the gateway and its limits are all exercised.
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || github.ref_name }}
-      - run: python3 ops/m14/smoke.py https://one1ship-m14-routing.onrender.com
+      - name: Build the routing image (Valhalla graph from the repository extract)
+        run: docker build -f ops/m14/Dockerfile -t 11ship-m14-routing:ci .
+      - name: Run it with the VPS limits
+        run: |
+          docker run -d --name m14 -p 127.0.0.1:18014:10000 -e M14_RATE_PER_MIN=600 -e M14_MAX_CONCURRENT=4             --memory 512m --cpus 0.5 --pids-limit 96 --read-only --tmpfs /tmp:size=32m,mode=1777             --cap-drop ALL --security-opt no-new-privileges:true 11ship-m14-routing:ci
+      - name: Real route, outside-coverage refusal and a parallel load
+        run: |
+          python3 ops/m14/smoke.py http://127.0.0.1:18014
+          python3 ops/m14/load-test.py http://127.0.0.1:18014 24 4 | tee routing-load.json
+      - name: Container log if anything failed
+        if: failure()
+        run: docker logs m14 2>&1 | tail -50
       - uses: actions/upload-artifact@v4
         with:
-          name: M14-Render-route-proof
-          path: routing-smoke.json
+          name: M14-local-docker-route-proof
+          path: |
+            routing-smoke.json
+            routing-load.json
           if-no-files-found: error
