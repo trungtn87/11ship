@@ -261,6 +261,8 @@ String m02FailureText(AuthFailure failure) {
       return 'Máy chủ chưa xác nhận được thiết bị. Hãy kiểm tra giờ của điện thoại rồi thử lại.';
     case AuthFailureKind.invalidServiceArea:
       return 'Khu vực đã chọn không còn hợp lệ. Hãy chọn khu vực khác.';
+    case AuthFailureKind.pickupOutsideArea:
+      return 'Ghim vị trí lấy hàng nằm ngoài khu vực phục vụ đã chọn. Hãy chọn lại ghim trên bản đồ; thông tin bạn đã nhập được giữ nguyên.';
     case AuthFailureKind.badRequest:
       return 'Thông tin chưa hợp lệ. Kiểm tra lại các trường rồi thử lại.';
     case AuthFailureKind.rateLimited:
@@ -460,7 +462,7 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
     case 'NO_BUSINESS_HOURS':
       return (label: 'Chưa cài giờ hoạt động', text: 'Cài lịch để quán tự mở và đóng cửa.', kind: ChipKind.warn);
     case 'NO_PICKUP_POINT':
-      return (label: 'Chưa có vị trí GPS của quán', text: 'Lấy vị trí GPS khi đang ở quán để khách tìm thấy quán.', kind: ChipKind.warn);
+      return (label: 'Chưa có vị trí lấy hàng hợp lệ', text: 'Chọn vị trí lấy hàng trên bản đồ, trong khu vực phục vụ, để khách tìm thấy quán. Không cần đứng tại quán hay bật GPS.', kind: ChipKind.warn);
     case 'NO_SELLABLE_ITEM':
       return (label: 'Chưa có món đang bán', text: 'Thêm ít nhất 1 món đang bán, có giá và ảnh để quán hiển thị với khách.', kind: ChipKind.warn);
     case 'SHOP_INCOMPLETE':

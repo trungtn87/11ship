@@ -51,6 +51,8 @@ describe('Shop (M02) module boundary', () => {
       .filter((name) => name !== 'admin-accounts/admin-account-read-repository.ts')
       // The read-only projections of the shop-management pages (M02 "Quản lý quán"); its status change goes through ShopRepository.
       .filter((name) => name !== 'admin-shops/admin-shop-read-repository.ts')
+      // Hệ thống › Vùng hoạt động (#253): the SYSTEM-only management of app.service_areas, with counts of the shops of an area; it never changes a shop.
+      .filter((name) => name !== 'admin-service-areas/admin-service-area-repository.ts')
       .filter((name) => /app\.(service_areas|shops|shop_members)\b/.test(codeOf(name)));
     expect(outside).toEqual([]);
   });

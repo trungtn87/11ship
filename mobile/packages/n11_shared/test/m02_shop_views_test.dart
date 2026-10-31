@@ -144,6 +144,21 @@ void main() {
       expect(tester.widget<TextField>(find.byKey(const Key('profile-field-phone'))).controller!.text, '12');
     });
 
+    testWidgets('a pin outside the service area is refused beside the picker, the typed data is kept and nothing is stored', (WidgetTester tester) async {
+      final Harness h = await harness(tester);
+      h.server.profileRefusal = 'PICKUP_OUTSIDE_SERVICE_AREA';
+      h.gps.failure = LocationFailure.denied;
+      await show(tester, ShopProfileScreen(flows: h.flows, startEditing: true));
+      expect(find.text('Chọn vị trí lấy hàng trên bản đồ'), findsOneWidget);
+      expect(find.byKey(const Key('address-pin-summary')), findsOneWidget, reason: 'the pin is shown for review before saving');
+      await tester.enterText(find.byKey(const Key('profile-field-name')), 'Tên đã gõ');
+      await tester.pump();
+      await tapKey(tester, 'profile-save');
+      expect(find.textContaining('ngoài khu vực phục vụ'), findsWidgets);
+      expect(h.server.effects, isEmpty);
+      expect(tester.widget<TextField>(find.byKey(const Key('profile-field-name'))).controller!.text, 'Tên đã gõ');
+    });
+
     testWidgets('a DISABLED shop is read-only: no edit button, a reason, nothing to save', (WidgetTester tester) async {
       final Harness h = await harness(tester);
       h.server.status = 'DISABLED';

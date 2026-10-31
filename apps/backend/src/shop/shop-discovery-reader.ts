@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../transaction/transaction-context';
-import { AVAILABILITY_TIME_ZONE } from './shop-availability-sql';
+import { AVAILABILITY_TIME_ZONE, pinInAreaSql } from './shop-availability-sql';
 
 /**
  * A shop a customer may be shown (issue #190): ACTIVE, in an ACTIVE area, its owner account not locked, with a weekly schedule AND a real pickup point,
@@ -53,6 +53,7 @@ SELECT s.shop_id, s.name, s.address_text, s.pickup_lat, s.pickup_lng, (s.logo IS
    AND a.status = 'ACTIVE'
    AND s.service_area_id = $1::uuid
    AND (s.pickup_lat IS NOT NULL AND s.pickup_lng IS NOT NULL AND NOT (s.pickup_lat = 0 AND s.pickup_lng = 0))
+   AND ${pinInAreaSql('s', 'a')}
    AND EXISTS (SELECT 1 FROM app.shop_business_hours hh WHERE hh.shop_id = s.shop_id)
    AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE')
  ORDER BY s.shop_id`;
@@ -97,6 +98,7 @@ export class ShopDiscoveryReader {
         CROSS JOIN local_time l
         WHERE s.status = 'ACTIVE' AND a.status = 'ACTIVE'
           AND (s.pickup_lat IS NOT NULL AND s.pickup_lng IS NOT NULL AND NOT (s.pickup_lat = 0 AND s.pickup_lng = 0))
+          AND ${pinInAreaSql('s', 'a')}
           AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE')
           AND EXISTS (
             SELECT 1 FROM app.shop_business_hours h

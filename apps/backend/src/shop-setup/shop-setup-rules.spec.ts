@@ -23,6 +23,16 @@ describe('shop setup rules (issue #190)', () => {
     expect(result).toMatchObject({ complete: true, completedSteps: 4, missing: [], state: 'ACTIVATED', publicVisible: true });
   });
 
+  it('a pin outside the configured area is not a location (issue #252): LOCATION open with its own code, never public, NEEDS_REVIEW once activated', () => {
+    const fresh = evaluateSetup({ ...complete, pickupInArea: false });
+    expect(fresh).toMatchObject({ complete: false, missing: ['PICKUP_OUTSIDE_AREA'], state: 'INCOMPLETE', publicVisible: false });
+    expect(fresh.steps.find((step) => step.key === 'LOCATION')).toEqual({ key: 'LOCATION', done: false, missing: ['PICKUP_OUTSIDE_AREA'] });
+    expect(evaluateSetup({ ...complete, pickupInArea: false, activatedAt: '2026-10-30T00:00:00.000Z' })).toMatchObject({ state: 'NEEDS_REVIEW', publicVisible: false });
+    // No pin at all stays the older code; an unknown (absent) answer never blocks.
+    expect(evaluateSetup({ ...complete, hasPickupPoint: false, pickupInArea: false }).missing).toEqual(['PICKUP_POINT']);
+    expect(evaluateSetup({ ...complete }).complete).toBe(true);
+  });
+
   it.each([
     ['no schedule', { hasHours: false }, ['BUSINESS_HOURS'], 3],
     ['no pickup point', { hasPickupPoint: false }, ['PICKUP_POINT'], 3],
