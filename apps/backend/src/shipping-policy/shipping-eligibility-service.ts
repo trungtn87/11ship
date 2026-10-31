@@ -172,7 +172,7 @@ export class ShippingEligibilityService {
       delivery:
         offer === undefined
           ? undefined
-          : { searching: offer.searching, hasShipper: offer.hasShipper, searchExpiresAtMs: offer.searchExpiresAtMs, shop: offer.shop, requiredHoldVnd: offer.requiredHoldVnd },
+          : { searching: offer.searching, hasShipper: offer.hasShipper, searchExpiresAtMs: offer.searchExpiresAtMs, shop: offer.shop, requiredHoldVnd: offer.requiredHoldVnd, locationOptional: offer.locationOptional },
       location: location === undefined ? undefined : { point: location.point, fresh: location.fresh, valid: location.valid },
       activeCount: openWork?.activeCount,
       availableVnd,

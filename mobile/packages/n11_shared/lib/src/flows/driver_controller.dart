@@ -105,17 +105,22 @@ class DriverPresence {
 
 @immutable
 class DriverClosure {
-  const DriverClosure({this.requestedAt, this.note, required this.canCancel});
+  const DriverClosure({this.requestedAt, this.note, required this.canCancel, this.fromStatus});
 
   final String? requestedAt;
   final String? note;
   final bool canCancel;
 
+  /// The status the closure was asked from (ACTIVE or SUSPENDED). From SUSPENDED the account stays locked: closing only returns the balance.
+  final String? fromStatus;
+
+  bool get fromSuspended => fromStatus == 'SUSPENDED';
+
   static DriverClosure? tryParse(Object? data) {
     if (data is! Map<String, Object?>) {
       return null;
     }
-    return DriverClosure(requestedAt: data['requested_at'] as String?, note: data['note'] as String?, canCancel: data['can_cancel'] == true);
+    return DriverClosure(requestedAt: data['requested_at'] as String?, note: data['note'] as String?, canCancel: data['can_cancel'] == true, fromStatus: data['from_status'] as String?);
   }
 }
 
@@ -158,6 +163,9 @@ class DriverProfile {
   final int version;
   final bool canEditProfile;
   final bool canSubmit;
+
+  /// A closure can be asked from ACTIVE and from SUSPENDED (the balance comes back without an unlock); the server decides again on the command.
+  bool get canRequestClosure => status == 'ACTIVE' || status == 'SUSPENDED';
   final DriverBank? bank;
   final DriverReadiness readiness;
   final DriverClosure? closure;
@@ -233,7 +241,7 @@ String driverStandingLabel(DriverProfile profile) {
     case 'SUSPENDED':
       return 'Tạm khóa';
     case 'CLOSING':
-      return 'Đang xin ngừng hoạt động';
+      return profile.closure?.fromSuspended == true ? 'Đang đóng để hoàn tiền (vẫn bị khóa)' : 'Đang xin ngừng hoạt động';
     case 'CLOSED':
       return 'Đã ngừng hoạt động';
     default:
@@ -296,7 +304,9 @@ String driverBlockLabel(String block) {
     case 'WALLET_NOT_AVAILABLE':
       return 'Ví chưa sẵn sàng (chờ module Ví)';
     case 'BALANCE_TOO_LOW':
-      return 'Số dư ví chưa đủ điều kiện';
+      return 'Số dư khả dụng chưa đủ để nhận đơn';
+    case 'FUNDING_TOO_LOW':
+      return 'Tổng tiền nạp đã xác nhận chưa đạt mức yêu cầu';
     default:
       return 'Chưa đủ điều kiện';
   }

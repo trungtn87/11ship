@@ -52,7 +52,7 @@ Future<({SessionController session, FakeApiTransport api})> signedIn() async {
 }
 
 class FakeM11 extends M11Source {
-  FakeM11();
+  FakeM11({this.customerReviewed = false, this.shopReviewed = false});
 
   final List<String> log = <String>[];
   final List<String> keys = <String>[];
@@ -60,6 +60,8 @@ class FakeM11 extends M11Source {
   String? comment;
   Object? failNext;
   bool pictureFails = false;
+  bool customerReviewed;
+  bool shopReviewed;
   ComplaintDetail detail = ComplaintDetail.fromJson(detailJson());
 
   Future<void> _maybeFail() async {
@@ -73,8 +75,8 @@ class FakeM11 extends M11Source {
   @override
   Future<CustomerOrderReviewState> customerOrder(String orderId) async => CustomerOrderReviewState.fromJson(<String, Object?>{
         'order': <String, Object?>{'code': 'OD-1', 'completed': true},
-        'shop': <String, Object?>{'name': 'Quán Mẫu', 'can_review': true, 'review': null},
-        'shipper': <String, Object?>{'name': 'Hùng', 'shipper_code': 'SP-9', 'rating': null, 'can_review': false, 'review': null},
+        'shop': <String, Object?>{'name': 'Quán Mẫu', 'can_review': !customerReviewed, 'review': customerReviewed ? <String, Object?>{'review_id': 'shop-review', 'stars': 5, 'comment': 'Rất ngon', 'created_at': '2026-10-18T09:00:00Z'} : null},
+        'shipper': <String, Object?>{'name': 'Hùng', 'shipper_code': 'SP-9', 'rating': null, 'can_review': false, 'review': customerReviewed ? <String, Object?>{'review_id': 'shipper-review', 'stars': 4, 'comment': 'Giao cẩn thận', 'created_at': '2026-10-18T09:00:00Z'} : null},
       });
 
   @override
@@ -90,10 +92,17 @@ class FakeM11 extends M11Source {
   Future<void> customerRateShipper(String orderId, {required int stars, String? comment, required String key}) async => log.add('rate-shipper');
 
   @override
-  Future<ShopDeliveryReviewState> shopDelivery(String deliveryId) => throw UnimplementedError();
+  Future<ShopDeliveryReviewState> shopDelivery(String deliveryId) async => ShopDeliveryReviewState.fromJson(<String, Object?>{
+        'delivery': <String, Object?>{'code': 'G-1'},
+        'shipper': <String, Object?>{'name': 'Hùng', 'shipper_code': 'SP-9', 'rating': null},
+        'can_review': !shopReviewed,
+        'review': shopReviewed ? <String, Object?>{'review_id': 'shop-driver-review', 'stars': 5, 'comment': 'Đúng giờ', 'created_at': '2026-10-18T09:00:00Z'} : null,
+      });
 
   @override
-  Future<void> shopRateShipper(String deliveryId, {required int stars, String? comment, required String key}) => throw UnimplementedError();
+  Future<void> shopRateShipper(String deliveryId, {required int stars, String? comment, required String key}) async {
+    shopReviewed = true;
+  }
 
   @override
   Future<ShopReviewPage> shopReviews({int? stars}) => throw UnimplementedError();
@@ -200,6 +209,19 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
 
 Finder key(String value) => find.byKey(Key(value));
 
+DeliveryView completedDelivery() {
+  final DateTime now = DateTime.utc(2026, 10, 18, 9);
+  return DeliveryView(
+    deliveryId: 'delivery-1', code: 'G-1', source: 'ORDER', orderId: 'order-1', state: DeliveryState.completed, version: 3,
+    pickup: const PickupView(shopName: 'Quán Mẫu', phone: '0900000001', addressText: 'Số 1 Phố Mẫu'),
+    recipient: const RecipientView(name: 'Người nhận', phone: '0900000002', addressText: 'Số 9 Phố Mẫu'),
+    goods: const GoodsView(description: 'Hộp bánh', valueVnd: 150000, paidVnd: 100000),
+    fee: const FeeView(mode: 'AGREED', payer: 'CUSTOMER', status: 'FINAL', amountVnd: 30000),
+    search: SearchView(startedAt: now.subtract(const Duration(minutes: 30)), expiresAt: now, serverNow: now, stoppedAt: now),
+    assignment: AssignmentView(assignmentId: 'assignment-1', shipperName: 'Hùng', acceptedAt: now.subtract(const Duration(minutes: 20)), pickedUpAt: now.subtract(const Duration(minutes: 10)), destinationConfirmed: true),
+  );
+}
+
 void main() {
   group('wire models', () {
     test('an empty summary is "no rating", never a default star', () {
@@ -266,6 +288,24 @@ void main() {
   });
 
   group('screens', () {
+    testWidgets('a finished order entry navigates to the existing rating result instead of a duplicate form', (WidgetTester tester) async {
+      final FakeM11 customer = FakeM11(customerReviewed: true);
+      await mount(tester, Builder(builder: (BuildContext context) => Scaffold(body: customerOrderFeedbackCard(context, source: customer, picker: FakeImagePicker(), orderId: 'order-1', orderCode: 'OD-1'))));
+      await tap(tester, key('m11-customer-rate'));
+      expect(key('m11-rate-shop-done'), findsOneWidget);
+      expect(key('m11-rate-shipper-done'), findsOneWidget);
+      expect(key('m11-rate-shop-rate'), findsNothing);
+    });
+
+    testWidgets('a finished delivery entry navigates to the shop rating result instead of a duplicate form', (WidgetTester tester) async {
+      final FakeM11 shop = FakeM11(shopReviewed: true);
+      final M07FeedbackSlot slot = shopDeliveryFeedbackSlot(source: shop, picker: FakeImagePicker());
+      await mount(tester, Builder(builder: (BuildContext context) => Scaffold(body: slot(context, completedDelivery()))));
+      await tap(tester, key('m11-shop-rate-shipper'));
+      expect(key('m11-shop-rate-done'), findsOneWidget);
+      expect(key('m11-shop-rate-rate'), findsNothing);
+    });
+
     testWidgets('the rating needs a star, asks for confirmation, and a lost answer is retried with the SAME key', (WidgetTester tester) async {
       final FakeM11 source = FakeM11();
       await mount(tester, CustomerOrderRatingScreen(source: source, orderId: 'o1', picker: FakeImagePicker()));

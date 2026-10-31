@@ -23,6 +23,10 @@ describe('M03 wallet activity gates', () => {
   it('zero money never enables new orders', async () => {
     expect(await rig({ available: 0n }).readinessForOrders(context, 'driver')).toEqual({ ready: false, reason: 'BALANCE_TOO_LOW' });
   });
+  it('names the cause: confirmed funding below the threshold is FUNDING_TOO_LOW, too little available money is BALANCE_TOO_LOW', async () => {
+    expect(await rig({ confirmed: 99_999n }).readinessForOrders(context, 'driver')).toEqual({ ready: false, reason: 'FUNDING_TOO_LOW' });
+    expect(await rig({ available: 999n }).readinessForOrders(context, 'driver')).toEqual({ ready: false, reason: 'BALANCE_TOO_LOW' });
+  });
   it('unconfirmed or partial first funding does not activate a new shipper', async () => {
     expect((await rig({ confirmed: 0n }).readinessForOrders(context, 'driver')).ready).toBe(false);
     expect((await rig({ confirmed: 99_999n }).readinessForOrders(context, 'driver')).ready).toBe(false);

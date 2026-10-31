@@ -7,7 +7,6 @@ import { AuditWriter } from '../audit/audit-writer';
 import { AuthPrincipal } from '../auth/auth-principal';
 import { ClientActor } from '../client-auth/client-session-authority';
 import { AppError, TechnicalError } from '../common/app-errors';
-import { ShipperWalletParametersReader } from '../driver/shipper-wallet-parameters';
 import { IdempotencyExecutor, JsonObject } from '../idempotency/idempotency-executor';
 import { OutboxWriter } from '../outbox/outbox-writer';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -46,7 +45,6 @@ export class DriverWithdrawalService {
     private readonly wallets: WalletService,
     private readonly money: WithdrawalMoneyService,
     private readonly withdrawals: WithdrawalRepository,
-    private readonly limits: ShipperWalletParametersReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     private readonly activity: AccountActivityRegistry,
@@ -84,25 +82,23 @@ export class DriverWithdrawalService {
       { scopeType: SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATION.create, idempotencyKey: key, logicalRequest: { amount_vnd: amountVnd }, replay: this.#replay(principal) },
       async (context) => {
         const { actor, driver } = await this.access.writer(context, principal);
-        // The minimum is read from the database at this moment; a request made before a change keeps the amount it was made with.
-        const limits = await this.limits.limits(context);
-        if (driver.status !== 'CLOSING' && amountVnd < limits.withdrawMinVnd) {
-          throw new AppError('WITHDRAWAL_AMOUNT_BELOW_MINIMUM');
+        // Owner lock 2026-10-28: a NEW withdrawal exists only while the Shipper is CLOSING (ACTIVE, SUSPENDED, PENDING and CLOSED never), decided under the
+        // driver row lock whatever key or route the request used. It is always the WHOLE balance, so the usual minimum does not apply (5.000 VND is paid back).
+        if (driver.status !== 'CLOSING') {
+          throw new AppError('WITHDRAWAL_ONLY_WHEN_CLOSING');
         }
         const wallet = await this.money.lockWalletOfDriver(context, driver.driverId);
         if (wallet === undefined) {
           // No wallet means no money: nothing is created for a withdrawal.
           throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
         }
-        if (driver.status === 'CLOSING') {
-          const obligations = await this.settlement.obligations(context, driver.driverId);
-          if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
-          if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
-          if ((await this.activity.activeWork(context, driver.userId)).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
-          const pending = await this.reads.pendingTopupCount(context, wallet.walletId);
-          if (pending > 0 || wallet.heldVnd !== 0n) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
-          if (BigInt(amountVnd) !== wallet.balanceVnd) throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
-        }
+        const obligations = await this.settlement.obligations(context, driver.driverId);
+        if (obligations.activeWork) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+        if (obligations.pendingFinance) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
+        if ((await this.activity.activeWork(context, driver.userId, ['WALLET'])).length > 0) throw new AppError('DRIVER_HAS_ACTIVE_WORK');
+        const pending = await this.reads.pendingTopupCount(context, wallet.walletId);
+        if (pending > 0 || wallet.heldVnd !== 0n) throw new AppError('DRIVER_WALLET_NOT_SETTLED');
+        if (BigInt(amountVnd) !== wallet.balanceVnd) throw new AppError('WITHDRAWAL_INSUFFICIENT_AVAILABLE');
         const row = await this.money.reserve(context, wallet, { driverId: driver.driverId, amountVnd: BigInt(amountVnd), createdByUserId: actor.userId });
         await this.#record(context, actor, requestId, OPERATION.create, 'created', 'CREATED', null, row, null);
         return { status: 201, replayGuard: { user_id: actor.userId }, payload: view(row) };

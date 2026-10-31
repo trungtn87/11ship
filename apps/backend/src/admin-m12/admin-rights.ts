@@ -34,6 +34,11 @@ export class AdminRights {
     return this.isSystem || (this.apps.get(app)?.canView ?? false);
   }
 
+  /** VIEW and the review right of one app (M01): what handling a complaint needs on the SHOP or the DRIVER app. */
+  canReviewApp(app: AdminApp): boolean {
+    return this.isSystem || ((this.apps.get(app)?.canView ?? false) && (this.apps.get(app)?.canReviewProfile ?? false));
+  }
+
   /** The delivery list and detail: VIEW on the SHOP or the DRIVER app, exactly as M07.07 decides it. */
   get canViewDeliveries(): boolean {
     return this.canViewApp('SHOP') || this.canViewApp('DRIVER');

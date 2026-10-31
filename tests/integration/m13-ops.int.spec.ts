@@ -13,7 +13,7 @@ import { DiscordBody, DiscordClient, DiscordResult, OPS_DISCORD_CLIENT, OpsDisco
 import { CheckReport, OpsEngine } from '../../apps/backend/src/ops/ops-engine';
 import { OpsIngestService } from '../../apps/backend/src/ops/ops-ingest-service';
 import { OpsRetention, OpsRuntime } from '../../apps/backend/src/ops/ops-runtime';
-import { HttpProbeResult, OPS_SYSTEM_PROBE, OpsSystemProbe } from '../../apps/backend/src/ops/ops-system-probe';
+import { HostSnapshot, HttpProbeResult, OPS_SYSTEM_PROBE, OpsSystemProbe } from '../../apps/backend/src/ops/ops-system-probe';
 import { AdminApp, adminData, adminErrorCode, AdminResponse, adminTestEnv, cookieFrom, loginStep, preauthCookies, rewindAcceptedStep, sessionCookies, startAdminApp, totpNow } from './support/admin-fixtures';
 import { begin, ok as okStep, post as postStep } from './support/activation-fixtures';
 import { api, dataOf, Phone, randomPhone } from './support/auth-fixtures';
@@ -44,6 +44,16 @@ class StubProbe implements OpsSystemProbe {
   m14: HttpProbeResult = { ok: true, status: 200, latencyMs: 9, code: null };
   cert: number | null = 100;
   cpuPercent(): number | null { return this.cpu; }
+  hostSnapshot(): HostSnapshot {
+    return {
+      sampledAtMs: Date.now(), uptimeSeconds: 1000, cpuPercent: this.cpu, cpuCores: 2, loadAvg: [0.5, 0.4, 0.3],
+      memory: { totalBytes: 1000, availableBytes: 800, usedBytes: 200, usedPercent: this.memory ?? 0 }, swap: { totalBytes: 100, usedBytes: 10, usedPercent: 10 },
+      disks: [{ label: 'root', path: '/', totalBytes: 1000, freeBytes: 500, usedBytes: 500, usedPercent: 50 }], io: { readBytes: 1, writeBytes: 2 },
+      network: { rxBytesTotal: 10, txBytesTotal: 20, rxBytesPerSec: 5, txBytesPerSec: 6 },
+      processesByCpu: [{ pid: 1, name: 'node', cpuPercent: 3, rssBytes: 100, memoryPercent: 10 }], processesByMemory: [{ pid: 1, name: 'node', cpuPercent: 3, rssBytes: 100, memoryPercent: 10 }],
+      backend: { pid: 1, uptimeSeconds: 10, rssBytes: 100, heapUsedBytes: 50, cpuPercent: 1 },
+    };
+  }
   memoryPercent(): number | null { return this.memory; }
   diskPercent(): number | null { return this.disk; }
   async selfHealth(): Promise<HttpProbeResult> { return this.self; }
@@ -425,7 +435,8 @@ describe('M13 — operations, alerts and updates', () => {
       expect(comp('m14').state).toBe('NO_DATA');
       expect(comp('https').state).toBe('NO_DATA');
       expect(comp('sms_gateway').state).toBe('NO_DATA');
-      expect(overview.external_probe).toMatchObject({ activated: false, label: 'Chưa kích hoạt' });
+      expect(overview.external_probe).toMatchObject({ status: 'NOT_CONFIGURED', activated: false, active_key_count: 0, last_report_at: null, runbook_path: 'ops/runbooks/m13-external-probe-20261023.md', discord_webhook_status: 'EXTERNAL_HOST_ONLY' });
+      expect(overview.vps).toMatchObject({ collector_state: 'ACTIVE', collector_stale: false });
 
       probe.self = { ok: false, status: null, latencyMs: 5000, code: 'TIMEOUT' };
       await collector.collectOnce();
@@ -446,6 +457,40 @@ describe('M13 — operations, alerts and updates', () => {
       overview = dataOf1(await aget(systemLogin(), '/overview'));
       expect(comp('resources').state).toBe('CRITICAL');
       expect(overview.incidents.open).toBeGreaterThanOrEqual(1);
+    });
+
+    it('GET /vps (#247): host, Backend and PostgreSQL apart, the history of the range, a stale collector said plainly, read-only and permission-checked', async () => {
+      expect(dataOf1(await aget(systemLogin(), '/vps')).collector).toMatchObject({ state: 'NO_DATA', collector_stale: true });
+      await collector.collectOnce();
+      await collector.collectOnce();
+      const v = dataOf1(await aget(systemLogin(), '/vps?range=1h'));
+      expect(v).toMatchObject({ range: '1h', expected_step_seconds: 60, collector: { state: 'ACTIVE', collector_stale: false, stale_after_seconds: 180 } });
+      expect(v.host).toMatchObject({ cpu_cores: 2, load_avg: [0.5, 0.4, 0.3], memory: { used_percent: 20 }, swap: { swap_percent: 10 } });
+      expect(v.backend).toMatchObject({ status: 'OK', pid: 1, self_health_latency_ms: 4 });
+      expect(v.postgres).toMatchObject({ status: 'OK' });
+      expect((v.postgres as Json).latency_ms).not.toBeNull();
+      expect((v.postgres as Json).active_connections).toBeGreaterThanOrEqual(1);
+      expect((v.postgres as Json).database_size_bytes).toBeGreaterThan(0);
+      expect(v.processes_by_cpu).toEqual([{ pid: 1, name: 'node', cpu_percent: 3, rss_bytes: 100, memory_percent: 10 }]);
+      const series = v.series as Record<string, Json[]>;
+      expect(series.cpu_percent!.length).toBeGreaterThanOrEqual(1);
+      expect(series.db_connections!.length).toBeGreaterThanOrEqual(1);
+      expect(series['disk.root']).toBeDefined();
+      expect(JSON.stringify(v)).not.toMatch(/postgres(ql)?:\/\/|cmdline|environ/);
+      for (const range of ['24h', '7d', '30d']) expect(dataOf1(await aget(systemLogin(), `/vps?range=${range}`)).range).toBe(range);
+      expect((await aget(systemLogin(), '/vps?range=2d')).status).toBe(400);
+      expect((await aget(systemLogin(), '/vps?cmd=ls')).status).toBe(400);
+      expect((await apost(systemLogin(), '/vps', {})).status).toBeGreaterThanOrEqual(400);
+      // Four minutes without a sample: the collector lost its signal; that alone is not "the VPS is down".
+      await sql(`UPDATE app.ops_checks SET value = jsonb_set(value, '{sampled_at}', to_jsonb((now() - interval '4 minutes')::text)) WHERE check_key = 'vps'`);
+      const stale = dataOf1(await aget(systemLogin(), '/vps'));
+      expect(stale.collector).toMatchObject({ state: 'STALE', collector_stale: true });
+      expect(String((stale.collector as Json).message)).toContain('Mất tín hiệu bộ thu thập > 3 phút');
+      expect(dataOf1(await aget(systemLogin(), '/overview')).vps).toMatchObject({ collector_stale: true });
+      const who = await adminWith();
+      expect(code(await aget(who.login, '/vps'))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+      expect((await apost(systemLogin(), '/access', { user_id: who.userId, level: 'VIEW', expected_version: 0 })).status).toBe(200);
+      expect((await aget(who.login, '/vps')).status).toBe(200);
     });
 
     it('a threshold SYSTEM changes takes effect, and a value outside its bounds or order is refused', async () => {
@@ -469,6 +514,9 @@ describe('M13 — operations, alerts and updates', () => {
       await collector.collectOnce();
       expect(await incidentOf('external_probe')).toHaveLength(0);
       const probeKey = await ingest.createKey('Giam sat ngoai', 'PROBE');
+      const probeStatus = async (): Promise<Json> => dataOf1(await aget(systemLogin(), '/overview')).external_probe as Json;
+      expect(await probeStatus()).toMatchObject({ status: 'WAITING_FIRST_REPORT', active_key_count: 1, last_report_at: null });
+      expect(dataOf1(await aget(systemLogin(), '/config')).external_probe).toMatchObject({ status: 'WAITING_FIRST_REPORT' });
       const backupKey = await ingest.createKey('Sao luu', 'BACKUP');
       const send = (secret: string, body: unknown) => api(admin.running.baseUrl, 'POST', '/ops/ingest/probe', { bearer: secret, body });
       expect((await send(backupKey.secret, { reported_at: new Date().toISOString() })).status).toBe(401);
@@ -479,6 +527,9 @@ describe('M13 — operations, alerts and updates', () => {
       const body = { reported_at: new Date().toISOString(), reports: [{ episode_id: 'ep-1-finished', first_failed_at: first, recovered_at: rec, failures: 5, code: 'TIMEOUT', notified: true }, { episode_id: 'ep-2-open', first_failed_at: first, failures: 3, code: 'HTTP_503', notified: false }] };
       expect((await send(probeKey.secret, body)).status).toBe(200);
       expect((await send(probeKey.secret, body)).status).toBe(200);
+      expect(await probeStatus()).toMatchObject({ status: 'ACTIVE', activated: true });
+      expect((await probeStatus()).last_report_at).not.toBeNull();
+      expect((await probeStatus()).last_outage_at).not.toBeNull();
       const inc = await incidentOf('public_api');
       expect(inc).toHaveLength(2);
       const done = inc.find((i) => i.status === 'RECOVERED')!;
@@ -490,12 +541,14 @@ describe('M13 — operations, alerts and updates', () => {
       expect((await send(probeKey.secret, { reported_at: new Date().toISOString(), reports: [{ episode_id: 'ep-2-open', first_failed_at: first, recovered_at: new Date().toISOString(), failures: 3, code: 'HTTP_503', notified: false }] })).status).toBe(200);
       expect((await incidentOf('public_api')).map((i) => i.status).sort()).toEqual(['RECOVERED', 'RECOVERED']);
       await sql(`UPDATE app.ops_checks SET value = jsonb_set(value, '{reported_at}', to_jsonb((now() - interval '30 minutes')::text)) WHERE check_key = 'external_probe'`);
+      expect(await probeStatus()).toMatchObject({ status: 'STALE' });
       await collector.collectOnce();
       expect((await incidentOf('external_probe'))[0]).toMatchObject({ severity: 'WARNING', status: 'NEW' });
       expect((await send(probeKey.secret, { reported_at: new Date().toISOString() })).status).toBe(200);
       expect((await incidentOf('external_probe'))[0]).toMatchObject({ status: 'RECOVERED' });
       expect(await ingest.revokeKey(probeKey.keyId)).toBe(true);
       expect((await send(probeKey.secret, { reported_at: new Date().toISOString() })).status).toBe(401);
+      expect(await probeStatus()).toMatchObject({ status: 'NOT_CONFIGURED', active_key_count: 0 });
     });
 
     it('backup and restore test are two facts; a failed backup warns; a report is evaluated at once', async () => {
@@ -578,13 +631,18 @@ describe('M13 — operations, alerts and updates', () => {
       const started = await send({ action: 'start', component: 'BACKEND', to_version: '1.2.0', from_version: '1.1.0', has_db_migration: true });
       expect(started.status).toBe(200);
       const id = String(dataOf(started).deploy_id);
+      // A CI retry of the same start returns the open record; a different target is a new record; a 12-character commit id is a valid version.
+      expect(String(dataOf(await send({ action: 'start', component: 'BACKEND', to_version: '1.2.0', from_version: '1.1.0', has_db_migration: true })).deploy_id)).toBe(id);
+      const other = await send({ action: 'start', component: 'BACKEND', to_version: 'abcdef012345', has_db_migration: false });
+      expect(other.status).toBe(200);
+      expect(String(dataOf(other).deploy_id)).not.toBe(id);
       expect((await send({ action: 'finish', deploy_id: id, status: 'FAILED', health_result: 'FAILED', health_detail: 'ready 503' })).status).toBe(200);
       expect((await send({ action: 'finish', deploy_id: id, status: 'SUCCEEDED' })).status).toBe(409);
       await dispatcher.runOnce();
       expect(discord.calls).toHaveLength(1);
       expect(JSON.stringify(discord.calls[0]!.body)).toContain('không tự khôi phục cơ sở dữ liệu');
       const view = dataOf1(await aget(systemLogin(), '/releases'));
-      expect((view.deploys as Json[])[0]).toMatchObject({ status: 'FAILED', health_result: 'FAILED', has_db_migration: true });
+      expect((view.deploys as Json[]).find((d) => d.deploy_id === id)).toMatchObject({ status: 'FAILED', health_result: 'FAILED', has_db_migration: true });
       expect(view.deploy_control).toMatchObject({ available: false });
       expect((view.deploy_control as Json).missing.length).toBeGreaterThan(0);
     });

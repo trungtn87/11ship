@@ -16,6 +16,16 @@ import 'package:ship/ship_online.dart';
 
 const AppConfig config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
+/// Stands in for the running M13 client: only what the static report gate calls.
+class _CaptureOps extends Fake implements OpsClient {
+  final List<String> reports = <String>[];
+
+  @override
+  Future<void> record({required String kind, required String code, String? message, String? deliveryCode}) async {
+    reports.add('$kind:$code');
+  }
+}
+
 /// The phone side: the real service collects AND sends, so this fake plays the service. When it runs and has a fix it "sends" through the fake server
 /// (the same route the real service calls) and reports what the server answered, the way the plugin's snapshot does. The Dart app never sends.
 class _Feed extends LocationFeed {
@@ -395,6 +405,22 @@ void main() {
       expect(t.online.receiving, isTrue);
       expect(t.online.paused, isFalse);
       expect(t.accepting.length, postsBefore, reason: 'resuming asks nothing of the accepting command');
+    });
+
+    test('GPS_STALE (#264): a shared position that the server stops holding is reported once, without the position', () async {
+      final _CaptureOps ops = _CaptureOps();
+      OpsClient.attachForTest(ops);
+      addTearDown(() => OpsClient.attachForTest(null));
+      final t = await _build();
+      await t.driver.setAccepting(true);
+      t.advance(const Duration(seconds: 101));
+      t.feed.controller.add(t.feed.snapshot());
+      await settle();
+      expect(ops.reports, <String>['GPS_STALE:GPS_STALE_NO_SERVER_POSITION']);
+      t.advance(const Duration(seconds: 5));
+      t.feed.controller.add(t.feed.snapshot());
+      await settle();
+      expect(ops.reports, hasLength(1), reason: 'one report per stale episode');
     });
 
     test('a Shipper who switched off is never put back online by a position coming back', () async {
