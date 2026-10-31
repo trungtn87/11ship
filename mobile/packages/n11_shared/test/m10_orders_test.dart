@@ -990,31 +990,18 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('a REQUIRED app update (#193): a waiting order cannot be confirmed but can be refused; an order already accepted is handled as before', (WidgetTester tester) async {
+    testWidgets('an app update notice never blocks confirming a waiting order (#280)', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final OrderRuntime runtime = runtimeOf(store);
       final String waiting = store.seed();
-      runtime.newWorkBlocked = () => true;
-      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: waiting));
-      expect(key('order-confirm'), findsNothing, reason: 'starting new work is blocked');
-      expect(key('order-confirm-blocked'), findsOneWidget);
-      expect(containing('Cần cập nhật ứng dụng trước khi nhận đơn mới'), findsOneWidget);
-      expect(key('order-reject'), findsOneWidget, reason: 'the shop can still turn the order down');
-      await unmount(tester);
-      // Once the app is updated (or when no update is required) the same order confirms normally, and then its next steps are never blocked.
-      runtime.newWorkBlocked = () => false;
       await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: waiting));
       expect(key('order-confirm'), findsOneWidget);
+      expect(containing('Cần cập nhật ứng dụng'), findsNothing);
       await tap(tester, key('order-confirm'));
       expect(containing('Quán đang chuẩn bị'), findsWidgets);
-      runtime.newWorkBlocked = () => true;
-      await unmount(tester);
-      await mount(tester, ShopOrderDetailScreen(runtime: runtime, orderId: waiting));
-      expect(key('order-confirm-blocked'), findsNothing, reason: 'an accepted order is not "new work"');
-      expect(containing('Quán đang chuẩn bị'), findsWidgets);
-      expect(find.byType(N11Button), findsWidgets, reason: 'its own actions (call shipper, cancel...) stay');
       await unmount(tester);
     });
+
 
     testWidgets('refusing needs a reason and the customer reads it', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();

@@ -27,9 +27,25 @@ class N11UpdateChannel(private val activity: Activity) : MethodChannel.MethodCal
         when (call.method) {
             "updateDirectory" -> result.success(updateDir().absolutePath)
             "dataDirectory" -> result.success(File(activity.filesDir, "n11-ops").also { it.mkdirs() }.absolutePath)
+            "openStore" -> openStore(result)
             "install" -> install(call.argument<String>("path") ?: "", result)
             else -> result.notImplemented()
         }
+    }
+
+    /** M13 (#280): opens the Google Play page of THIS application id only (no address comes from Dart). false = no Play app/browser could open it. */
+    private fun openStore(result: MethodChannel.Result) {
+        val id = activity.packageName
+        for (uri in listOf("market://details?id=$id", "https://play.google.com/store/apps/details?id=$id")) {
+            try {
+                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                result.success(true)
+                return
+            } catch (e: Exception) {
+                // try the next address
+            }
+        }
+        result.success(false)
     }
 
     private fun install(path: String, result: MethodChannel.Result) {

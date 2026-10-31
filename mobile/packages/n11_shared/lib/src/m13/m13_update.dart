@@ -1,83 +1,29 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../account/api_client.dart';
 
-// M13: the app asks the server whether a newer build exists, downloads it, checks its size and SHA-256 against what the server announced and only then
-// hands it to the Android installer, where the person confirms. The application id and the signing key never change: Android itself refuses an update
-// signed by another key. No Firebase, no silent install, nothing is installed by this code.
+// M13 (Owner decision 31/10/2026, issue #280): the app only COMPARES its build number with the newest one the server announces and tells the person
+// when a newer build exists. It downloads nothing, installs nothing, asks for no install permission and never decides that the person is "in the middle
+// of an order": the notice never blocks an order or a delivery. With a listing on Google Play the person is sent to that listing, which does the
+// download and the update. Until the listing is announced (PLAY_LISTING_READY) the notice has no button that leads anywhere.
 
-/// The largest file this app is willing to store (the real build is far smaller).
-const int maxUpdateBytes = 150 * 1024 * 1024;
+/// True only in a build made after both apps are published on Google Play under their own application id and signing key
+/// (`--dart-define=PLAY_LISTING_READY=true`). Never a link that does not exist yet.
+const bool kPlayListingReady = bool.fromEnvironment('PLAY_LISTING_READY');
 
-/// A closed list of reasons; the screens show plain Vietnamese for each, never platform text.
-class UpdateFailure implements Exception {
-  const UpdateFailure(this.code);
-
-  /// OFFLINE, SERVER, BAD_ANSWER, SIZE_MISMATCH, SHA256_MISMATCH, INSTALL_PERMISSION, INSTALLER, NO_DIRECTORY
-  final String code;
-
-  @override
-  String toString() => 'UpdateFailure($code)';
-}
-
-String updateFailureText(String code) {
-  switch (code) {
-    case 'OFFLINE':
-      return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.';
-    case 'SERVER':
-      return 'Máy chủ chưa trả bản cập nhật. Thử lại sau ít phút.';
-    case 'BAD_ANSWER':
-      return 'Máy chủ trả thông tin cập nhật không hợp lệ.';
-    case 'SIZE_MISMATCH':
-    case 'SHA256_MISMATCH':
-      return 'Tệp tải về không khớp mã kiểm tra nên đã bị bỏ. Không cài bản này.';
-    case 'INSTALL_PERMISSION':
-      return 'Hãy cho phép ứng dụng cài đặt trong màn hình vừa mở, rồi bấm Cập nhật lại.';
-    case 'INSTALLER':
-      return 'Không mở được trình cài đặt Android.';
-    default:
-      return 'Chưa cập nhật được ($code).';
-  }
-}
-
+/// A newer build than the installed one.
 @immutable
-class AppUpdateOffer {
-  const AppUpdateOffer({
-    required this.releaseId,
-    required this.versionName,
-    required this.versionCode,
-    required this.required,
-    required this.sizeBytes,
-    required this.sha256,
-    required this.downloadPath,
-    this.reason,
-    this.notes,
-    this.compatibilityNote,
-  });
+class AppUpdateNotice {
+  const AppUpdateNotice({required this.versionName, required this.versionCode});
 
-  final String releaseId;
   final String versionName;
   final int versionCode;
 
-  /// True only when the installed build is older than the minimum the server declared; otherwise the update is advice.
-  final bool required;
-  final int sizeBytes;
-  final String sha256;
-  final String downloadPath;
-  final String? reason;
-  final String? notes;
-  final String? compatibilityNote;
-
-  String get fileName => 'update-$versionCode.apk';
-
-  /// null = no newer build. Throws [FormatException] on an answer that is not what the server documents (then nothing is downloaded).
-  static AppUpdateOffer? fromCheck(Object? data) {
+  /// null = no newer build. Throws [FormatException] on an answer that is not what the server documents.
+  static AppUpdateNotice? fromCheck(Object? data) {
     if (data is! Map<String, Object?>) {
       throw const FormatException('update');
     }
@@ -88,109 +34,21 @@ class AppUpdateOffer {
     if (release is! Map<String, Object?>) {
       throw const FormatException('release');
     }
-    String text(String key) {
-      final Object? value = release[key];
-      if (value is String && value.isNotEmpty) {
-        return value;
-      }
-      throw FormatException(key);
+    final Object? name = release['version_name'];
+    final Object? code = release['version_code'];
+    if (name is! String || name.isEmpty || name.length > 32 || code is! int || code <= 0) {
+      throw const FormatException('release');
     }
-
-    String? optional(String key, int max) {
-      final Object? value = release[key];
-      return value is String && value.isNotEmpty ? (value.length > max ? value.substring(0, max) : value) : null;
-    }
-
-    int number(String key) {
-      final Object? value = release[key];
-      if (value is int && value > 0) {
-        return value;
-      }
-      throw FormatException(key);
-    }
-
-    final String sha = text('sha256').toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha)) {
-      throw const FormatException('sha256');
-    }
-    final String path = text('download_path');
-    if (!RegExp(r'^/v1/app-updates/download/[0-9a-fA-F-]{36}$').hasMatch(path)) {
-      throw const FormatException('download_path');
-    }
-    final int size = number('size_bytes');
-    if (size > maxUpdateBytes) {
-      throw const FormatException('size_bytes');
-    }
-    final Object? reason = data['reason'];
-    return AppUpdateOffer(
-      releaseId: text('release_id'),
-      versionName: text('version_name'),
-      versionCode: number('version_code'),
-      required: data['required'] == true,
-      sizeBytes: size,
-      sha256: sha,
-      downloadPath: path,
-      reason: reason is String && reason.isNotEmpty ? (reason.length > 300 ? reason.substring(0, 300) : reason) : null,
-      notes: optional('release_notes', 1000),
-      compatibilityNote: optional('compatibility_note', 300),
-    );
+    return AppUpdateNotice(versionName: name, versionCode: code);
   }
 }
 
-/// The file the server serves. [close] ends the connection early.
-class UpdateDownload {
-  const UpdateDownload({required this.bytes, required this.close});
-
-  final Stream<List<int>> bytes;
-  final void Function() close;
-}
-
-abstract class UpdateFileSource {
-  /// Opens the file at [path]. Throws [UpdateFailure] (OFFLINE / SERVER) when the server does not answer 200.
-  Future<UpdateDownload> open(String path);
-}
-
-/// Streams the file over HTTPS with normal TLS verification (no custom certificate callback). Redirects are not followed.
-class HttpUpdateFileSource implements UpdateFileSource {
-  HttpUpdateFileSource({required this.base, this.timeout = const Duration(seconds: 20)});
-
-  final Uri base;
-  final Duration timeout;
-
-  @override
-  Future<UpdateDownload> open(String path) async {
-    final HttpClient client = HttpClient()..connectionTimeout = timeout;
-    try {
-      final Uri uri = base.resolve(path);
-      if (uri.scheme != 'https') {
-        throw const UpdateFailure('OFFLINE');
-      }
-      final HttpClientRequest request = await client.getUrl(uri).timeout(timeout);
-      request.followRedirects = false;
-      final HttpClientResponse response = await request.close().timeout(timeout);
-      if (response.statusCode != 200) {
-        await response.drain<void>();
-        client.close(force: true);
-        throw UpdateFailure(response.statusCode >= 500 || response.statusCode == 404 ? 'SERVER' : 'BAD_ANSWER');
-      }
-      return UpdateDownload(bytes: response.timeout(timeout), close: () => client.close(force: true));
-    } on UpdateFailure {
-      client.close(force: true);
-      rethrow;
-    } on Object {
-      client.close(force: true);
-      throw const UpdateFailure('OFFLINE');
-    }
-  }
-}
-
-/// What only the phone can do: where to put the file and the Android installer (Kotlin: N11UpdateChannel).
+/// What only the phone can do: where the app may keep its own data and opening this app's own Google Play page (Kotlin: N11UpdateChannel).
 abstract class UpdatePlatform {
-  Future<String> updateDirectory();
   Future<String> dataDirectory();
 
-  /// 'OPENED' or 'INSTALL_PERMISSION' (the settings page for installing from this app was opened). Throws [UpdateFailure] otherwise.
-  Future<String> install(String path);
+  /// Opens the Play listing of THIS application id (never another address). False when it could not be opened.
+  Future<bool> openStore();
 }
 
 class MethodChannelUpdatePlatform implements UpdatePlatform {
@@ -199,199 +57,103 @@ class MethodChannelUpdatePlatform implements UpdatePlatform {
   static const MethodChannel _channel = MethodChannel('vn.eleven.n11/update');
 
   @override
-  Future<String> updateDirectory() async {
-    try {
-      final String? path = await _channel.invokeMethod<String>('updateDirectory');
-      if (path == null || path.isEmpty) {
-        throw const UpdateFailure('NO_DIRECTORY');
-      }
-      return path;
-    } on PlatformException {
-      throw const UpdateFailure('NO_DIRECTORY');
-    } on MissingPluginException {
-      throw const UpdateFailure('NO_DIRECTORY');
-    }
-  }
-
-  @override
   Future<String> dataDirectory() async {
     try {
       final String? path = await _channel.invokeMethod<String>('dataDirectory');
       if (path == null || path.isEmpty) {
-        throw const UpdateFailure('NO_DIRECTORY');
+        throw StateError('NO_DIRECTORY');
       }
       return path;
     } on PlatformException {
-      throw const UpdateFailure('NO_DIRECTORY');
+      throw StateError('NO_DIRECTORY');
     } on MissingPluginException {
-      throw const UpdateFailure('NO_DIRECTORY');
+      throw StateError('NO_DIRECTORY');
     }
   }
 
   @override
-  Future<String> install(String path) async {
+  Future<bool> openStore() async {
     try {
-      return await _channel.invokeMethod<String>('install', <String, Object?>{'path': path}) ?? 'INSTALLER';
-    } on PlatformException catch (error) {
-      throw UpdateFailure(error.code == 'INSTALL_PERMISSION' ? 'INSTALL_PERMISSION' : 'INSTALLER');
+      return await _channel.invokeMethod<bool>('openStore') ?? false;
+    } on PlatformException {
+      return false;
     } on MissingPluginException {
-      throw const UpdateFailure('INSTALLER');
+      return false;
     }
   }
 }
 
-enum AppUpdatePhase { idle, checking, upToDate, available, downloading, installerOpened, failed }
+enum AppUpdatePhase { idle, checking, upToDate, available, failed }
 
-/// What the server said about this build's compatibility (the `status` of /v1/app-updates/check). null = an older server that does not say.
-enum CompatStatus { compatible, updateOptional, updateRequired, updateRequiredUnavailable, unknownVersion }
-
-CompatStatus? parseCompatStatus(Object? raw) {
-  switch (raw) {
-    case 'COMPATIBLE':
-      return CompatStatus.compatible;
-    case 'UPDATE_OPTIONAL':
-      return CompatStatus.updateOptional;
-    case 'UPDATE_REQUIRED':
-      return CompatStatus.updateRequired;
-    case 'UPDATE_REQUIRED_UNAVAILABLE':
-      return CompatStatus.updateRequiredUnavailable;
-    case 'UNKNOWN_VERSION':
-      return CompatStatus.unknownVersion;
-  }
-  return null;
-}
-
-class _DigestSink implements Sink<crypto.Digest> {
-  crypto.Digest? value;
-
-  @override
-  void add(crypto.Digest data) {
-    value = data;
-  }
-
-  @override
-  void close() {}
-}
-
-/// One controller per app. [check] runs at start, on return to the foreground and then at most every [minInterval]; [download] never starts by itself.
+/// One controller per app. [check] runs at start, on return to the foreground and then at most every [minInterval]. It needs no sign-in.
 class AppUpdateController extends ChangeNotifier {
   AppUpdateController({
     required this.component,
     required this.installedVersionCode,
     required this.installedVersionName,
     required this.transport,
-    required this.files,
     required this.platform,
-    this.isBusy = _never,
-    this.busyProbe,
+    this.playListingReady = kPlayListingReady,
     this.minInterval = const Duration(minutes: 30),
     this.failureRetryInterval = const Duration(minutes: 2),
-    this.retryDelay = const Duration(seconds: 3),
-    this.maxAttempts = 3,
     this.enabled = true,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
-
-  static bool _never() => false;
 
   /// FOOD or SHIP.
   final String component;
   final int installedVersionCode;
   final String installedVersionName;
   final ApiTransport transport;
-  final UpdateFileSource files;
   final UpdatePlatform platform;
 
-  /// True while the person is in the middle of work that an update screen must not interrupt (a shipper with an active order).
-  final bool Function() isBusy;
-
-  /// Asked (never more than once per [refreshBusy]) whether the person is mid-work, for apps that only learn it from the server (a shipper's active order).
-  final Future<bool> Function()? busyProbe;
-  bool _probedBusy = false;
+  /// Whether this build may send the person to Google Play (see [kPlayListingReady]).
+  final bool playListingReady;
   final Duration minInterval;
 
   /// After a check that could not be answered (offline, server error) the next one may come this soon, not after the full [minInterval]:
-  /// not hearing from the server says nothing about this build and must not hide a pending update for half an hour.
+  /// not hearing from the server says nothing about this build.
   final Duration failureRetryInterval;
-  final Duration retryDelay;
-  final int maxAttempts;
 
-  /// False for a build without a build number: it is never offered an update.
+  /// False for a build without a build number: it is never told to update.
   final bool enabled;
   final DateTime Function() _now;
 
   AppUpdatePhase _phase = AppUpdatePhase.idle;
-  AppUpdateOffer? _offer;
-  String? _failure;
-  double _progress = 0;
+  AppUpdateNotice? _notice;
   DateTime? _lastCheck;
-  bool _dismissed = false;
   bool _lastCheckFailed = false;
-  CompatStatus? _compat;
-  String? _unavailableReason;
-  int? _minSupported;
+  int? _dismissedCode;
 
   AppUpdatePhase get phase => _phase;
-  AppUpdateOffer? get offer => _offer;
-  String? get failureCode => _failure;
-  double get progress => _progress;
+  AppUpdateNotice? get notice => _notice;
 
-  /// The server demands a build this app cannot offer yet (the APK is not published or not downloadable): an operations fault, never "up to date".
-  bool get requiredUnavailable => _compat == CompatStatus.updateRequiredUnavailable;
-  CompatStatus? get compat => _compat;
-  String? get unavailableReason => _unavailableReason;
+  /// True when the last check could not be answered. It says nothing about the build: never shown as "up to date".
+  bool get lastCheckFailed => _lastCheckFailed;
 
-  /// The newest build this server says it supports as the oldest (FOOD and SHIP have their own number), when it said so.
-  int? get minSupportedVersionCode => _minSupported;
+  /// The person can be sent to Google Play.
+  bool get canOpenStore => playListingReady;
 
-  /// A required update exists (downloadable or not): the person must update before NEW work starts. It never interrupts work in progress.
-  bool get mustUpdate => (_offer != null && _offer!.required) || requiredUnavailable;
+  /// The popup is shown for a newer build the person has not postponed ("Để sau" holds until the app is started again or an even newer build appears).
+  bool get showNotice => _notice != null && _dismissedCode != _notice!.versionCode;
 
-  /// An update that must be installed before the app is used further. Never while the person is busy (an active order): then it is only a banner.
-  bool get blocking => mustUpdate && !_working && _phase != AppUpdatePhase.installerOpened;
-
-  /// A required update that waits because the person is in the middle of an order.
-  bool get deferred => mustUpdate && _working;
-
-  /// Whether a screen must refuse to START new work (go online, accept an order). True from the moment a required update is known, also while it is
-  /// deferred behind work in progress: the order in hand is finished, nothing new begins.
-  bool get blocksNewWork => mustUpdate && _phase != AppUpdatePhase.installerOpened;
-
-  bool get _working => isBusy() || _probedBusy;
-
-  /// Re-reads "is the person mid-work" from [busyProbe]. A probe that fails counts as busy: an update screen never replaces an order on a guess.
-  Future<void> refreshBusy() async {
-    final Future<bool> Function()? probe = busyProbe;
-    if (probe == null || !mustUpdate) {
-      return;
-    }
-    bool busy;
-    try {
-      busy = await probe();
-    } on Object {
-      busy = true;
-    }
-    if (busy != _probedBusy) {
-      _probedBusy = busy;
+  void dismiss() {
+    if (_notice != null) {
+      _dismissedCode = _notice!.versionCode;
       notifyListeners();
     }
   }
 
-  /// The banner is shown for an available update the person has not postponed (a required one cannot be postponed).
-  bool get showBanner => _offer != null && (!_dismissed || _offer!.required) && (_phase == AppUpdatePhase.available || _phase == AppUpdatePhase.failed || _phase == AppUpdatePhase.downloading);
-
-  void dismiss() {
-    if (_offer != null && !_offer!.required) {
-      _dismissed = true;
-      notifyListeners();
+  /// Opens the Play listing. Does nothing while the listing is not announced.
+  Future<bool> openStore() async {
+    if (!playListingReady) {
+      return false;
     }
+    return platform.openStore();
   }
 
   Future<void> check({bool force = false}) async {
-    if (!enabled) {
-      return;
-    }
-    if (_phase == AppUpdatePhase.checking || _phase == AppUpdatePhase.downloading) {
+    if (!enabled || _phase == AppUpdatePhase.checking) {
       return;
     }
     final DateTime now = _now();
@@ -399,174 +161,28 @@ class AppUpdateController extends ChangeNotifier {
       return;
     }
     _lastCheck = now;
+    final AppUpdatePhase before = _phase;
     _phase = AppUpdatePhase.checking;
     notifyListeners();
     try {
       final ApiResponse response = await transport.send('GET', '/v1/app-updates/check?component=$component&version_code=$installedVersionCode');
       if (response.status != 200) {
-        throw UpdateFailure(response.status >= 500 ? 'SERVER' : 'BAD_ANSWER');
+        throw const FormatException('status');
       }
-      final AppUpdateOffer? offer = AppUpdateOffer.fromCheck(response.data);
-      final Object? data = response.data;
-      _compat = data is Map<String, Object?> ? parseCompatStatus(data['status']) : null;
-      final Object? minSupported = data is Map<String, Object?> ? data['min_supported_version_code'] : null;
-      _minSupported = minSupported is int && minSupported > 0 ? minSupported : null;
-      if (requiredUnavailable) {
-        // The backend does not work with this build and no APK can be downloaded: say so plainly, offer nothing to download, never claim "up to date".
-        final Object? reason = (data as Map<String, Object?>)['reason'];
-        _unavailableReason = reason is String && reason.isNotEmpty ? (reason.length > 300 ? reason.substring(0, 300) : reason) : null;
-        _offer = null;
+      final AppUpdateNotice? found = AppUpdateNotice.fromCheck(response.data);
+      if (found != null && found.versionCode > installedVersionCode) {
+        _notice = found;
         _phase = AppUpdatePhase.available;
-        if (busyProbe != null) {
-          _probedBusy = true; // until the probe answers, an update screen must not cover work in progress
-        }
-      } else if (offer != null && offer.versionCode <= installedVersionCode) {
-        _unavailableReason = null;
-        _offer = null;
-        _phase = AppUpdatePhase.upToDate;
-      } else if (offer == null) {
-        _unavailableReason = null;
-        _offer = null;
-        _phase = AppUpdatePhase.upToDate;
       } else {
-        _unavailableReason = null;
-        if (_offer?.releaseId != offer.releaseId) {
-          _dismissed = false;
-        }
-        _offer = offer;
-        _phase = AppUpdatePhase.available;
-        if (offer.required && busyProbe != null) {
-          _probedBusy = true; // until the probe answers, an update screen must not cover work in progress
-        }
+        _notice = null;
+        _phase = AppUpdatePhase.upToDate;
       }
-      _failure = null;
       _lastCheckFailed = false;
-    } on FormatException {
-      _lastCheckFailed = true;
-      _failure = 'BAD_ANSWER';
-      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
-    } on UpdateFailure catch (error) {
-      _lastCheckFailed = true;
-      _failure = error.code;
-      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
     } on Object {
+      // A check that could not be answered changes nothing the person sees: what is known stays, and the next check comes soon.
       _lastCheckFailed = true;
-      // A failed check is not an error the person must deal with: the last known offer (if any) stays, the next check tries again.
-      _failure = 'OFFLINE';
-      _phase = _offer == null && !requiredUnavailable ? AppUpdatePhase.idle : AppUpdatePhase.available;
+      _phase = _notice != null ? AppUpdatePhase.available : (before == AppUpdatePhase.upToDate ? AppUpdatePhase.upToDate : AppUpdatePhase.failed);
     }
     notifyListeners();
-    if (mustUpdate) {
-      await refreshBusy();
-    }
-  }
-
-  /// Downloads, verifies and opens the installer. A file that does not match what the server announced is deleted and never installed.
-  Future<void> download() async {
-    final AppUpdateOffer? offer = _offer;
-    if (offer == null || _phase == AppUpdatePhase.downloading) {
-      return;
-    }
-    _phase = AppUpdatePhase.downloading;
-    _failure = null;
-    _progress = 0;
-    notifyListeners();
-    try {
-      final String directory = await platform.updateDirectory();
-      await _clean(directory);
-      final File file = File('$directory/${offer.fileName}');
-      await _fetchVerified(offer, file);
-      final String outcome = await platform.install(file.path);
-      if (outcome == 'INSTALL_PERMISSION') {
-        throw const UpdateFailure('INSTALL_PERMISSION');
-      }
-      _phase = AppUpdatePhase.installerOpened;
-    } on UpdateFailure catch (error) {
-      _failure = error.code;
-      _phase = AppUpdatePhase.failed;
-    } on Object {
-      _failure = 'OFFLINE';
-      _phase = AppUpdatePhase.failed;
-    }
-    notifyListeners();
-  }
-
-  Future<void> _clean(String directory) async {
-    try {
-      final Directory dir = Directory(directory);
-      if (await dir.exists()) {
-        await for (final FileSystemEntity entity in dir.list()) {
-          if (entity is File) {
-            await entity.delete();
-          }
-        }
-      }
-    } on Object {
-      // A leftover file is replaced below; nothing else depends on this.
-    }
-  }
-
-  Future<void> _fetchVerified(AppUpdateOffer offer, File file) async {
-    UpdateFailure? last;
-    for (int attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        await _fetchOnce(offer, file);
-        return;
-      } on UpdateFailure catch (error) {
-        last = error;
-        await _delete(file);
-        // A file that does not match is never retried into acceptance: the same bytes would be wrong again.
-        if (error.code == 'SIZE_MISMATCH' || error.code == 'SHA256_MISMATCH' || error.code == 'BAD_ANSWER' || attempt == maxAttempts) {
-          rethrow;
-        }
-        await Future<void>.delayed(retryDelay * attempt);
-      }
-    }
-    throw last ?? const UpdateFailure('OFFLINE');
-  }
-
-  Future<void> _delete(File file) async {
-    try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } on Object {
-      // Nothing to do.
-    }
-  }
-
-  Future<void> _fetchOnce(AppUpdateOffer offer, File file) async {
-    final UpdateDownload download = await files.open(offer.downloadPath);
-    final _DigestSink digestSink = _DigestSink();
-    final ByteConversionSink hash = crypto.sha256.startChunkedConversion(digestSink);
-    final IOSink out = file.openWrite();
-    int total = 0;
-    try {
-      await for (final List<int> chunk in download.bytes) {
-        total += chunk.length;
-        if (total > offer.sizeBytes) {
-          throw const UpdateFailure('SIZE_MISMATCH');
-        }
-        hash.add(chunk);
-        out.add(chunk);
-        _progress = total / offer.sizeBytes;
-        notifyListeners();
-      }
-    } on UpdateFailure {
-      rethrow;
-    } on Object {
-      throw const UpdateFailure('OFFLINE');
-    } finally {
-      download.close();
-      await out.close();
-    }
-    hash.close();
-    if (total != offer.sizeBytes) {
-      throw UpdateFailure(total < offer.sizeBytes ? 'OFFLINE' : 'SIZE_MISMATCH');
-    }
-    final crypto.Digest? digest = digestSink.value;
-    if (digest == null || digest.toString() != offer.sha256) {
-      throw const UpdateFailure('SHA256_MISMATCH');
-    }
   }
 }

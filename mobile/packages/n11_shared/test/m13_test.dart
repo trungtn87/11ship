@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
@@ -24,78 +23,50 @@ class _FakeTransport implements ApiTransport {
 
 ApiResponse _json(Object data, {int status = 200}) => ApiResponse(status: status, headers: const <String, String>{}, body: jsonEncode(<String, Object?>{'data': data}));
 
-class _FakeFiles implements UpdateFileSource {
-  _FakeFiles(this.chunks);
-
-  List<List<int>> chunks;
-  int opened = 0;
-  Object? failFirst;
-
-  @override
-  Future<UpdateDownload> open(String path) async {
-    opened += 1;
-    if (failFirst != null && opened == 1) {
-      throw failFirst!;
-    }
-    return UpdateDownload(bytes: Stream<List<int>>.fromIterable(chunks), close: () {});
-  }
-}
-
 class _FakePlatform implements UpdatePlatform {
   _FakePlatform(this.dir);
 
   final Directory dir;
-  String installOutcome = 'OPENED';
-  final List<String> installed = <String>[];
-
-  @override
-  Future<String> updateDirectory() async => dir.path;
+  int storeOpened = 0;
+  bool storeResult = true;
 
   @override
   Future<String> dataDirectory() async => dir.path;
 
   @override
-  Future<String> install(String path) async {
-    installed.add(path);
-    return installOutcome;
+  Future<bool> openStore() async {
+    storeOpened += 1;
+    return storeResult;
   }
 }
 
-List<int> _apk() => List<int>.generate(5000, (int i) => i % 251);
+/// What the server answers for a build older than the newest published one. The download fields are still sent by today's server; the app ignores them.
+Map<String, Object?> _check({bool required = false, int versionCode = 9, String versionName = '1.9'}) => <String, Object?>{
+      'status': required ? 'UPDATE_REQUIRED' : 'UPDATE_OPTIONAL',
+      'update_available': true,
+      'required': required,
+      'release': <String, Object?>{
+        'release_id': '11111111-2222-3333-4444-555555555555',
+        'version_name': versionName,
+        'version_code': versionCode,
+        'size_bytes': 5000,
+        'sha256': 'a' * 64,
+        'download_path': '/v1/app-updates/download/11111111-2222-3333-4444-555555555555',
+      },
+    };
 
-String _sha(List<int> bytes) => crypto.sha256.convert(bytes).toString();
+Map<String, Object?> _latest() => <String, Object?>{'status': 'COMPATIBLE', 'update_available': false, 'required': false, 'release': null};
 
-Map<String, Object?> _check({required bool required, List<int>? bytes, int versionCode = 9}) {
-  final List<int> data = bytes ?? _apk();
-  return <String, Object?>{
-    'update_available': true,
-    'required': required,
-    'priority': required ? 'REQUIRED' : 'RECOMMENDED',
-    'reason': required ? 'Lỗi bảo mật' : null,
-    'release': <String, Object?>{
-      'release_id': '11111111-2222-3333-4444-555555555555',
-      'version_name': '1.9',
-      'version_code': versionCode,
-      'release_notes': 'Sửa lỗi',
-      'size_bytes': data.length,
-      'sha256': _sha(data),
-      'download_path': '/v1/app-updates/download/11111111-2222-3333-4444-555555555555',
-    },
-  };
-}
-
-AppUpdateController _controller(_FakeTransport transport, _FakeFiles files, _FakePlatform platform, {bool Function()? busy, Future<bool> Function()? probe, int installed = 5}) =>
-    AppUpdateController(
+AppUpdateController _controller(_FakeTransport transport, _FakePlatform platform, {int installed = 5, bool playReady = false, DateTime Function()? now}) => AppUpdateController(
       component: 'SHIP',
       installedVersionCode: installed,
       installedVersionName: '1.0',
       transport: transport,
-      files: files,
       platform: platform,
-      isBusy: busy ?? () => false,
-      busyProbe: probe,
-      retryDelay: Duration.zero,
+      playListingReady: playReady,
+      now: now,
     );
+
 
 const AppConfig _config = AppConfig(apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
 
@@ -164,365 +135,186 @@ void main() {
     }
   });
 
-  group('update check and verified download', () {
-    test('asks for its own component and build, and offers a newer build', () async {
-      final _FakeTransport transport = _FakeTransport((String _) => _json(_check(required: false)));
-      final AppUpdateController c = _controller(transport, _FakeFiles(<List<int>>[_apk()]), _FakePlatform(dir));
+  group('update notice (#280): compare versions and tell, nothing more', () {
+    test('asks for its own component and build, and notices a newer one', () async {
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir));
       await c.check();
       expect(transport.paths.single, '/v1/app-updates/check?component=SHIP&version_code=5');
       expect(c.phase, AppUpdatePhase.available);
-      expect(c.offer!.versionName, '1.9');
-      expect(c.blocking, isFalse);
-      expect(c.showBanner, isTrue);
+      expect(c.notice!.versionName, '1.9');
+      expect(c.showNotice, isTrue);
     });
 
-    test('no newer build, a refused answer or a malformed one leave no offer and never throw', () async {
-      final _FakeTransport transport = _FakeTransport((String _) => _json(<String, Object?>{'update_available': false, 'release': null}));
-      final AppUpdateController c = _controller(transport, _FakeFiles(<List<int>>[]), _FakePlatform(dir));
+    test('a REQUIRED answer is still only a notice: nothing blocks, nothing is downloaded or installed', () async {
+      final _FakePlatform platform = _FakePlatform(dir);
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), platform);
+      await c.check();
+      expect(c.showNotice, isTrue);
+      expect(await c.openStore(), isFalse, reason: 'no Play listing announced: no button leads anywhere');
+      expect(platform.storeOpened, 0);
+    });
+
+    test('the same or an older build than the installed one, and a server that says nothing is newer, give no notice and are "up to date"', () async {
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_latest()));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir));
       await c.check(force: true);
       expect(c.phase, AppUpdatePhase.upToDate);
-      expect(c.offer, isNull);
-      transport.answer = (String _) => _json(<String, Object?>{'update_available': true, 'release': <String, Object?>{'sha256': 'zz'}});
+      expect(c.showNotice, isFalse);
+      transport.answer = (String _) => _json(_check(versionCode: 5));
       await c.check(force: true);
-      expect(c.offer, isNull);
-      expect(c.failureCode, 'BAD_ANSWER');
-      transport.answer = (String _) => throw const SocketException('down');
-      await c.check(force: true);
-      expect(c.failureCode, 'OFFLINE');
+      expect(c.notice, isNull);
+      expect(c.phase, AppUpdatePhase.upToDate);
+    });
+
+    test('an unanswered or malformed check is never "up to date" and never throws; what is known stays and the next check comes soon', () async {
+      DateTime clock = DateTime.utc(2026, 11, 1, 8);
+      final _FakeTransport transport = _FakeTransport((String _) => throw const SocketException('down'));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir), now: () => clock);
+      await c.check();
+      expect(c.lastCheckFailed, isTrue);
+      expect(c.phase, isNot(AppUpdatePhase.upToDate));
+      expect(c.showNotice, isFalse);
+      expect(updateCheckSummary(c), isNot(contains('mới nhất')));
+      clock = clock.add(const Duration(minutes: 3));
+      transport.answer = (String _) => _json(_check());
+      await c.check();
+      expect(c.showNotice, isTrue, reason: 'the failure retry interval is two minutes, not half an hour');
+      // A later failure keeps the notice.
+      transport.answer = (String _) => _json(<String, Object?>{'update_available': true, 'release': <String, Object?>{'version_name': 1}});
+      clock = clock.add(const Duration(minutes: 40));
+      await c.check();
+      expect(c.lastCheckFailed, isTrue);
+      expect(c.notice!.versionName, '1.9');
+      transport.answer = (String _) => ApiResponse(status: 503, headers: const <String, String>{}, body: '');
+      clock = clock.add(const Duration(minutes: 3));
+      await c.check();
+      expect(c.lastCheckFailed, isTrue);
+      expect(c.notice, isNotNull);
+    });
+
+    test('the check does not depend on a sign-in or on orders: it only ever uses the public check endpoint', () async {
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir));
+      await c.check();
+      expect(transport.paths, <String>['/v1/app-updates/check?component=SHIP&version_code=5']);
     });
 
     test('a build without a build number is never told to update', () async {
-      final _FakeTransport transport = _FakeTransport((String _) => _json(_check(required: true)));
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
       final AppUpdateController c = AppUpdateController(
-        component: 'FOOD', installedVersionCode: 0, installedVersionName: '0.0.0', transport: transport, files: _FakeFiles(<List<int>>[]), platform: _FakePlatform(dir), enabled: false,
+        component: 'FOOD', installedVersionCode: 0, installedVersionName: '0.0.0', transport: transport, platform: _FakePlatform(dir), enabled: false,
       );
       await c.check();
       expect(transport.paths, isEmpty);
-      expect(c.offer, isNull);
+      expect(c.notice, isNull);
     });
 
-    test('downloads, checks size and SHA-256 and only then opens the installer', () async {
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[_apk().sublist(0, 2000), _apk().sublist(2000)]), platform);
+    test('checks are spaced; "Để sau" holds for that build and a still newer build is announced again', () async {
+      DateTime clock = DateTime.utc(2026, 11, 1, 8);
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir), now: () => clock);
       await c.check();
-      await c.download();
-      expect(c.phase, AppUpdatePhase.installerOpened);
-      expect(platform.installed.single, '${dir.path}/update-9.apk');
-      expect(_sha(File(platform.installed.single).readAsBytesSync()), c.offer!.sha256);
-    });
-
-    test('a tampered file is deleted and the installer is never opened', () async {
-      final List<int> tampered = _apk()..[10] = 99;
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[tampered]), platform);
       await c.check();
-      await c.download();
-      expect(c.phase, AppUpdatePhase.failed);
-      expect(c.failureCode, 'SHA256_MISMATCH');
-      expect(platform.installed, isEmpty);
-      expect(File('${dir.path}/update-9.apk').existsSync(), isFalse);
-    });
-
-    test('a file of the wrong size is refused', () async {
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[_apk(), <int>[1]]), platform);
-      await c.check();
-      await c.download();
-      expect(c.failureCode, 'SIZE_MISMATCH');
-      expect(platform.installed, isEmpty);
-    });
-
-    test('a network failure is retried a limited number of times and then reported', () async {
-      final _FakeFiles files = _FakeFiles(<List<int>>[_apk()])..failFirst = const UpdateFailure('OFFLINE');
-      final _FakePlatform platform = _FakePlatform(dir);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), files, platform);
-      await c.check();
-      await c.download();
-      expect(files.opened, 2);
-      expect(c.phase, AppUpdatePhase.installerOpened);
-    });
-
-    test('when installing from this app is not allowed yet the file stays verified and the person is told what to do', () async {
-      final _FakePlatform platform = _FakePlatform(dir)..installOutcome = 'INSTALL_PERMISSION';
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[_apk()]), platform);
-      await c.check();
-      await c.download();
-      expect(c.phase, AppUpdatePhase.failed);
-      expect(c.failureCode, 'INSTALL_PERMISSION');
-      expect(updateFailureText('INSTALL_PERMISSION'), contains('cho phép'));
-    });
-
-    test('a REQUIRED update blocks, except while the shipper has work in progress', () async {
-      bool busy = false;
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => busy);
-      await c.check();
-      expect(c.blocking, isTrue);
-      busy = true;
-      await c.refreshBusy();
-      expect(c.blocking, isFalse);
-      expect(c.deferred, isTrue);
-      busy = false;
-      await c.refreshBusy();
-      expect(c.blocking, isTrue);
-    });
-
-    test('a probe that fails counts as busy: an update screen never replaces an order on a guess', () async {
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => throw StateError('x'));
-      await c.check();
-      expect(c.blocking, isFalse);
-      expect(c.deferred, isTrue);
-    });
-
-    test('a recommended update can be postponed; a required one cannot', () async {
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await c.check();
+      expect(transport.paths, hasLength(1), reason: 'inside the interval');
       c.dismiss();
-      expect(c.showBanner, isFalse);
-      final AppUpdateController r = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await r.check();
-      r.dismiss();
-      expect(r.blocking, isTrue);
-    });
-  });
-
-  group('APK–backend compatibility (#193)', () {
-    Map<String, Object?> unavailable() => <String, Object?>{
-          'status': 'UPDATE_REQUIRED_UNAVAILABLE',
-          'compatible': false,
-          'required': true,
-          'update_available': false,
-          'min_supported_version_code': 30,
-          'reason': 'Cần bản mới để nhận đơn đúng cách',
-          'release': null,
-        };
-
-    test('required but nothing downloadable is never "up to date": no offer, blocks new work, and the screen offers a re-check, not a download', () async {
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(unavailable())), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await c.check();
-      expect(c.offer, isNull);
-      expect(c.requiredUnavailable, isTrue);
-      expect(c.phase, isNot(AppUpdatePhase.upToDate));
-      expect(c.blocking, isTrue);
-      expect(c.blocksNewWork, isTrue);
-      expect(c.unavailableReason, 'Cần bản mới để nhận đơn đúng cách');
-      expect(c.minSupportedVersionCode, 30);
-      await c.download();
-      expect(c.phase, AppUpdatePhase.available);
-    });
-
-    test('with work in progress it is deferred (no screen) but new work is still refused; once the server says compatible it clears', () async {
-      bool busy = true;
-      Map<String, Object?> answer = unavailable();
-      final _FakeTransport transport = _FakeTransport((String _) => _json(answer));
-      final AppUpdateController c = _controller(transport, _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => busy);
-      await c.check();
-      expect(c.blocking, isFalse);
-      expect(c.deferred, isTrue);
-      expect(c.blocksNewWork, isTrue);
-      answer = <String, Object?>{'status': 'COMPATIBLE', 'update_available': false, 'required': false, 'release': null};
-      busy = false;
-      await c.check(force: true);
-      expect(c.requiredUnavailable, isFalse);
-      expect(c.blocksNewWork, isFalse);
-      expect(c.phase, AppUpdatePhase.upToDate);
-    });
-
-    test('a required update with a download also blocks new work from the moment it is known, even while deferred behind an order', () async {
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => true);
-      await c.check();
-      expect(c.deferred, isTrue);
-      expect(c.blocksNewWork, isTrue);
-      final AppUpdateController optional = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await optional.check();
-      expect(optional.blocksNewWork, isFalse);
-    });
-
-    test('an unanswered check does not hide a pending update for half an hour, and does not forget what is known', () async {
-      DateTime now = DateTime(2026, 10, 25, 8);
-      bool offline = false;
-      final _FakeTransport transport = _FakeTransport((String _) {
-        if (offline) throw const SocketException('down');
-        return _json(unavailable());
-      });
-      final AppUpdateController c = AppUpdateController(
-        component: 'SHIP',
-        installedVersionCode: 5,
-        installedVersionName: '1.0',
-        transport: transport,
-        files: _FakeFiles(<List<int>>[]),
-        platform: _FakePlatform(dir),
-        now: () => now,
-      );
-      await c.check();
-      expect(transport.paths, hasLength(1));
-      now = now.add(const Duration(minutes: 5));
-      await c.check();
-      expect(transport.paths, hasLength(1), reason: 'a successful check is not repeated within 30 minutes');
-      now = now.add(const Duration(minutes: 30));
-      offline = true;
+      expect(c.showNotice, isFalse);
+      clock = clock.add(const Duration(minutes: 31));
       await c.check();
       expect(transport.paths, hasLength(2));
-      expect(c.failureCode, 'OFFLINE');
-      expect(c.requiredUnavailable, isTrue, reason: 'offline is not "compatible"');
-      now = now.add(const Duration(minutes: 1));
+      expect(c.showNotice, isFalse, reason: 'postponed for this build');
+      transport.answer = (String _) => _json(_check(versionCode: 10, versionName: '2.0'));
+      clock = clock.add(const Duration(minutes: 31));
       await c.check();
-      expect(transport.paths, hasLength(2), reason: 'not hammering a server that did not answer');
-      now = now.add(const Duration(minutes: 2));
-      offline = false;
-      await c.check();
-      expect(transport.paths, hasLength(3));
-      expect(c.requiredUnavailable, isTrue);
+      expect(c.showNotice, isTrue);
     });
 
-    test('the status words of the server are read; an older server without them leaves them unset', () async {
-      expect(parseCompatStatus('UPDATE_OPTIONAL'), CompatStatus.updateOptional);
-      expect(parseCompatStatus('COMPATIBLE'), CompatStatus.compatible);
-      expect(parseCompatStatus('UNKNOWN_VERSION'), CompatStatus.unknownVersion);
-      expect(parseCompatStatus('x'), isNull);
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(<String, Object?>{'update_available': false, 'release': null})), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
+    test('with the Play listing announced the button opens the store of this application; a failure to open it is reported, not hidden', () async {
+      final _FakePlatform platform = _FakePlatform(dir);
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check())), platform, playReady: true);
       await c.check();
-      expect(c.compat, isNull);
-      expect(c.phase, AppUpdatePhase.upToDate);
+      expect(c.canOpenStore, isTrue);
+      expect(await c.openStore(), isTrue);
+      platform.storeResult = false;
+      expect(await c.openStore(), isFalse);
+      expect(platform.storeOpened, 2);
     });
   });
 
-  group('compatibility screens (#193)', () {
-    Widget app(AppUpdateController c, {Widget? home}) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: home ?? const Scaffold(body: Text('trang chính')));
-    Map<String, Object?> unavailable() => <String, Object?>{'status': 'UPDATE_REQUIRED_UNAVAILABLE', 'required': true, 'update_available': false, 'reason': 'Cần bản mới', 'release': null};
+  group('update popup (#280)', () {
+    Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold(body: Text('trang chính')));
 
-    testWidgets('required without a downloadable file: a clear screen with a re-check and no download button; an order in hand only gets a banner', (WidgetTester tester) async {
-      bool busy = true;
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(unavailable())), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => busy);
+    testWidgets('an older build gets one light popup with the version and "Để sau"; it blocks nothing for good', (WidgetTester tester) async {
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check())), _FakePlatform(dir));
       await tester.pumpWidget(app(c));
       await tester.runAsync(c.check);
       await tester.pump();
-      expect(find.byKey(const Key('m13-update-screen')), findsNothing);
-      expect(find.byKey(const Key('m13-update-banner')), findsOneWidget);
-      expect(find.textContaining('Hoàn thành đơn đang làm bình thường'), findsOneWidget);
-      expect(find.byKey(const Key('m13-update-download')), findsNothing);
-      busy = false;
-      await tester.runAsync(c.refreshBusy);
+      expect(find.byKey(const Key('m13-update-popup')), findsOneWidget);
+      expect(find.textContaining('1.9'), findsOneWidget);
+      expect(find.byKey(const Key('m13-update-open-store')), findsNothing, reason: 'no Play listing announced: no button to nowhere');
+      expect(find.textContaining('sau khi xong đơn'), findsNothing);
+      await tester.tap(find.byKey(const Key('m13-update-later')));
       await tester.pump();
-      expect(find.byKey(const Key('m13-update-screen')), findsOneWidget);
-      expect(find.text('Ứng dụng cần cập nhật để tiếp tục sử dụng'), findsOneWidget);
-      expect(find.byKey(const Key('m13-update-download')), findsNothing);
-      expect(find.byKey(const Key('m13-update-recheck')), findsOneWidget);
+      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
+      expect(find.text('trang chính'), findsOneWidget);
+    });
+
+    testWidgets('a tap outside closes it as "Để sau"', (WidgetTester tester) async {
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check())), _FakePlatform(dir));
+      await tester.pumpWidget(app(c));
+      await tester.runAsync(c.check);
+      await tester.pump();
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pump();
+      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
+    });
+
+    testWidgets('with the Play listing announced "Cập nhật" opens the store and closes the popup', (WidgetTester tester) async {
+      final _FakePlatform platform = _FakePlatform(dir);
+      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), platform, playReady: true);
+      await tester.pumpWidget(app(c));
+      await tester.runAsync(c.check);
+      await tester.pump();
+      await tester.runAsync(() async => tester.tap(find.byKey(const Key('m13-update-open-store'))));
+      await tester.pump();
+      await tester.pump();
+      expect(platform.storeOpened, 1);
+      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
+    });
+
+    testWidgets('the newest build, or a check that failed, shows no popup', (WidgetTester tester) async {
+      final _FakeTransport transport = _FakeTransport((String _) => _json(_latest()));
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir));
+      await tester.pumpWidget(app(c));
+      await tester.runAsync(() => c.check(force: true));
+      await tester.pump();
+      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
+      transport.answer = (String _) => throw const SocketException('down');
+      await tester.runAsync(() => c.check(force: true));
+      await tester.pump();
+      expect(find.byKey(const Key('m13-update-popup')), findsNothing);
+      expect(find.text('trang chính'), findsOneWidget);
     });
 
     testWidgets('the account row "Kiểm tra cập nhật" re-checks on demand and reports plainly', (WidgetTester tester) async {
-      Map<String, Object?> answer = <String, Object?>{'status': 'COMPATIBLE', 'update_available': false, 'required': false, 'release': null};
+      Map<String, Object?> answer = _latest();
       final _FakeTransport transport = _FakeTransport((String _) => _json(answer));
-      final AppUpdateController c = _controller(transport, _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await tester.pumpWidget(app(c, home: Scaffold(body: Builder(builder: (BuildContext context) {
-        final AppUpdateController? scoped = AppUpdateScope.maybeOf(context);
-        return scoped == null ? const Text('no scope') : ListenableBuilder(listenable: scoped, builder: (BuildContext context, Widget? _) => Text(updateCheckSummary(scoped), key: const Key('summary')));
-      }))));
-      expect(find.byKey(const Key('summary')), findsOneWidget);
+      final AppUpdateController c = _controller(transport, _FakePlatform(dir));
+      await tester.pumpWidget(MaterialApp(
+        builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!),
+        home: Scaffold(body: Builder(builder: (BuildContext context) {
+          final AppUpdateController? scoped = AppUpdateScope.maybeOf(context);
+          return scoped == null ? const Text('no scope') : ListenableBuilder(listenable: scoped, builder: (BuildContext context, Widget? _) => Text(updateCheckSummary(scoped), key: const Key('summary')));
+        })),
+      ));
       expect(find.text('Chạm để kiểm tra bản mới.'), findsOneWidget);
       await tester.runAsync(() => c.check(force: true));
       await tester.pump();
-      expect(find.textContaining('chưa có bản mới để tải'), findsOneWidget);
-      answer = unavailable();
+      expect(find.text('Bạn đang dùng bản mới nhất.'), findsOneWidget);
+      answer = _check();
       await tester.runAsync(() => c.check(force: true));
       await tester.pump();
-      expect(find.textContaining('chưa sẵn sàng để tải'), findsWidgets);
-      expect(find.textContaining('chưa có bản mới để tải'), findsNothing);
-    });
-  });
-
-  group('shop owner busy probe (#193)', () {
-    ShopOrderCounts counts({int pending = 0, int preparing = 0, int scheduled = 0, int delivering = 0, int attention = 0}) =>
-        ShopOrderCounts(pending: pending, preparing: preparing, scheduled: scheduled, delivering: delivering, attention: attention);
-
-    Future<bool> busy({SessionStatus status = SessionStatus.signedIn, List<String>? roles = const <String>['CUSTOMER', 'SHOP_OWNER'], required Future<ShopOrderCounts> Function() read}) =>
-        shopOwnerBusy(status: status, roles: roles, counts: read);
-
-    test('orders the shop is handling are work in hand, whichever stage', () async {
-      expect(await busy(read: () async => counts(preparing: 1)), isTrue);
-      expect(await busy(read: () async => counts(scheduled: 2)), isTrue);
-      expect(await busy(read: () async => counts(delivering: 1)), isTrue);
-      expect(await busy(read: () async => counts(attention: 1)), isTrue);
-    });
-
-    test('the shop has finished everything, or only has orders it has not accepted yet: free (those cannot be started until the app is updated)', () async {
-      expect(await busy(read: () async => counts()), isFalse);
-      expect(await busy(read: () async => counts(pending: 4)), isFalse);
-    });
-
-    test('a person without a shop, or nobody signed in, is free; the server is not even asked', () async {
-      int asked = 0;
-      Future<ShopOrderCounts> read() async {
-        asked += 1;
-        return counts(preparing: 9);
-      }
-
-      expect(await busy(roles: const <String>['CUSTOMER'], read: read), isFalse);
-      expect(await busy(status: SessionStatus.guest, roles: null, read: read), isFalse);
-      expect(asked, 0);
-    });
-
-    test('an unreadable answer or a session not known yet is never "idle": the probe throws', () async {
-      await expectLater(busy(read: () async => throw const SocketException('down')), throwsA(isA<SocketException>()));
-      await expectLater(busy(status: SessionStatus.starting, roles: null, read: () async => counts()), throwsA(isA<StateError>()));
-      await expectLater(busy(status: SessionStatus.unverified, roles: const <String>['CUSTOMER'], read: () async => counts()), throwsA(isA<StateError>()));
-      await expectLater(busy(roles: null, read: () async => counts()), throwsA(isA<StateError>()));
-    });
-
-    test('with the update controller: an order in hand defers the REQUIRED update, finishing it brings the screen, and a failing read keeps it deferred', () async {
-      ShopOrderCounts now = counts(preparing: 1);
-      bool failing = false;
-      Future<bool> probe() => busy(read: () async {
-            if (failing) throw const SocketException('down');
-            return now;
-          });
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: probe);
-      await c.check();
-      expect(c.deferred, isTrue);
-      expect(c.blocking, isFalse);
-      expect(c.blocksNewWork, isTrue, reason: 'no new work while the update waits behind the order in hand');
-      failing = true;
-      now = counts();
-      await c.refreshBusy();
-      expect(c.deferred, isTrue, reason: 'a failed read is not read as "the shop is free"');
-      expect(c.blocking, isFalse);
-      failing = false;
-      await c.refreshBusy();
-      expect(c.blocking, isTrue, reason: 'the last order is done: the update screen may come');
-      expect(c.deferred, isFalse);
-    });
-  });
-
-  group('update screens', () {
-    Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold(body: Text('trang chính')));
-
-    testWidgets('a recommended update shows a banner above the app and can be postponed', (WidgetTester tester) async {
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: false))), _FakeFiles(<List<int>>[]), _FakePlatform(dir));
-      await tester.pumpWidget(app(c));
-      await tester.runAsync(c.check);
-      await tester.pump();
-      expect(find.byKey(const Key('m13-update-banner')), findsOneWidget);
-      expect(find.text('trang chính'), findsOneWidget);
-      expect(find.textContaining('1.9'), findsWidgets);
-      await tester.tap(find.byKey(const Key('m13-update-later')));
-      await tester.pump();
-      expect(find.byKey(const Key('m13-update-banner')), findsNothing);
-      expect(find.text('trang chính'), findsOneWidget);
-    });
-
-    testWidgets('a required update covers the app, but a shipper with an active order only gets a banner', (WidgetTester tester) async {
-      bool busy = true;
-      final AppUpdateController c = _controller(_FakeTransport((String _) => _json(_check(required: true))), _FakeFiles(<List<int>>[]), _FakePlatform(dir), probe: () async => busy);
-      await tester.pumpWidget(app(c));
-      await tester.runAsync(c.check);
-      await tester.pump();
-      expect(find.byKey(const Key('m13-update-screen')), findsNothing);
-      expect(find.byKey(const Key('m13-update-banner')), findsOneWidget);
-      expect(find.textContaining('sau khi xong đơn'), findsOneWidget);
-      busy = false;
-      await tester.runAsync(c.refreshBusy);
-      await tester.pump();
-      expect(find.byKey(const Key('m13-update-screen')), findsOneWidget);
-      expect(find.text('trang chính'), findsOneWidget);
+      expect(find.text('Có bản mới 1.9'), findsOneWidget);
     });
   });
 
@@ -649,7 +441,7 @@ void main() {
         app: ClientApp.ship,
         config: _config,
         session: signedOut,
-        updates: _controller(_FakeTransport((String _) => _json(<String, Object?>{})), _FakeFiles(<List<int>>[]), _FakePlatform(dir)),
+        updates: _controller(_FakeTransport((String _) => _json(<String, Object?>{})), _FakePlatform(dir)),
         queue: queue,
       );
       OpsClient.attachForTest(ops);

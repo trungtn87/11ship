@@ -14,18 +14,8 @@ void main() {
   session.start();
   // Sharing the position follows the session and what the server says is needed, not a screen: it starts watching here, before any tab is built.
   shipOnlineFor(session, driver: flows.driver).attach();
-  // M13: update check, version report and the offline error queue. A REQUIRED update never covers a delivery in progress: the shipper with an active
-  // delivery sees only a banner until it is finished (an unreadable answer counts as "busy").
-  final OpsClient? ops = createOpsClient(
-    ClientApp.ship,
-    session,
-    config,
-    busyProbe: () async => (await (flows.shipperDeliveries?.mine(history: false) ?? Future<List<DeliveryView>>.value(const <DeliveryView>[]))).isNotEmpty,
-  );
-  // A REQUIRED update never interrupts the delivery in hand, but no new work starts: the online switch refuses (and an online shipper is switched off).
-  if (ops != null) {
-    shipOnlineFor(session, driver: flows.driver).bindUpdateGate(gate: ops.updates, blocked: () => ops.updates.blocksNewWork);
-  }
+  // M13: update check (a notice only), version report and the offline error queue. Null when this build has no server address.
+  final OpsClient? ops = createOpsClient(ClientApp.ship, session, config);
   ops?.installCrashHooks();
   ops?.start();
   runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));
