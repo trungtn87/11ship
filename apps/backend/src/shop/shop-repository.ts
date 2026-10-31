@@ -64,6 +64,14 @@ function toShop(row: RawShop): ShopRow {
 }
 
 
+export interface ShopMapPin {
+  shopId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  serviceAreaId: string | null;
+}
+
 /**
  * SQL for app.shops and app.shop_members. M02 owns both tables; no other module issues SQL against them.
  * Every method takes the caller's TransactionContext: none of them begins, commits or rolls back anything.
@@ -74,6 +82,24 @@ export class ShopRepository {
     const r=(await context.query<{total:string;active:string}>("SELECT count(*)::text AS total,count(*) FILTER(WHERE status='ACTIVE')::text AS active FROM app.shops")).rows[0]!;
     return {total:toSafeInteger(r.total),active:toSafeInteger(r.active)};
   }
+  /** Issue #262 (IV): the pins of the active shops for the operations map, and how many active shops have no usable pin. One more row than `limit` may come back so the caller can say it was cut. */
+  async mapPins(context: TransactionContext, limit: number): Promise<{ pins: ShopMapPin[]; withoutPin: number }> {
+    const rows = await context.query<{ shop_id: string; name: string; pickup_lat: number | string; pickup_lng: number | string; service_area_id: string | null }>(
+      `SELECT shop_id::text AS shop_id, name, pickup_lat, pickup_lng, service_area_id::text AS service_area_id
+         FROM app.shops
+        WHERE status = 'ACTIVE' AND pickup_lat IS NOT NULL AND pickup_lng IS NOT NULL AND NOT (pickup_lat = 0 AND pickup_lng = 0)
+        ORDER BY shop_id LIMIT $1::int`,
+      [limit],
+    );
+    const missing = await context.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM app.shops WHERE status = 'ACTIVE' AND (pickup_lat IS NULL OR pickup_lng IS NULL OR (pickup_lat = 0 AND pickup_lng = 0))`,
+    );
+    return {
+      pins: rows.rows.map((r) => ({ shopId: r.shop_id, name: r.name, lat: Number(r.pickup_lat), lng: Number(r.pickup_lng), serviceAreaId: r.service_area_id })),
+      withoutPin: Number(missing.rows[0]?.n ?? '0'),
+    };
+  }
+
   async namesOf(context:TransactionContext,ids:readonly string[]):Promise<ReadonlyMap<string,string>> {
     const rows=(await context.query<{shop_id:string;name:string}>('SELECT shop_id,name FROM app.shops WHERE shop_id=ANY($1::uuid[])',[ids])).rows;
     return new Map(rows.map(r=>[r.shop_id,r.name]));

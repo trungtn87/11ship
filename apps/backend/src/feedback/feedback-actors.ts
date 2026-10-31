@@ -41,7 +41,7 @@ export class FeedbackActors {
         return { role: 'SHOP', userId: caller.actor.userId, shop: caller.shop };
       }
       case 'SHIPPER': {
-        const caller = mode === 'update' ? await this.delivery.shipperWriter(context, principal, { acceptNew: false }) : await this.delivery.shipperReader(context, principal);
+        const caller = await this.delivery.shipperOwnFeedback(context, principal, mode);
         return { role: 'SHIPPER', userId: caller.actor.userId, driver: caller.driver };
       }
     }

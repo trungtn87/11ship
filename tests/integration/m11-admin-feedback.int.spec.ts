@@ -14,15 +14,15 @@ import { AdminLogin, Json, M11World, PNG_BASE64, Shipper } from './support/m11-h
 describe('M11.03 — administration, moderation and adjustments', () => {
   let w: M11World;
   let system: AdminLogin;
-  let handler: AdminLogin; // ADMIN: view + review on DRIVER
-  let viewer: AdminLogin; // ADMIN: view only on SHOP
+  let handler: AdminLogin; // ADMIN: view + review on SHOP and DRIVER (a delivery file names both parties)
+  let viewer: AdminLogin; // ADMIN: view only on SHOP and DRIVER
   let shipper: Shipper;
 
   beforeAll(async () => {
     w = await M11World.start({ admin: true });
     system = w.systemLogin();
-    handler = await w.adminWith('DRIVER', { review: true });
-    viewer = await w.adminWith('SHOP', { review: false });
+    handler = await w.adminWith('BOTH', { review: true });
+    viewer = await w.adminWith('BOTH', { review: false });
     shipper = await w.newShipper();
   });
   afterAll(async () => {
@@ -248,6 +248,40 @@ describe('M11.03 — administration, moderation and adjustments', () => {
 
   // ---- ratings: hide and restore -------------------------------------------------------------------------------------------------------
 
+  it('#261 scope: an ADMIN with only SHOP or only DRIVER reaches only that side; a file naming both parties is not found (list, counters, detail, action); SYSTEM and SHOP+DRIVER reach all', async () => {
+    const shopOnly = await w.adminWith('SHOP', { review: true });
+    const driverOnly = await w.adminWith('DRIVER', { review: true });
+    const c = await file(); // a shop's complaint about a delivery: it names the shop AND the Shipper
+    const ids = async (who: AdminLogin): Promise<string[]> => ((data(await w.adminGet(who, '/complaints?limit=50')).items as Json[]).map((i) => String(i.complaint_id)));
+    expect(await ids(system)).toContain(c.id);
+    expect(await ids(handler)).toContain(c.id);
+    const everything = data(await w.adminGet(system, '/complaints?limit=50'));
+    for (const who of [shopOnly, driverOnly]) {
+      expect(await ids(who)).not.toContain(c.id);
+      expect(codeOf(await w.adminGet(who, `/complaints/${c.id}`))).toEqual({ status: 404, code: 'COMPLAINT_NOT_FOUND' });
+      expect(codeOf(await act(who, c.id, 'receive', { expected_version: c.version }))).toEqual({ status: 404, code: 'COMPLAINT_NOT_FOUND' });
+      const counters = (data(await w.adminGet(who, '/complaints?limit=1')).counters as Json);
+      expect(counters.pending).toBeLessThan((everything.counters as Json).pending as number);
+    }
+    // Nothing moved: the file is still waiting.
+    expect(((await detail(system, c.id)).complaint as Json).status).toBe('PENDING');
+
+    // A review of a shop is the SHOP part; the Shipper-only administrator neither sees nor hides it, the shop one does.
+    const shop2 = await createShopOwner(w.app);
+    await completeSetup(w.app, shop2);
+    const customer = await w.newCustomer('Khách phạm vi');
+    const order = w.newOrder(customer, { shopId: shop2.shopId });
+    await w.asCustomer(customer, 'POST', `/customers/me/orders/${order.orderId}/reviews/shop`, body(1, 'Chậm'));
+    const line = ((data(await w.adminGet(system, '/reviews?stars=1&kind=SHOP_BY_CUSTOMER&limit=50')).items as Json[]).find((i) => (i.shop as Json).shop_id === shop2.shopId)) as Json;
+    const reviewId = String(line.review_id);
+    expect(((data(await w.adminGet(shopOnly, '/reviews?limit=50')).items as Json[]).map((i) => i.review_id))).toContain(reviewId);
+    expect(((data(await w.adminGet(driverOnly, '/reviews?limit=50')).items as Json[]).map((i) => i.review_id))).not.toContain(reviewId);
+    expect(codeOf(await w.adminGet(driverOnly, `/reviews/${reviewId}`))).toEqual({ status: 404, code: 'REVIEW_NOT_FOUND' });
+    expect(codeOf(await w.adminPost(driverOnly, `/reviews/${reviewId}/actions/hide`, { expected_version: 1, reason_code: 'WRONG_ORDER' }))).toEqual({ status: 404, code: 'REVIEW_NOT_FOUND' });
+    expect((await w.adminGet(shopOnly, `/reviews/${reviewId}`)).status).toBe(200);
+    expect(((await q('SELECT visibility FROM app.reviews WHERE review_id = $1::uuid', [reviewId]))[0] as Json).visibility).toBe('VISIBLE');
+  });
+
   it('hiding a rating needs a reason, keeps the original, removes it from the page and from the score; restoring brings it back; stars and text are never editable', async () => {
     const shop2 = await createShopOwner(w.app);
     await completeSetup(w.app, shop2);
@@ -413,7 +447,7 @@ describe('M11.03 — administration, moderation and adjustments', () => {
     if (finance === undefined) {
       throw new Error('the world has no M04 stand-in');
     }
-    const money = await w.adminWith('DRIVER', { review: true });
+    const money = await w.adminWith('BOTH', { review: true });
     await w.app.pool.query(
       `INSERT INTO app.admin_finance_grants (user_id, permission_key, state, granted_by_user_id, granted_at, version, created_at, updated_at) VALUES ($1::uuid, 'wallet.adjustment.post', 'GRANTED', $2::uuid, now(), 1, now(), now())`,
       [money.userId, system.userId],

@@ -135,6 +135,21 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('issue #259: a withdrawal notification (target WALLET_TXN) opens the Shipper wallet, never the top-up flow, and a lost right shows the message', (WidgetTester tester) async {
+    final t = await boot(tester);
+    await tester.pumpWidget(app(t.session, t.flows));
+    await tester.pump();
+    t.source.outcome = const OpenOutcome(kind: OpenKind.ok, target: NotificationTarget(type: TargetType.walletTxn, id: '11111111-1111-4111-8111-111111111111'), expired: false);
+    t.flows.notifications!.requestOpen('n-withdrawal');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(t.source.opened, <String>['n-withdrawal']);
+    expect(find.byKey(const Key('wallet-topup-button')), findsOneWidget, reason: 'the wallet home, with its history, opens for the withdrawal');
+    expect(find.byKey(const Key('wallet-topup-closing-note')), findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('a guest has no inbox, no bell count and no settings entry', (WidgetTester tester) async {
     final t = await boot(tester, signedIn: false);
     t.source.items = <NotificationItem>[row('card', 5)];

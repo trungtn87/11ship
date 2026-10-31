@@ -46,6 +46,21 @@ export class FeedbackRecorder {
     });
   }
 
+  /** Issue #261: the janitor removed never-attached pictures. Counts only: never a picture, an owner or a file name. */
+  async orphanPicturesPurged(context: TransactionContext, requestId: string, removed: { count: number; bytes: number }): Promise<void> {
+    await this.audit.append(context, {
+      requestId,
+      actorType: 'SYSTEM',
+      actorId: null,
+      action: 'feedback.orphan_pictures_purged.v1',
+      resourceType: 'complaint_attachment_cleanup',
+      resourceId: requestId,
+      resourceVersion: 1,
+      outcome: 'SUCCESS',
+      metadata: { removed: removed.count, bytes: removed.bytes, ttl_hours: 24 },
+    });
+  }
+
   /** `change` is a short dotted suffix: submitted, appended, supplement, received, info_requested, concluded, closed, reopen_requested, reopened ... */
   async complaint(
     context: TransactionContext,

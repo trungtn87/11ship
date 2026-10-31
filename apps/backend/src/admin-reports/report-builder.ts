@@ -62,6 +62,23 @@ export function requiredRights(kind: ReportKind): readonly string[] {
 }
 
 /**
+ * Issue #262: `report.read` opens the reports, it does not widen the data. Each report is built from figures that name the shop side, the Shipper side or both, and no
+ * row-level split exists, so an ADMIN gets a report only when their app grants cover EVERY side it names; otherwise it fails closed (SYSTEM always passes):
+ * deliveries and quality name both, shops the SHOP app, shippers and money the DRIVER app (money also needs wallet.read, above).
+ */
+const REPORT_APPS: Record<ReportKind, readonly ('SHOP' | 'DRIVER')[]> = {
+  deliveries: ['SHOP', 'DRIVER'],
+  shops: ['SHOP'],
+  shippers: ['DRIVER'],
+  quality: ['SHOP', 'DRIVER'],
+  money: ['DRIVER'],
+};
+
+export function mayReadReportData(kind: ReportKind, rights: AdminRights): boolean {
+  return REPORT_APPS[kind].every((app) => rights.canViewApp(app));
+}
+
+/**
  * M12-E: the five reports. Every figure is read from the owner (M07 deliveries, M04 ledger) and states its moment (created / ended / ledger written) and, for a rate, its
  * denominator. Order and delivery are counted apart: Order is not built, so its figure is absent (not 0), and a recall counts as a delivery, never as an Order. The platform's
  * revenue is not derived from deliveries: item and shipping money are between the parties and a top-up is a deposit; only the ledger rows (commission, adjustment, withdrawal) are the platform's money.
@@ -79,6 +96,9 @@ export class ReportBuilder {
   async build(context: TransactionContext, kind: ReportKind, period: Period, basis: ReportBasis, rights: AdminRights, limit: number): Promise<Report> {
     for (const key of requiredRights(kind)) {
       rights.require(key);
+    }
+    if (!mayReadReportData(kind, rights)) {
+      throw new AppError('ADMIN_FORBIDDEN');
     }
     switch (kind) {
       case 'deliveries':

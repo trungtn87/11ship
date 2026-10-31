@@ -6,7 +6,7 @@ import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AdminRightsReader } from '../admin-m12/admin-rights';
 import { Period, resolvePeriod, vietnamDay } from '../admin-m12/vietnam-time';
 import { OverviewQuery } from '../admin-overview/admin-overview-validation';
-import { Report, ReportBuilder, REPORT_KINDS } from '../admin-reports/report-builder';
+import { mayReadReportData, Report, ReportBuilder, REPORT_KINDS } from '../admin-reports/report-builder';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { FINANCE_PERMISSION_READ, PERMISSION_REPORT_READ } from '../finance-access/finance-access-constants';
@@ -41,7 +41,7 @@ export class BusinessReportService {
       const p=resolvePeriod(query.range,rights.nowMs,query.custom);const periods=comparisonPeriods(p,rights.nowMs);
       const reports:JsonObject={};
       for(const kind of REPORT_KINDS){
-        if(kind==='money'&&!rights.has(FINANCE_PERMISSION_READ)){reports[kind]={status:'FORBIDDEN'};continue;}
+        if((kind==='money'&&!rights.has(FINANCE_PERMISSION_READ))||!mayReadReportData(kind,rights)){reports[kind]={status:'FORBIDDEN'};continue;}
         let current=await this.builder.build(c,kind,periods.current,'created',rights,100);
         let previous=await this.builder.build(c,kind,periods.previous,'created',rights,100);
         if(kind==='shippers'){current=shipperSuccessRates(current);previous=shipperSuccessRates(previous);}

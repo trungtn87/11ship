@@ -61,6 +61,7 @@ import { OpsAnalyticsRepository } from '../ops-analytics/ops-analytics-repositor
 import { OpsAnalyticsService } from '../ops-analytics/ops-analytics-service';
 import { OpsAnomalyRepository, OpsAnomalySettingsRepository } from '../ops-analytics/ops-anomaly-repository';
 import { OpsAnomalyService } from '../ops-analytics/ops-anomaly-service';
+import { AdminOperationsMapService } from '../admin-overview/admin-operations-map-service';
 import { AdminOverviewService } from '../admin-overview/admin-overview-service';
 import { AdminFeedbackController } from '../admin-feedback/admin-feedback.controller';
 import { AdminFeedbackService } from '../admin-feedback/admin-feedback-service';
@@ -290,6 +291,7 @@ export class AdminAuthModule implements NestModule {
         OpsAnomalySettingsRepository,
         OpsAnomalyService,
         OpsAnalyticsRuntime,
+        AdminOperationsMapService,
         // M13 operations administration (SYSTEM everything; an ADMIN only the scope SYSTEM granted).
         OpsAdminService,
         // The 1B section 8.8 hook is always present (1B calls it); it is a no-op when no activation attempt exists.

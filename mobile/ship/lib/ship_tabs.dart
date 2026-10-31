@@ -128,8 +128,6 @@ class _OrdersBodyState extends State<OrdersBody> {
         ],
       ),
       const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Chưa có đơn nào được giao cho bạn.'),
-      // M06 UI: what is shown before accepting, and the batching evaluation. Not ready in real builds (each screen says what is missing).
-      const OrderEvaluationEntries(),
       _soonChip(),
     ]);
   }

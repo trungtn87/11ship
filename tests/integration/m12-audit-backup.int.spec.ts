@@ -157,6 +157,33 @@ describe('M12-F — audit viewer, backup history, restore requests', () => {
     expect(old.length + todays.length).toBe(4);
   });
 
+  it('#262: audit.read opens the viewer, not every record: an ADMIN sees only the resource types of the apps they may VIEW; SYSTEM sees all; an unclassified row is not shown to an ADMIN; no app view is 403', async () => {
+    const insert = (resourceType: string): Promise<unknown> =>
+      admin.pool.query(
+        `INSERT INTO app.audit_logs (audit_id, occurred_at, request_id, actor_type, actor_id, action, resource_type, resource_id, resource_version, outcome, reason_code, metadata)
+         VALUES (gen_random_uuid(), now(), gen_random_uuid(), 'ADMIN', $1, $2, $3, $4, 1, 'SUCCESS', NULL, '{}'::jsonb)`,
+        [`actor-${tag}`, `${mine}.scope.v1`, resourceType, `scope-${resourceType}-${tag}`],
+      );
+    for (const type of ['delivery', 'shop', 'wallet_withdrawal', 'user']) await insert(type);
+    const typesOf = async (who: { cookie: string; csrf: string }): Promise<string[]> =>
+      ((adminData(await audit(who, `?action=${mine}.scope&limit=100`)) as Json).items as Json[]).map((i) => String(i.resource_type)).sort();
+
+    expect(await typesOf(systemLogin())).toEqual(['delivery', 'shop', 'user', 'wallet_withdrawal']);
+    // `reader` has the DRIVER app and audit.read: deliveries only. Not the shop, not the money, not the accounts.
+    expect(await typesOf(reader.login)).toEqual(['delivery']);
+    // A SHOP-only administrator with audit.read sees the shop and not the delivery.
+    const shopReader = await activatedAdmin(admin, system, [permission('SHOP')], `Đọc nhật ký shop ${tag}`);
+    expect((await changeGrant(admin, system, 'grant', shopReader.userId, 'audit.read', 0)).status).toBe(200);
+    expect(await typesOf(shopReader.login)).toEqual(['shop']);
+    // A direct lookup by a known resource id outside the scope finds nothing.
+    const direct = adminData(await audit(shopReader.login, `?resource_id=scope-delivery-${tag}&limit=10`)) as Json;
+    expect(direct.items).toEqual([]);
+    // audit.read with no SHOP or DRIVER view (only the CUSTOMER app) is refused outright.
+    const none = await activatedAdmin(admin, system, [permission('CUSTOMER')], `Đọc nhật ký không app ${tag}`);
+    expect((await changeGrant(admin, system, 'grant', none.userId, 'audit.read', 0)).status).toBe(200);
+    expect((await audit(none.login)).status).toBe(403);
+  });
+
   it('3. the backup page is SYSTEM only and its health is honest at every stage', async () => {
     expect((await getAs(admin, reader.login, '/backups')).status).toBe(403); // audit.read does not open backups
     expect((await getAs(admin, undefined, '/backups')).status).toBe(401);

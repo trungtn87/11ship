@@ -60,7 +60,12 @@ IconData _iconOf(NotificationItem item) => switch (item.kind) {
   'DELIVERY_PICKED_UP' => Icons.delivery_dining_outlined,
   'DELIVERY_ACCEPTED' => Icons.storefront_outlined,
   'TOPUP_CONFIRMED' ||
-  'TOPUP_REJECTED' => Icons.account_balance_wallet_outlined,
+  'TOPUP_REJECTED' ||
+  'WITHDRAWAL_REQUESTED' ||
+  'WITHDRAWAL_PROCESSING' ||
+  'WITHDRAWAL_RECONCILING' ||
+  'WITHDRAWAL_PAID' ||
+  'WITHDRAWAL_CANCELLED' => Icons.account_balance_wallet_outlined,
   'PROFILE_APPROVED' ||
   'PROFILE_REJECTED' ||
   'PROFILE_SUSPENDED' ||

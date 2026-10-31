@@ -183,7 +183,8 @@ export class NotificationInboxService {
         return {kind:room.state==='PENDING'?'OK':'ENDED',state:room.state};
       }
       case 'WALLET_TXN': {
-        const owner = n.targetId === null ? undefined : await this.recipients.topupOwner(context, n.targetId);
+        // A WALLET_TXN target is a top-up request or (issue #259) a withdrawal; the owner is read from whichever row the identifier names.
+        const owner = n.targetId === null ? undefined : ((await this.recipients.topupOwner(context, n.targetId)) ?? (await this.recipients.withdrawalOwner(context, n.targetId)));
         return owner === actor.userId ? { kind: 'ENDED', state: null } : { kind: 'NO_ACCESS', state: null };
       }
       default:

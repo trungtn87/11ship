@@ -208,12 +208,12 @@ export class M11World {
     return { cookie: system.login.cookie, csrf: system.login.csrf, userId: system.account.userId };
   }
 
-  /** A new ADMIN with exactly these rights on the SHOP / DRIVER app (view, review, lock), logged in. */
-  async adminWith(app: 'DRIVER' | 'SHOP', rights: { review: boolean; lock?: boolean }): Promise<AdminLogin> {
+  /** A new ADMIN with exactly these rights on the SHOP app, the DRIVER app or BOTH (view, review, lock), logged in. */
+  async adminWith(app: 'DRIVER' | 'SHOP' | 'BOTH', rights: { review: boolean; lock?: boolean }): Promise<AdminLogin> {
     const admin = this.admin as AdminApp;
     const phone = randomPhone();
     admin.track(phone.normalized);
-    const invitation = await createInvitation(admin, this.system as SystemSession, createPayload(phone.local, { full_name: `Quản trị ${tag}`, permissions: [{ app, can_view: true, can_review_profile: rights.review, can_lock: rights.lock === true }] }));
+    const invitation = await createInvitation(admin, this.system as SystemSession, createPayload(phone.local, { full_name: `Quản trị ${tag}`, permissions: (app === 'BOTH' ? (['SHOP', 'DRIVER'] as const) : [app]).map((one) => ({ app: one, can_view: true, can_review_profile: rights.review, can_lock: rights.lock === true })) }));
     const token = invitation.link.split('#t=')[1] as string;
     const session = await begin(admin, { invitationId: invitation.invitationId, token, phone });
     ok(await post(admin, '/password', session, { password: ADMIN_PASSWORD }));

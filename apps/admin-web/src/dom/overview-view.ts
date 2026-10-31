@@ -2,6 +2,7 @@ import { customRangeError, Metric, MetricLink, notReadyText, Overview, OVERVIEW_
 import { formatVnd } from '../core/deliveries.js';
 import { h, primary, secondary } from './dom.js';
 import { icon } from './icons.js';
+import { loadOpsMap } from './ops-map-panel.js';
 import { failurePanel, notWiredPanel, skeleton } from './states.js';
 
 // DOM of "Tổng quan › Điều hành" (M12-A). It draws what the server said and nothing else: a figure is a number only when its status is OK; otherwise the card
@@ -79,6 +80,8 @@ export class OverviewView {
   readonly #from: HTMLInputElement;
   readonly #to: HTMLInputElement;
   readonly #customError: HTMLElement;
+  /** Issue #262: the operations map has its own request and its own failure; it never changes the figures above it. */
+  readonly #map = h('div', { class: 'ov-map' });
   readonly #buttons = new Map<OverviewRange, HTMLButtonElement>();
   #range: OverviewRange = 'today';
   #latest = 0;
@@ -120,8 +123,10 @@ export class OverviewView {
         this.#custom,
         this.#customError,
         this.#body,
+        this.#map,
       ),
     );
+    void loadOpsMap(this.#map, { onSessionLost: () => this.host.onSessionLost() });
   }
 
   dispose(): void {
