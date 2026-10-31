@@ -252,10 +252,10 @@ describe('M11.03 — administration, moderation and adjustments', () => {
     const shopOnly = await w.adminWith('SHOP', { review: true });
     const driverOnly = await w.adminWith('DRIVER', { review: true });
     const c = await file(); // a shop's complaint about a delivery: it names the shop AND the Shipper
-    const ids = async (who: AdminLogin): Promise<string[]> => ((data(await w.adminGet(who, '/complaints?limit=100')).items as Json[]).map((i) => String(i.complaint_id)));
+    const ids = async (who: AdminLogin): Promise<string[]> => ((data(await w.adminGet(who, '/complaints?limit=50')).items as Json[]).map((i) => String(i.complaint_id)));
     expect(await ids(system)).toContain(c.id);
     expect(await ids(handler)).toContain(c.id);
-    const everything = data(await w.adminGet(system, '/complaints?limit=100'));
+    const everything = data(await w.adminGet(system, '/complaints?limit=50'));
     for (const who of [shopOnly, driverOnly]) {
       expect(await ids(who)).not.toContain(c.id);
       expect(codeOf(await w.adminGet(who, `/complaints/${c.id}`))).toEqual({ status: 404, code: 'COMPLAINT_NOT_FOUND' });
@@ -272,10 +272,10 @@ describe('M11.03 — administration, moderation and adjustments', () => {
     const customer = await w.newCustomer('Khách phạm vi');
     const order = w.newOrder(customer, { shopId: shop2.shopId });
     await w.asCustomer(customer, 'POST', `/customers/me/orders/${order.orderId}/reviews/shop`, body(1, 'Chậm'));
-    const line = ((data(await w.adminGet(system, '/reviews?stars=1&kind=SHOP_BY_CUSTOMER&limit=100')).items as Json[]).find((i) => (i.shop as Json).shop_id === shop2.shopId)) as Json;
+    const line = ((data(await w.adminGet(system, '/reviews?stars=1&kind=SHOP_BY_CUSTOMER&limit=50')).items as Json[]).find((i) => (i.shop as Json).shop_id === shop2.shopId)) as Json;
     const reviewId = String(line.review_id);
-    expect(((data(await w.adminGet(shopOnly, '/reviews?limit=100')).items as Json[]).map((i) => i.review_id))).toContain(reviewId);
-    expect(((data(await w.adminGet(driverOnly, '/reviews?limit=100')).items as Json[]).map((i) => i.review_id))).not.toContain(reviewId);
+    expect(((data(await w.adminGet(shopOnly, '/reviews?limit=50')).items as Json[]).map((i) => i.review_id))).toContain(reviewId);
+    expect(((data(await w.adminGet(driverOnly, '/reviews?limit=50')).items as Json[]).map((i) => i.review_id))).not.toContain(reviewId);
     expect(codeOf(await w.adminGet(driverOnly, `/reviews/${reviewId}`))).toEqual({ status: 404, code: 'REVIEW_NOT_FOUND' });
     expect(codeOf(await w.adminPost(driverOnly, `/reviews/${reviewId}/actions/hide`, { expected_version: 1, reason_code: 'WRONG_ORDER' }))).toEqual({ status: 404, code: 'REVIEW_NOT_FOUND' });
     expect((await w.adminGet(shopOnly, `/reviews/${reviewId}`)).status).toBe(200);
