@@ -15,6 +15,8 @@ String _m10FailureText(M07Failure failure) {
   switch (failure.code) {
     case 'ORDER_NOT_FOUND':
       return 'Không tìm thấy đơn này.';
+    case 'ORDER_EDIT_LOCKED':
+      return 'Quán đã xác nhận đơn. Bạn vui lòng liên hệ quán để thay đổi.';
     case 'ORDER_STATE_CONFLICT' || 'VERSION_CONFLICT':
       return 'Đơn vừa thay đổi. Đã tải lại, hãy kiểm tra rồi thử lại.';
     case 'ORDER_CART_CHANGED':
@@ -100,6 +102,12 @@ abstract class CustomerOrderSource {
   Future<List<OrderSummary>> list(CustomerScope scope);
   Future<OrderView> get(String id);
   Future<OrderView> cancel(String id, {String? reason, required int expectedVersion, required String key});
+
+  /// Issue #238: replaces the content of an Order that still waits for the shop. [preview] is the fresh check of THIS draft (prices, total, fee quote).
+  Future<OrderView> editOrder(String id, CheckoutDraft draft, {required CheckoutPreview preview, required int expectedVersion, required String key}) => Future<OrderView>.error(UnsupportedError('editOrder'));
+
+  /// The shop's dishes on sale now, for "Thêm món" in the editor.
+  Future<List<EditDish>> editMenu(String id) async => const <EditDish>[];
 
   /// After the Shipper picked up the goods the customer who placed the order is the only one who can cancel it (a reason is required).
   Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key});

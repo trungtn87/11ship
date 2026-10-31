@@ -299,6 +299,8 @@ export function composeOrderChange(p: OrderChangePayload): Draft[] {
       return [order(p, 'SHOP', 'ORDER_CANCELLED_BY_CUSTOMER', 'Khách đã hủy đơn món', `Đơn ${code}: khách đã hủy khi shipper đang giao. Hàng đang ở shipper.`)];
     case 'schedule_reminder':
       return [order(p, 'SHOP', 'ORDER_SCHEDULE_REMINDER', 'Sắp đến giờ hẹn', `Đơn hẹn ${code} sắp đến giờ nhận món. Hãy chuẩn bị và gọi shipper.`, PUSH_TTL_MS.reminder)];
+    case 'customer_edited':
+      return [order(p, 'SHOP', 'ORDER_EDITED_BY_CUSTOMER', 'Khách cập nhật đơn hàng', `Đơn ${code}: khách vừa cập nhật nội dung đơn. Mở đơn để xem bản mới trước khi xác nhận.`)];
     case 'confirmed':
       return [
         p.priceChanged === true

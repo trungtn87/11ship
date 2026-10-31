@@ -183,6 +183,26 @@ export function parsePlaceBody(body: unknown): PlaceInput {
   return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER), expectedQuote };
 }
 
+export interface CustomerEditInput extends CheckoutInput {
+  /** The Order version the customer's screen showed: a change since (the shop acted, another phone edited) is refused. */
+  readonly expectedVersion: number;
+  readonly expectedItemsTotalVnd: number;
+  readonly expectedQuote: PlaceInput['expectedQuote'];
+}
+
+const NO_SHOP = '00000000-0000-4000-8000-000000000000';
+
+/**
+ * POST /v1/customers/me/orders/:id/edit (issue #238): the new content of the Order the customer sent. The shop and the wanted time are the Order's own (never sent), the
+ * prices and the quote are the ones the customer saw (the server prices again and refuses a difference).
+ */
+export function parseCustomerEditBody(body: unknown): CustomerEditInput {
+  const b = shaped(body, ['expected_version', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd', 'expected_quote'], ['note', 'delivery_note', 'tip_vnd']);
+  const { expected_version: version, ...content } = b;
+  const place = parsePlaceBody({ ...content, client_ref: NO_SHOP, shop_id: NO_SHOP });
+  return { ...place, expectedVersion: versionOf(version) };
+}
+
 export function parseClientRefQuery(query: unknown): string {
   return uuid(shaped(query ?? {}, ['client_ref']).client_ref);
 }

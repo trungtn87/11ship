@@ -55,6 +55,7 @@ class _Order {
   String status = 'PENDING_CONFIRMATION';
   int version = 1;
   bool edited = false;
+  int customerEdits = 0;
   String? changeReason;
   int paid = 0;
   int? feeEstimate;
@@ -200,6 +201,7 @@ class SampleOrderStore {
       'items': <Object?>[for (final _Line l in o.lines) _line(l)],
       'money': _money(o),
       'edited': o.edited,
+      'customer_edit_count': o.customerEdits,
       'change_reason': o.changeReason,
       'confirmed_at': o.status == 'PENDING_CONFIRMATION' ? null : now.toIso8601String(),
       'ended_at': o.status == 'PENDING_CONFIRMATION' || o.status == 'PREPARING' ? null : now.toIso8601String(),
@@ -241,7 +243,7 @@ class SampleOrderStore {
           'close_not_completed': false,
         }
       else
-        'can': <String, Object?>{'cancel': o.status == 'PENDING_CONFIRMATION', 'cancel_after_pickup': running && o.deliveryState == 'delivering', 'reorder': true},
+        'can': <String, Object?>{'edit': o.status == 'PENDING_CONFIRMATION', 'cancel': o.status == 'PENDING_CONFIRMATION', 'cancel_after_pickup': running && o.deliveryState == 'delivering', 'reorder': true},
       'timeline': <Object?>[
         for (final (String, String, String?) e in o.events) <String, Object?>{'at': now.toIso8601String(), 'type': e.$1, 'actor': e.$2, 'note': e.$3}
       ],
@@ -490,6 +492,35 @@ class SampleCustomerOrders extends CustomerOrderSource {
     o.events.add(('order.cancelled_by_customer', 'CUSTOMER', reason));
     return OrderView.fromJson(store._viewJson(o, shop: false));
   }
+
+  @override
+  Future<OrderView> editOrder(String id, CheckoutDraft draft, {required CheckoutPreview preview, required int expectedVersion, required String key}) async {
+    final _Order o = store._find(id);
+    // The shop confirmed first: nothing is written and the customer is told to contact the shop.
+    if (o.status != 'PENDING_CONFIRMATION') {
+      throw const M07Failure(M07FailureKind.conflict, code: 'ORDER_EDIT_LOCKED');
+    }
+    _version(o, expectedVersion);
+    o.lines
+      ..clear()
+      ..addAll(<_Line>[for (int i = 0; i < draft.lines.length; i += 1) _Line('line-${o.code}-e${o.customerEdits + 1}-$i', kSampleDishes.firstWhere((SampleDish d) => d.id == draft.lines[i].itemId), draft.lines[i].note, draft.lines[i].quantity, draft.lines[i].priceVnd)]);
+    o
+      ..note = draft.note
+      ..recipientName = draft.recipientName
+      ..recipientPhone = draft.recipientPhone
+      ..addressText = draft.address.text
+      ..lat = draft.address.lat
+      ..lng = draft.address.lng
+      ..edited = false
+      ..changeReason = null
+      ..customerEdits += 1
+      ..version += 1;
+    o.events.add(('order.customer_edited', 'CUSTOMER', null));
+    return OrderView.fromJson(store._viewJson(o, shop: false));
+  }
+
+  @override
+  Future<List<EditDish>> editMenu(String id) async => <EditDish>[for (final SampleDish d in kSampleDishes) EditDish(itemId: d.id, name: d.name, priceVnd: d.priceVnd)];
 
   @override
   Future<OrderView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key}) async {

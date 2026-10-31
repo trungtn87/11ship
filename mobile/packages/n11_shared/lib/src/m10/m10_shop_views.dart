@@ -12,6 +12,7 @@ import '../m07/m07_shop_views.dart';
 import '../m02/menu_models.dart';
 import '../m07/m07_source.dart';
 import '../m11/m11_entries.dart';
+import '../m02/m02_format.dart';
 import '../m07/m07_widgets.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
@@ -293,7 +294,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
   Future<void> _confirm(OrderView o) async {
     String? reason;
     if (o.edited) {
-      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được sửa. Khách sẽ thấy bản ban đầu, bản chốt và lý do này.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
+      reason = await showReasonDialog(context, title: 'Lý do thay đổi', explanation: 'Đơn đã được sửa. Tiền món: bản ban đầu ${formatVnd(o.money.originalItemsVnd)} → bản chốt ${formatVnd(o.money.itemsVnd)}. Khách sẽ thấy bản ban đầu, bản chốt và lý do này; phí giao và tiền đã trả không đổi vì thế.', confirmLabel: 'Xác nhận đơn', reasonLabel: 'Lý do thay đổi', danger: false);
       if (reason == null) {
         return;
       }
@@ -440,6 +441,9 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
     final DeliveryView? d = o.shopDelivery;
     final bool live = !o.ended;
     return vstack(<Widget>[
+      // Issue #238: the customer replaced the content while the Order waited; this screen always shows the newest version (a confirm of an older one is refused).
+      if (o.customerEdited && o.status == 'PENDING_CONFIRMATION')
+        N11Banner(key: const Key('order-customer-edited'), kind: BannerKind.info, title: 'Khách vừa cập nhật đơn hàng', text: 'Nội dung đơn đã thay đổi (lần ${o.customerEditCount}). Hãy xem lại món, ghi chú và địa chỉ trước khi xác nhận.'),
       N11Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

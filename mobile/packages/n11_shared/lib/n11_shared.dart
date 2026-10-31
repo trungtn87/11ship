@@ -83,6 +83,7 @@ export 'src/m10/m10_common.dart';
 export 'src/m10/m10_customer_views.dart';
 export 'src/m10/m10_http.dart';
 export 'src/m10/m10_models.dart';
+export 'src/m10/m10_order_edit.dart';
 export 'src/m10/m10_sample.dart';
 export 'src/m10/m10_shop_views.dart';
 export 'src/m10/m10_source.dart';

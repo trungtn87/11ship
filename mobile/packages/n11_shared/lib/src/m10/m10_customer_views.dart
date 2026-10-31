@@ -28,6 +28,7 @@ import '../widgets/form_feedback.dart';
 import 'm10_cart.dart';
 import 'm10_common.dart';
 import 'm10_models.dart';
+import 'm10_order_edit.dart';
 import 'm10_source.dart';
 import 'order_chat_models.dart';
 import 'order_chat_view.dart';
@@ -1275,6 +1276,12 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
     super.dispose();
   }
 
+  Future<void> _edit(OrderView o) async {
+    await Navigator.of(context).push(n11Route(OrderEditScreen(runtime: widget.runtime, order: o)));
+    // Saved or not, the page shows what the server holds now (a lock by the shop, a new version of the Order).
+    await _fetcher.reload();
+  }
+
   Future<void> _cancel(OrderView o) async {
     final bool yes = await showConfirmDialog(context, title: 'Hủy đơn?', content: const Text('Quán chưa xác nhận nên bạn hủy được. Sau khi quán xác nhận, bạn cần liên hệ quán.'), confirmLabel: 'Hủy đơn');
     if (!yes) {
@@ -1400,6 +1407,10 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
 
   Widget? _bottom(OrderView o) {
     if (o.can['cancel'] ?? false) {
+      // Issue #238: while the shop has not confirmed, "Sửa đơn" sits beside "Hủy đơn" (the edit comes first).
+      if (o.can['edit'] ?? false) {
+        return OrderActionsBar(edit: N11Button(key: const Key('order-edit'), label: 'Sửa đơn', kind: ButtonKind.secondary, onPressed: busy ? null : () => unawaited(_edit(o))), destructive: DangerButton(key: const Key('order-cancel'), label: 'Hủy đơn', outlined: false, onPressed: busy ? null : () => unawaited(_cancel(o))));
+      }
       return OrderActionsBar(destructive: DangerButton(key: const Key('order-cancel'), label: 'Hủy đơn', outlined: false, onPressed: busy ? null : () => unawaited(_cancel(o))));
     }
     if (o.can['cancel_after_pickup'] ?? false) {
