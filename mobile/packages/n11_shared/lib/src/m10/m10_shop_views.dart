@@ -457,7 +457,7 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
               ],
             ),
             const SizedBox(height: 4),
-            Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display)),
+            Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display, endActor: o.endActor)),
             const SizedBox(height: 4),
             Text('Đặt lúc ${m10When(o.createdAt)}', style: N11Text.caption),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Khách muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),

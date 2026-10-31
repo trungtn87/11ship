@@ -46,7 +46,7 @@ function parseOrderPayload(payload: Readonly<Record<string, unknown>>): OrderCha
   if (!isCanonicalUuid(orderId) || typeof code !== 'string' || !isCanonicalUuid(shopId) || !isCanonicalUuid(customerUserId) || typeof change !== 'string' || typeof status !== 'string' || typeof version !== 'number') {
     return undefined;
   }
-  return { orderId, code, shopId, customerUserId, change, status, version };
+  return { orderId, code, shopId, customerUserId, change, status, version, priceChanged: payload.price_changed === true };
 }
 
 function parseComplaintPayload(payload: Readonly<Record<string, unknown>>): ComplaintChangePayload | undefined {

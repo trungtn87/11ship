@@ -1425,7 +1425,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           children: <Widget>[
             Text(o.shop.name, style: N11Text.h2),
             const SizedBox(height: 4),
-            Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display)),
+            Align(alignment: Alignment.centerLeft, child: OrderStatusChip(o.display, endActor: o.endActor)),
             if (o.isScheduled) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: <Widget>[const N11Chip('Đơn hẹn', kind: ChipKind.dark), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Muốn nhận món lúc ${m10When(o.scheduledFor!)}', key: const Key('order-wanted'), style: N11Text.body))])),
             const Divider(height: N11Space.gap4, color: N11Colors.line),
             Row(

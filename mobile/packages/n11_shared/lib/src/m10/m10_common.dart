@@ -68,14 +68,18 @@ class OrderActionsBar extends StatelessWidget {
 }
 
 class OrderStatusChip extends StatelessWidget {
-  const OrderStatusChip(this.status, {super.key});
+  const OrderStatusChip(this.status, {super.key, this.endActor});
 
   final DisplayStatus status;
+
+  /// Who ended the Order (issue #260): an Administrator's cancellation arrives with the shop's status and must not read as the shop's.
+  final String? endActor;
 
   @override
   Widget build(BuildContext context) {
     final ({String label, ChipKind kind}) c = m10StatusChip(status);
-    return N11Chip(c.label, kind: c.kind);
+    final String label = status == DisplayStatus.cancelledByShop && endActor == 'ADMIN' ? 'Quản trị viên đã hủy' : c.label;
+    return N11Chip(label, kind: c.kind);
   }
 }
 

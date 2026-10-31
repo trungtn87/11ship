@@ -143,6 +143,7 @@ export class OrderShopService {
         actorType: 'SHOP',
         actorId: caller.actor.userId,
         note: order.editedAtMs !== null ? input.changeReason : null,
+        priceChanged: order.editedAtMs !== null && after.itemsTotalVnd !== order.itemsOriginalTotalVnd,
         operation: ORDER_OPERATIONS.confirm,
         requestId,
         details: { edited: order.editedAtMs !== null, original_total_vnd: order.itemsOriginalTotalVnd, confirmed_total_vnd: after.itemsTotalVnd },
