@@ -28,6 +28,11 @@ export const KINDS = [
   'ASSIGNMENT_RELEASED_BY_ADMIN',
   'TOPUP_CONFIRMED',
   'TOPUP_REJECTED',
+  'WITHDRAWAL_REQUESTED',
+  'WITHDRAWAL_PROCESSING',
+  'WITHDRAWAL_RECONCILING',
+  'WITHDRAWAL_PAID',
+  'WITHDRAWAL_CANCELLED',
   'PROFILE_APPROVED',
   'PROFILE_REJECTED',
   'PROFILE_SUSPENDED',
@@ -62,7 +67,8 @@ export const OUTBOX_TOPUP_CHANGED_TYPE = 'wallet.topup_request.changed.v1';
 export const OUTBOX_DRIVER_STATE_CHANGED_TYPE = 'driver.state_changed.v1';
 /** M11: a complaint moved (the Administration received it, asked, concluded, closed, re-opened). */
 export const OUTBOX_COMPLAINT_CHANGED_TYPE = 'complaint.changed.v1';
-/** Withdrawals (M04-C) have no producer yet, and any other `order.*` type than the one above: their names are reserved here and handled by explicit "not integrated" adapters. */
+/** Issue #259: the withdrawal event the Shipper wallet and the Administration emit (id, state, version only). Any other `order.*` / `wallet.withdrawal*` type stays "not integrated". */
+export const OUTBOX_WITHDRAWAL_CHANGED_TYPE = 'wallet.withdrawal.changed.v1';
 export const OUTBOX_ORDER_PREFIX = 'order.';
 export const OUTBOX_WITHDRAWAL_PREFIX = 'wallet.withdrawal';
 
@@ -128,6 +134,11 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   ASSIGNMENT_RELEASED_BY_ADMIN: 'ORDERS',
   TOPUP_CONFIRMED: 'WALLET_PROFILE',
   TOPUP_REJECTED: 'WALLET_PROFILE',
+  WITHDRAWAL_REQUESTED: 'WALLET_PROFILE',
+  WITHDRAWAL_PROCESSING: 'WALLET_PROFILE',
+  WITHDRAWAL_RECONCILING: 'WALLET_PROFILE',
+  WITHDRAWAL_PAID: 'WALLET_PROFILE',
+  WITHDRAWAL_CANCELLED: 'WALLET_PROFILE',
   PROFILE_APPROVED: 'WALLET_PROFILE',
   PROFILE_REJECTED: 'WALLET_PROFILE',
   PROFILE_SUSPENDED: 'WALLET_PROFILE',

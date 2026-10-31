@@ -129,6 +129,21 @@ describe('M08.06 — notification administration', () => {
     const shopOnly = adminData(await get(shopViewer, '/notifications/work-queue')) as Json;
     expect((shopOnly.failures as Json[]).some((f) => f.notification_id === ids.failed)).toBe(false);
     expect(all.push_provider_configured).toBe(false);
+
+    // Issue #259: the COUNTERS follow the same scope as the lists. The seeded FAILED push and the NO_TOKEN skip belong to SHIP; the Food-only viewer counts neither,
+    // the Shipper-only viewer counts them, and neither single-app viewer is given the system-wide dead-event or goods-case figures.
+    const counters = (r: Json): Json => r.counters as Json;
+    expect(counters(shopOnly).failed_pushes).toBe(0);
+    expect(counters(shopOnly).no_device).toBe(0);
+    expect(counters(shopOnly).dead_events).toBe(0);
+    expect(counters(shopOnly).goods_cases).toBe(0);
+    expect(shopOnly.goods_cases).toEqual([]);
+    const driverOnly = adminData(await get(driverViewer, '/notifications/work-queue')) as Json;
+    expect(counters(driverOnly).failed_pushes).toBeGreaterThanOrEqual(1);
+    expect(counters(driverOnly).no_device).toBeGreaterThanOrEqual(1);
+    expect(counters(driverOnly).dead_events).toBe(0);
+    expect(counters(driverOnly).goods_cases).toBe(0);
+    expect(counters(all).failed_pushes).toBeGreaterThanOrEqual(counters(driverOnly).failed_pushes as number);
   });
 
   it('the settings: defaults, any ADMIN reads, only SYSTEM writes with the right version and within bounds; the timers are shown read-only; one audit row', async () => {

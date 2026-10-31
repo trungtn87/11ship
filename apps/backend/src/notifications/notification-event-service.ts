@@ -9,7 +9,7 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
-import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY } from './notification-composer';
+import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY, WITHDRAWAL_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
@@ -20,6 +20,7 @@ import {
   OUTBOX_ORDER_CHANGED_TYPE,
   OUTBOX_ORDER_PREFIX,
   OUTBOX_TOPUP_CHANGED_TYPE,
+  OUTBOX_WITHDRAWAL_CHANGED_TYPE,
   OUTBOX_WITHDRAWAL_PREFIX,
   PICKUP_REMINDER_STALE_MS,
   PUSH_TTL_MS,
@@ -90,7 +91,7 @@ export class NotificationEventService {
 
   /** Resolves when the event is fully handled or recognized as not ours; rejects (so the outbox retries) when it could not be persisted. */
   async consume(event: OutboxPublishEvent): Promise<void> {
-    const ownType = event.eventType === 'business.finance.updated.v1' || event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
+    const ownType = event.eventType === 'business.finance.updated.v1' || event.eventType === OUTBOX_DELIVERY_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHANGED_TYPE || event.eventType === OUTBOX_TOPUP_CHANGED_TYPE || event.eventType === OUTBOX_WITHDRAWAL_CHANGED_TYPE || event.eventType === OUTBOX_DRIVER_STATE_CHANGED_TYPE || event.eventType === OUTBOX_COMPLAINT_CHANGED_TYPE || event.eventType === OUTBOX_ORDER_CHAT_MESSAGE_TYPE;
     if (ownType && this.#ageOf(event) > MAX_EVENT_AGE_MS) {
       // Old news (a backlog after an outage, or from before M08 existed): recorded, told to nobody, never replayed.
       await this.transactions.withTransaction((context) => this.repo.claimEvent(context, event.eventId, event.eventType, 'STALE_EVENT'));
@@ -105,6 +106,8 @@ export class NotificationEventService {
         return this.#order(event);
       case OUTBOX_TOPUP_CHANGED_TYPE:
         return this.#topup(event);
+      case OUTBOX_WITHDRAWAL_CHANGED_TYPE:
+        return this.#withdrawal(event);
       case OUTBOX_DRIVER_STATE_CHANGED_TYPE:
         return this.#profile(event);
       case OUTBOX_COMPLAINT_CHANGED_TYPE:
@@ -380,6 +383,26 @@ export class NotificationEventService {
       }
       const copy = TOPUP_COPY[state];
       await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId, this.#ageOf(event));
+    });
+  }
+
+  /** Issue #259: one inbox entry per (withdrawal, state, version); the owner comes from the withdrawal row, not from the payload. */
+  async #withdrawal(event: OutboxPublishEvent): Promise<void> {
+    const { withdrawal_id: withdrawalId, state, version } = event.payload;
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, 'OK'))) {
+        return;
+      }
+      if (!isCanonicalUuid(withdrawalId) || typeof version !== 'number' || typeof state !== 'string' || !Object.hasOwn(WITHDRAWAL_COPY, state)) {
+        return;
+      }
+      const userId = await this.recipients.withdrawalOwner(context, withdrawalId);
+      if (userId === undefined) {
+        return;
+      }
+      const copy = WITHDRAWAL_COPY[state as keyof typeof WITHDRAWAL_COPY];
+      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: withdrawalId, targetVersion: version, dedupeKey: `withdrawal:${withdrawalId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event.eventId, this.#ageOf(event));
     });
   }
 
