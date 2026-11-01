@@ -17,15 +17,18 @@ const GATE = join(ROOT, 'scripts/deploy/ci-gate.mjs');
 // Minimal line-based split of `jobs:` into { name -> block text } (no YAML dependency is declared:
 // js-yaml is only transitive). FAIL-CLOSED: anything this parser does not positively recognise throws,
 // so a quoted/odd job id or unusual structure can never hide a job from the policy below.
-function jobsOf(rawText) {
+function splitWorkflow(rawText) {
   const lines = rawText.replace(/\r\n/g, '\n').split('\n');
   const starts = lines.flatMap((line, i) => (/^jobs\s*:/.test(line) ? [i] : []));
   if (starts.length !== 1 || !/^jobs:\s*(#.*)?$/.test(lines[starts[0]])) throw Error('workflow must have exactly one plain "jobs:" mapping');
   const jobs = {};
+  const outside = lines.slice(0, starts[0] + 1); // everything that is not inside a job: header, on:, env:, permissions: ...
   let current = null;
-  for (const line of lines.slice(starts[0] + 1)) {
+  let i = starts[0] + 1;
+  for (; i < lines.length; i += 1) {
+    const line = lines[i];
     if (/^\S/.test(line)) break; // next top-level key
-    if (/^\s*(#.*)?$/.test(line)) { if (current) jobs[current].push(line); continue; }
+    if (/^\s*(#.*)?$/.test(line)) { if (current) jobs[current].push(line); else outside.push(line); continue; }
     if (/\t/.test(line.match(/^\s*/)[0])) throw Error('tab indentation inside jobs: is not supported: ' + line);
     const indent = line.match(/^ */)[0].length;
     if (indent === 2) {
@@ -33,18 +36,35 @@ function jobsOf(rawText) {
       if (!key) throw Error('unrecognised job key (quoted, flow-style or inline): ' + line);
       if (Object.hasOwn(jobs, key[1])) throw Error('duplicate job id: ' + key[1]);
       current = key[1]; jobs[current] = [];
+      outside.push(line);
     } else if (indent < 2 || current === null) {
       throw Error('unexpected indentation under jobs: ' + line);
     } else jobs[current].push(line);
   }
+  outside.push(...lines.slice(i));
   if (!Object.keys(jobs).length) throw Error('no jobs recognised');
-  return Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, v.join('\n')]));
+  return { jobs: Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, v.join('\n')])), outside: outside.join('\n') };
 }
+const jobsOf = rawText => splitWorkflow(rawText).jobs;
 
-// Reaching the VPS = holding the SSH key (deploy scripts ssh internally) or calling ssh/scp/rsync directly.
-const sshesToVps = block => /secrets.VPS_SSH_PRIVATE_KEY/.test(block) || /(^|[\s;&|(`])(ssh|scp|rsync|sftp)\s/m.test(block);
-const needsCiGate = block => /^\s+needs:\s*(\[[^\]]*\bci-gate\b[^\]]*\]|ci-gate)\s*$/m.test(block)
-  || /^\s+needs:\s*\n(\s+-\s*\S+\n)*\s+-\s*ci-gate\s*$/m.test(block);
+// Job-level properties (indent 4) only; step-level keys such as an "env: needs: ..." never count.
+function jobProps(block) {
+  const props = {};
+  let cur = null;
+  for (const line of block.split('\n')) {
+    if (/^\s*(#.*)?$/.test(line)) { if (cur) props[cur].push(line); continue; }
+    const indent = line.match(/^ */)[0].length;
+    if (indent === 4) {
+      const m = /^ {4}([A-Za-z_][A-Za-z0-9_-]*):(.*)$/.exec(line);
+      if (!m) throw Error('unrecognised job property: ' + line);
+      if (Object.hasOwn(props, m[1])) throw Error('duplicate job property: ' + m[1]);
+      cur = m[1]; props[cur] = [m[2]];
+    } else if (indent > 4 && cur) props[cur].push(line);
+    else throw Error('unexpected indentation in job: ' + line);
+  }
+  return Object.fromEntries(Object.entries(props).map(([k, v]) => [k, v.join('\n')]));
+}
+const needsList = value => value.replace(/#.*$/gm, '').replace(/^\s*-\s+/gm, ' ').replace(/[[\],]/g, ' ').split(/\s+/).filter(Boolean);
 
 // Read-only exceptions. Each entry must stay justified: it may not apply, push, or change state on the VPS.
 const READ_ONLY_ALLOWLIST = {
@@ -90,55 +110,126 @@ test('diagnose read-only pin: any edit to the job fails, including state-changin
   assert.throws(() => assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', block + '    # x\n', allow), /diagnose job changed/);
 });
 
-// Every job that can reach the VPS (holds the SSH key or calls ssh/scp/rsync/sftp) must need ci-gate,
-// whether or not it declares an environment. Only the pinned read-only diagnose job is exempt.
-function policyViolations(file, text) {
-  const violations = [];
-  let reaching = 0;
-  for (const [name, block] of Object.entries(jobsOf(text))) {
-    if (!sshesToVps(block)) continue;
-    reaching += 1;
-    const allow = READ_ONLY_ALLOWLIST[file];
-    if (allow && allow.jobs.includes(name)) {
-      try { assertPinnedReadOnly(file, name, block, allow); } catch (error) { violations.push(error.message); }
-      continue;
-    }
-    if (!needsCiGate(block)) violations.push(`${file}:${name} can reach the VPS over ssh without "needs: ci-gate"`);
+// ---- closed topology -----------------------------------------------------------------------
+// SECURITY BOUNDARY for real is the Owner's GitHub configuration: the SSH secret lives ONLY in environment
+// vps-production, whose deployment branches are limited to main (optionally with a required reviewer).
+// The checks below are a DETECTION layer: they keep every other workflow away from the VPS and pin the
+// two places that may touch it. Nothing here proves the GitHub settings (NOT TESTED until the Owner sets them).
+//
+//  * Only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose may mention VPS_* secrets/vars.
+//  * No other workflow may use ssh/scp/rsync/sftp (any path), secrets: inherit, a local reusable
+//    workflow/composite action, or scripts/deploy/* beyond three offline Node build/verify scripts.
+//  * deploy-vps.yml has exactly the jobs ci-gate (pinned by sha256) and deploy (job-level needs ci-gate,
+//    no always()/failure()/cancelled() in its job-level if).
+const SENSITIVE = /vps_|\bssh\b|\bscp\b|\brsync\b|\bsftp\b|secrets:\s*inherit|uses:\s*\.\/|github-vps-|vps-diagnose|recover-6270/i;
+const SAFE_NODE_SCRIPTS = ['check-app-compat.mjs', 'build-ubuntu-artifact.mjs', 'verify-ubuntu-artifact.mjs'];
+const CI_GATE_PINNED_SHA256 = 'fb9340b2e5d610b291e788a0970792263aa127d77f3a08b325217f8b2f35343e';
+
+function unsafeReferences(text) {
+  const out = [];
+  const hit = SENSITIVE.exec(text);
+  if (hit) out.push(`mentions "${hit[0]}"`);
+  for (const m of text.matchAll(/scripts\/deploy(?!\/)/g)) out.push(`bare scripts/deploy reference at ${m.index}`);
+  for (const m of text.matchAll(/scripts\/deploy\/([^\s"']*)/g)) {
+    const before = text.slice(Math.max(0, m.index - 5), m.index);
+    if (before !== 'node ' || !SAFE_NODE_SCRIPTS.includes(m[1])) out.push(`calls scripts/deploy/${m[1]} (not an allowed "node" build/verify script)`);
   }
-  return { violations, reaching };
+  return out;
 }
 
-test('every job that can reach the VPS over ssh needs ci-gate (environment or not), except the pinned read-only diagnose job', () => {
-  const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
-  assert.ok(files.length > 0);
-  let reaching = 0;
-  for (const file of files) {
-    const r = policyViolations(file, readFileSync(join(WORKFLOWS, file), 'utf8'));
-    assert.deepEqual(r.violations, [], file);
-    reaching += r.reaching;
+function deployJobViolations(block) {
+  const props = jobProps(block);
+  const out = [];
+  if (!needsList(props.needs ?? '').includes('ci-gate')) out.push('deploy job must have a job-level needs containing ci-gate');
+  if (props.if !== undefined && /\b(always|failure|cancelled)\s*\(/.test(props.if)) out.push('deploy job-level if must not use always()/failure()/cancelled()');
+  return out;
+}
+
+function topologyViolations(file, text) {
+  const { jobs, outside } = splitWorkflow(text);
+  const out = [];
+  const bad = (where, list) => list.forEach(reason => out.push(`${file}:${where} ${reason}`));
+  bad('(outside jobs: workflow-level env, permissions, triggers)', unsafeReferences(outside));
+  if (file === 'deploy-vps.yml') {
+    if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['ci-gate', 'deploy'])) out.push(`${file} must have exactly the jobs ci-gate, deploy (found ${Object.keys(jobs).join(', ')})`);
+    if (jobs['ci-gate'] === undefined) out.push(`${file} has no ci-gate job`);
+    else if (jobSha256(jobs['ci-gate']) !== CI_GATE_PINNED_SHA256) out.push(`${file}:ci-gate job changed: requires Lead + Codex re-review of the gate, then update the pinned hash`);
+    if (jobs.deploy === undefined) out.push(`${file} has no deploy job`);
+    else out.push(...deployJobViolations(jobs.deploy).map(reason => `${file}:deploy ${reason}`));
+  } else if (file === 'diagnose-vps-release.yml') {
+    if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['diagnose'])) out.push(`${file} must have exactly the job diagnose (found ${Object.keys(jobs).join(', ')})`);
+    const allow = READ_ONLY_ALLOWLIST[file];
+    if (jobs.diagnose !== undefined) { try { assertPinnedReadOnly(file, 'diagnose', jobs.diagnose, allow); } catch (error) { out.push(error.message); } }
+  } else {
+    for (const [name, block] of Object.entries(jobs)) bad(name, unsafeReferences(block));
   }
-  assert.ok(reaching >= 2, 'expected to inspect the deploy-vps.yml and diagnose-vps-release.yml jobs');
+  return out;
+}
+
+test('closed topology: only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose reach the VPS; deploy is gated; every other workflow is clean', () => {
+  const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
+  assert.ok(files.includes('deploy-vps.yml') && files.includes('diagnose-vps-release.yml'));
+  for (const file of files) assert.deepEqual(topologyViolations(file, readFileSync(join(WORKFLOWS, file), 'utf8')), [], file);
+  // The three allowed offline scripts really never touch the VPS.
+  for (const name of SAFE_NODE_SCRIPTS) assert.doesNotMatch(readFileSync(join(ROOT, 'scripts/deploy', name), 'utf8'), /vps_|\bssh\b|\bscp\b|\brsync\b|\bsftp\b/i, name);
+  // No local composite actions / reusable workflows exist that could hide a VPS call.
+  assert.ok(!readdirSync(join(ROOT, '.github')).includes('actions'), '.github/actions must not exist');
 });
 
-test('policy negatives (in memory): ssh-capable jobs without ci-gate fail even with no environment; odd job ids fail closed', () => {
+test('topology negatives (in memory): every bypass scenario fails', () => {
+  const deploy = readFileSync(join(WORKFLOWS, 'deploy-vps.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const other = readFileSync(join(WORKFLOWS, 'ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+  assert.deepEqual(topologyViolations('deploy-vps.yml', deploy), []);
+  assert.deepEqual(topologyViolations('ci.yml', other), []);
+  const mustChange = (text, from, to) => { assert.ok(text.includes(from), 'mutation anchor: ' + from); return text.replace(from, to); };
+  const wf = job => 'name: x\non: workflow_dispatch\njobs:\n' + job;
+  const sneaky = run => wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ' + run + '\n');
+  const expectFail = (file, text, pattern, label) => {
+    const v = topologyViolations(file, text);
+    assert.ok(v.length > 0 && v.some(line => pattern.test(line)), `${label}: expected ${pattern}, got ${JSON.stringify(v)}`);
+  };
+
+  // 1. "needs: ci-gate" only nested inside a step env: not a job-level needs.
+  const noJobNeeds = mustChange(deploy, '  deploy:\n    needs: ci-gate\n', '  deploy:\n') + '      - run: echo\n        env:\n          needs: ci-gate\n';
+  assert.deepEqual(Object.keys(splitWorkflow(deploy).jobs), ['ci-gate', 'deploy'], 'deploy is the last job');
+  expectFail('deploy-vps.yml', noJobNeeds, /job-level needs containing ci-gate/, 'nested needs');
+  // 2. A fake ci-gate job that does not run the real gate.
+  expectFail('deploy-vps.yml', mustChange(deploy, 'run: node scripts/deploy/ci-gate.mjs "$DEPLOY_SHA"', 'run: echo ok'), /ci-gate job changed/, 'fake ci-gate');
+  // 3. deploy job-level if that survives a failed gate.
+  for (const cond of ['always()', 'failure()', 'cancelled()', '!cancelled()', "github.ref == 'refs/heads/main' || always()"]) {
+    expectFail('deploy-vps.yml', mustChange(deploy, "  deploy:\n    needs: ci-gate\n    if: github.ref == 'refs/heads/main'", `  deploy:\n    needs: ci-gate\n    if: ${cond}`), /must not use always/, cond);
+  }
+  // 4. The SSH key at workflow level, in deploy-vps.yml itself and in another workflow.
+  expectFail('deploy-vps.yml', mustChange(deploy, '\npermissions:', '\nenv:\n  K: ${{ secrets.VPS_SSH_PRIVATE_KEY }}\npermissions:'), /outside jobs/, 'workflow-level key in deploy-vps');
+  expectFail('evil.yml', 'name: x\non: push\nenv:\n  K: ${{ secrets.VPS_SSH_PRIVATE_KEY }}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo\n', /outside jobs/, 'workflow-level key elsewhere');
+  expectFail('evil.yml', sneaky('echo hi\n        env:\n          K: ${{ secrets.VPS_SSH_PRIVATE_KEY }}'), /sneaky/, 'key in another workflow job');
+  // 5. The deploy script run from another workflow.
+  expectFail('evil.yml', sneaky('bash scripts/deploy/github-vps-deploy.sh'), /sneaky/, 'bash deploy script');
+  expectFail('evil.yml', sneaky('python3 scripts/deploy/vps-update.py apply'), /not an allowed/, 'vps-update');
+  expectFail('evil.yml', sneaky('node ./scripts/deploy/check-app-compat.mjs'), /not an allowed/, 'relative node path');
+  expectFail('evil.yml', sneaky('cd scripts/deploy && ./github-vps-deploy.sh'), /sneaky/, 'cd into scripts/deploy');
+  // 6. ssh by absolute path, scp/rsync/sftp.
+  for (const run of ['/usr/bin/ssh root@host reboot', 'ssh root@host', 'scp x root@host:/y', 'rsync -a x root@host:/y', 'sftp root@host']) expectFail('evil.yml', sneaky(run), /sneaky/, run);
+  // 7. secrets: inherit and local reusable workflows / composite actions.
+  expectFail('evil.yml', wf('  call:\n    uses: org/repo/.github/workflows/x.yml@v1\n    secrets: inherit\n'), /secrets:\s*inherit/, 'secrets inherit');
+  expectFail('evil.yml', wf('  call:\n    uses: ./.github/workflows/deploy-vps.yml\n'), /uses:\s*\.\//, 'local reusable workflow');
+  expectFail('evil.yml', sneaky('echo hi\n      - uses: ./.github/actions/deploy'), /uses:\s*\.\//, 'local composite action');
+  // Controls: the offline Node scripts ci.yml uses are allowed.
+  assert.deepEqual(topologyViolations('evil.yml', sneaky('node scripts/deploy/check-app-compat.mjs --static')), []);
+  // Extra jobs in deploy-vps.yml are refused.
+  expectFail('deploy-vps.yml', deploy + '  extra:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo\n', /exactly the jobs/, 'extra job');
+});
+
+test('parser is fail-closed: odd job ids and structures throw instead of hiding a job', () => {
   const wf = jobs => 'name: x\non: workflow_dispatch\njobs:\n' + jobs;
-  const keyNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo hi\n        env:\n          K: ${{ secrets.VPS_SSH_PRIVATE_KEY }}\n');
-  const sshNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh root@host reboot\n');
-  const rsyncNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: |\n          set -e\n          rsync -a x root@host:/y\n');
-  for (const text of [keyNoEnv, sshNoEnv, rsyncNoEnv]) {
-    const r = policyViolations('evil.yml', text);
-    assert.equal(r.violations.length, 1, text);
-    assert.match(r.violations[0], /without "needs: ci-gate"/);
-  }
-  // Control: the same job passes once it needs ci-gate.
-  assert.deepEqual(policyViolations('ok.yml', sshNoEnv.replace('    runs-on', '    needs: ci-gate\n    runs-on')).violations, []);
-  // Quoted / flow-style / odd ids cannot hide a job: the parser throws.
   for (const key of ['"sneaky":', "'sneaky':", 'sneaky : ', '? sneaky']) {
-    assert.throws(() => policyViolations('evil.yml', wf('  ' + key + '\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh root@host reboot\n')), /unrecognised job key/, key);
+    assert.throws(() => splitWorkflow(wf('  ' + key + '\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh root@host reboot\n')), /unrecognised job key/, key);
   }
-  assert.throws(() => policyViolations('evil.yml', wf('  a:\n    runs-on: x\n  a:\n    runs-on: y\n')), /duplicate job id/);
-  assert.throws(() => policyViolations('evil.yml', 'name: x\njobs: { a: { runs-on: x } }\n'), /plain "jobs:"/);
-  assert.throws(() => policyViolations('evil.yml', 'name: x\non: push\n'), /plain "jobs:"/);
+  assert.throws(() => splitWorkflow(wf('  a:\n    runs-on: x\n  a:\n    runs-on: y\n')), /duplicate job id/);
+  assert.throws(() => splitWorkflow('name: x\njobs: { a: { runs-on: x } }\n'), /plain "jobs:"/);
+  assert.throws(() => splitWorkflow('name: x\non: push\n'), /plain "jobs:"/);
+  assert.throws(() => jobProps('    "needs": ci-gate\n    runs-on: x'), /unrecognised job property/);
+  assert.throws(() => jobProps('    needs: a\n    needs: ci-gate'), /duplicate job property/);
 });
 
 test('the retired one-off recovery workflow is gone and nothing references it', () => {
@@ -152,7 +243,7 @@ test('deploy-vps.yml: ci-gate runs the gate on a resolved SHA and the deploy job
   assert.ok(jobs['ci-gate'] && jobs.deploy);
   assert.match(jobs['ci-gate'], /outputs:\s*\n\s+sha:\s*\$\{\{\s*steps\.source\.outputs\.sha\s*\}\}/);
   assert.match(jobs['ci-gate'], /node scripts\/deploy\/ci-gate\.mjs "\$DEPLOY_SHA"/);
-  assert.ok(needsCiGate(jobs.deploy), 'deploy must need ci-gate');
+  assert.ok(needsList(jobProps(jobs.deploy).needs ?? '').includes('ci-gate'), 'deploy must need ci-gate');
   assert.match(jobs.deploy, /uses:\s*actions\/checkout@v4\s*\n\s+with:\s*\n\s+ref:\s*\$\{\{\s*needs\.ci-gate\.outputs\.sha\s*\}\}/);
   assert.doesNotMatch(jobs.deploy, /ref:\s*main\b/);
 });
