@@ -1,6 +1,6 @@
 # 11Ship — Functional Baseline (B-01)
 
-**Phiên bản:** v0.2 (Owner đã chốt xung đột nguồn; vẫn là bản nháp chờ phản biện) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
+**Phiên bản:** v0.3 (Owner đã chốt xung đột nguồn; bổ sung 6 dòng từ chiều ngược B-02; vẫn là bản nháp chờ phản biện) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
 **Trạng thái:** DRAFT — Owner đã xác nhận C-01…C-15 ngày 01/11/2026; chờ Codex/Antigravity phản biện độc lập và hoàn tất B-04. **Chưa merge PR #298; chưa xác nhận code/runtime đạt baseline.**
 **Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
@@ -54,6 +54,9 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M01-R-14 | M01 | Điều khoản và quyền riêng tư | Đăng ký | Bản hiện hành: terms-20261014-v1, privacy-20261017-v1. Bản nháp v2 (31/10) chưa được duyệt → C-13 | Phiên bản đồng ý lưu theo user | — | — | M01-terms-privacy (14/10, 17/10); M01-terms-privacy-draft (31/10) |
 | M01-R-15 | M01 | Đăng xuất có hiệu lực ngay `[P8]` | Tài khoản → Đăng xuất (11Ship, 11Food) | UI chuyển ngay sang trạng thái khách/chưa đăng nhập; dừng mọi luồng riêng của phiên (push, GPS, long-poll). Máy chủ vẫn là bên quyết định | Session bị thu hồi | — | Response đến muộn của phiên cũ bị bỏ qua | #295 (01/11); M08 §9; M14-online-location |
 | M01-R-16 | M01 | Đổi tài khoản không lộ dữ liệu `[P8]` | Đăng xuất A → đăng nhập B | B không bao giờ thấy dữ liệu của A (ví, đơn, thông báo), kể cả khi response của A về muộn | Cache theo tài khoản | — | Bỏ dữ liệu không thuộc phiên hiện tại | #295; M08 §9 |
+| M01-R-17 | M01 | Mời và kích hoạt ADMIN | Admin Web: tạo/xem lời mời → mở link → kích hoạt | SYSTEM tạo lời mời có quyền; người được mời mở link, xác minh OTP qua SMS (purpose ADMIN_ACTIVATION riêng) rồi kích hoạt. Trang kích hoạt chỉ mở ô nhập mã khi gateway đã gửi SMS | Lời mời, challenge kích hoạt | SYS tạo lời mời | Gateway chưa sẵn sàng → báo đúng, không giả đã gửi | M01-workstreams (12/10); M01-production-profile (14/10) |
+| M01-R-18 | M01 | SMS Gateway là kênh OTP duy nhất | Mọi luồng OTP | OTP chỉ đi qua SMS Gateway (`SMS_GATEWAY_ENABLED=true`); không có chế độ DISABLED_TEST/FAKE/TEST_INBOX/fixture trên VPS | Hàng đợi SMS | — | Gateway chưa sẵn sàng → lỗi trung thực, không bỏ qua OTP | M01-production-profile (14/10); #101; #103 |
+| M01-R-19 | M01 | Ràng buộc thiết bị theo phiên | cxđ | Phiên app gắn với thiết bị; xóa tài khoản vĩnh viễn thì xóa phiên, ràng buộc thiết bị và khóa thiết bị không còn liên kết. Nguồn chỉ nêu gián tiếp; chi tiết hành vi cần Codex/Owner xác nhận | Ràng buộc/khóa thiết bị | — | — | M01-final-package (14/10); M08 §9 |
 
 ## 3. M02 — Quán, thực đơn, khám phá (gồm M09 cũ)
 
@@ -73,6 +76,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M02-R-12 | M02 | Khoảng cách trên Home/Tìm kiếm/Chi tiết quán `[P8]` → C-05 | 11Food Home, Tìm kiếm, Chi tiết quán | Luôn là quãng đường **từ quán → GPS hiện tại của khách**, theo hợp đồng M14 (M14-R-10), ghi nhãn rõ ý nghĩa. Không có GPS thì hiện "chưa xác định". Không dùng đường thẳng | Cache khoảng cách | KH | Đổi GPS → bỏ cache; lỗi tuyến → "chưa xác định" | #294 (01/11); #206 |
 | M02-R-13 | M02 | Admin quản lý quán | Admin Web › Quán | Xem/khóa/tắt quán theo quyền | — | AD (`can_manage_shops`) | Còn việc mở → SHOP_HAS_OPEN_WORK | M02-admin-shops (24/10) |
 | M02-R-14 | M02 | Banner trạng thái không lỗi thời | 11Food (CQ) | Banner trạng thái quán khớp dữ liệu máy chủ | — | CQ | — | #281 |
+| M02-R-15 | M02 | Nhóm món hệ thống | 11Food Home (chip nhóm món), Chi tiết quán; quản trị cxđ | Khám phá lọc theo nhóm món hệ thống đang hoạt động; thực đơn quán hiển thị theo nhóm. Không xóa vật lý nhóm, không tự chuyển món sang nhóm khác | Nhóm món | KH xem; quản trị cxđ | — | M02-discovery-UI-LOCKED (16/10); M02-home-shop-detail-UI-OWNER (22/10) |
 
 ## 4. M03 — Shipper
 
@@ -222,6 +226,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M12-R-07 | M12 | Scope báo cáo/audit | — | Báo cáo và audit theo scope; wallet.read là quyền riêng | — | AD | — | #262 (29/10) |
 | M12-R-08 | M12 | Hàng đợi việc, phân tích, cờ bất thường | Admin Web | Hàng đợi việc cần xử lý; phân tích; cờ bất thường chỉ gắn cờ, không tự xử lý | — | AD | — | #216; #241; #242 |
 | M12-R-09 | M12 | Mini Business | PWA `/business/` | Dashboard vận hành 5 tab cho **SYSTEM và ADMIN được cấp đúng quyền**. ADMIN xem/chỉ xử lý theo grants API, không suy app VIEW là có report.read/wallet.read hay quyền sửa; 403 hiển thị thiếu quyền phù hợp. **Không tự mặc định mở PWA này cho SHOP_OWNER** | App grants + report.read / wallet.read + action guards | SYS; AD theo scope/quyền được cấp | 401/403/500/offline phải phân biệt, không rò dữ liệu hoặc xóa tab khác | #236; #237 (Owner 2026-10); business-dashboard |
+| M12-R-10 | M12 | Web Push cho Mini Business (tùy chọn) | PWA `/business/` | Thông báo tài chính/chưa đọc luôn có trong PWA; nhắc một lần sau 30 phút chờ. Web Push chỉ hiện "Có cập nhật mới cần kiểm tra" và mở đúng chat; subscription gắn phiên | Subscription push | SYS, AD theo quyền | Từ chối quyền hoặc lỗi push không làm mất yêu cầu; không cấu hình VAPID vẫn có danh sách chờ | business-dashboard; G03 (26/10) |
 
 ## 13. M13 — Vận hành, cảnh báo, cập nhật
 
@@ -234,6 +239,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M13-R-05 | M13 | Kiểm tra phiên bản không phụ thuộc phiên đăng nhập | `/check` / API version (guest được truy cập) | So sánh versionCode từng app FOOD/SHIP khi mở/resume; có bản mới hiện **popup nhẹ** với Cập nhật và Để sau, không popup chặn toàn trang, không tự quyết định shipper đang có đơn/khóa nút cập nhật; không yêu cầu đăng nhập. Thông tin `min_supported_version_code` của backend chỉ phản ánh tương thích, **không phục hồi UX chặn tải APK** đã bị #280 thay thế | Phiên bản, metadata và điều kiện tương thích backend hiện hữu | KH/CQ/SP hoặc khách chưa đăng nhập | Offline/API lỗi không báo giả đã mới; không làm mất chức năng và kiểm lại sau | #280 (Owner 31/10, thay thế UX M13 cũ); M13-apk-backend-compat (25/10) → C-14 |
 | M13-R-06 | M13 | Kênh cập nhật mới và chuyển tiếp | 11Food/11Ship → popup Cập nhật | Baseline mới **chỉ kiểm phiên bản, thông báo và mở listing Google Play thật khi đã phát hành**, không tải/cài APK hoặc theo dõi tiến trình qua VPS; Để sau hoạt động. **Trong giai đoạn chưa có kênh Play khả dụng**, giữ đường nâng cấp APK cũ cho người dùng đang lưu hành (không gỡ file/endpoint cũ, không trỏ tới Play giả), nhưng không coi tự tải APK là chức năng mục tiêu của M13 mới. Chỉ chuyển kênh sau khi xác minh package, signing, link, versionCode và nâng cấp được bản cũ | Release FOOD/SHIP riêng; legacy 0.1.470 cần đường nâng cấp | — | Thiếu listing Play → không chuyển người dùng sang URL giả hoặc làm đứt cập nhật | #280 (Owner 31/10) → C-14 |
 | M13-R-07 | M13 | Nhật ký lỗi | Admin Web | Chỉ SYS đọc; không lưu SQL/mật khẩu/token/OTP/số tài khoản/ảnh/địa chỉ khách | — | SYS | — | M13-error-logs (21/10) |
+| M13-R-08 | M13 | Vận hành SMS Gateway | App Gateway Android; Admin Web (giám sát) | Gateway gửi telemetry và tự cập nhật khi rảnh; hàng đợi OTP hiển thị nhãn "Đăng ký / Quên mật khẩu" | Thiết bị gateway, hàng đợi | SYS; AD được cấp | Không đọc được trạng thái → không hiện xanh | M13-implementation (23/10) |
 
 ## 14. M14 — GPS, bản đồ, định tuyến
 
@@ -258,6 +264,17 @@ Phase 1 dùng các dòng trên làm đầu vào cho:
 - **B-00:** script kiểm kê đảm bảo mọi module, route, bảng, route Admin, màn mobile, runner và workflow map vào ít nhất một dòng. Dòng nào không map được thì bổ sung hoặc đánh dấu.
 - **B-02:** Codex lập ma trận ánh xạ.
 - **B-03:** smoke test.
+
+## 15b. Kết quả B-02 (Codex, head c30747b) và xử lý của Lead
+
+Ma trận B-02 đã map 163/163 Req ID. Lead xử lý chiều ngược như sau:
+
+- **Đã bổ sung dòng mới (có nguồn loại A):** M01-R-17 (mời/kích hoạt ADMIN), M01-R-18 (SMS Gateway là kênh OTP duy nhất), M01-R-19 (ràng buộc thiết bị, nguồn gián tiếp), M02-R-15 (nhóm món hệ thống), M12-R-10 (Web Push Mini Business), M13-R-08 (vận hành SMS Gateway).
+- **Chuyển Phase 3/4 làm ứng viên phát hiện, không thêm vào baseline:**
+  - `VoucherScreen` trên mobile, trong khi M10-R-02 và M02-discovery ghi rõ chưa có voucher.
+  - M01-R-11: không tìm thấy route mobile để người dùng tự xóa tài khoản.
+  - `DiagnosticsView`, `AdminLimitConfigVerifier`, thao tác bảo trì/truy cập ops, bảng `admin_sensitive_operations`: chưa thấy nguồn loại A. Phase 3 xác định nguồn gốc (PR/issue), sau đó Owner quyết giữ hay bỏ.
+- **Không phải yêu cầu chức năng:** các workflow governance/CI/progress, `sms-gateway-apk.yml` (build), test/spec/helper.
 
 ## 16. Conflict Register (B-05)
 
