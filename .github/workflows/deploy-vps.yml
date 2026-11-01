@@ -28,7 +28,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci-gate:
+    name: CI gate (deploy SHA must be green on main)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Resolve latest main once
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI on the exact deploy SHA (fail-closed)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/deploy/ci-gate.mjs "$DEPLOY_SHA"
+
   deploy:
+    needs: ci-gate
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -38,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.ci-gate.outputs.sha }}
           persist-credentials: false
       - name: Resolve latest main once
         id: source
