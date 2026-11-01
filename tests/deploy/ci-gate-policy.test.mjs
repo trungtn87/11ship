@@ -144,7 +144,7 @@ function unsafeReferences(text) {
     if (before !== 'node ' || !SAFE_NODE_SCRIPTS.includes(m[1])) { out.push(`calls scripts/deploy/${m[1]} (not an allowed "node" build/verify script)`); continue; }
     if (m[1] === 'check-app-compat.mjs') {
       const rest = text.slice(m.index + m[0].length).split('\n', 1)[0];
-      if (!/(^|\s)--static(\s|$)/.test(rest) || /--(live|after)\b/.test(rest)) out.push(`calls check-app-compat.mjs without exactly --static ("${rest.trim()}")`);
+      if (rest.trim() !== '--static') out.push(`calls check-app-compat.mjs without exactly --static ("${rest.trim()}")`);
     }
   }
   return out;
@@ -248,7 +248,7 @@ test('topology negatives (in memory): every bypass scenario fails', () => {
     expectFail('deploy-vps.yml', deploy + '\n# ' + expr + '\n', /whole secrets context/, 'deploy-vps ' + expr);
   }
   // 9. check-app-compat is exempt only with --static.
-  for (const args of ['--live https://example.com', '--live "$ORIGIN" --after', '--after', '', '--static --live https://example.com']) {
+  for (const args of ['--live https://example.com', '--live "$ORIGIN" --after', '--after', '', '--static --live https://example.com', '"$MODE" "$ORIGIN" # --static', '--static $X', '--static # x', '--static "--live"']) {
     expectFail('evil.yml', sneaky('node scripts/deploy/check-app-compat.mjs ' + args), /without exactly --static/, 'check-app-compat ' + args);
   }
   // Controls: the offline Node scripts ci.yml uses are allowed.
