@@ -116,12 +116,19 @@ test('diagnose read-only pin: any edit to the job fails, including state-changin
 // The checks below are a DETECTION layer: they keep every other workflow away from the VPS and pin the
 // two places that may touch it. Nothing here proves the GitHub settings (NOT TESTED until the Owner sets them).
 //
-//  * Only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose may mention VPS_* secrets/vars.
+//  * Only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose may declare an environment pointing at
+//    vps-production (any spelling/case); every other workflow may declare no `environment` at all.
+//  * Only those two jobs may mention VPS_* secrets/vars. No workflow may hand over the whole secrets
+//    context (toJSON(secrets), secrets[...], ${{ secrets }}).
 //  * No other workflow may use ssh/scp/rsync/sftp (any path), secrets: inherit, a local reusable
-//    workflow/composite action, or scripts/deploy/* beyond three offline Node build/verify scripts.
+//    workflow/composite action, or scripts/deploy/* beyond: node build-ubuntu-artifact.mjs /
+//    verify-ubuntu-artifact.mjs (offline build/verify) and node check-app-compat.mjs with --static only
+//    (--live and --after make network calls and are NOT exempt).
 //  * deploy-vps.yml has exactly the jobs ci-gate (pinned by sha256) and deploy (job-level needs ci-gate,
-//    no always()/failure()/cancelled() in its job-level if).
-const SENSITIVE = /vps_|\bssh\b|\bscp\b|\brsync\b|\bsftp\b|secrets:\s*inherit|uses:\s*\.\/|github-vps-|vps-diagnose|recover-6270/i;
+//    no always()/failure()/cancelled() in its job-level if, matched case-insensitively).
+const SENSITIVE = /vps_|vps-production|\bssh\b|\bscp\b|\brsync\b|\bsftp\b|secrets:\s*inherit|uses:\s*\.\/|github-vps-|vps-diagnose|recover-6270/i;
+// Whole-context secret access (the dot form secrets.NAME is fine).
+const SECRETS_CONTEXT = /tojson\s*\(\s*secrets\b|\bsecrets\s*\[|\bsecrets\s*\}\}|\(\s*secrets\s*[,)]|,\s*secrets\s*[,)]/i;
 const SAFE_NODE_SCRIPTS = ['check-app-compat.mjs', 'build-ubuntu-artifact.mjs', 'verify-ubuntu-artifact.mjs'];
 const CI_GATE_PINNED_SHA256 = 'fb9340b2e5d610b291e788a0970792263aa127d77f3a08b325217f8b2f35343e';
 
@@ -129,10 +136,16 @@ function unsafeReferences(text) {
   const out = [];
   const hit = SENSITIVE.exec(text);
   if (hit) out.push(`mentions "${hit[0]}"`);
+  const ctx = SECRETS_CONTEXT.exec(text);
+  if (ctx) out.push(`passes the whole secrets context ("${ctx[0]}")`);
   for (const m of text.matchAll(/scripts\/deploy(?!\/)/g)) out.push(`bare scripts/deploy reference at ${m.index}`);
   for (const m of text.matchAll(/scripts\/deploy\/([^\s"']*)/g)) {
     const before = text.slice(Math.max(0, m.index - 5), m.index);
-    if (before !== 'node ' || !SAFE_NODE_SCRIPTS.includes(m[1])) out.push(`calls scripts/deploy/${m[1]} (not an allowed "node" build/verify script)`);
+    if (before !== 'node ' || !SAFE_NODE_SCRIPTS.includes(m[1])) { out.push(`calls scripts/deploy/${m[1]} (not an allowed "node" build/verify script)`); continue; }
+    if (m[1] === 'check-app-compat.mjs') {
+      const rest = text.slice(m.index + m[0].length).split('\n', 1)[0];
+      if (!/(^|\s)--static(\s|$)/.test(rest) || /--(live|after)\b/.test(rest)) out.push(`calls check-app-compat.mjs without exactly --static ("${rest.trim()}")`);
+    }
   }
   return out;
 }
@@ -141,7 +154,8 @@ function deployJobViolations(block) {
   const props = jobProps(block);
   const out = [];
   if (!needsList(props.needs ?? '').includes('ci-gate')) out.push('deploy job must have a job-level needs containing ci-gate');
-  if (props.if !== undefined && /\b(always|failure|cancelled)\s*\(/.test(props.if)) out.push('deploy job-level if must not use always()/failure()/cancelled()');
+  if (props.if !== undefined && /\b(always|failure|cancelled)\s*\(/i.test(props.if)) out.push('deploy job-level if must not use always()/failure()/cancelled()');
+  if (!/vps-production/i.test(props.environment ?? '')) out.push('deploy job must declare environment vps-production');
   return out;
 }
 
@@ -149,7 +163,11 @@ function topologyViolations(file, text) {
   const { jobs, outside } = splitWorkflow(text);
   const out = [];
   const bad = (where, list) => list.forEach(reason => out.push(`${file}:${where} ${reason}`));
-  bad('(outside jobs: workflow-level env, permissions, triggers)', unsafeReferences(outside));
+  // The one workflow-level mention allowed: deploy-vps.yml serialises runs with this concurrency group name.
+  const outsideChecked = file === 'deploy-vps.yml' ? outside.replace('\n  group: vps-production-deploy\n', '\n') : outside;
+  bad('(outside jobs: workflow-level env, permissions, triggers)', unsafeReferences(outsideChecked));
+  // The whole secrets context is never handed over, not even in the two allowed workflows.
+  if (SECRETS_CONTEXT.test(text)) out.push(`${file} passes the whole secrets context`);
   if (file === 'deploy-vps.yml') {
     if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['ci-gate', 'deploy'])) out.push(`${file} must have exactly the jobs ci-gate, deploy (found ${Object.keys(jobs).join(', ')})`);
     if (jobs['ci-gate'] === undefined) out.push(`${file} has no ci-gate job`);
@@ -161,7 +179,11 @@ function topologyViolations(file, text) {
     const allow = READ_ONLY_ALLOWLIST[file];
     if (jobs.diagnose !== undefined) { try { assertPinnedReadOnly(file, 'diagnose', jobs.diagnose, allow); } catch (error) { out.push(error.message); } }
   } else {
-    for (const [name, block] of Object.entries(jobs)) bad(name, unsafeReferences(block));
+    for (const [name, block] of Object.entries(jobs)) {
+      bad(name, unsafeReferences(block));
+      // No environment at all outside the two allowed jobs (also catches dynamic names like ${{ inputs.x }}).
+      if (jobProps(block).environment !== undefined) out.push(`${file}:${name} declares an environment (only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose may)`);
+    }
   }
   return out;
 }
@@ -170,7 +192,7 @@ test('closed topology: only deploy-vps.yml:deploy and diagnose-vps-release.yml:d
   const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
   assert.ok(files.includes('deploy-vps.yml') && files.includes('diagnose-vps-release.yml'));
   for (const file of files) assert.deepEqual(topologyViolations(file, readFileSync(join(WORKFLOWS, file), 'utf8')), [], file);
-  // The three allowed offline scripts really never touch the VPS.
+  // The three allowed scripts never reach the VPS (check-app-compat only over HTTPS, and only --static is exempt).
   for (const name of SAFE_NODE_SCRIPTS) assert.doesNotMatch(readFileSync(join(ROOT, 'scripts/deploy', name), 'utf8'), /vps_|\bssh\b|\bscp\b|\brsync\b|\bsftp\b/i, name);
   // No local composite actions / reusable workflows exist that could hide a VPS call.
   assert.ok(!readdirSync(join(ROOT, '.github')).includes('actions'), '.github/actions must not exist');
@@ -196,7 +218,7 @@ test('topology negatives (in memory): every bypass scenario fails', () => {
   // 2. A fake ci-gate job that does not run the real gate.
   expectFail('deploy-vps.yml', mustChange(deploy, 'run: node scripts/deploy/ci-gate.mjs "$DEPLOY_SHA"', 'run: echo ok'), /ci-gate job changed/, 'fake ci-gate');
   // 3. deploy job-level if that survives a failed gate.
-  for (const cond of ['always()', 'failure()', 'cancelled()', '!cancelled()', "github.ref == 'refs/heads/main' || always()"]) {
+  for (const cond of ['always()', 'failure()', 'cancelled()', '!cancelled()', 'Always()', 'FAILURE()', 'Cancelled()', '!CANCELLED()', 'ALWAYS ()', "github.ref == 'refs/heads/main' || always()"]) {
     expectFail('deploy-vps.yml', mustChange(deploy, "  deploy:\n    needs: ci-gate\n    if: github.ref == 'refs/heads/main'", `  deploy:\n    needs: ci-gate\n    if: ${cond}`), /must not use always/, cond);
   }
   // 4. The SSH key at workflow level, in deploy-vps.yml itself and in another workflow.
@@ -214,6 +236,21 @@ test('topology negatives (in memory): every bypass scenario fails', () => {
   expectFail('evil.yml', wf('  call:\n    uses: org/repo/.github/workflows/x.yml@v1\n    secrets: inherit\n'), /secrets:\s*inherit/, 'secrets inherit');
   expectFail('evil.yml', wf('  call:\n    uses: ./.github/workflows/deploy-vps.yml\n'), /uses:\s*\.\//, 'local reusable workflow');
   expectFail('evil.yml', sneaky('echo hi\n      - uses: ./.github/actions/deploy'), /uses:\s*\.\//, 'local composite action');
+  // 8. Another workflow declaring the production environment (any form/case) or an environment at all,
+  //    and handing over the whole secrets context, then running an arbitrary script.
+  const envJob = env => wf('  sneaky:\n    runs-on: ubuntu-24.04\n' + env + '    steps:\n      - run: scripts/remote-op.sh\n');
+  for (const env of ['    environment: vps-production\n', '    environment: VPS-Production\n', '    environment: { name: vps-production }\n', '    environment:\n      name: VPS-PRODUCTION\n', '    environment: ${{ inputs.target }}\n']) {
+    expectFail('evil.yml', envJob(env), /sneaky/, env.trim());
+  }
+  expectFail('evil.yml', wf("  sneaky:\n    runs-on: ubuntu-24.04\n    environment: vps-production\n    steps:\n      - run: scripts/remote-op.sh\n        env:\n          ALL: ${{ toJSON(secrets) }}\n"), /whole secrets context/, 'toJSON(secrets)');
+  for (const expr of ['${{ toJSON(secrets) }}', '${{ tojson( secrets ) }}', "${{ secrets['VPS_SSH_PRIVATE_KEY'] }}", "${{ secrets[format('{0}', 'X')] }}", '${{ secrets }}']) {
+    expectFail('evil.yml', sneaky('echo ' + expr), /secrets context/, expr);
+    expectFail('deploy-vps.yml', deploy + '\n# ' + expr + '\n', /whole secrets context/, 'deploy-vps ' + expr);
+  }
+  // 9. check-app-compat is exempt only with --static.
+  for (const args of ['--live https://example.com', '--live "$ORIGIN" --after', '--after', '', '--static --live https://example.com']) {
+    expectFail('evil.yml', sneaky('node scripts/deploy/check-app-compat.mjs ' + args), /without exactly --static/, 'check-app-compat ' + args);
+  }
   // Controls: the offline Node scripts ci.yml uses are allowed.
   assert.deepEqual(topologyViolations('evil.yml', sneaky('node scripts/deploy/check-app-compat.mjs --static')), []);
   // Extra jobs in deploy-vps.yml are refused.
