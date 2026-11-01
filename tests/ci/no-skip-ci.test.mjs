@@ -60,3 +60,14 @@ test('update-progress pushes to main only from a separate job gated on PROGRESS_
   assert.equal((text.replace(/^\s*#.*$/gm, '').match(/contents: write/g) ?? []).length, 1, 'exactly one job can write repository contents');
   assert.ok(text.includes('node scripts/generate-progress.mjs'), 'generator is kept');
 });
+
+test('the progress workflow and its message constant carry no CI-skip marker in any commit message', async () => {
+  const text = readFileSync(new URL('../../.github/workflows/update-progress.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const messages = [...text.matchAll(/git commit\b[^\n]*/g)].map(m => m[0]);
+  assert.ok(messages.length > 0, 'the workflow still makes a commit');
+  for (const message of messages) assert.ok(!SKIP_TOKEN.test(message), message);
+  assert.equal(findSkipTokens({ commits: messages.map((message, i) => ({ sha: String(i), message })) }).length, 0);
+  const { PROGRESS_COMMIT_MESSAGE } = await import('../../scripts/progress/constants.mjs');
+  assert.ok(!SKIP_TOKEN.test(PROGRESS_COMMIT_MESSAGE), PROGRESS_COMMIT_MESSAGE);
+  assert.ok(text.includes('git commit -m "' + PROGRESS_COMMIT_MESSAGE + '"'), 'workflow commits with the constant the collector trusts');
+});

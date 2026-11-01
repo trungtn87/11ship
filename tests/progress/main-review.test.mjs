@@ -12,7 +12,7 @@ import { collectSnapshot, GitHubError } from '../../scripts/progress/github.mjs'
 import { resetReviewLabels } from '../../scripts/progress/review.mjs';
 import { resolveProgress, validatePlan, mainStatus, STATE, CI } from '../../scripts/progress/resolve.mjs';
 import { buildMarkdown } from '../../scripts/generate-progress.mjs';
-import { PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
+import { LEGACY_PROGRESS_COMMIT_MESSAGE, PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
 import { plan, livePlan, REQUIRED, checks, history, merged, snapshot, LABELS_C1A1, stateOf, root } from './helpers.mjs';
 
 // ---------------------------------------------------------------------------------------------
@@ -134,9 +134,20 @@ describe('main CI is judged on the real head (blocker 1)', () => {
     assert.equal(result.main.ci, CI.RUNNING);
   });
 
+  test('MAIN-CI-02e the legacy bot message (with the CI-skip marker, still on main from before S-02) is still recognised', async () => {
+    const { snap } = await mainFor({
+      commits: [progressEntry('bot1', 'code1', { message: LEGACY_PROGRESS_COMMIT_MESSAGE }), entry('code1', null)],
+      runs: { code1: green },
+      files: { bot1: ['docs/PROGRESS.md'] },
+    });
+    assert.equal(snap.main.ci_sha, 'code1');
+    assert.deepEqual(snap.main.skipped_progress_shas, ['bot1']);
+    assert.ok(!PROGRESS_COMMIT_MESSAGE.includes('['), 'the message the workflow creates carries no marker');
+  });
+
   // Anything that merely looks like a progress commit must be treated as a normal commit.
   const lookalikes = {
-    'wrong message': () => progressEntry('x1', 'code1', { message: 'chore(progress): update docs/PROGRESS.md' }),
+    'wrong message': () => progressEntry('x1', 'code1', { message: 'chore(progress): refresh the dashboard' }),
     'extra message body': () => progressEntry('x1', 'code1', { message: `${PROGRESS_COMMIT_MESSAGE}\n\nand also some code` }),
     'human author': () => progressEntry('x1', 'code1', { meta: { author: identity(HUMAN), committer: identity(PROGRESS_BOT) } }),
     'human committer': () => progressEntry('x1', 'code1', { meta: { author: identity(PROGRESS_BOT), committer: identity(HUMAN) } }),

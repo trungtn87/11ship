@@ -5,11 +5,13 @@ name: Update progress
 # * Two kinds of jobs, split by trust:
 #   - `preview` runs on `pull_request`, may execute the PR's own code, and therefore gets a READ-ONLY
 #     token. It runs the tests and prints the dashboard to the job summary. It never writes.
-#   - `publish` holds the only write token. It runs on `push`, `workflow_run`, `workflow_dispatch` and
-#     `pull_request_target` (needed because label changes only reach a write-capable workflow that
-#     way). It checks out the DEFAULT BRANCH only and never the PR head, and it never reads a PR
-#     title, body, branch name or label value in the shell: the generator reads state itself through
-#     the REST API and treats it as data. Nothing from the event payload is interpolated into `run:`.
+#   - `publish` only GENERATES docs/PROGRESS.md and holds a READ-ONLY token (contents: read). It runs
+#     on `push`, `workflow_run`, `workflow_dispatch` and `pull_request_target` (needed because label
+#     changes only reach a workflow that way). `commit-progress` is the ONLY job holding
+#     contents: write; it runs only while the repository variable PROGRESS_PUBLISH is 'true'. Both
+#     check out the DEFAULT BRANCH only and never the PR head, and never read a PR title, body,
+#     branch name or label value in the shell: the generator reads state itself through the REST API
+#     and treats it as data. Nothing from the event payload is interpolated into `run:`.
 # * A review result is bound to the EXACT head SHA by a commit status, not by labels or timestamps.
 #   The review:* labels are only the input. `review-status` runs on pull_request_target `labeled` /
 #   `unlabeled` for a review:* label. It checks out the default branch only, reads the PR through the
@@ -245,7 +247,7 @@ jobs:
               exit 0
             fi
             git add docs/PROGRESS.md
-            git commit -m "chore(progress): update docs/PROGRESS.md [skip ci]"
+            git commit -m "chore(progress): update docs/PROGRESS.md"
             if git push origin "HEAD:${DEFAULT_BRANCH}"; then
               echo "published on attempt ${attempt}"
               exit 0

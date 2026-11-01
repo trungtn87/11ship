@@ -7,6 +7,7 @@
 import {
   MAIN_LOOKBACK,
   PROGRESS_BOT,
+  LEGACY_PROGRESS_COMMIT_MESSAGE,
   PROGRESS_COMMIT_MESSAGE,
   PROGRESS_FILE,
   REVIEW_CONTEXT,
@@ -130,7 +131,8 @@ export async function collectSnapshot({ repo, mainBranch, requiredChecks, pinned
  */
 export async function isTrustedProgressCommit(get, repo, c) {
   const meta = c.commit ?? {};
-  if (String(meta.message ?? '').trim() !== PROGRESS_COMMIT_MESSAGE) return false;
+  const message = String(meta.message ?? '').trim();
+  if (message !== PROGRESS_COMMIT_MESSAGE && message !== LEGACY_PROGRESS_COMMIT_MESSAGE) return false;
   for (const who of [meta.author, meta.committer]) {
     if (!who || who.name !== PROGRESS_BOT.name || who.email !== PROGRESS_BOT.email) return false;
   }
