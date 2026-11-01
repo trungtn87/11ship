@@ -14,17 +14,30 @@ const GATE = join(ROOT, 'scripts/deploy/ci-gate.mjs');
 
 // ---- workflow policy -------------------------------------------------------------------------
 
-// Minimal line-based split of `jobs:` into { name -> block text } (no YAML dependency is declared).
-function jobsOf(text) {
-  const start = text.split('\n').findIndex(line => /^jobs:\s*$/.test(line));
-  if (start < 0) return {};
+// Minimal line-based split of `jobs:` into { name -> block text } (no YAML dependency is declared:
+// js-yaml is only transitive). FAIL-CLOSED: anything this parser does not positively recognise throws,
+// so a quoted/odd job id or unusual structure can never hide a job from the policy below.
+function jobsOf(rawText) {
+  const lines = rawText.replace(/\r\n/g, '\n').split('\n');
+  const starts = lines.flatMap((line, i) => (/^jobs\s*:/.test(line) ? [i] : []));
+  if (starts.length !== 1 || !/^jobs:\s*(#.*)?$/.test(lines[starts[0]])) throw Error('workflow must have exactly one plain "jobs:" mapping');
   const jobs = {};
   let current = null;
-  for (const line of text.split('\n').slice(start + 1)) {
-    if (/^\S/.test(line)) break;
-    const key = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
-    if (key) { current = key[1]; jobs[current] = []; } else if (current) jobs[current].push(line);
+  for (const line of lines.slice(starts[0] + 1)) {
+    if (/^\S/.test(line)) break; // next top-level key
+    if (/^\s*(#.*)?$/.test(line)) { if (current) jobs[current].push(line); continue; }
+    if (/\t/.test(line.match(/^\s*/)[0])) throw Error('tab indentation inside jobs: is not supported: ' + line);
+    const indent = line.match(/^ */)[0].length;
+    if (indent === 2) {
+      const key = /^ {2}([A-Za-z_][A-Za-z0-9_-]*):\s*(#.*)?$/.exec(line);
+      if (!key) throw Error('unrecognised job key (quoted, flow-style or inline): ' + line);
+      if (Object.hasOwn(jobs, key[1])) throw Error('duplicate job id: ' + key[1]);
+      current = key[1]; jobs[current] = [];
+    } else if (indent < 2 || current === null) {
+      throw Error('unexpected indentation under jobs: ' + line);
+    } else jobs[current].push(line);
   }
+  if (!Object.keys(jobs).length) throw Error('no jobs recognised');
   return Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, v.join('\n')]));
 }
 
@@ -78,24 +91,55 @@ test('diagnose read-only pin: any edit to the job fails, including state-changin
   assert.throws(() => assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', block + '    # x\n', allow), /diagnose job changed/);
 });
 
-test('every production-environment job that reaches the VPS over ssh needs ci-gate, or is a justified read-only diagnosis', () => {
+// Every job that can reach the VPS (holds the SSH key or calls ssh/scp/rsync/sftp) must need ci-gate,
+// whether or not it declares an environment. Only the pinned read-only diagnose job is exempt.
+function policyViolations(file, text) {
+  const violations = [];
+  let reaching = 0;
+  for (const [name, block] of Object.entries(jobsOf(text))) {
+    if (!sshesToVps(block)) continue;
+    reaching += 1;
+    const allow = READ_ONLY_ALLOWLIST[file];
+    if (allow && allow.jobs.includes(name)) {
+      try { assertPinnedReadOnly(file, name, block, allow); } catch (error) { violations.push(error.message); }
+      continue;
+    }
+    if (!needsCiGate(block)) violations.push(`${file}:${name} can reach the VPS over ssh without "needs: ci-gate"`);
+  }
+  return { violations, reaching };
+}
+
+test('every job that can reach the VPS over ssh needs ci-gate (environment or not), except the pinned read-only diagnose job', () => {
   const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
   assert.ok(files.length > 0);
-  let checked = 0;
+  let reaching = 0;
   for (const file of files) {
-    const jobs = jobsOf(readFileSync(join(WORKFLOWS, file), 'utf8'));
-    for (const [name, block] of Object.entries(jobs)) {
-      if (!targetsProduction(block) || !sshesToVps(block)) continue;
-      checked += 1;
-      const allow = READ_ONLY_ALLOWLIST[file];
-      if (allow && allow.jobs.includes(name)) {
-        assertPinnedReadOnly(file, name, block, allow);
-        continue;
-      }
-      assert.ok(needsCiGate(block), `${file}:${name} deploys to vps-production over ssh without "needs: ci-gate"`);
-    }
+    const r = policyViolations(file, readFileSync(join(WORKFLOWS, file), 'utf8'));
+    assert.deepEqual(r.violations, [], file);
+    reaching += r.reaching;
   }
-  assert.ok(checked >= 2, 'expected to inspect deploy-vps.yml and diagnose-vps-release.yml production jobs');
+  assert.ok(reaching >= 2, 'expected to inspect the deploy-vps.yml and diagnose-vps-release.yml jobs');
+});
+
+test('policy negatives (in memory): ssh-capable jobs without ci-gate fail even with no environment; odd job ids fail closed', () => {
+  const wf = jobs => 'name: x\non: workflow_dispatch\njobs:\n' + jobs;
+  const keyNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo hi\n        env:\n          K: ${{ secrets.VPS_SSH_PRIVATE_KEY }}\n');
+  const sshNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh root@host reboot\n');
+  const rsyncNoEnv = wf('  sneaky:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: |\n          set -e\n          rsync -a x root@host:/y\n');
+  for (const text of [keyNoEnv, sshNoEnv, rsyncNoEnv]) {
+    const r = policyViolations('evil.yml', text);
+    assert.equal(r.violations.length, 1, text);
+    assert.match(r.violations[0], /without "needs: ci-gate"/);
+  }
+  // Control: the same job passes once it needs ci-gate.
+  assert.deepEqual(policyViolations('ok.yml', sshNoEnv.replace('    runs-on', '    needs: ci-gate\n    runs-on')).violations, []);
+  // Quoted / flow-style / odd ids cannot hide a job: the parser throws.
+  for (const key of ['"sneaky":', "'sneaky':", 'sneaky : ', '? sneaky']) {
+    assert.throws(() => policyViolations('evil.yml', wf('  ' + key + '\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh root@host reboot\n')), /unrecognised job key/, key);
+  }
+  assert.throws(() => policyViolations('evil.yml', wf('  a:\n    runs-on: x\n  a:\n    runs-on: y\n')), /duplicate job id/);
+  assert.throws(() => policyViolations('evil.yml', 'name: x\njobs: { a: { runs-on: x } }\n'), /plain "jobs:"/);
+  assert.throws(() => policyViolations('evil.yml', 'name: x\non: push\n'), /plain "jobs:"/);
 });
 
 test('the retired one-off recovery workflow is gone and nothing references it', () => {
