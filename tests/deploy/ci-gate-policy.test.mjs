@@ -41,7 +41,6 @@ function jobsOf(rawText) {
   return Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, v.join('\n')]));
 }
 
-const targetsProduction = block => /^\s+environment:\s*vps-production\s*$/m.test(block) || /^\s+name:\s*vps-production\s*$/m.test(block);
 // Reaching the VPS = holding the SSH key (deploy scripts ssh internally) or calling ssh/scp/rsync directly.
 const sshesToVps = block => /secrets.VPS_SSH_PRIVATE_KEY/.test(block) || /(^|[\s;&|(`])(ssh|scp|rsync|sftp)\s/m.test(block);
 const needsCiGate = block => /^\s+needs:\s*(\[[^\]]*\bci-gate\b[^\]]*\]|ci-gate)\s*$/m.test(block)
