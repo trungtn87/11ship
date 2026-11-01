@@ -29,3 +29,6 @@ rclone.conf
 *.cred
 backup.env
 scripts/deploy/__pycache__/
+
+# Graphify output is exploration data only, never committed
+graphify-out/
