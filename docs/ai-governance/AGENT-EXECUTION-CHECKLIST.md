@@ -17,7 +17,7 @@ Use in PR description or a durable PR/Issue comment, not in generated `docs/PROG
 - Completed / in progress / not done / not tested:
 - Commit and latest SHA:
 - Focused tests (result and evidence):
-- Blockers or decisions requested of ChatGPT; no unilateral product choice:
+- Blockers or decisions requested of Claude Lead; no unilateral product choice:
 
 ## END / POSTFLIGHT / HANDOFF
 - Scope checklist and outstanding items:
@@ -27,5 +27,5 @@ Use in PR description or a durable PR/Issue comment, not in generated `docs/PROG
 - Tests, CI run URLs and SHA covered; limits:
 - Next executor, handoff checkpoint and confirmation old executor stopped:
 - How Owner tests affected Android/web behavior:
-- ChatGPT review / Owner merge approval: (reserved for authorized decision)
+- Review (Claude Lead / Codex / Antigravity as assigned) / Owner merge approval: (reserved for authorized decision)
 - Owner deploy/APK approval and actual release evidence: (reserved)

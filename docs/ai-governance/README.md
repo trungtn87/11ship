@@ -1,18 +1,21 @@
-# 11Ship AI Governance v1.1 — Owner approved 2026-10-27
+# 11Ship AI Governance v2.0 — 2026-11-01 (Owner approved, Q1 of 2026-10-31)
 
-Status: approved policy; effective on merge to main. This is the authoritative **agent permissions, handoff and local/GitHub synchronization** policy. Business contracts, production safety runbooks, release signing and risk-based tests remain in force. Older workflow wording (including standing permission to merge small PRs and Cloud-only executor labels) is superseded where inconsistent.
+Status: approved policy; effective on merge to main. v2.0 replaces v1.1 (2026-10-27): the team model below replaces ChatGPT as coordinator/reviewer/merger. The synchronization, handoff and release-gate rules of v1.1 are kept. This is the authoritative **agent permissions, handoff and local/GitHub synchronization** policy. Business contracts, production safety runbooks, release signing and risk-based tests remain in force. Older workflow wording (including standing permission to merge small PRs, Cloud-only executor labels and any ChatGPT coordinator/reviewer/merger role) is superseded where inconsistent.
 
 ## 1. Accountability and permissions
 
 | Actor | Responsible for | May not do |
 | --- | --- | --- |
-| Owner | Final product/business decisions; authorize implementation scope, merge, production deployment, APK publication and closure | N/A |
-| ChatGPT | Investigate, challenge requirements, design, document decisions, create/manage issues, define PR scope/acceptance, assign developer, review code/results, request corrections, execute merge/deploy **only with Owner's explicit approval** | Unilaterally change approved business/UX, skip material review, or implement product code absent specific Owner exception |
-| Claude Code | Primary implementation agent; local Windows preferred; code, migrations/tests/build preparation, focused test, commit/push, PR evidence, report and escalate | Decide new business/UX rules or expand scope; merge, deploy production, release APK or close issues |
-| Codex | Backup implementation agent, Cloud/GitHub currently; same coding responsibilities and same limits; local capability not assumed | Independently decide missing product requirements; silently omit scope; merge/deploy/release/close |
+| Owner (trungtn87) | Business decisions; approves merge, production deployment, APK publication and closure; final acceptance (nghiệm thu) | N/A |
+| Claude Lead | Planning, Functional Baseline, running Graphify, splitting work, review, classifying findings, reporting; merges **only** on Owner's explicit approval for that PR | Change product code; decide business/UX rules; deploy, publish APK or close issues without Owner approval |
+| Claude Code | Primary implementation agent (Windows local preferred): code, migrations/tests/build preparation, focused tests, commit/push, PR evidence, report and escalate | Decide new business/UX rules or expand scope; merge, deploy production, release APK, close issues, self-accept |
+| Codex | Independent review of code, security and API (also standby implementer when explicitly assigned, with the same limits as Claude Code) | Review its own implementation; merge/deploy/release/close |
+| Google Antigravity | Independent review of architecture, cross-module flows and E2E | Draw diagrams; implement product code; merge/deploy/release/close |
 | GitHub Actions | Required CI/build/test evidence and authorized deploy workflows | Substitute for Owner acceptance or grant itself release approval |
 
-Only **one active implementation owner for a given task/branch/PR**. Transfers require handoff and the previous actor to stop editing that branch. Routine implementation choices are owned by developer, but ambiguity affecting product behavior, financial values, user permissions, data, security, UI contract or order lifecycle must be escalated to ChatGPT; ChatGPT brings changes to approved scope to Owner.
+Only **one active implementation owner for a given task/branch/PR**. Transfers require handoff and the previous actor to stop editing that branch. Routine implementation choices are owned by developer, but ambiguity affecting product behavior, financial values, user permissions, data, security, UI contract or order lifecycle must be escalated to Claude Lead; Claude Lead brings changes to approved scope to Owner.
+
+Standing rules: no two agents write code at the same time; nobody accepts their own work; nothing is merged or deployed without the Owner's explicit approval; work not run is reported NOT TESTED or BLOCKED; tests are never loosened to make them PASS; no agent touches production or real transactions outside an authorized runbook.
 
 ## 2. Mandatory reading before EVERY task or resumed session
 
@@ -40,9 +43,9 @@ Run before starting/resuming **every assigned PR**, on executor transfer and on 
 
 Before coding: checklist each approved requirement and test; flag missing design decisions. During execution: update PR at substantive milestones and on blocker; report what is DONE / IN PROGRESS / NOT DONE / NOT TESTED, current SHA and affected tests. Do not wait for final turn to report material blockers. If communication channel unavailable, create durable PR/Issue report when possible and stop the affected decision.
 
-On blockers: ask ChatGPT via task report with evidence, options and recommendation. Never silently choose business behavior, omit hard requirements, split PR to evade fixes or treat silence as approval. Other independent work can continue.
+On blockers: ask Claude Lead via task report with evidence, options and recommendation. Never silently choose business behavior, omit hard requirements, split PR to evade fixes or treat silence as approval. Other independent work can continue.
 
-Finish: provide PR URL/branch and remote HEAD SHA, requirements checklist, code summary, tests and CI with exact SHA, unresolved items, synchronization pre/post findings and device testing instructions. ChatGPT independently reviews against approved design; CI green alone does not authorize merge. Fix material findings **within the same open PR** and rerun affected checks.
+Finish: provide PR URL/branch and remote HEAD SHA, requirements checklist, code summary, tests and CI with exact SHA, unresolved items, synchronization pre/post findings and device testing instructions. Claude Lead reviews against the approved design, with independent review by Codex (code/security/API) and Google Antigravity (architecture/cross-module/E2E) where assigned; CI green alone does not authorize merge. Fix material findings **within the same open PR** and rerun affected checks.
 
 ## 5. Standard GitHub record
 
@@ -52,7 +55,7 @@ Each Issue holds requirements and approvals. Each new ready PR must place the ma
 - Milestones/checklist, blockers/questions and decisions with links
 - Tests/CI links and code SHA under test, known gaps
 - Postflight (local/remote SHA, pending work, transfer checkpoint and next steps)
-- Final ChatGPT review and Owner's specific merge/deploy approval; release SHAs/version and confirmation after deployment
+- Final review (Claude Lead, Codex, Antigravity as assigned) and Owner's specific merge/deploy approval; release SHAs/version and confirmation after deployment
 
 Do **not** manually edit `docs/PROGRESS.md`; it is generated. Do not paste credentials/tokens or sensitive logs into PR comments.
 
@@ -60,7 +63,7 @@ Do **not** manually edit `docs/PROGRESS.md`; it is generated. Do not paste crede
 
 Transfer Claude → Codex or back: previous executor stops; checkpoint code safely to remote where possible, document exact SHA and local-only work, checklist, blockers and test evidence; new executor verifies the handoff before editing. Codex Cloud can proceed on remote-independent scope even if local unverified, but must record risk.
 
-**Merge**: ChatGPT only after Owner gives explicit approval for the specified PR/scope, and independent review and applicable checks pass. Old standing small-PR auto-merge permission is revoked by this policy. **Deploy, production migration, APK publication and issue closure** each need applicable Owner approval; keep production runbooks/version rules.
+**Merge**: Claude Lead only after Owner gives explicit approval for the specified PR/scope, and review and applicable checks pass. The `main-protection` ruleset applies: PR required, squash merge, 3 required checks. Old standing small-PR auto-merge permission is revoked by this policy. **Deploy, production migration, APK publication and issue closure** each need applicable Owner approval. Deploy VPS runs only through `ci-gate` (green CI on the exact code SHA) and the `vps-production` environment, which has required reviewers; keep production runbooks/version rules.
 
 ## 7. Enforcement vs aspiration
 
@@ -99,3 +102,9 @@ Codex Cloud cannot independently inspect local files. Without a fresh report pub
 - Divergence or dirty worktree -> preserve all data and report, do not force/reset/clean.
 - GitHub unreachable -> report remote verification unavailable and preserve independent progress.
 - New ready PR missing acknowledgment/checkpoint report -> readiness check fails; Draft and legacy PRs remain workable.
+
+## 10. Repo process notes (v2.0)
+
+- Never put a CI-skip marker in a PR title, body or commit message; if it must be mentioned, write it broken up (for example "skip" and "ci" in separate words).
+- **Graphify** is an exploration aid for agents, not a source of truth: confirm what it shows in the code and approved documents. Its output (`graphify-out/`) is git-ignored and never committed.
+- The status name `11ship/chatgpt-review` and the `review:*` labels in the progress workflow/scripts keep their old names for now; the readiness report format (Baseline-SHA / Remote-head-SHA, 40 hex) is unchanged.
