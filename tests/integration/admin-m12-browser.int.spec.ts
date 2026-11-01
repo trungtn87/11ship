@@ -391,7 +391,8 @@ describe('M12 administration web (real browser)', () => {
 
     // "Sao lưu ngay": one click queues ONE job, the button locks, the page shows it waiting; a second click cannot add another.
     await page.evaluate(`(() => { const b = document.querySelector('#backup-run'); b.click(); b.click(); return true; })()`);
-    await page.waitFor(`document.body.innerText.includes('Đã xếp lịch sao lưu ngay') && document.querySelector('#backup-run').disabled`);
+    // The notice is shown in the same tick that load() swaps the body for a skeleton, so for a moment there is no #backup-run: wait for the re-rendered, locked button (null-safe).
+    await page.waitFor(`document.body.innerText.includes('Đã xếp lịch sao lưu ngay') && document.querySelector('#backup-run')?.disabled === true`);
     expect((await app.pool.query(`SELECT count(*)::int AS n, min(state) AS state FROM app.backup_jobs`)).rows[0]).toEqual({ n: 1, state: 'QUEUED' });
     expect(await page.text('#backup-job-text')).toContain('đang chờ dịch vụ sao lưu nhận việc');
     await shot(page, 'm12f-backup-run-queued');
