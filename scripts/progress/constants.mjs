@@ -3,8 +3,11 @@
 /** The only file the progress bot may change. */
 export const PROGRESS_FILE = 'docs/PROGRESS.md';
 
-/** Exact first line (and only line) of the commit the progress workflow creates. */
-export const PROGRESS_COMMIT_MESSAGE = 'chore(progress): update docs/PROGRESS.md [skip ci]';
+/** Exact first line (and only line) of the commit the progress workflow creates. It carries no CI-skip marker (S-02). */
+export const PROGRESS_COMMIT_MESSAGE = 'chore(progress): update docs/PROGRESS.md';
+
+/** Message of bot commits already on main from before S-02 (they carry the CI-skip marker). Recognised, never created. */
+export const LEGACY_PROGRESS_COMMIT_MESSAGE = 'chore(progress): update docs/PROGRESS.md [skip ci]';
 
 /** Git identity the workflow commits with (see .github/workflows/update-progress.yml). */
 export const PROGRESS_BOT = Object.freeze({

@@ -12,7 +12,7 @@ import { collectSnapshot, GitHubError } from '../../scripts/progress/github.mjs'
 import { resetReviewLabels } from '../../scripts/progress/review.mjs';
 import { resolveProgress, validatePlan, mainStatus, STATE, CI } from '../../scripts/progress/resolve.mjs';
 import { buildMarkdown } from '../../scripts/generate-progress.mjs';
-import { PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
+import { LEGACY_PROGRESS_COMMIT_MESSAGE, PROGRESS_BOT, PROGRESS_COMMIT_MESSAGE, REVIEW_LABELS } from '../../scripts/progress/constants.mjs';
 import { plan, livePlan, REQUIRED, checks, history, merged, snapshot, LABELS_C1A1, stateOf, root } from './helpers.mjs';
 
 // ---------------------------------------------------------------------------------------------
@@ -134,9 +134,20 @@ describe('main CI is judged on the real head (blocker 1)', () => {
     assert.equal(result.main.ci, CI.RUNNING);
   });
 
+  test('MAIN-CI-02e the legacy bot message (with the CI-skip marker, still on main from before S-02) is still recognised', async () => {
+    const { snap } = await mainFor({
+      commits: [progressEntry('bot1', 'code1', { message: LEGACY_PROGRESS_COMMIT_MESSAGE }), entry('code1', null)],
+      runs: { code1: green },
+      files: { bot1: ['docs/PROGRESS.md'] },
+    });
+    assert.equal(snap.main.ci_sha, 'code1');
+    assert.deepEqual(snap.main.skipped_progress_shas, ['bot1']);
+    assert.ok(!PROGRESS_COMMIT_MESSAGE.includes('['), 'the message the workflow creates carries no marker');
+  });
+
   // Anything that merely looks like a progress commit must be treated as a normal commit.
   const lookalikes = {
-    'wrong message': () => progressEntry('x1', 'code1', { message: 'chore(progress): update docs/PROGRESS.md' }),
+    'wrong message': () => progressEntry('x1', 'code1', { message: 'chore(progress): refresh the dashboard' }),
     'extra message body': () => progressEntry('x1', 'code1', { message: `${PROGRESS_COMMIT_MESSAGE}\n\nand also some code` }),
     'human author': () => progressEntry('x1', 'code1', { meta: { author: identity(HUMAN), committer: identity(PROGRESS_BOT) } }),
     'human committer': () => progressEntry('x1', 'code1', { meta: { author: identity(PROGRESS_BOT), committer: identity(HUMAN) } }),
@@ -387,7 +398,7 @@ describe('workflow wiring (static checks)', () => {
   });
 
   test('no run: line interpolates anything from the event', () => {
-    for (const name of ['preview', 'review-status', 'reset-review', 'publish']) {
+    for (const name of ['preview', 'review-status', 'reset-review', 'publish', 'commit-progress']) {
       for (const line of runLines(jobBlock(name))) assert.ok(!line.includes('${{'), `${name}: ${line.trim()}`);
     }
   });
@@ -398,7 +409,19 @@ describe('workflow wiring (static checks)', () => {
     assert.match(block, /needs\.reset-review\.result == 'success' \|\| needs\.reset-review\.result == 'skipped'/);
     assert.match(block, /needs\.review-status\.result == 'success' \|\| needs\.review-status\.result == 'skipped'/);
     assert.match(block, /github\.event_name != 'pull_request'/);
+    // S-02: the generator job holds no write token; only commit-progress does.
+    assert.match(block, /permissions:\n\s+contents: read\n/);
+    assert.ok(!/: write/.test(block), 'publish (generator) has no write permission');
+    assert.ok(!/git (push|commit)/.test(block), 'publish does not commit or push');
+  });
+
+  test('commit-progress is the only job with contents: write and runs only while PROGRESS_PUBLISH is true', () => {
+    const block = jobBlock('commit-progress');
+    assert.match(block, /needs: publish\n/);
+    assert.match(block, /if: \$\{\{ !cancelled\(\) && needs\.publish\.result == 'success' && vars\.PROGRESS_PUBLISH == 'true' \}\}/);
     assert.match(block, /contents: write/);
+    assert.equal((text.replace(/^\s*#.*$/gm, '').match(/contents: write/g) ?? []).length, 1, 'exactly one job can write repository contents');
+    assert.ok(!/pull_request\.head|head\.ref|head\.sha|github\.head_ref/.test(block), 'the PR head is never used');
   });
 
   test('only the review-status job may write commit statuses; the jobs that read them can read them', () => {
@@ -412,7 +435,7 @@ describe('workflow wiring (static checks)', () => {
     assert.match(text, /paths-ignore:\n\s+- docs\/PROGRESS\.md/);
     assert.match(text, /workflow_run:\n\s+workflows: \[CI\]/);
     assert.ok(!/workflow_run:\n\s+workflows: \[[^\]]*Update progress/.test(text));
-    assert.match(jobBlock('publish'), /git diff --quiet -- docs\/PROGRESS\.md/);
+    assert.match(jobBlock('commit-progress'), /git diff --quiet -- docs\/PROGRESS\.md/);
   });
 });
 
