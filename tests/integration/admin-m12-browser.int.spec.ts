@@ -208,6 +208,14 @@ describe('M12 administration web (real browser)', () => {
     await adminPage.close();
   }, 120_000);
 
+  // The configuration hub replaces its cards with a skeleton on every (re)load, e.g. right after a save, so a card button can briefly not exist.
+  // Wait until the card AND its button exist, then click; a missing one fails with a clear timeout instead of "undefined.querySelectorAll".
+  const pressInCard = async (page: Page, cardTitle: string, label: string): Promise<void> => {
+    const find = `(() => { const card = [...document.querySelectorAll('.cfg-card')].find((c) => c.textContent.includes(${JSON.stringify(cardTitle)})); return card ? [...card.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === ${JSON.stringify(label)} && !b.disabled) : undefined; })()`;
+    await page.waitFor(`${find} !== undefined`);
+    expect(await page.evaluate<boolean>(`(() => { const b = ${find}; if (!b) return false; b.click(); return true; })()`)).toBe(true);
+  };
+
   it('M12-D: the configuration hub shows the owners\' values and the fixed rules; SYSTEM changes a value with a compared old/new and a reason, then reverts it as a new version; an ADMIN sees no edit', async () => {
     const page: Page = await (browser as Browser).newPage();
     await page.viewport(1440, 900, false);
@@ -221,7 +229,7 @@ describe('M12 administration web (real browser)', () => {
     }
     await shot(page, 'm12d-config-desktop');
     const before = (await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v as string;
-    expect(await page.evaluate<boolean>(`(() => { const card = [...document.querySelectorAll('.cfg-card')].find((c) => c.textContent.includes('Shipper, ví và hoa hồng')); [...card.querySelectorAll('button')].find((b) => b.textContent === 'Sửa').click(); return true; })()`)).toBe(true);
+    await pressInCard(page, 'Shipper, ví và hoa hồng', 'Sửa');
     await page.waitFor(`document.querySelector('.dialog #cfg-f-topup_min_vnd')`);
     expect(await page.evaluate<boolean>(`document.querySelector('.dialog .btn-primary').disabled`)).toBe(true); // nothing changed yet
     await page.fill('#cfg-f-topup_min_vnd', String(Number(before) + 5000));
@@ -235,7 +243,7 @@ describe('M12 administration web (real browser)', () => {
     await page.waitFor(`!document.querySelector('.dialog') && document.body.innerText.includes('Đã lưu cấu hình')`);
     expect((await app.pool.query(`SELECT int_value::text AS v FROM app.shipper_wallet_parameters WHERE param_key = 'topup_min_vnd'`)).rows[0].v).toBe(String(Number(before) + 5000));
     // History with the reason, then revert as a new version.
-    await page.evaluate(`(() => { const card = [...document.querySelectorAll('.cfg-card')].find((c) => c.textContent.includes('Shipper, ví và hoa hồng')); [...card.querySelectorAll('button')].find((b) => b.textContent === 'Lịch sử thay đổi').click(); return true; })()`);
+    await pressInCard(page, 'Shipper, ví và hoa hồng', 'Lịch sử thay đổi');
     await page.waitFor(`document.body.innerText.includes('Lý do: Điều chỉnh mức nạp tối thiểu')`);
     await shot(page, 'm12d-config-history');
     await press(page, 'Hoàn nguyên giá trị này');
