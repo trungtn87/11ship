@@ -1,6 +1,6 @@
 # 11Ship — Functional Baseline (B-01)
 
-**Phiên bản:** v0.4 (áp review Codex B-02; C-01..C-15 đã chốt, C-16..C-20 chờ Owner) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
+**Phiên bản:** v0.5 (áp review Codex B-02 và Antigravity; C-01..C-15 đã chốt, C-16..C-28 chờ Owner) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
 **Trạng thái:** DRAFT — Owner đã xác nhận C-01…C-15 ngày 01/11/2026; chờ Codex/Antigravity phản biện độc lập và hoàn tất B-04. **Chưa merge PR #298; chưa xác nhận code/runtime đạt baseline.**
 **Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
@@ -162,8 +162,8 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M07-R-11 | M07 | Khách Gọi shipper | 11Food chế độ KH, tab Gọi ship | Thu hộ là thông tin, không ledger/ứng tiền bắt buộc; người gửi/nhận có thể trả phí theo lựa chọn; GPS tùy chọn, tracking khi đủ hai điểm GPS; người tạo có thể chia sẻ link theo dõi giới hạn và thu hồi; đơn hoàn thành theo lifecycle, không chờ đối soát thu hộ | Yêu cầu giao do KH tạo, tiền thu hộ tách phí giao | KH; SP đúng assignment | Không có route → phí chưa xác định/thỏa thuận; không giả tracking | #221 (Owner 26/10); #282 (30/10) → C-11 |
 | M07-R-12 | M07 | Trợ giúp trong đơn | Chi tiết đơn | Có lối trợ giúp ngay trong đơn | — | KH, CQ, SP | — | #217 |
 | M07-R-13 | M07 | Hạn tìm shipper | — | Nhắc 5 và 15 phút; ngừng tìm ở phút 30. Hủy nhận giữ mốc cũ; gọi lại tạo delivery mới với mốc mới | Mốc lưu DB | — | Restart không reset | M08 §5; M10-timeouts |
-| M07-R-14 | M07 | Ba hành động hủy khác nhau | 11Food, 11Ship | Hủy đơn món / Hủy yêu cầu giao / Shipper hủy nhận là ba nút khác nhau, không dùng nút "Hủy" mơ hồ | — | Theo M10-R-10 | Race hủy vs pickup → một bên thắng | M10 §9 |
-| M07-R-15 | M07 | Quãng đường cố định suốt vòng đời đơn `[P8]` | Delivery | Dùng cùng `distance_m` đã báo giá cho delivery, phí và hiển thị; tuyến vẽ là tuyến đã báo giá | `route_distance_m` | — | — | #294 |
+| M07-R-14 | M07 | Quyền hủy theo loại yêu cầu | 11Food, 11Ship | Hủy đơn món / Hủy yêu cầu giao / Shipper hủy nhận là ba nút khác nhau. Đơn món: theo M10-R-10. Khách Gọi shipper (không qua quán): trước pickup người tạo được hủy cả khi shipper đã nhận, hold của shipper được giải phóng; sau pickup theo M07-R-04 | — | KH (người tạo); CQ; SP | Race hủy vs pickup → một bên thắng | M10 §9; #221 (26/10); G09 |
+| M07-R-15 | M07 | Quãng đường cố định suốt vòng đời đơn `[P8]` | Delivery | Dùng cùng `distance_m` đã báo giá cho delivery, phí và hiển thị; tuyến vẽ là tuyến đã báo giá. Không có tuyến (thiếu GPS, lỗi định tuyến): distance_m = null, hiển thị "chưa xác định", không vẽ polyline | `route_distance_m` | — | — | #294 |
 | M07-R-16 | M07 | Quyền với việc cũ khi SUSPENDED | 11Ship | Shipper SUSPENDED chỉ thấy/xử lý assignment đang có; chặn việc mới; kiểm phiên, race và không chéo sang delivery khác | — | SP | Thao tác ngoài phạm vi → 403 | #258 (28/10) |
 
 ## 9. M08 — Thông báo, nhắc việc, đồng bộ
@@ -185,12 +185,13 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M08-R-13 | M08 | Chạm thông báo tự đổi vai trò | App | Chạm thông báo của vai trò khác thì app tự chuyển vai trò | — | — | — | #202 |
 | M08-R-14 | M08 | Thông báo vòng đời rút tiền | Hộp thông báo 11Ship | Mỗi trạng thái rút tiền tạo đúng một thông báo; người nhận lấy từ DB; chống trùng, chịu được sự kiện đến sai thứ tự | — | SP | — | #259 (29/10) |
 | M08-R-15 | M08 | Counter và danh sách Admin cùng scope | Admin Web | Counter, ca hàng (goods_cases), lỗi gửi và chi tiết dùng cùng một scope | — | AD | — | #259 (29/10) |
+| M08-R-16 | M08 | Thông báo theo thời hạn đơn | Hộp thông báo, push | Quán: nhắc chờ xác nhận phút 15/20/25; nhắc tìm shipper phút 5/15; ngừng tìm phút 30. Khách và quán: báo ngừng tìm phút 30; báo SYSTEM tự hủy (phút 30 chờ quán, phút 60 chờ shipper, phút 60 đã nhận chưa lấy). Khách/quán/shipper: cảnh báo phút 30 khi đã nhận chưa lấy. Không phát dồn mốc lỗi thời | Mốc do M07/M10 lưu | KH, CQ, SP | — | M08 §3, §5 (16/10); M10-timeouts (21/10) |
 
 ## 10. M10 — Đặt món và đơn hàng quán
 
 | Req ID | Module | Yêu cầu | Entry point dự kiến | Hành vi mong đợi | State/Data | Quyền | Hành vi khi lỗi | Nguồn |
 |---|---|---|---|---|---|---|---|---|
-| M10-R-01 | M10 | Giỏ hàng | 11Food thực đơn (nút +) | Một giỏ một quán; cùng món cùng ghi chú thì gộp; thêm món quán khác phải xác nhận thay giỏ; giữ giỏ khi thoát app nhưng giá trong giỏ không phải giá chốt | Giỏ trên máy | KH | — | M10-Functional-UI-LOCKED §2 (16/10) |
+| M10-R-01 | M10 | Giỏ hàng | 11Food thực đơn (nút +) | Một giỏ một quán; cùng món cùng ghi chú thì gộp; thêm món quán khác phải xác nhận thay giỏ; giữ giỏ khi thoát app nhưng giá trong giỏ không phải giá chốt. Giỏ thuộc từng tài khoản: đổi tài khoản trên cùng máy không thấy giỏ của tài khoản trước (M01-R-16) | Giỏ trên máy | KH | — | M10-Functional-UI-LOCKED §2 (16/10); #295 (01/11) |
 | M10-R-02 | M10 | Chưa có tính năng thanh toán mở rộng | — | Không topping/size/combo/voucher/ví khách/thanh toán online | — | — | — | M10 §2, §11 |
 | M10-R-03 | M10 | Xác nhận đặt món | Checkout | Người nhận (tên/SĐT) bắt buộc, có thể khác người đặt; địa chỉ từ M05 hoặc nhập mới; tiền món và phí ship tách riêng | — | KH | Phí chưa có → ghi rõ, không hiện 0 đ | M10 §3 |
 | M10-R-04 | M10 | Máy chủ kiểm trước khi tạo | Tạo Order | Kiểm quán hợp lệ, món còn hiện, giá hiện tại, lịch mở cửa/giờ hẹn, người nhận, địa chỉ | — | KH | Giá đổi/món ẩn → báo khách xác nhận lại | M10 §3 |
@@ -209,7 +210,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M10-R-17 | M10 | Lý do thiếu phí/khoảng cách | Checkout, chi tiết | Hiện lý do cụ thể khi thiếu khoảng cách/phí | — | KH | — | #211 |
 | M10-R-18 | M10 | Xin đổi địa chỉ/người nhận sau khi tạo đơn | Chi tiết đơn | Có một đường xin đổi rõ ràng; người có quyền xác nhận trước khi thay snapshot. Trước lấy hàng: nếu ảnh hưởng tuyến/phí thì tính lại và xin người trả phí đồng ý, không có hai assignment hoạt động. Sau lấy: giữ khóa phí, không tự cho sửa điểm giao. Đơn kết thúc: không sửa | Snapshot trước/sau, người xác nhận, lý do, version | KH xin; quán/người trả phí xác nhận theo giai đoạn | Phản hồi muộn không ghi đè trạng thái đã lấy/đã đóng | #218 (đóng 30/10) |
 | M10-R-19 | M10 | Mã đơn hiển thị và tương thích DIRECT cũ | Danh sách, chi tiết, thông báo | Mã quán dạng K01-0001, duy nhất và không tái sử dụng; dãy số quán áp dụng ORDER và DIRECT **cũ gắn quán**, không reset; mã DH-/G- cũ vẫn tra cứu được. Yêu cầu Gọi shipper mới do KH tạo **không bắt buộc có quán và không ép dùng counter/mã quán**; mã tham chiếu công khai riêng cần được đối chiếu contract trước khi chốt format; API vẫn dùng UUID nội bộ | Counter giao dịch theo quán cho dữ liệu gắn quán; customer delivery độc lập quán | KH, CQ theo quyền sở hữu | Không tạo mã trùng hoặc gán quán giả cho yêu cầu KH | M10-M07-filter-shop-code (22/10); #221 (Owner 26/10) → C-11 |
-| M10-R-20 | M10 | Danh sách đơn quán | 11Food Đơn hàng: Đơn món / Giao hàng | Một hàng tìm kiếm + nút Lọc; mặc định Tất cả; lọc và tìm ở máy chủ. Giữ khả năng xem/xử lý giao hàng DIRECT **cũ** thuộc quán; yêu cầu Gọi shipper mới do KH tạo thuộc lịch sử Khách hàng, không tự nhập vào danh sách quản trị đơn của quán | `GET /v1/shop/me/orders`, `GET /v1/shop/me/deliveries` (lịch sử gắn quán) | CQ | Lọc rỗng → Không có đơn phù hợp + Xóa bộ lọc | M10-M07-filter-shop-code (22/10); #221 (Owner 26/10) → C-11 |
+| M10-R-20 | M10 | Danh sách đơn quán | 11Food Đơn hàng: Đơn món / Giao hàng | Một hàng tìm kiếm + nút Lọc; mặc định Tất cả; lọc và tìm ở máy chủ. Giữ khả năng xem/xử lý giao hàng DIRECT **cũ** thuộc quán; yêu cầu Gọi shipper mới do KH tạo thuộc lịch sử Khách hàng, không tự nhập vào danh sách quản trị đơn của quán. Tab Giao hàng của quán **không còn nút "Gọi shipper"** tạo DIRECT độc lập (C-11); Gọi shipper chỉ còn trong chi tiết đơn món | `GET /v1/shop/me/orders`, `GET /v1/shop/me/deliveries` (lịch sử gắn quán) | CQ | Lọc rỗng → Không có đơn phù hợp + Xóa bộ lọc | M10-M07-filter-shop-code (22/10); #221 (Owner 26/10) → C-11 |
 | M10-R-21 | M10 | Trao đổi đơn hàng | `/v1/customers/me/orders/:id/chat`, `/v1/shop/me/orders/:id/chat`, `/v1/shop/me/deliveries/:id/chat`, `/v1/driver/deliveries/:id/chat` | Một feed gồm tin văn bản và mốc nghiệp vụ; chat không đổi phí/trạng thái; tối đa 500 ký tự; shipper chỉ khi assignment ACTIVE | `order_chat_messages` | Bên liên quan | Không có quyền → 404; đã đóng → 409 ORDER_CHAT_CLOSED | M10-order-chat (25/10); #191 |
 | M10-R-22 | M10 | Lưu trữ chat | — | Mặc định 7 ngày từ khi hồ sơ đóng (1–365); giữ chứng cứ khi có khiếu nại hoặc hold | `chat.retention_days` | SYS sửa | Hết hạn → expired:true | M10-order-chat |
 | M10-R-23 | M10 | Đơn cũ bất biến `[P8]` | Chi tiết đơn cũ | Quãng đường/phí đơn cũ không đổi (ví dụ K01-0006 giữ 3.838 m). Nếu vẽ tuyến hiện tại cho đơn cũ phải ghi "chỉ tham khảo" | Snapshot | — | — | #294 |
@@ -309,6 +310,13 @@ Ma trận B-02 đã map 163/163 Req ID. Lead xử lý chiều ngược như sau:
 - BLOCKED nguồn: số liệu/bộ lọc màn Thu nhập (#255) chưa có contract, không tạo Req ID.
 - Ứng viên Phase 3: không tìm thấy `route_version`/geometry trong code (M14-R-10).
 
+## 15d. Áp phản biện Antigravity (head c30747b)
+
+- F-14 (M02-R-10 trỏ M04-R-14): đã sửa ở v0.4.
+- Đã sửa vì có nguồn: F-09 → M07-R-14 (khách Gọi shipper được hủy trước pickup, #221); F-11 → M10-R-20 (bỏ nút Gọi shipper ở tab Giao hàng của quán, C-11); F-04 → M07-R-15 (không có tuyến thì null, không vẽ); F-06 → M10-R-01 (giỏ theo tài khoản); F-03 → thêm M08-R-16 (thông báo theo thời hạn).
+- Nguồn im lặng, cần Owner quyết: F-01 → C-21, F-02 → C-22, F-05 → C-23, F-07 → C-24, F-08 → C-25, F-10 → C-26, F-12 → C-27, F-13 → C-28.
+- Đánh giá F-2.1 (hợp đồng định tuyến nhất quán): PASSED, không cần sửa.
+
 ## 16. Conflict Register (B-05)
 
 **Owner đã quyết ngày 01/11/2026:** cả **15/15 xung đột nguồn đã được chốt (RESOLVED)**; C-08 theo #213, C-11 theo #221, 13 mục còn lại theo đề xuất QA, với diễn giải C-14/C-15 bên dưới. Quyết định này chốt **đặc tả nghiệp vụ**, không xác nhận code, UAT hoặc merge PR #298.
@@ -335,6 +343,14 @@ Ma trận B-02 đã map 163/163 Req ID. Lead xử lý chiều ngược như sau:
 | C-18 | Đổi tên shipper khi đã có ngân hàng/yêu cầu rút | #255 cho sửa tên | Chính sách danh tính/thụ hưởng chưa khóa | **CHƯA QUYẾT** — Owner chọn |
 | C-19 | Accuracy null/0 khi nhận việc | Hiện chấp nhận null | #265: đổi phải có bằng chứng + Owner quyết | **CHƯA QUYẾT** — Owner chọn |
 | C-20 | Ai được xóa tài khoản | M01-final-package: chỉ Admin thực hiện | Baseline v0.1 ghi chủ tài khoản tự xóa | **CHƯA QUYẾT** — Owner chọn |
+| C-21 | Hold hoa hồng khi khách hủy sau pickup | M07 23/10: hủy sau pickup phải "xử lý hoa hồng an toàn" | Không nguồn nào nói release hay capture | **CHƯA QUYẾT** — Owner chọn (Antigravity F-01) |
+| C-22 | Thời hạn sau khi quán xác nhận mà không gọi shipper | M10-timeouts: giai đoạn 2 chỉ bắt đầu khi tạo yêu cầu tìm | Không có giới hạn cho trạng thái Đang chuẩn bị | **CHƯA QUYẾT** — Owner chọn (F-02) |
+| C-23 | Đăng xuất shipper có tắt nhận đơn ở máy chủ không | M14-online-location: chỉ shipper/khóa/ngừng hoạt động đổi ý định online | #295: đăng xuất phải dừng mọi luồng của phiên | **CHƯA QUYẾT** — Owner chọn (F-05) |
+| C-24 | Khoản PENDING_FINANCE khi đang CLOSING | M03-R-06: CLOSED cần mọi khoản về 0 | M04-R-07: CLOSING không cho nạp mới | **CHƯA QUYẾT** — cấn trừ vào lệnh rút hay cho nạp bù (F-07; G15 ghi BLOCKED) |
+| C-25 | Tiền vào sau khi đã tạo lệnh rút trong CLOSING | #255: rút toàn bộ số dư | Không nguồn nói về lệnh rút thứ hai | **CHƯA QUYẾT** — Owner chọn (F-08) |
+| C-26 | Mã công khai cho yêu cầu Gọi shipper của khách | #221: "mã tham chiếu công khai ngắn" | Chưa có định dạng | **CHƯA QUYẾT** — Owner chốt định dạng (F-10) |
+| C-27 | Quyền ví của ADMIN chỉ có scope SHOP | M04-R-09: quyền ví tách riêng | M08-R-12: counter lọc theo scope | **CHƯA QUYẾT** — gắn quyền ví với scope DRIVER? (F-12) |
+| C-28 | Quyền Admin can thiệp/hủy đơn | M10-R-13, G23: có thao tác Admin hủy | M12-R-03 không có quyền tên riêng | **CHƯA QUYẾT** — Owner chốt quyền (F-13) |
 
 ## 17. Quyết định đã chốt và phần còn cần nghiệm thu
 
