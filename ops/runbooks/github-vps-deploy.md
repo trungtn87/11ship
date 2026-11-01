@@ -128,11 +128,20 @@ Không tự deploy sau mỗi merge, không gửi Discord, không bật Firebase.
 health check là nghiệm thu trên điện thoại. M13 có thể gọi/dùng lại workflow này
 khi tích hợp điều khiển phát hành; không tạo hệ thống version/deploy riêng.
 
-## Khôi phục riêng bản 6270be9 khi Owner không có terminal VPS
+## Khôi phục riêng bản 6270be9 (action đã gỡ ngày 2026-11-01)
 
-Action **Recover VPS 6270be9** là thao tác operator thủ công, chỉ trên main và
-environment/SSH/concurrency hiện có. Phải chọn `approve_reviewed_hashes`; mặc định
-tắt. Nó không tự duyệt migration trong **Deploy VPS** hay cho những bản tiếp theo.
+Action **Recover VPS 6270be9** là thao tác một lần, đã chạy duy nhất ngày 2026-10-21
+(thành công) và **đã bị gỡ khỏi `.github/workflows/` ngày 2026-11-01**. Lý do: nó là
+đường deploy production (SSH root, environment `vps-production`) không đi qua
+`ci-gate`, và chạy lại sẽ đưa VPS về nguồn cũ `6270be9`. Không khôi phục file workflow.
+
+Nếu cần khôi phục/triển khai lại: dùng **Deploy VPS** thường (chỉ chạy trên main,
+bắt buộc `ci-gate` xanh trên đúng SHA) và duyệt migration bằng quy trình hiện hành.
+`scripts/deploy/recover-6270be9.sh` và `tests/deploy/recover-6270be9.test.*` được giữ
+làm lịch sử/bằng chứng; không còn workflow nào gọi chúng.
+
+Ghi nhận lịch sử của lần chạy đó (action không còn tồn tại; không tự duyệt migration
+cho những bản tiếp theo):
 
 Nguồn ứng dụng cố định `6270be903e7c94b5155b3db9a353a7761b864722`, cùng APK build 210.
 Gói đã verify/upload/extract bởi Deploy VPS run `39636197294`, bị dừng trước apply.
