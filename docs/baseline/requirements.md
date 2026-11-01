@@ -1,7 +1,7 @@
 # 11Ship — Functional Baseline (B-01)
 
-**Phiên bản:** v0.1 (bản nháp để phản biện) · **Ngày lập:** 2026-11-01 · **Người lập:** Claude Lead
-**Trạng thái:** DRAFT. Chờ Codex/Antigravity phản biện độc lập, sau đó Owner xác nhận ở cổng B-04.
+**Phiên bản:** v0.2 (Owner đã chốt xung đột nguồn; vẫn là bản nháp chờ phản biện) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
+**Trạng thái:** DRAFT — Owner đã xác nhận C-01…C-15 ngày 01/11/2026; chờ Codex/Antigravity phản biện độc lập và hoàn tất B-04. **Chưa merge PR #298; chưa xác nhận code/runtime đạt baseline.**
 **Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
 ## 0. Cách đọc tài liệu
@@ -16,7 +16,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
   - **Quyền:** `KH` khách, `CQ` chủ quán, `SP` shipper (DRIVER), `AD` ADMIN theo scope, `SYS` SYSTEM.
   - **Nguồn:** tên file `docs/current` không có đuôi `.md`, `#NNN` là issue/PR, `G0x` là handoff, kèm ngày quyết định.
   - **`[P8]`:** dòng có lỗi đã biết (#294, #295) cần đối chiếu và sửa ở Phase 8 bằng test red→green. Phase 1 **không** sửa.
-  - **`→ C-xx`:** dòng phụ thuộc một xung đột chưa được Owner quyết.
+  - **`→ C-xx`:** liên kết truy vết xung đột nguồn đã được Owner chốt ở mục 16 (không còn là blocker quyết định nghiệp vụ).
 - **M09 đã gộp vào M02.** Không đánh lại số module.
 
 ## 1. M00 — Nền tảng, hợp đồng chung
@@ -138,14 +138,14 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M07-R-01 | M07 | Không có bước "món sẵn sàng" riêng | 11Food (CQ) | Bỏ bước "ready". Bấm "Gọi shipper" nghĩa là món đã sẵn sàng | — | CQ | — | M07-owner-delivery-flow (23/10) → C-10 |
 | M07-R-02 | M07 | Shipper nhả đơn trước pickup | 11Ship | Trước pickup shipper được nhả đơn; tìm lại theo hạn còn lại, không reset hạn | Assignment | SP | — | M07-owner-delivery-flow; M08 §4 |
 | M07-R-03 | M07 | Sau pickup chỉ có "Giao thành công" | 11Ship | Sau pickup không có nút thất bại hay nhả đơn | DELIVERED | SP | — | M07-owner-delivery-flow (23/10) |
-| M07-R-04 | M07 | Hủy sau pickup | 11Food | Chỉ bên tạo được hủy: ORDER → khách; DIRECT → quán. Không tự hủy sau pickup | — | KH hoặc CQ | — | M07-owner-delivery-flow |
-| M07-R-05 | M07 | Giao trực tiếp (DIRECT) | 11Food "Gọi ship" | DIRECT không có GPS, không có tracking | — | CQ | — | M07-owner-delivery-flow → C-11 |
+| M07-R-04 | M07 | Hủy sau pickup | 11Food | Chỉ **người tạo yêu cầu** được hủy: ORDER → khách đặt; Gọi shipper độc lập mới → khách tạo; DIRECT cũ do quán tạo → quán tạo. Không tự hủy sau pickup | Người tạo/nguồn yêu cầu | KH; CQ chỉ với DIRECT cũ hợp lệ | Không cho shipper tự mở quyền hủy sau pickup | M07-owner-delivery-flow (23/10); #221 (Owner 26/10) → C-11 |
+| M07-R-05 | M07 | DIRECT/đơn giao không gắn đặt món | 11Food (KH) → Gọi shipper | Không còn **lối tạo DIRECT độc lập trong chế độ quán**. Người gửi, kể cả chủ quán gửi hàng ngoài app, tạo yêu cầu ở chế độ Khách hàng; không bắt buộc quán/giỏ/món/giá trị hàng; GPS cả hai điểm tùy chọn, tracking chỉ khi đủ hai tọa độ; thiếu GPS vẫn tạo/nhận/hoàn thành và dùng phí thỏa thuận khi không định tuyến được. DIRECT cũ vẫn đọc/xử lý/lưu lịch sử | Delivery theo creator; tương thích bản ghi DIRECT cũ | KH tạo; CQ chỉ quản lý DIRECT cũ theo quyền | Không dùng (0,0), GPS giả hay giả 0 km/0đ | #221 (Owner 26/10); #282 (30/10) → C-11 |
 | M07-R-06 | M07 | Thương lượng lại phí | Đề nghị phí mới | Bên trả phí quyết định. Hết hạn trả lời mặc định 5 phút, SYSTEM cấu hình được | — | Bên trả phí; SYS | Hết hạn → giữ phí cũ | M07-owner-delivery-flow (bổ sung 24/10) |
 | M07-R-07 | M07 | Không liên lạc được khách | 11Ship | Shipper gọi cho quán; app không can thiệp | — | SP | — | #258 (29/10) |
 | M07-R-08 | M07 | Shipper bị SUSPENDED | — | Giữ assignment đang có | — | — | — | #258 |
 | M07-R-09 | M07 | Nút "chuyển M11" trung thực | 11Ship | Nút chỉ làm đúng điều nó ghi | — | SP | — | #258 |
 | M07-R-10 | M07 | Không có nút Bỏ qua | 11Ship danh sách đơn | Không có nút Skip | — | SP | — | #212 |
-| M07-R-11 | M07 | Khách "Gọi shipper" | 11Food tab "Gọi ship" | COD chỉ là thông tin; GPS tùy chọn; tracking chỉ khi cả hai điểm có GPS; có link tracking công khai | — | KH | — | #221; #282 → C-11 |
+| M07-R-11 | M07 | Khách Gọi shipper | 11Food chế độ KH, tab Gọi ship | Thu hộ là thông tin, không ledger/ứng tiền bắt buộc; người gửi/nhận có thể trả phí theo lựa chọn; GPS tùy chọn, tracking khi đủ hai điểm GPS; người tạo có thể chia sẻ link theo dõi giới hạn và thu hồi; đơn hoàn thành theo lifecycle, không chờ đối soát thu hộ | Yêu cầu giao do KH tạo, tiền thu hộ tách phí giao | KH; SP đúng assignment | Không có route → phí chưa xác định/thỏa thuận; không giả tracking | #221 (Owner 26/10); #282 (30/10) → C-11 |
 | M07-R-12 | M07 | Trợ giúp trong đơn | Chi tiết đơn | Có lối trợ giúp ngay trong đơn | — | KH, CQ, SP | — | #217 |
 | M07-R-13 | M07 | Hạn tìm shipper | — | Nhắc 5 và 15 phút; ngừng tìm ở phút 30. Hủy nhận giữ mốc cũ; gọi lại tạo delivery mới với mốc mới | Mốc lưu DB | — | Restart không reset | M08 §5; M10-timeouts |
 | M07-R-14 | M07 | Ba hành động hủy khác nhau | 11Food, 11Ship | Hủy đơn món / Hủy yêu cầu giao / Shipper hủy nhận là ba nút khác nhau, không dùng nút "Hủy" mơ hồ | — | Theo M10-R-10 | Race hủy vs pickup → một bên thắng | M10 §9 |
@@ -181,18 +181,18 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M10-R-06 | M10 | Khoảng cách ở checkout/đặt/sửa đơn `[P8]` | Checkout, đặt đơn, sửa đơn | Quãng đường **quán → điểm giao đã chọn** theo hợp đồng M14. Đổi địa chỉ thì quote cũ hết hiệu lực. Một hợp đồng quote duy nhất | Quote | KH | Không tuyến → lý do cụ thể | #294; #239 |
 | M10-R-07 | M10 | Quán xác nhận/sửa đơn | 11Food (CQ) | Trước xác nhận được sửa số lượng, đơn giá, bỏ món; có thay đổi thì bắt buộc lý do; khách thấy bản ban đầu và bản chốt; không xác nhận đơn rỗng; xác nhận xong khóa món và tiền món | Snapshot | CQ | — | M10 §5 |
 | M10-R-08 | M10 | Quán đặt giá cuối | 11Food (CQ) | Quán đặt giá cuối có lý do, không cần khách duyệt, hiển thị minh bạch | — | CQ | — | #260 (29/10) |
-| M10-R-09 | M10 | Khách sửa đơn khi chờ xác nhận | 11Food chi tiết đơn | Được sửa khi PENDING_CONFIRMATION, có kiểm version. Còn thiếu: bộ chọn địa chỉ trong luồng sửa (gap mở) | expected_version | KH | Lệch version → 409 | #238 (mở) |
+| M10-R-09 | M10 | Khách sửa đơn khi chờ xác nhận `[P8]` | 11Food chi tiết đơn → Sửa đơn | Chỉ khi PENDING_CONFIRMATION, có kiểm version; cho sửa món/người nhận/địa chỉ. **Bắt buộc** có chọn sổ địa chỉ hoặc địa chỉ khác, tìm địa điểm offline/chọn-điều chỉnh ghim trên bản đồ ngay trong luồng sửa; dùng picker chung, không ép lưu vào sổ. Đổi địa chỉ hủy preview cũ, tính lại km/phí và cho xem trước khi lưu; hiện còn gap UI theo Owner test 31/10 | expected_version; DraftAddress | KH | Lệch version → 409; thoát không lưu; tuyến thiếu → báo rõ | #238 (Owner 26/10, kiểm thử 31/10); #294 (01/11) |
 | M10-R-10 | M10 | Quyền hủy | 11Food | Chưa xác nhận: khách hủy, quán từ chối (có lý do). Đã xác nhận chưa pickup: quán hủy có lý do. Đã pickup: theo M07-R-04 | — | KH, CQ | Race hủy vs xác nhận → một bên thắng | M10 §9; M07-owner-delivery-flow |
 | M10-R-11 | M10 | Thời hạn ba giai đoạn | — | Chờ quán: nhắc phút 15/20/25, phút 30 SYSTEM hủy. Chờ shipper: ngừng tìm phút 30, phút 60 SYSTEM hủy cả Order. Đã nhận chưa lấy: phút 30 cảnh báo, phút 60 SYSTEM hủy và giải phóng hold. Không cộng dồn giai đoạn; pickup thắng thì không hủy | Policy snapshot lúc INSERT | — | Lỗi phần nào rollback tất cả | M10-timeouts (21/10); #153 |
 | M10-R-12 | M10 | Cấu hình thời hạn | Admin `/system/settings/order-timeouts` | Bảy ô phút; lịch sử thay đổi append-only | `order_timeout_policy(_changes)` | SYS hoặc AD có quyền | — | M10-timeouts |
 | M10-R-13 | M10 | Log mọi kiểu hủy | — | `cancellation_transitions` append-only; CANCELLED_BY_SYSTEM hiện rõ là hệ thống hủy; hủy bởi Admin hiện là Admin hủy | — | — | — | M10-timeouts; #260 |
 | M10-R-14 | M10 | Trạng thái hiển thị | 11Food | Nhãn khách theo bảng §8 (Chờ quán xác nhận … Hoàn thành) | Order và delivery lưu riêng | KH | — | M10 §8 |
-| M10-R-15 | M10 | Tiền và đã thanh toán | Chi tiết đơn | Theo dõi tiền món chốt, đã trả, còn phải thu, phí ship và bên trả. Không giữ tiền hàng/COD | — | — | — | M10 §11; #213 → C-08 |
+| M10-R-15 | M10 | Hiện Đã thanh toán / Còn phải thanh toán | Chi tiết đơn 11Food (KH/CQ), thẻ Tiền món và phí giao | Hiện Tiền món, Phí giao, Tổng dự kiến nếu đủ dữ liệu, **Đã thanh toán** và **Còn phải thanh toán**. Nếu paid_vnd/remaining_vnd chỉ phản ánh tiền món phải ghi rõ nhãn **tiền món**; chỉ tính số tổng gồm phí khi xác minh bên chịu phí, mức phí chốt và số đã trả; không trừ phí quán trả vào nợ khách, không số âm/0 giả. Chỉ ghi nhận tiền thực có nguồn và quyền/audit; giao xong không mặc định đã thu; thanh toán trực tiếp ngoài app, không mở ví khách/online | Tiền món đã ghi nhận, tiền món còn lại; phí giao/phạm vi thanh toán tách riêng | KH, CQ xem; thao tác ghi nhận theo quyền backend | Không đủ dữ liệu phí đã trả → hiển thị riêng từng khoản, không bịa tổng | #213 (Owner 26/10, thay M07 23/10); M10 §11 → C-08 |
 | M10-R-16 | M10 | Đơn hẹn giờ | Checkout | Giờ hẹn là giờ mong muốn nhận món; chọn theo lịch quán; chưa tự gọi shipper theo đồng hồ | — | KH | — | M10 §7 |
 | M10-R-17 | M10 | Lý do thiếu phí/khoảng cách | Checkout, chi tiết | Hiện lý do cụ thể khi thiếu khoảng cách/phí | — | KH | — | #211 |
 | M10-R-18 | M10 | Đổi địa chỉ sau xác nhận | Chi tiết đơn | Theo luồng #218 | — | KH, CQ | — | #218 |
-| M10-R-19 | M10 | Mã đơn hiển thị | Danh sách, chi tiết, thông báo | Dạng K01-0001; mã quán duy nhất, không tái dùng; một dãy số chung cho ORDER và DIRECT của quán; không reset; mã cũ DH-/G- vẫn tìm được; route vẫn dùng UUID | Counter transactional theo quán | — | Không trùng khi đồng thời | M10-M07-filter-shop-code (22/10) |
-| M10-R-20 | M10 | Danh sách đơn quán | 11Food Đơn hàng: Đơn món / Giao hàng | Một hàng tìm kiếm + nút Lọc; mặc định Tất cả; lọc và tìm ở máy chủ | `GET /v1/shop/me/orders`, `GET /v1/shop/me/deliveries` | CQ | Lọc rỗng → "Không có đơn phù hợp" + Xóa bộ lọc | M10-M07-filter-shop-code (22/10) |
+| M10-R-19 | M10 | Mã đơn hiển thị và tương thích DIRECT cũ | Danh sách, chi tiết, thông báo | Mã quán dạng K01-0001, duy nhất và không tái sử dụng; dãy số quán áp dụng ORDER và DIRECT **cũ gắn quán**, không reset; mã DH-/G- cũ vẫn tra cứu được. Yêu cầu Gọi shipper mới do KH tạo **không bắt buộc có quán và không ép dùng counter/mã quán**; mã tham chiếu công khai riêng cần được đối chiếu contract trước khi chốt format; API vẫn dùng UUID nội bộ | Counter giao dịch theo quán cho dữ liệu gắn quán; customer delivery độc lập quán | KH, CQ theo quyền sở hữu | Không tạo mã trùng hoặc gán quán giả cho yêu cầu KH | M10-M07-filter-shop-code (22/10); #221 (Owner 26/10) → C-11 |
+| M10-R-20 | M10 | Danh sách đơn quán | 11Food Đơn hàng: Đơn món / Giao hàng | Một hàng tìm kiếm + nút Lọc; mặc định Tất cả; lọc và tìm ở máy chủ. Giữ khả năng xem/xử lý giao hàng DIRECT **cũ** thuộc quán; yêu cầu Gọi shipper mới do KH tạo thuộc lịch sử Khách hàng, không tự nhập vào danh sách quản trị đơn của quán | `GET /v1/shop/me/orders`, `GET /v1/shop/me/deliveries` (lịch sử gắn quán) | CQ | Lọc rỗng → Không có đơn phù hợp + Xóa bộ lọc | M10-M07-filter-shop-code (22/10); #221 (Owner 26/10) → C-11 |
 | M10-R-21 | M10 | Trao đổi đơn hàng | `/v1/customers/me/orders/:id/chat`, `/v1/shop/me/orders/:id/chat`, `/v1/shop/me/deliveries/:id/chat`, `/v1/driver/deliveries/:id/chat` | Một feed gồm tin văn bản và mốc nghiệp vụ; chat không đổi phí/trạng thái; tối đa 500 ký tự; shipper chỉ khi assignment ACTIVE | `order_chat_messages` | Bên liên quan | Không có quyền → 404; đã đóng → 409 ORDER_CHAT_CLOSED | M10-order-chat (25/10); #191 |
 | M10-R-22 | M10 | Lưu trữ chat | — | Mặc định 7 ngày từ khi hồ sơ đóng (1–365); giữ chứng cứ khi có khiếu nại hoặc hold | `chat.retention_days` | SYS sửa | Hết hạn → expired:true | M10-order-chat |
 | M10-R-23 | M10 | Đơn cũ bất biến `[P8]` | Chi tiết đơn cũ | Quãng đường/phí đơn cũ không đổi (ví dụ K01-0006 giữ 3.838 m). Nếu vẽ tuyến hiện tại cho đơn cũ phải ghi "chỉ tham khảo" | Snapshot | — | — | #294 |
@@ -221,7 +221,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M12-R-06 | M12 | Nhật ký và sao lưu | M12-F | Audit chỉ đọc. Sao lưu hằng ngày, giữ 7 ngày + 4 tuần, thêm bản trước migration; bản sao ngoài VPS, mã hóa (Google Drive + rclone); khôi phục chỉ SYS | — | AD (`audit.read`); SYS | — | M12-spec §6; M12-implementation (Owner chốt) |
 | M12-R-07 | M12 | Scope báo cáo/audit | — | Báo cáo và audit theo scope; wallet.read là quyền riêng | — | AD | — | #262 (29/10) |
 | M12-R-08 | M12 | Hàng đợi việc, phân tích, cờ bất thường | Admin Web | Hàng đợi việc cần xử lý; phân tích; cờ bất thường chỉ gắn cờ, không tự xử lý | — | AD | — | #216; #241; #242 |
-| M12-R-09 | M12 | Mini Business | PWA `/business/` | Bảng điều khiển cho chủ doanh nghiệp | — | cxđ | — | #236; #237; business-dashboard |
+| M12-R-09 | M12 | Mini Business | PWA `/business/` | Dashboard vận hành 5 tab cho **SYSTEM và ADMIN được cấp đúng quyền**. ADMIN xem/chỉ xử lý theo grants API, không suy app VIEW là có report.read/wallet.read hay quyền sửa; 403 hiển thị thiếu quyền phù hợp. **Không tự mặc định mở PWA này cho SHOP_OWNER** | App grants + report.read / wallet.read + action guards | SYS; AD theo scope/quyền được cấp | 401/403/500/offline phải phân biệt, không rò dữ liệu hoặc xóa tab khác | #236; #237 (Owner 2026-10); business-dashboard |
 
 ## 13. M13 — Vận hành, cảnh báo, cập nhật
 
@@ -231,8 +231,8 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M13-R-02 | M13 | Không có nút deploy | Admin Web | Chỉ ghi lịch sử deploy và health check | — | — | — | M13-implementation (Owner) |
 | M13-R-03 | M13 | Probe bên ngoài | Ngoài VPS | Probe ngoài + Discord là điều kiện nghiệm thu | — | — | — | #264 (29/10) |
 | M13-R-04 | M13 | Giám sát VPS | Admin Web | Theo #247 | — | SYS | — | #247 |
-| M13-R-05 | M13 | Tương thích APK–backend | `/check` (không cần đăng nhập) | Dưới min_client_version_code → bắt buộc cập nhật; trên mức tối thiểu → khuyến nghị. Shipper đang có đơn chỉ thấy banner | `app-compatibility.json` | — | Check lỗi → thử lại sau 2 phút | M13-apk-backend-compat (25/10) |
-| M13-R-06 | M13 | Kênh cập nhật | — | Chỉ kiểm phiên bản + Google Play; giữ đường cập nhật APK cũ trong giai đoạn chuyển tiếp | — | — | — | #280 → C-14 |
+| M13-R-05 | M13 | Kiểm tra phiên bản không phụ thuộc phiên đăng nhập | `/check` / API version (guest được truy cập) | So sánh versionCode từng app FOOD/SHIP khi mở/resume; có bản mới hiện **popup nhẹ** với Cập nhật và Để sau, không popup chặn toàn trang, không tự quyết định shipper đang có đơn/khóa nút cập nhật; không yêu cầu đăng nhập. Thông tin `min_supported_version_code` của backend chỉ phản ánh tương thích, **không phục hồi UX chặn tải APK** đã bị #280 thay thế | Phiên bản, metadata và điều kiện tương thích backend hiện hữu | KH/CQ/SP hoặc khách chưa đăng nhập | Offline/API lỗi không báo giả đã mới; không làm mất chức năng và kiểm lại sau | #280 (Owner 31/10, thay thế UX M13 cũ); M13-apk-backend-compat (25/10) → C-14 |
+| M13-R-06 | M13 | Kênh cập nhật mới và chuyển tiếp | 11Food/11Ship → popup Cập nhật | Baseline mới **chỉ kiểm phiên bản, thông báo và mở listing Google Play thật khi đã phát hành**, không tải/cài APK hoặc theo dõi tiến trình qua VPS; Để sau hoạt động. **Trong giai đoạn chưa có kênh Play khả dụng**, giữ đường nâng cấp APK cũ cho người dùng đang lưu hành (không gỡ file/endpoint cũ, không trỏ tới Play giả), nhưng không coi tự tải APK là chức năng mục tiêu của M13 mới. Chỉ chuyển kênh sau khi xác minh package, signing, link, versionCode và nâng cấp được bản cũ | Release FOOD/SHIP riêng; legacy 0.1.470 cần đường nâng cấp | — | Thiếu listing Play → không chuyển người dùng sang URL giả hoặc làm đứt cập nhật | #280 (Owner 31/10) → C-14 |
 | M13-R-07 | M13 | Nhật ký lỗi | Admin Web | Chỉ SYS đọc; không lưu SQL/mật khẩu/token/OTP/số tài khoản/ảnh/địa chỉ khách | — | SYS | — | M13-error-logs (21/10) |
 
 ## 14. M14 — GPS, bản đồ, định tuyến
@@ -244,11 +244,11 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M14-R-03 | M14 | Ngưỡng độ chính xác | — | Bỏ mẫu có sai số > 500 m | — | — | — | #265 |
 | M14-R-04 | M14 | Phiên khóa báo vị trí | — | Đăng xuất/thu hồi phiên thì không báo vị trí và không nhận đơn được | — | SP | 401 → dừng dịch vụ | M14-online-location |
 | M14-R-05 | M14 | Một cảnh báo đúng nguyên nhân | 11Ship Home | Một vùng đỏ duy nhất theo thứ tự ưu tiên (mất Internet, lỗi máy chủ, lỗi gửi vị trí, tạm dừng do vị trí cũ…) | — | SP | — | M14-home-alerts (25/10); #194 |
-| M14-R-06 | M14 | Camera và cử chỉ bản đồ | Bản đồ | Theo #203/#215 | — | — | — | #203; #215 → C-12 |
+| M14-R-06 | M14 | Camera và cử chỉ bản đồ | Bản đồ | Giữ pan/pinch và fit theo ngữ cảnh; **riêng Home 11Ship** fit vùng bán kính nhận 3 km + padding (không còn mặc định khoảng 5 km ở màn này); bản đồ tuyến fit đầy đủ các điểm/tuyến | GPS/viewport | — | Không tự giật camera khi người dùng đang thao tác | #203; #215; #294 (Owner 01/11) → C-12 |
 | M14-R-07 | M14 | Tìm địa điểm offline | Bản đồ | Tìm địa điểm Cao Bằng offline | — | — | — | #283 |
 | M14-R-08 | M14 | Không lưu lịch sử GPS chính thức | — | Không lưu chuỗi GPS trên điện thoại hay máy chủ chính thức; chỉ vị trí mới nhất | — | — | — | M10 §17; M14-integration |
 | M14-R-09 | M14 | Tracking theo delivery hiện hành | Chi tiết đơn | Bám assignment hiện hành; dừng live khi đơn kết thúc; không giả tọa độ | — | KH, CQ theo quyền | — | M10 §17 |
-| M14-R-10 | M14 | Một hợp đồng định tuyến `[P8]` | Routing service (Valhalla) | Tuyến xe máy ngắn nhất hợp lệ; trả distance_m, ETA, geometry, route_version. Không fallback đường thẳng | — | — | Lỗi → ROUTE_DATA_UNAVAILABLE | #294 (01/11); #239 → C-15 |
+| M14-R-10 | M14 | Một hợp đồng định tuyến `[P8]` | Routing service (Valhalla trên VPS) | Tuyến xe máy ngắn nhất **hợp lệ**; trả distance_m, ETA, geometry, route_version; không fallback đường thẳng. **Valhalla đã chạy staging VPS 31/10, có kết quả quãng đường và quote lại địa chỉ; chưa đồng nghĩa đạt nghiệm thu shortest, geometry và đồng bộ mọi màn** | Route snapshot/version; M14_ROUTING_ORIGIN đã kết nối staging | — | Không có route → ROUTE_DATA_UNAVAILABLE, không giả 0 hay đường thẳng | #294 (Owner 01/11); #239; comment #238 (31/10) → C-15 |
 | M14-R-11 | M14 | Bản đồ vẽ đúng tuyến đã báo giá `[P8]` | Bản đồ checkout/chi tiết đơn | Polyline là chính tuyến đã dùng để tính giá | geometry + route_version | — | — | #294 |
 | M14-R-12 | M14 | Vòng 3 km trên Home 11Ship `[P8]` | 11Ship Home | Tâm là GPS shipper, đường thẳng. Bên trong trong suốt, bên ngoài phủ xám; camera vừa 3 km + lề | — | SP | — | #294 → C-12 |
 
@@ -261,35 +261,38 @@ Phase 1 dùng các dòng trên làm đầu vào cho:
 
 ## 16. Conflict Register (B-05)
 
-Mỗi xung đột cần Owner quyết. Cột **Đề xuất** chỉ là gợi ý theo thứ tự ưu tiên nguồn, chưa có hiệu lực.
+**Owner đã quyết ngày 01/11/2026:** cả **15/15 xung đột nguồn đã được chốt (RESOLVED)**; C-08 theo #213, C-11 theo #221, 13 mục còn lại theo đề xuất QA, với diễn giải C-14/C-15 bên dưới. Quyết định này chốt **đặc tả nghiệp vụ**, không xác nhận code, UAT hoặc merge PR #298.
 
-| ID | Chủ đề | Nguồn A | Nguồn B | Đề xuất của Lead |
+| ID | Chủ đề | Nguồn A | Nguồn B | Quyết định Owner (01/11/2026) |
 |---|---|---|---|---|
-| C-01 | Rút tiền khi bị khóa | M01-final-package: shipper bị khóa được yêu cầu rút, tối thiểu 10.000 đ | #255: chỉ rút khi CLOSING, không có mức tối thiểu | Theo #255 (OWNER LOCK, mới hơn) |
-| C-02 | Điều kiện rút tiền | M04-C: rút tối thiểu 10.000 đ, ngân hàng phải VERIFIED, cần ≥100k đã nạp | M03-simplified + #255 | Theo #255; đánh dấu M04-C lỗi thời |
-| C-03 | Bán kính tìm shipper | M03-UI-LOCKED, M06-design: 5 km | M06-v1.1: 3 km | 3 km (M06-v1.1, mới hơn) |
-| C-04 | Xác minh ngân hàng là điều kiện nhận đơn | M06-BC | #257, M03-simplified | Bỏ điều kiện (theo #257) |
-| C-05 | Khoảng cách trên trang khám phá | M02-discovery 16/10: không hiện khoảng cách; #147: Haversine; #206: chỉ đường đi | #294: quán → GPS hiện tại (ngược chiều với code hiện tại) | Theo #294 (Owner 01/11) |
-| C-06 | Quyền ghi nhận thanh toán quán | business-dashboard: dùng wallet.topup.record | G03: shop.payment.* | Theo G03 |
-| C-07 | GPS khi còn chuyến | M14-online-location 24/10: còn chuyến vẫn giữ GPS | #265: tắt Online là dừng GPS | Theo #265 (đã ghi rõ thay thế) |
-| C-08 | Hiển thị đã trả/còn phải thu | #213: hiện | M07 23/10: bỏ khỏi UI | Owner quyết |
-| C-09 | Giới hạn chat tài chính | #199: 1000 ký tự | G03: 500 grapheme | 500 grapheme (G03) |
-| C-10 | Bước "món sẵn sàng" | M10 §6: hai thao tác độc lập | M07 23/10: bỏ bước ready | Theo M07 23/10 |
-| C-11 | DIRECT do quán tạo | M07 23/10: có DIRECT do quán tạo | #221: bỏ DIRECT độc lập của quán | Owner quyết |
-| C-12 | Camera bản đồ | #203: khoảng 5 km | #294: vừa 3 km | Theo #294 cho Home 11Ship |
-| C-13 | Điều khoản | terms v1 / privacy v1 | Bản nháp v2 (31/10) | Giữ v1 tới khi Owner duyệt v2 |
-| C-14 | Kênh cập nhật | #280: chỉ kiểm phiên bản + Google Play | Giữ đường APK cũ khi chuyển tiếp | Giữ cả hai trong giai đoạn chuyển tiếp |
-| C-15 | Trạng thái routing Valhalla | #239 đã đóng nhưng routing chưa deploy, M14_ROUTING_ORIGIN chưa đặt | Comment #238 (31/10): Valhalla chạy trên VPS | Kiểm runtime ở Phase 6, ghi NOT TESTED đến khi có bằng chứng |
+| C-01 | Rút tiền khi bị khóa | M01-final-package: shipper bị khóa được yêu cầu rút, tối thiểu 10.000 đ | #255: chỉ rút khi CLOSING, không có mức tối thiểu | Theo #255: chỉ rút toàn bộ số dư trong CLOSING; SUSPENDED có đường vào CLOSING không cần mở khóa |
+| C-02 | Điều kiện rút tiền | M04-C: rút tối thiểu 10.000 đ, ngân hàng phải VERIFIED, cần ≥100k đã nạp | M03-simplified + #255 | Theo #255: không mức rút tối thiểu và không bắt buộc ngân hàng VERIFIED từ trước; ngân hàng thụ hưởng được Admin xác minh khi hoàn tiền, không bỏ kiểm an toàn |
+| C-03 | Bán kính tìm shipper | M03-UI-LOCKED, M06-design: 5 km | M06-v1.1: 3 km | Bán kính EXTERNAL 3.000m đường thẳng (Haversine) theo M06-v1.1, không nhầm với độ dài tuyến tính phí |
+| C-04 | Xác minh ngân hàng là điều kiện nhận đơn | M06-BC | #257, M03-simplified | Theo #257: bỏ yêu cầu ngân hàng VERIFIED khỏi điều kiện Online/nhận đơn |
+| C-05 | Khoảng cách trên trang khám phá | M02-discovery 16/10: không hiện khoảng cách; #147: Haversine; #206: chỉ đường đi | #294: quán → GPS hiện tại (ngược chiều với code hiện tại) | Theo #294: Home/Tìm kiếm/Chi tiết quán đo **quán → GPS hiện tại** bằng tuyến xe máy ngắn nhất hợp lệ; checkout dùng quán → điểm giao đã chọn |
+| C-06 | Quyền ghi nhận thanh toán quán | business-dashboard: dùng wallet.topup.record | G03: shop.payment.* | Theo G03: quyền `shop.payment.*`, không dùng `wallet.topup.record` thay thế |
+| C-07 | GPS khi còn chuyến | M14-online-location 24/10: còn chuyến vẫn giữ GPS | #265: tắt Online là dừng GPS | Theo #265: tắt Online thì dừng gửi GPS kể cả khi đang có chuyến, nhưng giữ trách nhiệm với chuyến đã nhận |
+| C-08 | Hiển thị đã trả/còn phải thu | #213: hiện | M07 23/10: bỏ khỏi UI | **Theo #213 (Owner 26/10): hiện Đã thanh toán / Còn phải thanh toán ở 11Food KH/CQ; ghi rõ phần tiền món và phí, không suy đoán đã thu từ trạng thái giao** |
+| C-09 | Giới hạn chat tài chính | #199: 1000 ký tự | G03: 500 grapheme | 500 grapheme theo G03 cho mini chat tài chính; không lấy giới hạn 1000 ký tự cũ |
+| C-10 | Bước "món sẵn sàng" | M10 §6: hai thao tác độc lập | M07 23/10: bỏ bước ready | Theo M07 23/10: bỏ nút/bước món sẵn sàng riêng; quán gọi shipper nghĩa là món đã sẵn sàng |
+| C-11 | DIRECT do quán tạo | M07 23/10: có DIRECT do quán tạo | #221: bỏ DIRECT độc lập của quán | **Theo #221 (Owner 26/10): bỏ lối tạo DIRECT độc lập của quán; chủ quán gửi ngoài app qua chế độ Khách; giữ Gọi shipper cho đơn món; bảo toàn DIRECT cũ và quyền creator** |
+| C-12 | Camera bản đồ | #203: khoảng 5 km | #294: vừa 3 km | Theo #294: riêng bản đồ Home 11Ship fit vòng 3km + padding, trong rõ/ngoài xám; các màn khác fit đúng ngữ cảnh |
+| C-13 | Điều khoản | terms v1 / privacy v1 | Bản nháp v2 (31/10) | Giữ terms v1/privacy v1 đang hiệu lực; v2 chỉ là nháp cho đến khi Owner duyệt |
+| C-14 | Kênh cập nhật | #280: chỉ kiểm phiên bản + Google Play | Giữ đường APK cũ khi chuyển tiếp | **Phân biệt trạng thái:** M13 mục tiêu mới theo #280 = chỉ so sánh phiên bản + popup + mở Google Play thật. APK tự host **chỉ là đường nâng cấp legacy trong chuyển tiếp** khi Play chưa xác nhận, không được gỡ làm đứt bản cũ và không thuộc UX mới |
+| C-15 | Trạng thái routing Valhalla | #239 đã đóng nhưng routing chưa deploy, M14_ROUTING_ORIGIN chưa đặt | Comment #238 (31/10): Valhalla chạy trên VPS | **Đã có bằng chứng runtime staging 31/10:** Valhalla 3.9.1 trên VPS, `M14_ROUTING_ORIGIN` đã cấu hình, 5 quán có quãng đường và sửa địa chỉ tính lại. **Chưa nghiệm thu hết** shortest xe máy, snapshot/geometry, mọi màn, chống lệch phí; Phase 6/8 cần kiểm thực tế, không ghi toàn bộ routing là NOT DEPLOYED |
 
-## 17. Câu hỏi mở cho Owner
+## 17. Quyết định đã chốt và phần còn cần nghiệm thu
 
-1. Xác nhận các đề xuất trong Conflict Register; riêng C-08 và C-11 cần Owner quyết.
-2. M10-R-09: bộ chọn địa chỉ trong luồng sửa đơn (#238) có thuộc baseline hiện tại không?
-3. M12-R-09: quyền truy cập Mini Business `/business/` dành cho ai?
-4. Các dòng `[P8]` (#294, #295) giữ nguyên là lỗi cần sửa ở Phase 8, không mở thành tính năng mới.
+1. **C-01…C-15 đã chốt theo Owner ngày 01/11/2026.** Không đưa hai xung đột C-08/C-11 quay lại bàn quyết nếu không có quyết định mới.
+2. **M10-R-09 thuộc baseline bắt buộc** theo #238: sửa đơn phải chọn địa chỉ khác/tìm offline/điều chỉnh ghim ngay trong luồng; phần thiếu là gap cần test red→green tại Phase 8, không phải đề xuất feature mới.
+3. **M12-R-09:** Mini Business `/business/` dành cho SYSTEM/ADMIN theo quyền chức năng, đối chiếu #236/#237; không tự cấp SHOP_OWNER quyền Admin PWA.
+4. **C-14:** trước chuyển cập nhật sang Play phải xác nhận cả hai listing thật và kênh nâng cấp tương thích cho APK cũ; không bật URL giả, không xóa legacy khi còn người dùng phụ thuộc.
+5. **C-15:** runtime staging đã có bằng chứng; kiểm định tính đúng của tuyến, snapshot, chi phí và polyline vẫn là việc chưa nghiệm thu ở Phase 6/8.
+6. Các dòng `[P8]` (#294, #295 và gap #238) chỉ nhận diện lỗi của chức năng cũ để sửa bằng test red→green tại Phase 8; việc sửa tài liệu tại Phase 1 không đồng nghĩa lỗi đã được khắc phục.
+7. **PR #298 vẫn mở, không merge/deploy.** Cần phản biện Codex (B-02), Antigravity, smoke B-03 và Owner chốt B-04 sau review.
 
 ## 18. Phản biện tiếp theo
 
 - **Codex:** kiểm từng dòng với nguồn, chỉ ra dòng thiếu/sai, lập B-02.
 - **Antigravity:** phản biện chéo module, nhất là luồng M10↔M07↔M04↔M14.
-- **Owner:** xác nhận ở B-04.
+- **Owner:** đã chốt C-01…C-15 ngày 01/11; tiếp tục quyết định B-04 sau phản biện và kiểm chứng, không tự merge.
