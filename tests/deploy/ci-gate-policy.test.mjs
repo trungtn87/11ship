@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -38,10 +39,44 @@ const READ_ONLY_ALLOWLIST = {
   'diagnose-vps-release.yml': {
     jobs: ['diagnose'],
     reason: 'workflow_dispatch diagnosis only prints release integrity (hash compare, systemctl is-active); it applies nothing.',
-    // Guard on the REMOTE heredoc only (local ssh-key tmpdir cleanup is irrelevant): void as soon as it gains a state-changing verb.
+    // SECURITY BOUNDARY = this pin. The whole job text (ssh command + remote script) is locked by sha256;
+    // any edit fails the test until Lead + Codex re-review the read-only claim and the hash is updated.
+    pinnedSha256: '9d2f6d627082c8b525dd78ca1d48abdc0ee05456813b30305ba3a2091e4ec4e7',
+    // Secondary layer ONLY, NOT a security boundary (a denylist cannot prove read-only; e.g. subprocess lists,
+    // open(...,'w'), docker, reboot all slip past). It only gives a friendlier hint on obvious mistakes.
     forbidden: /\b(systemctl\s+(restart|start|stop|reload|enable|disable)|rm\s|mv\s|ln\s+-s|chmod|chown|unlink|write_|os\.(remove|rename|system)|shutil|\.mkdir|tar\s+-?x|pg_|psql|python3\s+-B\s+\S*vps-update|cp\s|tee\s|>\s*\/(opt|etc|root))/,
   },
 };
+
+const jobSha256 = block => createHash('sha256').update(block.replace(/\r\n/g, '\n').trimEnd() + '\n').digest('hex');
+
+function assertPinnedReadOnly(file, name, block, allow) {
+  assert.equal(jobSha256(block), allow.pinnedSha256,
+    `${file}:${name} diagnose job changed: requires Lead + Codex re-review of read-only claim, then update the pinned hash (${allow.reason})`);
+  assert.doesNotMatch(block.split(/<<'PY'/).slice(1).join(''), allow.forbidden, `${file}:${name} contains an obviously state-changing command (secondary denylist)`);
+}
+
+test('diagnose read-only pin: any edit to the job fails, including state-changing calls the denylist misses', () => {
+  const allow = READ_ONLY_ALLOWLIST['diagnose-vps-release.yml'];
+  const block = jobsOf(readFileSync(join(WORKFLOWS, 'diagnose-vps-release.yml'), 'utf8')).diagnose;
+  assert.ok(block, 'diagnose job exists');
+  assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', block, allow);
+  assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', block.replace(/\r?\n/g, '\r\n'), allow); // CRLF checkout is the same job
+  const inserted = [
+    "subprocess.run(['systemctl','restart','x'])",
+    "open('/etc/11ship/x','w').write('1')",
+    "Path('/etc/x').write_text('1')",
+    "subprocess.run(['reboot'])",
+    "subprocess.run(['docker','rm','x'])",
+  ];
+  for (const line of inserted) {
+    const tampered = block.replace("          print('target: '+str(target))", `          ${line}\n          print('target: '+str(target))`);
+    assert.notEqual(tampered, block, 'insertion point exists');
+    assert.throws(() => assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', tampered, allow), /diagnose job changed: requires Lead \+ Codex re-review/, line);
+  }
+  // A comment-only edit is also a change that needs re-review.
+  assert.throws(() => assertPinnedReadOnly('diagnose-vps-release.yml', 'diagnose', block + '    # x\n', allow), /diagnose job changed/);
+});
 
 test('every production-environment job that reaches the VPS over ssh needs ci-gate, or is a justified read-only diagnosis', () => {
   const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
@@ -54,7 +89,7 @@ test('every production-environment job that reaches the VPS over ssh needs ci-ga
       checked += 1;
       const allow = READ_ONLY_ALLOWLIST[file];
       if (allow && allow.jobs.includes(name)) {
-        assert.doesNotMatch(block.split(/<<'PY'/).slice(1).join(''), allow.forbidden, `${file}:${name} is allowlisted as read-only (${allow.reason}) but now contains a state-changing command`);
+        assertPinnedReadOnly(file, name, block, allow);
         continue;
       }
       assert.ok(needsCiGate(block), `${file}:${name} deploys to vps-production over ssh without "needs: ci-gate"`);
