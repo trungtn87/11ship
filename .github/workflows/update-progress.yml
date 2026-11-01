@@ -32,9 +32,10 @@ name: Update progress
 #   - `workflow_run` listens to "CI" only, never to this workflow;
 #   - a commit is made only when the generated file actually changed.
 # * Pushing to main is OFF by default (S-02): a bot commit carrying the CI-skip marker lands on main
-#   without a CI run and blinds the main-branch signal. The commit step runs only when the repository
-#   variable PROGRESS_PUBLISH is exactly 'true'. The generator still runs (and the preview job still
-#   shows the dashboard); nothing is written to main otherwise.
+#   without a CI run and blinds the main-branch signal. Generating and committing are separate jobs:
+#   `publish` only generates docs/PROGRESS.md with a READ-ONLY token (contents: read) and hands it on
+#   as an artifact; `commit-progress` is the only job with contents: write and it runs only when the
+#   repository variable PROGRESS_PUBLISH is exactly 'true'. Nothing can write to main otherwise.
 # * The generator has no npm dependencies, so no `npm ci` (and no lifecycle scripts) runs next to
 #   the write token.
 
@@ -153,6 +154,51 @@ jobs:
     if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.reset-review.result == 'success' || needs.reset-review.result == 'skipped') && (needs.review-status.result == 'success' || needs.review-status.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Generator only: no write token here (S-02). `commit-progress` below is the only writer.
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      issues: read
+      actions: read
+      statuses: read
+    # One generator at a time; later runs wait instead of racing each other. Every run reads live
+    # state, so the last one always wins with the freshest data.
+    concurrency:
+      group: update-progress-publish
+      cancel-in-progress: false
+    steps:
+      - name: Check out the default branch (never the PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Generate docs/PROGRESS.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-progress.mjs
+
+      - name: Hand the generated file to the commit job
+        if: ${{ vars.PROGRESS_PUBLISH == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: progress-md
+          path: docs/PROGRESS.md
+          retention-days: 1
+          if-no-files-found: error
+
+  commit-progress:
+    name: Commit docs/PROGRESS.md (only while PROGRESS_PUBLISH is 'true')
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && vars.PROGRESS_PUBLISH == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: read
@@ -160,10 +206,9 @@ jobs:
       issues: read
       actions: read
       statuses: read
-    # One publisher at a time; later runs wait instead of racing each other. Every run reads live
-    # state, so the last one always wins with the freshest data.
+    # One committer at a time; later runs wait instead of racing each other.
     concurrency:
-      group: update-progress-publish
+      group: update-progress-commit
       cancel-in-progress: false
     env:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -178,20 +223,22 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - name: Generate docs/PROGRESS.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/generate-progress.mjs
+      - name: Fetch the generated docs/PROGRESS.md
+        uses: actions/download-artifact@v4
+        with:
+          name: progress-md
+          path: ${{ runner.temp }}/progress-md
 
-      - name: Commit when changed (only while repository variable PROGRESS_PUBLISH is 'true')
-        if: ${{ vars.PROGRESS_PUBLISH == 'true' }}
+      - name: Commit when changed
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GENERATED_DIR: ${{ runner.temp }}/progress-md
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp "$GENERATED_DIR/PROGRESS.md" docs/PROGRESS.md
           for attempt in 1 2 3; do
             if git diff --quiet -- docs/PROGRESS.md; then
               echo "docs/PROGRESS.md unchanged"

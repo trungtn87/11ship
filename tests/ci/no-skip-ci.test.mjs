@@ -39,9 +39,24 @@ test('workflow is plain pull_request, read-only, and passes PR text as environme
   for (const line of text.split('\n').filter(l => /^\s+run:/.test(l))) assert.ok(!line.includes('${{'), line);
 });
 
-test('update-progress pushes to main only when PROGRESS_PUBLISH is exactly true', () => {
+test('update-progress pushes to main only from a separate job gated on PROGRESS_PUBLISH being exactly true', () => {
   const text = readFileSync(new URL('../../.github/workflows/update-progress.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-  const step = text.slice(text.indexOf('      - name: Commit when changed'));
-  assert.match(step.split('\n').slice(0, 3).join('\n'), /if: \$\{\{ vars\.PROGRESS_PUBLISH == 'true' \}\}/);
+  const job = name => {
+    const at = text.indexOf(`\n  ${name}:\n`);
+    assert.notEqual(at, -1, name);
+    const rest = text.slice(at + 1);
+    const end = rest.slice(1).search(/\n {2}[a-z][\w-]*:\n/);
+    return end === -1 ? rest : rest.slice(0, end + 1);
+  };
+  const publish = job('publish');
+  const commit = job('commit-progress');
+  assert.match(commit, /if: \$\{\{ [^\n]*vars\.PROGRESS_PUBLISH == 'true' \}\}/);
+  assert.match(commit, /permissions:\n\s+contents: write\n/);
+  assert.match(commit, /git push origin/);
+  // The generator job: read-only token, no commit/push, no persisted credentials.
+  assert.match(publish, /permissions:\n\s+contents: read\n/);
+  assert.ok(!/: write/.test(publish) && !/git (push|commit)/.test(publish));
+  assert.match(publish, /persist-credentials: false/);
+  assert.equal((text.replace(/^\s*#.*$/gm, '').match(/contents: write/g) ?? []).length, 1, 'exactly one job can write repository contents');
   assert.ok(text.includes('node scripts/generate-progress.mjs'), 'generator is kept');
 });

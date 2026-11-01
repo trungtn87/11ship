@@ -387,7 +387,7 @@ describe('workflow wiring (static checks)', () => {
   });
 
   test('no run: line interpolates anything from the event', () => {
-    for (const name of ['preview', 'review-status', 'reset-review', 'publish']) {
+    for (const name of ['preview', 'review-status', 'reset-review', 'publish', 'commit-progress']) {
       for (const line of runLines(jobBlock(name))) assert.ok(!line.includes('${{'), `${name}: ${line.trim()}`);
     }
   });
@@ -398,7 +398,19 @@ describe('workflow wiring (static checks)', () => {
     assert.match(block, /needs\.reset-review\.result == 'success' \|\| needs\.reset-review\.result == 'skipped'/);
     assert.match(block, /needs\.review-status\.result == 'success' \|\| needs\.review-status\.result == 'skipped'/);
     assert.match(block, /github\.event_name != 'pull_request'/);
+    // S-02: the generator job holds no write token; only commit-progress does.
+    assert.match(block, /permissions:\n\s+contents: read\n/);
+    assert.ok(!/: write/.test(block), 'publish (generator) has no write permission');
+    assert.ok(!/git (push|commit)/.test(block), 'publish does not commit or push');
+  });
+
+  test('commit-progress is the only job with contents: write and runs only while PROGRESS_PUBLISH is true', () => {
+    const block = jobBlock('commit-progress');
+    assert.match(block, /needs: publish\n/);
+    assert.match(block, /if: \$\{\{ !cancelled\(\) && needs\.publish\.result == 'success' && vars\.PROGRESS_PUBLISH == 'true' \}\}/);
     assert.match(block, /contents: write/);
+    assert.equal((text.replace(/^\s*#.*$/gm, '').match(/contents: write/g) ?? []).length, 1, 'exactly one job can write repository contents');
+    assert.ok(!/pull_request\.head|head\.ref|head\.sha|github\.head_ref/.test(block), 'the PR head is never used');
   });
 
   test('only the review-status job may write commit statuses; the jobs that read them can read them', () => {
@@ -412,7 +424,7 @@ describe('workflow wiring (static checks)', () => {
     assert.match(text, /paths-ignore:\n\s+- docs\/PROGRESS\.md/);
     assert.match(text, /workflow_run:\n\s+workflows: \[CI\]/);
     assert.ok(!/workflow_run:\n\s+workflows: \[[^\]]*Update progress/.test(text));
-    assert.match(jobBlock('publish'), /git diff --quiet -- docs\/PROGRESS\.md/);
+    assert.match(jobBlock('commit-progress'), /git diff --quiet -- docs\/PROGRESS\.md/);
   });
 });
 
