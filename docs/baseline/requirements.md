@@ -1,6 +1,6 @@
 # 11Ship — Functional Baseline (B-01)
 
-**Phiên bản:** v0.6 (áp review Codex B-02 và Antigravity; Owner đã chốt C-01..C-28) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-01 · **Người lập:** Claude Lead, cập nhật quyết định Owner
+**Phiên bản:** v0.7 (áp review Codex B-02 và Antigravity; Owner đã chốt C-01..C-28 và quyết định B-04 ngày 02/11) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-02 · **Người lập:** Claude Lead, cập nhật quyết định Owner
 **Trạng thái:** DRAFT — Owner đã xác nhận C-01…C-15 ngày 01/11/2026; chờ Codex/Antigravity phản biện độc lập và hoàn tất B-04. **Chưa merge PR #298; chưa xác nhận code/runtime đạt baseline.**
 **Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
@@ -115,7 +115,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M04-R-11 | M04 | Entitlement quán | Admin Web | Cấp entitlement là thao tác riêng, tách khỏi ghi nhận thanh toán | — | AD (`shop.entitlement.manage`) | — | G03; #198 |
 | M04-R-12 | M04 | Chat tài chính quán | Quán ↔ Admin | Tin tối đa 500 grapheme; chat không phải thao tác tài chính | — | CQ; AD | Quá dài → từ chối | G03; #199 → C-09 |
 | M04-R-13 | M04 | Ví chỉ hiện khi đã đăng nhập `[P8]` | 11Ship Tài khoản, Thu nhập, Home, deep link, thông báo | Mục "Ví của tôi" và mọi lối vào ví bị ẩn khi là khách, đã đăng xuất, phiên hết hạn/bị thu hồi, chưa xác minh hoặc đang khởi động. Chỉ hiện khi đã đăng nhập. Giữ hành vi lockedWalletOnly | — | SP | Deep link vào ví khi chưa đăng nhập → về màn đăng nhập | #295 (01/11) |
-| M04-R-14 | M04 | Tiền đến muộn hoặc không có yêu cầu (C-25) | Admin Web › Tài chính | Yêu cầu nạp tạo trước CLOSING còn PENDING vẫn được Admin kiểm và CONFIRMED/REJECTED theo chứng cứ. Tiền đến khi không có yêu cầu, yêu cầu đã hủy, hoặc sau CLOSED: không tự cộng ví đã đóng, không tạo yêu cầu giả; xử lý qua quy trình chứng từ + audit. Nếu đang có lệnh rút mở thì không tạo lệnh thứ hai đồng thời (M03-R-05) | — | AD | Không xác định được chủ → giữ chờ xử lý | #256 (28/10); Owner 01/11 C-25 |
+| M04-R-14 | M04 | Tiền đến muộn hoặc không có yêu cầu (C-25) | Admin Web › Tài chính | Yêu cầu nạp tạo trước CLOSING còn PENDING vẫn được Admin kiểm và CONFIRMED/REJECTED theo chứng cứ. Tiền đến khi không có yêu cầu, yêu cầu đã hủy, hoặc sau CLOSED: không tự cộng ví đã đóng, không tạo yêu cầu giả; xử lý qua quy trình chứng từ + audit. **Owner 02/11 (B04-08):** đối soát thủ công ngay trong Admin Web; giao dịch không khớp không bao giờ tự động cộng ví; mỗi lần xử lý có nhật ký, bằng chứng đính kèm và chống xử lý trùng. Nếu đang có lệnh rút mở thì không tạo lệnh thứ hai đồng thời (M03-R-05) | — | AD | Không xác định được chủ → giữ chờ xử lý; xử lý lần hai cùng giao dịch → từ chối | #256 (28/10); Owner 01/11 C-25; Owner 02/11 B04-08 |
 | M04-R-15 | M04 | Quyền ví gắn scope DRIVER (C-27) | Admin Web | Quyền ví shipper (wallet.*) chỉ có hiệu lực trong scope DRIVER; không cấp nhờ scope SHOP. Counter/danh sách ví theo cùng quy tắc | — | AD scope DRIVER | Thiếu scope → 403 | G18; G19; Owner 01/11 C-27 |
 
 ## 6. M05 — Hồ sơ khách và sổ địa chỉ
@@ -193,7 +193,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | Req ID | Module | Yêu cầu | Entry point dự kiến | Hành vi mong đợi | State/Data | Quyền | Hành vi khi lỗi | Nguồn |
 |---|---|---|---|---|---|---|---|---|
 | M10-R-01 | M10 | Giỏ hàng | 11Food thực đơn (nút +) | Một giỏ một quán; cùng món cùng ghi chú thì gộp; thêm món quán khác phải xác nhận thay giỏ; giữ giỏ khi thoát app nhưng giá trong giỏ không phải giá chốt. Giỏ thuộc từng tài khoản: đổi tài khoản trên cùng máy không thấy giỏ của tài khoản trước (M01-R-16) | Giỏ trên máy | KH | — | M10-Functional-UI-LOCKED §2 (16/10); #295 (01/11) |
-| M10-R-02 | M10 | Chưa có tính năng thanh toán mở rộng | — | Không topping/size/combo/voucher/ví khách/thanh toán online | — | — | — | M10 §2, §11 |
+| M10-R-02 | M10 | Chưa có tính năng thanh toán mở rộng | — | Không topping/size/combo/voucher/ví khách/thanh toán online. **Owner 02/11 (B04-13):** không hiển thị lối vào "Voucher của tôi" trong 11Food; chỉ gỡ lối vào/màn trống, không xóa dữ liệu hay chức năng khác khi chưa xác định ảnh hưởng `[P8]` | — | — | — | M10 §2, §11; Owner 02/11 B04-13 |
 | M10-R-03 | M10 | Xác nhận đặt món | Checkout | Người nhận (tên/SĐT) bắt buộc, có thể khác người đặt; địa chỉ từ M05 hoặc nhập mới; tiền món và phí ship tách riêng | — | KH | Phí chưa có → ghi rõ, không hiện 0 đ | M10 §3 |
 | M10-R-04 | M10 | Máy chủ kiểm trước khi tạo | Tạo Order | Kiểm quán hợp lệ, món còn hiện, giá hiện tại, lịch mở cửa/giờ hẹn, người nhận, địa chỉ | — | KH | Giá đổi/món ẩn → báo khách xác nhận lại | M10 §3 |
 | M10-R-05 | M10 | Gửi đơn an toàn khi mất mạng | Tạo Order | Retry cùng thao tác không tạo hai Order; trạng thái chưa biết không báo thành công/thất bại chắc chắn | Idempotency | KH | — | M10 §4 |
@@ -364,9 +364,11 @@ Ma trận B-02 đã map 163/163 Req ID. Lead xử lý chiều ngược như sau:
 5. **C-15:** runtime staging đã có bằng chứng; kiểm định tính đúng của tuyến, snapshot, chi phí và polyline vẫn là việc chưa nghiệm thu ở Phase 6/8.
 6. Các dòng `[P8]` (#294, #295 và gap #238) chỉ nhận diện lỗi của chức năng cũ để sửa bằng test red→green tại Phase 8; việc sửa tài liệu tại Phase 1 không đồng nghĩa lỗi đã được khắc phục.
 7. **PR #298 vẫn mở, không merge/deploy.** Cần phản biện Codex (B-02), Antigravity, smoke B-03 và Owner chốt B-04 sau review.
+8. **B-04 (Owner 02/11):** sổ 19 điểm lệch tại [`b04-deviations.md`](b04-deviations.md). B04-08 và B04-13 đã ghi vào M04-R-14 và M10-R-02. B04-14: màn chẩn đoán và bảng Admin có giá trị vận hành được giữ, nhưng **chỉ thêm yêu cầu vào baseline sau khi kiểm chức năng, phân quyền và bảo mật**; hiện chưa phải yêu cầu. B04-17 (Android 17) hoãn đến sau B-03 trên thiết bị thật.
+9. **B-03:** lần 1 (APK v470, emulator Android 17) không dùng để nghiệm thu UI; chạy lại bằng APK v480 trên máy thật. S-02 giữ BLOCKED; S-04 giữ FAIL khi khoảng cách còn lệch.
 
 ## 18. Phản biện tiếp theo
 
 - **Codex:** kiểm từng dòng với nguồn, chỉ ra dòng thiếu/sai, lập B-02.
 - **Antigravity:** phản biện chéo module, nhất là luồng M10↔M07↔M04↔M14.
-- **Owner:** đã chốt C-01…C-15 ngày 01/11; tiếp tục quyết định B-04 sau phản biện và kiểm chứng, không tự merge.
+- **Owner:** đã chốt C-01…C-28 (01/11) và B-04 (02/11); nghiệm thu baseline sau B-03 chạy lại, không tự merge.
