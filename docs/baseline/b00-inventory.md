@@ -286,20 +286,35 @@ Main SHA `fb3ba2ce18ada300dbbf65749096f400780f4e31`. Đối chiếu với `docs/
 | `no-skip-ci.yml` | `.github/workflows/no-skip-ci.yml` |
 | `update-progress.yml` | `.github/workflows/update-progress.yml` |
 
-## Trạng thái đối chiếu 234 mục CHƯA MAP (Lead, 02/11)
+## Trạng thái đối chiếu 234 mục CHƯA MAP (Lead, cập nhật 02/11 sau review độc lập)
 
 **Chưa tuyên bố "đã xử lý hết".** Danh sách trên là kết quả đối chiếu theo chuỗi tại v0.6; nó không tự thay đổi.
 
-Bằng chứng hiện có: Codex gán thủ công từng mục (bình luận PR #298 do Codex chỉnh sửa, đã chép bảng dưới đây vào repo). Lead đã kiểm:
+**Nguồn của bảng gán:** bình luận PR #298 của Codex, [comment 6561712894](https://github.com/trungtn87/11ship/pull/298#issuecomment-6561712894) (sửa lần cuối 2026-11-01 18:24 UTC, mục "Đối chiếu B-00 — 234/234 mục CHƯA MAP"). Lead đã tải lại bình luận này ngày 02/11 và so sánh: bảng dưới đây trùng khớp với bản trong bình luận. (Review độc lập của Codex ngày 02/11 chỉ tìm trong bình luận 6560506383 nên báo không thấy nguồn; bảng nằm ở bình luận 6561712894.)
 
 | Kiểm tra | Kết quả |
 |---|---|
-| Đủ 234 mục của danh sách trên đều có một dòng gán trong bảng của Codex | Đạt (234/234; bảng có 231 khóa duy nhất do vài tên trùng) |
+| Đủ 234 mục của danh sách trên đều có một dòng gán | Đạt (234/234; bảng có 231 khóa duy nhất do vài tên trùng) |
 | Mọi Req ID được viện dẫn đều tồn tại trong `requirements.md` v0.7 | Đạt (0 mã lạ) |
-| 8 mục ghi `KHÔNG CÓ YÊU CẦU` là hạ tầng/test/quy trình, không phải lệnh xóa | Lead chấp nhận theo mô tả của Codex; chưa kiểm sâu |
-| Đúng ngữ nghĩa của từng dòng gán | **Chưa kiểm từng dòng.** Lead xem ngẫu nhiên 14 dòng, thấy hợp lý, nhưng một vài dòng gán rộng (ví dụ `health` gán M13-R-03/04) |
+| Bảng trong repo trùng bảng trong bình luận 6561712894 | Đạt |
+| 8 mục `KHÔNG CÓ YÊU CẦU` là hạ tầng/test/quy trình, không phải lệnh xóa | Lead chấp nhận theo mô tả của Codex; chưa kiểm sâu |
+| **Đúng ngữ nghĩa của từng dòng gán** | **KHÔNG ĐẠT ở mẫu đã kiểm.** Lead xem 14 dòng và thấy hợp lý, nhưng review độc lập của Codex (02/11) chọn 20 dòng và thấy 10 dòng gán sai hoặc quá rộng, 1 dòng quá hẹp (xem "Errata" dưới). Mẫu của Lead không đủ để kết luận; bảng chỉ có độ tin cậy ngữ nghĩa thấp |
 
-Kết luận: **234/234 mục đã được gán (Req ID hoặc "không có yêu cầu"), CHƯA kiểm ngữ nghĩa từng dòng.** Việc kiểm từng dòng thuộc Phase 3 (review theo module). Mục nào Phase 3 thấy gán sai thì mở lại và sửa baseline hoặc ghi điểm lệch.
+**Kết luận:** 234/234 mục đã có một dòng gán, nhưng việc gán **chưa được xác minh về ngữ nghĩa và đã có lỗi được chứng minh**. Không dùng bảng này làm bằng chứng phủ yêu cầu. Việc rà lại toàn bộ 234 dòng thuộc Phase 3 (review theo module).
+
+### Errata (Lead, 02/11, theo review độc lập của Codex; đã đối chiếu với `requirements.md` v0.7)
+
+Bảng gán gốc bên dưới được giữ nguyên để lưu vết. Các dòng sau được sửa:
+
+| Mục | Gán gốc | Sửa | Lý do |
+|---|---|---|---|
+| route `GET /v1/admin/finance/reconciliation`, `POST .../reconciliation/check` | M04-R-08 | Không có yêu cầu riêng; ứng viên Phase 3/4 (kiểm bất biến và lệch sổ ví) | M04-R-08 là điều chỉnh PENDING_FINANCE khi thiếu số dư (C-24), khác hợp đồng |
+| route `GET/POST /v1/admin/finance/commission-policy`, bảng `wallet_commission_policies` | M04-R-03 | M12-R-04 (cấu hình tập trung); chưa có yêu cầu riêng về chính sách hoa hồng, ứng viên Phase 3 | M04-R-03 là hold một lần (hold active → captured hoặc released) |
+| route `GET /v1/admin/orders`, `GET /v1/admin/orders/:order_id`, màn `orders-view` | M10-R-13, M10-R-20 (+ M10-R-25, M12-R-13 ở `orders-view`) | Bỏ M10-R-20: giữ M10-R-13 (và M10-R-25, M12-R-13 cho `orders-view`) | M10-R-20 là danh sách đơn của quán trên 11Food, không phải danh sách đơn Admin |
+| route `GET /v1/health/live`, `GET /v1/health/ready` | M13-R-03, M13-R-04 | M13-R-04 đầy đủ; M13-R-03 chỉ một phần (là đích của probe, không phủ probe ngoài VPS và Discord độc lập) | Quá rộng |
+| màn `deliveries-view` | M07-R-09 | Giữ M07-R-09; còn quá hẹp, cần rà thêm M07 ở Phase 3 | Codex ghi quá hẹp |
+
+Số dòng gốc bị sai hoặc quá rộng trong mẫu 20 dòng của Codex: 10. Chưa rà 214 dòng còn lại.
 
 ### Bảng gán của Codex (nguyên văn, chưa chỉnh)
 

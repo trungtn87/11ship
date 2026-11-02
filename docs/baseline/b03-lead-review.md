@@ -1,7 +1,7 @@
 # 11Ship — B-03 smoke: review của Claude Lead
 
 **Phiên bản:** 2 (hoàn chỉnh) · **Ngày:** 2026-11-02 · **Người review:** Claude Lead
-**Baseline:** `requirements.md` v0.7 · **Sổ điểm lệch:** `b04-deviations.md` v3 (20 điểm)
+**Baseline:** `requirements.md` v0.7 · **Sổ điểm lệch:** `b04-deviations.md` v3.3 (20 điểm)
 
 ## 1. Kết luận B-03
 
