@@ -1,11 +1,20 @@
 # 11Ship — Sổ điểm lệch baseline (B-04)
 
-**Phiên bản:** 3.1 · **Ngày:** 2026-11-02 · **Người lập:** Claude Lead · **Owner quyết định:** 2026-11-02
-**Đối chiếu:** `requirements.md` v0.7; code đọc tại `main` `fb3ba2c`; bằng chứng từ B-00, B-02 (Codex, 198 dòng) và B-03 lần 1 (Antigravity, VPS test).
-**Trạng thái:** Owner đã quyết 4 điểm cần quyết. Nghiệm thu baseline cuối cùng chờ B-03 chạy lại bằng APK v480 trên thiết bị thật. Không điểm nào được xử lý bằng cách sửa baseline cho khớp code.
+**Phiên bản:** 3.2 · **Ngày:** 2026-11-02 · **Người lập:** Claude Lead · **Owner quyết định:** 2026-11-02
+**Đối chiếu:** `requirements.md` v0.7; code đọc tại `main` `fb3ba2c`; bằng chứng từ B-00, B-02 (Codex, 198 dòng) và B-03 (Antigravity và Codex, VPS test, emulator API 34).
+**Trạng thái:** B-03 đã đóng khảo sát theo quyết định Owner 02/11: hoàn thành khảo sát, **chưa đạt nghiệm thu**, không luồng nào PASS, không chạy thêm trong Phase 1. Owner đã quyết 4 điểm (B04-08, B04-13, B04-14, B04-17). Không điểm nào được xử lý bằng cách sửa baseline cho khớp code.
 
-Phân loại: 12 Sửa code · 0 Sửa tài liệu · 4 Giữ nguyên · 4 Owner đã quyết (B04-08, B04-13, B04-14, B04-17). Bản 3 (02/11) thêm B04-20 từ B-03 và bổ sung bằng chứng cho B04-01, B04-02; xem `b03-lead-review.md`.
-"Sửa code" là gap được ghi nhận để xử lý ở Phase 5/6/8 theo quy trình (test đỏ→xanh); Phase 1 không sửa code.
+**Tổng số mục thực tế cần sửa (20 điểm):**
+
+| Nhóm | Số | Mã |
+|---|---|---|
+| Sửa code sản phẩm | **12** | B04-01, 02, 03, 04, 05, 06, 07, 08, 09, 11, 13, 20 (B04-08 và B04-13 do Owner quyết 02/11) |
+| Sửa hoặc bổ sung test (không đổi code sản phẩm) | 2 | B04-18, B04-19 |
+| Điều kiện hoặc hoãn, chưa biết có sửa code không | 2 | B04-14 (kiểm trước rồi mới quyết), B04-17 (sau kiểm thử Android 17) |
+| Giữ nguyên | 4 | B04-10, 12, 15, 16 |
+| Sửa tài liệu baseline | 0 | |
+
+"Sửa code" là gap được ghi nhận để xử lý ở Phase 5/6/8 theo quy trình (test đỏ→xanh); Phase 1 không sửa code. #299 (B04-20) làm trước các test Checkout và Sửa đơn.
 
 | Mã | Yêu cầu baseline | Code hiện tại (fb3ba2c) | Bằng chứng | Phân loại | Đề xuất / quyết định | Tác động |
 |---|---|---|---|---|---|---|
@@ -26,6 +35,6 @@ Phân loại: 12 Sửa code · 0 Sửa tài liệu · 4 Giữ nguyên · 4 Owner
 | B04-15 | Build kiểm thử phải lấy từ SHA được kiểm | APK v470 trên VPS từ 2270ae1, cũ hơn main 64 commit (35 file mobile khác) | So sánh 2270ae1…fb3ba2c | Giữ nguyên | Owner 02/11: B-03 chạy lại bằng v480, không phát hành lên VPS | VPS test đang phát hành bản cũ |
 | B04-16 | M01-R-03/04/18: quên mật khẩu bằng OTP qua SMS Gateway | VPS trả `PASSWORD_RESET_DISABLED` | B-03 S-02 | Giữ nguyên | Owner 02/11: giữ BLOCKED, không PASS bằng mock | Chưa tự lấy lại mật khẩu được trên VPS test |
 | B04-17 | App chạy được trên thiết bị Android được hỗ trợ | Cùng APK mở được trên API 30 (CI); không mở được trên emulator Android 17 API 37 | B-03 DEFECT-01; run 41196089598 | **Owner đã quyết 02/11** → Hoãn | Quyết hỗ trợ Android 17 sau B-03 trên thiết bị thật | Có thể không mở được trên máy Android mới |
-| B04-18 | Test tự động phải ổn định | `admin-shops.int.spec.ts:260`: khung thứ Hai 00:00–00:01 làm test đỏ 1 phút mỗi tuần | CI đỏ trên bbfce73, chạy lại xanh | Sửa code | Sửa test ở Phase 6/7, không nới assertion | CI đỏ giả |
-| B04-19 | Mọi yêu cầu có bằng chứng test | 174 dòng chưa chỉ ra được test cụ thể | B-02 "Chưa đủ bằng chứng" | Sửa code | Phase 6 bổ sung test; không coi là thiếu chức năng | Chưa biết hành vi đúng hay không |
+| B04-18 | Test tự động phải ổn định | `admin-shops.int.spec.ts:260`: khung thứ Hai 00:00–00:01 làm test đỏ 1 phút mỗi tuần | CI đỏ trên bbfce73, chạy lại xanh | Sửa test | Sửa test ở Phase 6/7, không nới assertion | CI đỏ giả |
+| B04-19 | Mọi yêu cầu có bằng chứng test | 174 dòng chưa chỉ ra được test cụ thể | B-02 "Chưa đủ bằng chứng" | Bổ sung test | Phase 6 bổ sung test; không coi là thiếu chức năng | Chưa biết hành vi đúng hay không |
 | B04-20 | M10-R-09, M05 (sổ địa chỉ): chọn/ghim địa chỉ trên bản đồ trong checkout và luồng sửa đơn phải dùng được | 11Food hết bộ nhớ (`OutOfMemoryError`) ở màn "Chọn địa chỉ" khi bản đồ chưa tải tile; MapLibre tạo lại surface liên tục; app thoát | B-03 S-04 (Antigravity), log đã lọc, issue #299; chưa biết có chỉ xảy ra trên emulator (heap 192 MB) | Sửa code `[P8]` | Phase 8: **làm trước** các test Checkout (S-04) và Sửa đơn (S-06). Tái hiện trên thiết bị thật, sửa vòng đời bản đồ, test hồi quy | Khách không đặt được đơn khi nhập địa chỉ mới nếu lỗi xảy ra trên máy thật |

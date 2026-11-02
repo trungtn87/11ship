@@ -1,7 +1,7 @@
 # 11Ship — Functional Baseline (B-01)
 
 **Phiên bản:** v0.7 (áp review Codex B-02 và Antigravity; Owner đã chốt C-01..C-28 và quyết định B-04 ngày 02/11) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-02 · **Người lập:** Claude Lead, cập nhật quyết định Owner
-**Trạng thái:** DRAFT — Owner đã xác nhận C-01…C-15 ngày 01/11/2026; chờ Codex/Antigravity phản biện độc lập và hoàn tất B-04. **Chưa merge PR #298; chưa xác nhận code/runtime đạt baseline.**
+**Trạng thái:** DRAFT chờ Owner duyệt. Owner đã chốt C-01…C-28 (01/11) và các quyết định B-04 (02/11). B-03 đã đóng khảo sát, chưa đạt nghiệm thu. **Đây là baseline tài liệu: chưa xác nhận code/runtime đạt baseline. PR #298 chưa merge.**
 **Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
 ## 0. Cách đọc tài liệu
@@ -365,7 +365,7 @@ Ma trận B-02 đã map 163/163 Req ID. Lead xử lý chiều ngược như sau:
 6. Các dòng `[P8]` (#294, #295 và gap #238) chỉ nhận diện lỗi của chức năng cũ để sửa bằng test red→green tại Phase 8; việc sửa tài liệu tại Phase 1 không đồng nghĩa lỗi đã được khắc phục.
 7. **PR #298 vẫn mở, không merge/deploy.** Cần phản biện Codex (B-02), Antigravity, smoke B-03 và Owner chốt B-04 sau review.
 8. **B-04 (Owner 02/11):** sổ 19 điểm lệch tại [`b04-deviations.md`](b04-deviations.md). B04-08 và B04-13 đã ghi vào M04-R-14 và M10-R-02. B04-14: màn chẩn đoán và bảng Admin có giá trị vận hành được giữ, nhưng **chỉ thêm yêu cầu vào baseline sau khi kiểm chức năng, phân quyền và bảo mật**; hiện chưa phải yêu cầu. B04-17 (Android 17) hoãn đến sau B-03 trên thiết bị thật.
-9. **B-03:** lần 1 (APK v470, emulator Android 17) không dùng để nghiệm thu UI; chạy lại bằng APK v480 trên máy thật. S-02 giữ BLOCKED; S-04 giữ FAIL khi khoảng cách còn lệch.
+9. **B-03 (Owner 02/11):** đã hoàn thành khảo sát, **chưa đạt nghiệm thu**, không luồng nào PASS; không chạy thêm trong Phase 1. Môi trường: emulator Android 14 API 34 với APK v480 (không phải thiết bị thật). Bằng chứng: #295, #294 và #299 (lỗi đã có bằng chứng), #238 chưa xác minh trên UI, S-09 chưa kết luận, S-02 BLOCKED. Chi tiết: [`b03-lead-review.md`](b03-lead-review.md).
 
 ## 18. Phản biện tiếp theo
 

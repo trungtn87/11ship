@@ -1,6 +1,6 @@
 # 11Ship — Báo cáo kết thúc Phase 1 (Functional Baseline)
 
-**Ngày:** 2026-11-02 · **Người lập:** Claude Lead · **PR:** #298 (mở, chưa merge) · **Trạng thái:** DỰ THẢO để Owner duyệt
+**Ngày:** 2026-11-02 · **Người lập:** Claude Lead · **PR:** #298 (mở, chưa merge) · **Trạng thái:** Owner duyệt về hướng kết luận (02/11); bản này đã chỉnh theo 5 yêu cầu của Owner, chờ xác nhận bản chính thức
 **Mốc:** `main` `fb3ba2c`; baseline `requirements.md` v0.7; sổ điểm lệch `b04-deviations.md` v3.1; review B-03 `b03-lead-review.md` v2.
 
 ## 1. Kết luận
@@ -20,16 +20,22 @@ Baseline mô tả điều sản phẩm phải làm. Việc baseline được duy
 
 | Hạng mục | Kết quả | Bằng chứng |
 |---|---|---|
-| B-00 Kiểm kê tự động | Xong. 234 mục chưa map ban đầu đều được gán yêu cầu hoặc ghi rõ "không có yêu cầu" | `b00-inventory.md` |
+| B-00 Kiểm kê tự động | Kiểm kê xong (69 module, 412 route, 141 bảng, 36 màn Admin, 64 màn mobile, 15 runner, 11 workflow). 234 mục CHƯA MAP đều có một dòng gán của Codex (Req ID hoặc "không có yêu cầu"); Lead kiểm đủ số lượng và Req ID tồn tại, **chưa kiểm ngữ nghĩa từng dòng** | `b00-inventory.md` (có mục trạng thái đối chiếu và bảng gán) |
 | B-01 Baseline | Xong v0.7: 198 yêu cầu, Conflict Register C-01..C-28 | `requirements.md` |
 | B-02 Ma trận trạng thái và bằng chứng | Xong, Lead đã chấp nhận: 3 Đã làm, 18 Một phần, 3 Chưa, 174 Chưa đủ bằng chứng | Bình luận Codex trên PR #298; "Chưa đủ bằng chứng" là chấm thận trọng, không phải thiếu chức năng |
 | B-03 Smoke VPS test | Hoàn thành khảo sát, **chưa đạt nghiệm thu** | `b03-lead-review.md` |
-| B-04 Điểm lệch | Sổ 20 điểm, đã áp quyết định Owner 02/11 | `b04-deviations.md` |
+| B-04 Điểm lệch | Sổ 20 điểm, đã áp quyết định Owner 02/11; B-03 đã đóng khảo sát | `b04-deviations.md` |
 | B-05 Conflict Register | C-01..C-28 đã chốt | `requirements.md` mục 16 |
 
 ## 3. Số liệu B-04
 
-20 điểm: **12 sửa code**, **4 giữ nguyên**, **4 Owner đã quyết** (B04-08 đối soát thủ công, B04-13 gỡ lối Voucher, B04-14 giữ có điều kiện, B04-17 hoãn Android 17). **0 sửa tài liệu**: baseline không bị sửa để hợp thức hóa hành vi chưa đúng.
+20 điểm, tổng số mục thực tế cần sửa:
+
+- **12 sửa code sản phẩm** (B04-01..09, 11, 13, 20; gồm B04-08 và B04-13 do Owner quyết).
+- **2 sửa hoặc bổ sung test** (B04-18, B04-19).
+- **2 điều kiện hoặc hoãn** (B04-14 kiểm rồi mới quyết, B04-17 sau kiểm thử Android 17): chưa biết có phải sửa code.
+- **4 giữ nguyên** (B04-10, 12, 15, 16).
+- **0 sửa tài liệu**: baseline không bị sửa để hợp thức hóa hành vi chưa đúng.
 
 ## 4. Lỗi và việc còn lại sang các Phase sau
 
