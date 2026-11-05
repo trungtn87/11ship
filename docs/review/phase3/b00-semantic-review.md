@@ -6,9 +6,9 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Nguồn: bảng gán của Codex
 
 | Kết luận | Số dòng |
 |---|---:|
-| CONFIRMED | 136 |
+| CONFIRMED | 132 |
 | TOO_NARROW | 34 |
-| WRONG | 20 |
+| WRONG | 24 |
 | TOO_BROAD | 15 |
 | NO_REQUIREMENT | 10 |
 | LABEL_UNRELIABLE+CONFIRMED | 10 |
@@ -101,13 +101,13 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Nguồn: bảng gán của Codex
 | route | GET /v1/admin/invitations/:invitation_id | M01-R-17 | CONFIRMED | M01-R-17 | apps/backend/src/admin-provisioning/admin-provisioning.controller.ts:117 |  |
 | route | POST /v1/admin/invitations/:invitation_id/reissue | M01-R-17 | CONFIRMED | M01-R-17 | apps/backend/src/admin-provisioning/admin-provisioning.controller.ts:124 |  |
 | route | POST /v1/admin/invitations/:invitation_id/revoke | M01-R-17 | CONFIRMED | M01-R-17 | apps/backend/src/admin-provisioning/admin-provisioning.controller.ts:142 |  |
-| route | POST /v1/auth/phone-verifications | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05, M01-R-13, M01-R-14, M01-R-21, M01-R-22 (legacy /v1/auth/*) | apps/backend/src/auth/auth.controller.ts:42 | Mapping đúng ngữ nghĩa nhưng đây là bộ route legacy song song với /v1/client-auth/*: Q1, ứng viên Owner decision |
-| route | GET /v1/auth/phone-verifications/:verificationId | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05, M01-R-13, M01-R-14, M01-R-21, M01-R-22 (legacy /v1/auth/*) | apps/backend/src/auth/auth.controller.ts:49 | Mapping đúng ngữ nghĩa nhưng đây là bộ route legacy song song với /v1/client-auth/*: Q1, ứng viên Owner decision |
-| route | POST /v1/auth/phone-verifications/:verificationId/verify | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05, M01-R-13, M01-R-14, M01-R-21, M01-R-22 (legacy /v1/auth/*) | apps/backend/src/auth/auth.controller.ts:55 | Mapping đúng ngữ nghĩa nhưng đây là bộ route legacy song song với /v1/client-auth/*: Q1, ứng viên Owner decision |
-| route | POST /v1/auth/register | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05, M01-R-13, M01-R-14, M01-R-21, M01-R-22 (legacy /v1/auth/*) | apps/backend/src/auth/auth.controller.ts:67 | Mapping đúng ngữ nghĩa nhưng đây là bộ route legacy song song với /v1/client-auth/*: Q1, ứng viên Owner decision |
-| route | POST /v1/auth/login | M01-R-01, M01-R-07 | CONFIRMED | M01-R-01, M01-R-07 (legacy) | apps/backend/src/auth/auth.controller.ts:81 | Q1 legacy |
-| route | POST /v1/auth/role/select | M01-R-01, M01-R-07 | CONFIRMED | M01-R-01, M01-R-07 (legacy) | apps/backend/src/auth/auth.controller.ts:88 | Q1 legacy |
-| route | GET /v1/auth/me | M01-R-01, M01-R-07 | CONFIRMED | M01-R-01, M01-R-07 (legacy) | apps/backend/src/auth/auth.controller.ts:96 | Q1 legacy |
+| route | POST /v1/auth/phone-verifications | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05 (cấp OTP; M01-R-13, R-14, R-21, R-22 không thuộc ba route này) | apps/backend/src/auth/auth.controller.ts:42 | Route ĐANG được app dùng (Dart phone_verification.dart:130,181,235; web client-shared contract.ts:34) dù nằm dưới /v1/auth/*: Q1, public-routes.md #4-#6. Đăng ký thật do /v1/client-auth/register |
+| route | GET /v1/auth/phone-verifications/:verificationId | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05 (cấp OTP; M01-R-13, R-14, R-21, R-22 không thuộc ba route này) | apps/backend/src/auth/auth.controller.ts:49 | Route ĐANG được app dùng (Dart phone_verification.dart:130,181,235; web client-shared contract.ts:34) dù nằm dưới /v1/auth/*: Q1, public-routes.md #4-#6. Đăng ký thật do /v1/client-auth/register |
+| route | POST /v1/auth/phone-verifications/:verificationId/verify | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | CONFIRMED | M01-R-02, M01-R-04, M01-R-05 (cấp OTP; M01-R-13, R-14, R-21, R-22 không thuộc ba route này) | apps/backend/src/auth/auth.controller.ts:55 | Route ĐANG được app dùng (Dart phone_verification.dart:130,181,235; web client-shared contract.ts:34) dù nằm dưới /v1/auth/*: Q1, public-routes.md #4-#6. Đăng ký thật do /v1/client-auth/register |
+| route | POST /v1/auth/register | M01-R-02, M01-R-04..05, M01-R-13..14, M01-R-21..22 | WRONG | Legacy: M01-R-02 chỉ về mặt lịch sử; luồng đăng ký hiện hành là /v1/client-auth/register (M01-R-02, R-13, R-14, R-21, R-22) | apps/backend/src/auth/auth.controller.ts:67 | Không client nào trong repo gọi (public-routes.md #7); Owner decision về legacy (Q1) |
+| route | POST /v1/auth/login | M01-R-01, M01-R-07 | WRONG | Legacy: luồng hiện hành là /v1/client-auth/login\|context\|me (M01-R-01, M01-R-07) | apps/backend/src/auth/auth.controller.ts:81 | Không client nào trong repo gọi (public-routes.md #8); đường legacy không dùng ClientLoginLimiter (ứng viên Phase 5) |
+| route | POST /v1/auth/role/select | M01-R-01, M01-R-07 | WRONG | Legacy: luồng hiện hành là /v1/client-auth/login\|context\|me (M01-R-01, M01-R-07) | apps/backend/src/auth/auth.controller.ts:88 | Không client nào trong repo gọi (public-routes.md #8); đường legacy không dùng ClientLoginLimiter (ứng viên Phase 5) |
+| route | GET /v1/auth/me | M01-R-01, M01-R-07 | WRONG | Legacy: luồng hiện hành là /v1/client-auth/login\|context\|me (M01-R-01, M01-R-07) | apps/backend/src/auth/auth.controller.ts:96 | Không client nào trong repo gọi (public-routes.md #8); đường legacy không dùng ClientLoginLimiter (ứng viên Phase 5) |
 | route | POST /v1/client-auth/device/challenges | M01-R-19 | CONFIRMED | M01-R-19 | apps/backend/src/client-device/client-device.controller.ts:16 |  |
 | route | POST /v1/client-auth/device/registrations | M01-R-19 | CONFIRMED | M01-R-19 | apps/backend/src/client-device/client-device.controller.ts:23 |  |
 | route | GET /v1/customer/me/profile | M05-R-01 | CONFIRMED | M05-R-01 | apps/backend/src/customer-profile/customer-profile.controller.ts:19 |  |
