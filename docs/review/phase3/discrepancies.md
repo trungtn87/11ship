@@ -16,6 +16,8 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Phân loại B-04: sửa code / 
 | M04-R-13 | Ví chỉ hiện khi đã đăng nhập `[P8]` | Lối vào ví không bị ẩn khi khách/đã đăng xuất. Đây là #295, đã tái hiện trong B-03. Nguyên nhân gốc chưa tái hiện lại trong Phase 3 (không chạy app) | mobile/ship/lib/ship_tabs.dart:141 (WalletEntry dựng không kèm điều kiện signedIn), :99,:152,:202-203 (các mục khác có kiểm signedIn); B-03 Codex + Lead review: sau đăng xuất và mở lại app vẫn thấy 'Ví của tôi' và Thu nhập | sửa code (Phase 8) | #295 |
 | M10-R-02 | Chưa có tính năng thanh toán mở rộng | Owner 02/11 (B04-13) yêu cầu không hiển thị lối vào 'Voucher của tôi' trong 11Food; lối vào vẫn có ở account_views. Màn rỗng không có API voucher (không có chức năng voucher ngầm) | mobile/packages/n11_shared/lib/src/account/account_views.dart:343 (ListItem key voucher-entry 'Voucher của tôi' -> VoucherScreen), :1172-1174 (màn rỗng: 'no voucher API, storage or redemption') | sửa code (Phase 8) | B04-13 |
 | M10-R-09 | Khách sửa đơn khi chờ xác nhận `[P8]` | Backend khớp (PENDING_CONFIRMATION + version). Yêu cầu bắt buộc chọn địa chỉ/ghim ngay trong luồng sửa chưa được chứng minh: B-03 S-06 BLOCKED do #299; không PASS | orders/order-customer-service.ts:565,622 (chỉ PENDING_CONFIRMATION), :542,625 (kiểm expected_version); #238 (ghim bản đồ trong luồng sửa chưa kiểm UI), #299 (11Food OOM khi mở bộ chọn bản đồ) | sửa code (Phase 8) | #238, #299 |
+| M04-R-15 | Quyền ví tài chính chỉ áp cho hồ sơ shipper (scope DRIVER) | Quyền tài chính kiểm khoá dotted theo user, không ràng buộc app scope DRIVER; `DRIVER_NOT_FOUND` là kiểm đối tượng, không phải scope của actor | `admin-finance/admin-finance-read-service.ts:286-299`; `finance-access-constants.ts:23-35` (Codex đề xuất, Lead đã mở lại 2026-11-05) | sửa code hoặc Owner decision (Phase 5) | |
+| M12-R-13 | Quyền riêng cho từng thao tác ngoại lệ đơn (C-28) | Hủy đơn ánh xạ vào quyền lock/review hiện có, không có khoá quyền riêng | `admin-orders/admin-order-service.ts:28-30,40,175,212,220-224`; `requirements.md:253` (Codex đề xuất, Lead đã mở lại) | sửa code hoặc Owner decision (OD-12) | C-28 |
 
 ## 3. Một phần (PARTIAL) có phân loại B-04 cụ thể
 
@@ -37,7 +39,6 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Phân loại B-04: sửa code / 
 | M10-R-01 (PARTIAL) | Giỏ lưu ở máy chủ theo tài khoản, không phải 'giỏ trên máy' như cột STATE của baseline: tốt cho yêu cầu không lộ dữ liệu giữa tài khoản (phía server), nhưng baseline cần sửa mô tả. Gộp cùng món cùng ghi chú và xác nhận thay giỏ chưa đọc ở m10_cart.dart | sửa tài liệu (nơi lưu giỏ) | B04 mới |
 | M10-R-06 (PARTIAL) | Quote checkout dùng M14 và có snapshot/thời điểm. #294: hai nơi cho số khác nhau cho cùng cặp điểm; Phase 2 ghi chỉ có một M14RouteClient, nguyên nhân chưa chốt (xem Q3) | sửa code (Phase 8) | #294 |
 | M10-R-18 (PARTIAL) | Có luồng xin đổi, bên có quyền quyết định, chặn sau pickup ở hai nơi. 'Không có hai assignment hoạt động' và tính lại phí/xin đồng ý chưa kiểm; baseline nói 'Sau lấy: …' cần đối chiếu khác biệt với CANNOT_CHANGE_AFTER_PICKUP | Owner decision/sửa tài liệu (hành vi sau lấy hàng) | B04 mới |
-| M12-R-13 (PARTIAL) | Có kiểm quyền theo hàng quyền hiện tại và ghi actor; chưa thấy một khoá quyền riêng cho 'hủy đơn' tách khỏi quyền xem (kiểm theo quyền app VIEW/review). Có thể lệch C-28 | sửa code hoặc Owner decision | C-28 |
 | M14-R-03 (PARTIAL) | Ngưỡng 500 m có. Code coi accuracy null là hợp lệ (đúng 'tạm giữ chính sách hiện tại' của C-19); chưa có đo kiểm Android thật, đúng theo baseline | hoãn (đo kiểm thiết bị) | C-19 |
 | M14-R-04 (PARTIAL) | Phiên bị thu hồi thì API từ chối (guard). App có dừng gửi hay không và #295 (UI còn dữ liệu sau đăng xuất): chưa chứng minh | sửa code/test (Phase 8) | #295 |
 | M14-R-10 (PARTIAL) | Một client duy nhất, không fallback đường thẳng. Trả đủ distance_m/ETA nhưng chưa thấy geometry/route_version trong mô-đun này (chỉ distanceM, seconds): baseline yêu cầu distance_m, ETA, geometry, route_version | sửa code hoặc sửa tài liệu (Owner decision) | #294; B04 mới |
@@ -50,9 +51,9 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Phân loại B-04: sửa code / 
 
 ## 4. Chưa xác định (UNKNOWN) và nguyên nhân
 
-Số dòng UNKNOWN: 31. Nguyên nhân gom theo nhóm (chi tiết ở từng dòng trong bảng đối chiếu):
+Số dòng UNKNOWN: 27. Nguyên nhân gom theo nhóm (chi tiết ở từng dòng trong bảng đối chiếu):
 - **Hành vi giao diện/thiết bị chỉ nằm ở app** (Flutter, GPS nền, camera bản đồ, popup): cần đọc Dart sâu hoặc chạy trên thiết bị; chuyển Phase 6 và Antigravity.
-- **Phân quyền/scope nhiều tầng của Admin** (M08-R-12/15, M12-R-07, M04-R-15): cần ma trận quyền; chuyển Phase 5.
+- **Phân quyền/scope nhiều tầng của Admin** (M08-R-12/15, M12-R-07, M04-R-15 nay là MISMATCH): cần ma trận quyền; chuyển Phase 5.
 - **Dữ liệu/giá trị chỉ có trên VPS hoặc trong cấu hình** (phiên bản điều khoản thực, cờ native gate, APP_ENV): không có trong source.
 - **Chi tiết chưa đọc đến dòng** trong module lớn (orders, shop-management, admin-reports).
 
@@ -63,9 +64,7 @@ Số dòng UNKNOWN: 31. Nguyên nhân gom theo nhóm (chi tiết ở từng dòn
 | M02-R-14 | Banner khớp dữ liệu máy chủ là hành vi UI; CSV chỉ theo tên module |  |
 | M02-R-16 | Chưa theo dõi toạ độ quán được chụp vào đơn lúc tạo hay đọc lại lúc xem. Không suy ra từ tên |  |
 | M02-R-17 | Không thấy kết quả tìm kiếm cho xử lý khu vực ACTIVE thiếu hình học; chưa đọc hàm kiểm ghim |  |
-| M03-R-09 | Comment nói lý do đình chỉ được giữ; chưa mở cột lý do/audit thực tế nên không xác nhận |  |
 | M04-R-10 | Chưa kiểm 'không gói thuê bao, không ví quán, báo chuyển khoản không cấp quyền'. Không có node trong graph không phải bằng chứng thiếu |  |
-| M04-R-15 | Chưa thấy nơi bắt buộc scope DRIVER cho quyền wallet.*. Không suy ra từ tên |  |
 | M05-R-06 | Yêu cầu thuần UI (bộ chọn dùng chung, Quay lại không áp dụng, lỗi GPS giữ ghim cũ). #238 và #299 (OOM bản đồ) liên quan; B-03: S-06 BLOCKED | sửa code (Phase 8) |
 | M06-R-05 | Chưa thấy khái niệm tip trong file đã mở (grep 'tip' ra 0 kết quả trong agreement.ts); baseline nói tip cộng vào phí thỏa thuận không thêm trường. Chưa quét toàn repo nên chưa kết luận MISSING |  |
 | M06-R-09 | Yêu cầu 'bỏ màn M06 giả/trùng' cần so danh sách màn với baseline; không suy ra từ tên file |  |
@@ -74,8 +73,6 @@ Số dòng UNKNOWN: 31. Nguyên nhân gom theo nhóm (chi tiết ở từng dòn
 | M08-R-12 | Có phân quyền SYSTEM/ADMIN theo app nhưng 'scope của ADMIN' (khu vực/quyền) cho bộ đếm chưa chứng minh |  |
 | M08-R-13 | Có dấu hiệu chuyển vai trò trong m08_views nhưng chưa đọc luồng; không kết luận |  |
 | M08-R-15 | Cùng lý do M08-R-12: cùng scope cho counter/ca hàng/lỗi/chi tiết chưa chứng minh |  |
-| M10-R-08 | Chưa tìm thấy hàm đặt giá cuối riêng trong phần đã đọc; chưa quét hết order-shop-service nên không MISSING |  |
-| M10-R-14 | Nhãn khách theo bảng §8: chưa đối chiếu từng nhãn |  |
 | M10-R-19 | Mã K01-0001, unique, không tái sử dụng chưa kiểm; counter theo quán chưa tìm |  |
 | M10-R-23 | Đơn cũ giữ route_distance_m: cột snapshot chưa mở; ví dụ K01-0006 là dữ liệu VPS NOT TESTED |  |
 | M11-R-09 | Không thấy xử lý SUSPENDED riêng; chưa kiểm xem đường đọc của shipper có lọc theo trạng thái không. Không kết luận MISSING |  |

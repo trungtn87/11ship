@@ -21,21 +21,21 @@ Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity). C
 
 | Verdict | Số dòng |
 |---|---:|
-| IMPLEMENTED | 78 |
-| PARTIAL | 84 |
-| MISMATCH | 4 |
+| IMPLEMENTED | 77 |
+| PARTIAL | 87 |
+| MISMATCH | 6 |
 | MISSING | 1 |
-| UNKNOWN | 31 |
+| UNKNOWN | 27 |
 | **Tổng** | **198** |
 
 Theo độ tin cậy của ứng viên Phase 2:
 
 | Ứng viên | IMPLEMENTED | PARTIAL | MISMATCH | MISSING | UNKNOWN |
 |---|---:|---:|---:|---:|---:|
-| MEDIUM | 33 | 35 | 2 | 0 | 17 |
-| STRONG | 26 | 20 | 2 | 0 | 3 |
+| MEDIUM | 35 | 34 | 3 | 0 | 15 |
+| STRONG | 23 | 23 | 3 | 0 | 2 |
 | WEAK | 4 | 6 | 0 | 1 | 0 |
-| WEAK(ident only) | 15 | 23 | 0 | 0 | 11 |
+| WEAK(ident only) | 15 | 24 | 0 | 0 | 10 |
 
 Cách đọc: IMPLEMENTED nghĩa là đã mở source và hành vi chính khớp; mỗi dòng ghi riêng phần chưa kiểm (nhiều dòng còn "UI/runtime NOT TESTED"). Đây là đối chiếu tĩnh, **không phải PASS chức năng**. UNKNOWN không bị đổi thành MISSING; MISSING (1 dòng) có nêu phạm vi quét.
 
@@ -75,19 +75,19 @@ Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 d�
 - **Hai sweeper giao hàng** (`#searchReminders`, `#pickupReminders`): 30 s/tick, tối đa 50 mục, nhắc phút 5 và 15, ngừng tìm phút 30; nhắc lấy hàng mỗi 5 phút không có số lần tối đa riêng (OD-10).
 - **Ba script vận hành**: mục đích, điều kiện chạy, chống chạy nhầm đã ghi trong `ops-scripts.md`; có drift tài liệu "staging only" của `db-migrate-remote.js`.
 - **Ingest `ops-client.controller.ts`**: khóa máy Bearer sha256, mỗi khóa một scope; không thấy limiter cho ingest; log client giới hạn 300/giờ/tài khoản.
-- **41 route công khai**: từng route có cơ chế và phân loại; không kết luận "không bảo vệ" chỉ vì thiếu `SessionAuthGuard`. `trust proxy` không được đặt trong source nên limiter theo IP phía sau reverse proxy là UNKNOWN.
+- **41 route công khai**: từng route có cơ chế và phân loại; không kết luận "không bảo vệ" chỉ vì thiếu `SessionAuthGuard`. `trust proxy` không được đặt trong source; nginx trong repo proxy từ 127.0.0.1 và không có `limit_req`, nên limiter tracking có thể gộp mọi client vào một xô IP (suy luận tĩnh, cấu hình triển khai thật NOT TESTED).
 
 ## 6. Quy tắc số liệu
 
-- **AdminTransport**: 129 route handler mang nhãn `AdminTransport` trong `nest.json` (Phase 2, quét AST theo handler, đếm theo route), thuộc 21 controller; tái lập lại cùng số 129 trong Phase 3 bằng cùng script/dữ liệu. Không đối chiếu được con số Codex (142) và 154 (đếm theo controller) vì chưa có script của họ: 129 vẫn là **cận dưới theo phương pháp này**, không phải số tuyệt đối. Nếu Codex đếm lại, yêu cầu nêu đơn vị, phạm vi loại trừ và cách xử lý trùng.
-- **Tác vụ nền**: grep `setInterval(` trong `apps/backend/src` (không tính test) cho 12 lời gọi trong 11 file (một dòng của `ops-analytics-runtime.ts` có hai lời gọi), trùng Phase 2. Con số 11 tác vụ logic và 10 runtime owner giữ nguyên theo Phase 2, chưa đếm lại bằng phương pháp độc lập. `delivery-tracking-public.controller.ts` có một `setInterval` thuộc bộ giới hạn trong RAM, không phải tác vụ nghiệp vụ.
+- **AdminTransport**: 129 route handler mang nhãn `AdminTransport` trong `nest.json` (Phase 2, quét AST theo handler), thuộc 21 controller; tái lập lại 129 trong Phase 3. Codex đếm khác (142 route/18 lớp controller, 150 decorator) với đơn vị và phạm vi khác; hai con số không so sánh trực tiếp được. 129 là **cận dưới theo phương pháp handler-tag**, không phải số tuyệt đối. Không dùng con số 154.
+- **Tác vụ nền**: grep `setInterval(` trong **phạm vi backend** `apps/backend/src` (không tính test; toàn repo gồm admin-web và mobile là 17 lời gọi/16 file, không dùng làm số tác vụ nền) cho 12 lời gọi trong 11 file (một dòng của `ops-analytics-runtime.ts` có hai lời gọi), trùng Phase 2. Con số 11 tác vụ logic và 10 runtime owner giữ nguyên theo Phase 2, chưa đếm lại bằng phương pháp độc lập. `delivery-tracking-public.controller.ts` có một `setInterval` thuộc bộ giới hạn trong RAM, không phải tác vụ nghiệp vụ.
 
 ## 7. Giới hạn và điểm yếu cần reviewer soi
 
 - Đây là đối chiếu **tĩnh**; không chạy app, test, CI hay VPS. Giá trị cấu hình thực trên VPS (APP_ENV, native gate, phiên bản điều khoản) là UNKNOWN.
 - Độ sâu đọc không đồng đều: các dòng có nhãn "CHƯA MỞ" trong cột bằng chứng nghĩa là chưa đọc đến dòng. Các verdict IMPLEMENTED có thể còn nhánh chưa kiểm; Codex nên kiểm mẫu có chủ đích, đặc biệt M01, M04, M10 và các dòng MISSING/MISMATCH.
 - MISSING cho M10-R-26 dựa vào phạm vi quét đã nêu (12 file có `PREPARING`, các sweeper, hàng đợi Admin); cần Codex xác nhận bằng cách quét độc lập.
-- 31 dòng UNKNOWN chủ yếu là hành vi giao diện/thiết bị/runtime; không dòng nào bị quy thành thiếu.
+- 27 dòng UNKNOWN chủ yếu là hành vi giao diện/thiết bị/runtime; không dòng nào bị quy thành thiếu.
 - Lead chưa tái lập thủ công con số 412 route/69 controller; dùng dữ liệu Phase 2 đã được review.
 
 ## 8. Chuyển giao Phase 4/5
@@ -112,7 +112,7 @@ Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 d�
 
 ## 10. Review độc lập và kết luận Lead
 
-- Codex (read-only): CHƯA CHẠY. Brief: `/mnt/project-files/handoffs/codex-review-phase3-reconciliation.md`.
+- Codex (read-only, review 2026-11-05 trên head 8d522bd, trạng thái "commented"): **ĐÃ CHẠY, đã xử lý**. Mẫu 30 IMPLEMENTED: 23 đúng, 7 đúng một phần, 0 sai; mẫu 20 UNKNOWN/PARTIAL: 14 đúng, 6 sai (tỷ lệ 70%). Lead đã mở lại cả 6 dòng và đồng ý: M03-R-02, M03-R-09, M10-R-08, M10-R-14 lên IMPLEMENTED; M04-R-15 và M12-R-13 thành MISMATCH. Năm dòng IMPLEMENTED bị ghi "đúng một phần" (M04-R-04, M10-R-10, M10-R-22, M12-R-08, M12-R-11) hạ xuống PARTIAL; hai dòng còn lại (M01-R-04, M01-R-09) vốn đã ghi phần chưa kiểm trong ghi chú. Đã sửa kết luận limiter IP và ingest (nginx trong repo), cách ghi số AdminTransport và phạm vi `setInterval`, và thêm `view.ts` vào danh sách inventory thiếu. Codex không xác nhận được nguyên nhân 617 m vs 720 m từ source; vẫn UNKNOWN. Lưu ý: tỷ lệ 70% của mẫu 20 dòng chỉ cho thấy độ tin cậy của nhóm UNKNOWN/PARTIAL; các dòng UNKNOWN/PARTIAL còn lại chưa được rà lại độc lập.
 - Antigravity (read-only): CHƯA CHẠY. Brief: `/mnt/project-files/handoffs/antigravity-review-phase3-reconciliation.md`.
-- Khuyến nghị của Lead: chưa nghiệm thu cho tới khi hai review xong và mọi finding được xử lý. Nếu Owner muốn tiết kiệm thời gian, ưu tiên Codex trước (xác nhận MISSING/MISMATCH, mẫu IMPLEMENTED của M01/M04/M10, đếm lại AdminTransport).
+- Khuyến nghị của Lead: chưa nghiệm thu cho tới khi Antigravity xong và mọi finding được xử lý. Antigravity chưa trả kết quả.
 - Chỉ Owner quyết định ACCEPTED hoặc NOT ACCEPTED, và việc merge.
