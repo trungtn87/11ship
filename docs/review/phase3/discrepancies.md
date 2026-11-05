@@ -106,3 +106,9 @@ Số dòng UNKNOWN: 19. Nguyên nhân gom theo nhóm (chi tiết ở từng dòn
 - **M01-R-20** baseline "không tự kích hoạt lại" nhưng khôi phục sau OTP + mật khẩu mới đưa tài khoản về ACTIVE (`account-recovery-service.ts:263`).
 - **M07-R-06** mặc định 5 phút nằm ở `order_parameters` (`fee_answer_minutes`), không phải bảng timeout đơn.
 - **Baseline thiếu yêu cầu** cho: mức nạp/rút tối thiểu (`shipper_wallet_parameters`), chính sách hoa hồng (`wallet_commission_policies`), ẩn/khôi phục đánh giá (`review_moderations`), đối soát lệch sổ ví, middleware truyền tải admin/client.
+
+
+## 7. Hai điểm Owner yêu cầu ghi rõ (2026-11-05)
+
+1. **M08 bỏ sự kiện quá 24 giờ — hành vi hiện hữu, ứng viên lệch baseline.** `apps/backend/src/notifications/notification-event-service.ts:95-97`: sự kiện có tuổi > `MAX_EVENT_AGE_MS` (86 400 000 ms) bị claim là `STALE_EVENT` và không thông báo cho người dùng. Baseline M08 chưa nêu quy tắc này. B-04: fix doc-baseline hoặc Owner decision về ngưỡng (chưa có OD; Phase 4 đưa lên). Static trace, runtime NOT TESTED. Xem `outbox-m08.md`, `flows-f1-f4-f6.md:43`.
+2. **#295 có ba lối vào ví không kiểm `session.status`:** (a) tab Thu nhập `ship_tabs.dart:141`; (b) tab Tài khoản `ship_tabs.dart:201`; (c) notification router `TargetType.walletTxn` `ship_tabs.dart:40-41` (đẩy `WalletHomeScreen`). Nút ví ở `ship_home.dart:205` đã được bọc điều kiện. Static trace; runtime (a)(b) đã có bằng chứng FAIL ở B-03, (c) NOT TESTED. Xem `open-questions.md` Q2.

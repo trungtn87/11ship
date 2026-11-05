@@ -1,6 +1,6 @@
 # Phase 3 — Báo cáo đối chiếu Graph ↔ Baseline (E)
 
-Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity — cả hai đã chạy). Chưa có ai nghiệm thu. Chức năng vẫn **NOT ACCEPTED**; bug #295, #294, #299 giữ nguyên trạng thái.
+Trạng thái: **Owner đã chốt ACCEPTED CÓ GIỚI HẠN ngày 2026-11-05** (chỉ đối chiếu tĩnh Graph ↔ Baseline tại SHA nêu trên; không phải nghiệm thu chức năng). Codex và Antigravity đã review và mọi finding đã xử lý. PR #302 chưa merge. OD-1..OD-18 đã được Owner quyết, xem `owner-decisions.md`. Chức năng vẫn **NOT ACCEPTED**; bug #295, #294, #299 giữ nguyên trạng thái.
 
 - Code SHA phân tích: `549572696efb4bbc18af3c362b7f56a5fcd335e6` (không đổi). Nhánh tài liệu dựa trên `main` d5f8f28 (Phase 2 đã merge).
 - Phạm vi: chỉ tài liệu/dữ liệu trong `docs/review/phase3/`. Không sửa code sản phẩm, không deploy, không build/phát hành APK, không chạy runtime.
@@ -15,7 +15,7 @@ Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity —
 | C | `graph-baseline-links.v2.csv` | 198 dòng; cột ứng viên gốc giữ nguyên, thêm `candidate_confidence`, `semantic_verdict`, `evidence`, `evidence_label`, `review_note`, `b04_class`, `related_issue` |
 | D | `b00-semantic-review.md/.csv` | 234 mục B-00 đã rà ngữ nghĩa |
 | Carry-over | `flows-f1-f4-f6.md`, `delivery-sweeper.md`, `ops-scripts.md`, `ops-client-ingest.md`, `public-routes.md`, `outbox-m08.md`, `open-questions.md` | Việc còn thiếu của Phase 2 và Q1–Q9 |
-| Quyết định Owner | `owner-decisions.md` | OD-1..OD-18, mỗi mục có đề xuất của Lead |
+| Quyết định Owner | `owner-decisions.md` | OD-1..OD-18: đề xuất của Lead và quyết định của Owner (2026-11-05) |
 
 ## 2. Tổng theo verdict (198 yêu cầu)
 

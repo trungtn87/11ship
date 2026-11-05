@@ -22,3 +22,31 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Mỗi mục: câu hỏi ngắn, 
 | OD-16 | Giới hạn liên kết liên hệ quán: 160 hay 300 ký tự | Sửa baseline theo code (300) nếu Owner không có lý do cho 160 | M02-R-08 |
 | OD-17 | Thêm yêu cầu vào baseline cho chức năng đã có mà chưa có hàng: mức nạp/rút tối thiểu, chính sách hoa hồng, ẩn/khôi phục đánh giá, đối soát lệch sổ, middleware truyền tải admin/client | Thêm vào baseline v0.8 theo đúng hành vi đã đọc | b00-semantic-review.md |
 | OD-18 | Chuẩn hóa nơi lưu giỏ hàng và mô tả hai mặc định địa chỉ trong baseline (M10-R-01, M05-R-03) | Sửa baseline theo code | discrepancies.md §6 |
+
+
+## Quyết định của Owner (2026-11-05)
+
+**Phase 3: ACCEPTED CÓ GIỚI HẠN.** Phạm vi chỉ là đối chiếu tĩnh Graph ↔ Baseline tại SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Các số 80/91/7/1/19 không phải PASS chức năng; nghiệm thu chức năng 11Ship vẫn **NOT ACCEPTED**; hành vi thiết bị/runtime còn NOT TESTED. PR #302 chưa được merge cho tới khi required CI trên head xanh và Owner ra lệnh merge. Mỗi quyết định dưới đây là quyết định của Owner, thay cho "đề xuất của Lead" ở bảng trên.
+
+| OD | Quyết định của Owner | Việc theo sau (không làm trong PR này) |
+|---|---|---|
+| OD-1 | Gỡ 4 route auth legacy, không chờ Phase 8: làm ở cleanup sau Phase 3 khi xác nhận APK/client còn hỗ trợ không gọi chúng. Trong thời gian chưa gỡ, đường login legacy phải có cùng limiter/bảo vệ như đường hiện hành (không né `ClientLoginLimiter`) | cleanup + bảo mật |
+| OD-2 | Không bắt `Idempotency-Key` máy móc cho 52 handler. Bắt buộc cho thao tác retry có thể gây hậu quả kép (tiền, chuyển trạng thái order/delivery, tạo resource/side-effect quan trọng). Miễn: location/telemetry, OTP/login/logout, preview, PUT tự idempotent thật sự. Cần lập allowlist/required-list rõ | Phase sau |
+| OD-3 | Giữ `wallet.adjustment.post` SYSTEM-only; sửa baseline. Không cấp điều chỉnh tiền trực tiếp cho ADMIN; nếu cần chỉnh tay thì làm workflow có chứng từ/audit riêng | sửa baseline |
+| OD-4 | Hoãn mã giao dịch ngân hàng duy nhất tới khi hoàn thiện đối soát thủ công B04-08; khi làm thật, reference ngân hàng phải chống xử lý trùng. Không chặn Phase 3 | hoãn |
+| OD-5 | Khóa tạo DIRECT mới qua `POST /v1/shop/me/deliveries`; giữ đọc/xử lý DIRECT lịch sử; xóa `ShopCallScreen` ở cleanup; luồng Gọi shipper chế độ Khách hàng giữ nguyên (đúng M07-R-05) | cleanup |
+| OD-6 | Mặc định 20 phút nhắc quán, 40 phút vào hàng đợi Admin; giữ mốc tự hủy 60 phút. Khi làm phải nối M10 → M08 → M12 Action Queue, không chỉ gửi thông báo | triển khai sau |
+| OD-7 | OTP + mật khẩu mới được khôi phục DELETE_REQUEST về ACTIVE; sửa baseline. Chỉ khôi phục trạng thái tài khoản, không tự gỡ SUSPENDED của role shipper/chủ quán | sửa baseline |
+| OD-8 | Tạm giữ 120 s pickup + 60 s handoff, ghi là tham số provisional, chưa phải hằng số nghiệp vụ đã nghiệm thu; Phase 6 đo rồi chốt | Phase 6 |
+| OD-9 | Giữ cả hai ngưỡng: 120 s = vị trí đủ mới cho nghiệp vụ live/nhận đơn; 600 s = stale cho theo dõi/Admin. Sửa baseline mô tả hai ý nghĩa riêng | sửa baseline |
+| OD-10 | Không chấp nhận nhắc mỗi 5 phút vô hạn tới phút 60. Tối đa 3 lần nhắc cho cùng một giai đoạn, sau đó để timeout/escalation xử lý | sửa code sau |
+| OD-11 | Lên lịch `IdempotencyCleanup` chạy hằng ngày, không chờ Phase 8; dùng tiêu chí expiry hiện có, không tạo retention mới | cleanup/ops sớm |
+| OD-12 | Tách quyền `admin.order.cancel` riêng; không dựa quyền VIEW/review chung. Rà các thao tác phá hủy/ảnh hưởng tiền tương tự theo cùng nguyên tắc | sửa code sau |
+| OD-13 | Xóa `NotIntegratedCommissionAdjustmentPort` ở cleanup sau khi xác nhận lại 0 tham chiếu production/test cần giữ | cleanup |
+| OD-14 | `fee/skip` không vi phạm "không có nút Bỏ qua". Baseline ghi rõ: cấm bỏ qua cuốc/đơn; `fee/skip` chỉ là bỏ qua đề nghị điều chỉnh phí | sửa baseline |
+| OD-15 | Giữ code: sau pickup không tự sửa điểm giao. M10-R-18 đã nói "giữ khóa phí, không tự cho sửa điểm giao"; chỉ chỉnh câu chữ nếu cần, không mở flow đổi địa chỉ sau lấy hàng | sửa baseline (chữ) |
+| OD-16 | Chốt 300 ký tự cho liên kết/liên hệ quán; sửa baseline 160 → 300 | sửa baseline |
+| OD-17 | Không thêm hàng loạt mọi thứ trong code vào Functional Baseline. Chính sách hoa hồng là nghiệp vụ thật → thêm requirement; review moderation nếu là chức năng Admin chủ đích → thêm vào M11; reconciliation và transport middleware → baseline kỹ thuật/ops/bảo mật. **Mức nạp/rút tối thiểu không được hợp thức hóa chỉ vì bảng DB có sẵn**: coi là policy chưa được Owner duyệt cho tới khi có quyết định kinh doanh cụ thể | sửa baseline |
+| OD-18 | Sửa baseline theo kiến trúc hiện hành: giỏ hàng server-authoritative theo tài khoản, app chỉ giữ cache cục bộ; địa chỉ mô tả rõ `pickup default` và `delivery default`, không ghi "chỉ một default" | sửa baseline |
+
+Ghi chú của Owner về #294: nguyên nhân kiến trúc đã giải thích được (Home đo GPS → quán; quote/đơn đo quán → địa chỉ giao; định tuyến có hướng nên hai số không cùng một phép đo). Yêu cầu lớn hơn về đồng bộ ý nghĩa khoảng cách và tuyến hiển thị vẫn **chưa nghiệm thu**, nhất là M14-R-11 MISMATCH.
