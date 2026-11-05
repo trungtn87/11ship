@@ -11,6 +11,8 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Mọi kết luận dưới đây
 | So sánh | `_notifications` **có** kiểm `session.status != signedIn` và hiện trạng thái trống (`ship_tabs.dart:150-153`) | ĐÃ MỞ SOURCE |
 | Test hiện có | Không test nào dưới `mobile/` tham chiếu key `wallet-entry` hoặc `account-wallet-entry` (grep) | HEURISTIC (phủ định) |
 | Kết luận | **Giả thuyết được xác nhận bằng static trace**: hai điểm dựng mục ví không điều kiện đăng nhập. Backend đã trả 403 đúng (B04-02). Chưa chạy runtime trong Phase 3 | static trace = ĐÃ MỞ SOURCE; hành vi runtime sau đăng xuất = NOT TESTED (đã có bằng chứng UI FAIL của Phase 1/B-03, không lặp lại) |
+**Lối vào thứ ba (Antigravity, Lead đã mở lại 2026-11-05):** `mobile/ship/lib/ship_tabs.dart:40-41` — `shipNotificationRouter` với `TargetType.walletTxn` đẩy `WalletHomeScreen(source: buildWalletSource(session: session))` mà không kiểm `session.status`. Static trace; runtime NOT TESTED. Nút ví ở `ship_home.dart:205` đã được bọc điều kiện.
+
 Trạng thái bug giữ nguyên: **#295 có bằng chứng**, loại B04 "sửa code".
 
 ## Q3 — #294: đường đi của phép tính khoảng cách

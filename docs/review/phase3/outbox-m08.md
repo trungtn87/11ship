@@ -16,6 +16,10 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Nhãn: **ĐÃ MỞ SOURCE** cho 
 | Push FCM | `PushDispatcher.runOnce`: claim hàng push có lease, quyết định EXPIRE/SKIP/gửi; token bị từ chối thì vô hiệu và bỏ qua; lỗi tạm thời thì retry mũ (mặc định tối đa 5 lượt, gốc 30 s, trần 15 phút) nhưng **không retry vượt hạn của chính push**; kết thúc `FAILED` kèm bằng chứng | `notifications/push-dispatcher.ts:40-85`; `notification-constants.ts:85-88` |
 | Ack/retry end-to-end | Consumer ném lỗi thì outbox retry theo backoff rồi `DEAD`; consumer ack bằng cách trả về. Push có vòng retry riêng, độc lập với outbox | `notification-event-service.ts:92` (chú thích hợp đồng); `outbox-dispatcher.ts:299-324` |
 
+## Ghi chú từ Antigravity (Lead đã mở lại)
+- `notification-event-service.ts:95-97`: sự kiện của loại mình xử lý có tuổi > `MAX_EVENT_AGE_MS` (24 giờ) được claim là `STALE_EVENT` và không thông báo cho người dùng. Chưa có trong baseline M08; đề xuất **fix doc-baseline** hoặc Owner decision (ngưỡng 24 giờ có chấp nhận được không).
+- Comment tại dòng ~119 về rút tiền có thể lỗi thời (rút tiền đã nối M08, Issue #259) — chưa tự xác minh dòng này, **UNKNOWN**.
+
 ## Hệ quả
 - "Không có path" của Graphify giữa `OrderRecorder` và `NotificationEventService` là **đúng về cạnh tĩnh**, nhưng liên kết có thật qua outbox. Đã xác nhận bằng source như trên. Verdict liên quan (M08): xem bảng reconciliation.
 - Các lớp `NOT_INTEGRATED` là hành vi có chủ ý (ack, không phát), không phải lỗi mất sự kiện. Việc những event type nào chưa có consumer: **UNKNOWN** cho tới khi đối chiếu từng yêu cầu M08.

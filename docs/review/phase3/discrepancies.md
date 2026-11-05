@@ -18,6 +18,7 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Phân loại B-04: sửa code / 
 | M10-R-09 | Khách sửa đơn khi chờ xác nhận `[P8]` | Backend khớp (PENDING_CONFIRMATION + version). Yêu cầu bắt buộc chọn địa chỉ/ghim ngay trong luồng sửa chưa được chứng minh: B-03 S-06 BLOCKED do #299; không PASS | orders/order-customer-service.ts:565,622 (chỉ PENDING_CONFIRMATION), :542,625 (kiểm expected_version); #238 (ghim bản đồ trong luồng sửa chưa kiểm UI), #299 (11Food OOM khi mở bộ chọn bản đồ) | sửa code (Phase 8) | #238, #299 |
 | M04-R-15 | Quyền ví tài chính chỉ áp cho hồ sơ shipper (scope DRIVER) | Quyền tài chính kiểm khoá dotted theo user, không ràng buộc app scope DRIVER; `DRIVER_NOT_FOUND` là kiểm đối tượng, không phải scope của actor | `admin-finance/admin-finance-read-service.ts:286-299`; `finance-access-constants.ts:23-35` (Codex đề xuất, Lead đã mở lại 2026-11-05) | sửa code hoặc Owner decision (Phase 5) | |
 | M12-R-13 | Quyền riêng cho từng thao tác ngoại lệ đơn (C-28) | Hủy đơn ánh xạ vào quyền lock/review hiện có, không có khoá quyền riêng | `admin-orders/admin-order-service.ts:28-30,40,175,212,220-224`; `requirements.md:253` (Codex đề xuất, Lead đã mở lại) | sửa code hoặc Owner decision (OD-12) | C-28 |
+| M14-R-11 | Bản đồ vẽ đúng tuyến đã báo giá | Backend chỉ trả distanceM/seconds (không hình học); không màn nào truyền `route:` vào `M14OfflineMap` | `delivery/m14-route-client.ts:14-18`; `n11_m14_map.dart:17,34` (Antigravity đề xuất, Lead đã mở lại) | sửa code hoặc Owner decision (Phase 8) | |
 
 ## 3. Một phần (PARTIAL) có phân loại B-04 cụ thể
 
@@ -51,7 +52,7 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Phân loại B-04: sửa code / 
 
 ## 4. Chưa xác định (UNKNOWN) và nguyên nhân
 
-Số dòng UNKNOWN: 27. Nguyên nhân gom theo nhóm (chi tiết ở từng dòng trong bảng đối chiếu):
+Số dòng UNKNOWN: 19. Nguyên nhân gom theo nhóm (chi tiết ở từng dòng trong bảng đối chiếu):
 - **Hành vi giao diện/thiết bị chỉ nằm ở app** (Flutter, GPS nền, camera bản đồ, popup): cần đọc Dart sâu hoặc chạy trên thiết bị; chuyển Phase 6 và Antigravity.
 - **Phân quyền/scope nhiều tầng của Admin** (M08-R-12/15, M12-R-07, M04-R-15 nay là MISMATCH): cần ma trận quyền; chuyển Phase 5.
 - **Dữ liệu/giá trị chỉ có trên VPS hoặc trong cấu hình** (phiên bản điều khoản thực, cờ native gate, APP_ENV): không có trong source.
@@ -65,13 +66,10 @@ Số dòng UNKNOWN: 27. Nguyên nhân gom theo nhóm (chi tiết ở từng dòn
 | M02-R-16 | Chưa theo dõi toạ độ quán được chụp vào đơn lúc tạo hay đọc lại lúc xem. Không suy ra từ tên |  |
 | M02-R-17 | Không thấy kết quả tìm kiếm cho xử lý khu vực ACTIVE thiếu hình học; chưa đọc hàm kiểm ghim |  |
 | M04-R-10 | Chưa kiểm 'không gói thuê bao, không ví quán, báo chuyển khoản không cấp quyền'. Không có node trong graph không phải bằng chứng thiếu |  |
-| M05-R-06 | Yêu cầu thuần UI (bộ chọn dùng chung, Quay lại không áp dụng, lỗi GPS giữ ghim cũ). #238 và #299 (OOM bản đồ) liên quan; B-03: S-06 BLOCKED | sửa code (Phase 8) |
 | M06-R-05 | Chưa thấy khái niệm tip trong file đã mở (grep 'tip' ra 0 kết quả trong agreement.ts); baseline nói tip cộng vào phí thỏa thuận không thêm trường. Chưa quét toàn repo nên chưa kết luận MISSING |  |
 | M06-R-09 | Yêu cầu 'bỏ màn M06 giả/trùng' cần so danh sách màn với baseline; không suy ra từ tên file |  |
 | M07-R-07 | Yêu cầu nói 'app không can thiệp' (thiếu hành vi); không thể chứng minh bằng việc không thấy mã. Không MISSING |  |
-| M07-R-10 | Không thấy route 'bỏ qua đơn' trong danh sách offers. Route fee/skip là bỏ qua đề nghị phí (khác nghĩa), nên chưa thể kết luận khớp hay lệch với 'không có nút Skip'; cần Owner làm rõ ý nghĩa (nút ở UI chưa đọc) | Owner decision (làm rõ 'Skip') |
 | M08-R-12 | Có phân quyền SYSTEM/ADMIN theo app nhưng 'scope của ADMIN' (khu vực/quyền) cho bộ đếm chưa chứng minh |  |
-| M08-R-13 | Có dấu hiệu chuyển vai trò trong m08_views nhưng chưa đọc luồng; không kết luận |  |
 | M08-R-15 | Cùng lý do M08-R-12: cùng scope cho counter/ca hàng/lỗi/chi tiết chưa chứng minh |  |
 | M10-R-19 | Mã K01-0001, unique, không tái sử dụng chưa kiểm; counter theo quán chưa tìm |  |
 | M10-R-23 | Đơn cũ giữ route_distance_m: cột snapshot chưa mở; ví dụ K01-0006 là dữ liệu VPS NOT TESTED |  |
@@ -80,12 +78,7 @@ Số dòng UNKNOWN: 27. Nguyên nhân gom theo nhóm (chi tiết ở từng dòn
 | M12-R-07 | Scope báo cáo/audit cho tổng số, danh sách, xem trước, runner, tải xuống chưa đối chiếu |  |
 | M12-R-12 | Có kịch bản khôi phục thử và checklist; không có log chạy thật trong repo. Đúng quy tắc baseline: chưa có bằng chứng -> NOT TESTED |  |
 | M13-R-06 | Baseline mới: chỉ kiểm phiên bản và mở Play. Còn route app-updates/* phục vụ tải APK? (Phase 3: public-routes.md). Chưa đối chiếu nên không kết luận |  |
-| M14-R-01 | Comment cho thấy app chỉ xin quyền foreground + thông báo (chưa xác nhận có GPS nền khi vuốt khỏi gần đây). Phía app là UNKNOWN (đã ghi ở F4) |  |
-| M14-R-05 | Thứ tự ưu tiên cảnh báo chỉ ở app, chưa đọc |  |
 | M14-R-06 | Camera/cử chỉ chỉ ở app. #299 (OOM bản đồ) liên quan |  |
-| M14-R-11 | Backend không trả geometry/route_version ở m14-route-client nên chưa thấy cách polyline 'chính là tuyến đã tính giá'. Có thể geometry đến từ nguồn khác (app vẽ lại?): chưa theo dõi. Không kết luận |  |
-| M14-R-12 | Có key home-radius-*; chưa đọc cách vẽ vòng tròn/phủ xám/camera |  |
-| M14-R-14 | Comment ngụ ý chưa xin quyền vị trí nền (ACCESS_BACKGROUND_LOCATION). 'Chạy tiếp khi vuốt khỏi gần đây' cần đọc phần native/service Android; không kết luận |  |
 
 ## 5. Ứng viên mã chết / legacy (chưa tự quyết xóa/giữ)
 

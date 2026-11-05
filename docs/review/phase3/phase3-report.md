@@ -1,6 +1,6 @@
 # Phase 3 — Báo cáo đối chiếu Graph ↔ Baseline (E)
 
-Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity). Chưa có ai nghiệm thu. Chức năng vẫn **NOT ACCEPTED**; bug #295, #294, #299 giữ nguyên trạng thái.
+Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity — cả hai đã chạy). Chưa có ai nghiệm thu. Chức năng vẫn **NOT ACCEPTED**; bug #295, #294, #299 giữ nguyên trạng thái.
 
 - Code SHA phân tích: `549572696efb4bbc18af3c362b7f56a5fcd335e6` (không đổi). Nhánh tài liệu dựa trên `main` d5f8f28 (Phase 2 đã merge).
 - Phạm vi: chỉ tài liệu/dữ liệu trong `docs/review/phase3/`. Không sửa code sản phẩm, không deploy, không build/phát hành APK, không chạy runtime.
@@ -21,21 +21,21 @@ Trạng thái: **bản nháp chờ review độc lập** (Codex, Antigravity). C
 
 | Verdict | Số dòng |
 |---|---:|
-| IMPLEMENTED | 77 |
-| PARTIAL | 87 |
-| MISMATCH | 6 |
+| IMPLEMENTED | 80 |
+| PARTIAL | 91 |
+| MISMATCH | 7 |
 | MISSING | 1 |
-| UNKNOWN | 27 |
+| UNKNOWN | 19 |
 | **Tổng** | **198** |
 
 Theo độ tin cậy của ứng viên Phase 2:
 
 | Ứng viên | IMPLEMENTED | PARTIAL | MISMATCH | MISSING | UNKNOWN |
 |---|---:|---:|---:|---:|---:|
-| MEDIUM | 35 | 34 | 3 | 0 | 15 |
+| MEDIUM | 38 | 37 | 4 | 0 | 8 |
 | STRONG | 23 | 23 | 3 | 0 | 2 |
 | WEAK | 4 | 6 | 0 | 1 | 0 |
-| WEAK(ident only) | 15 | 24 | 0 | 0 | 10 |
+| WEAK(ident only) | 15 | 25 | 0 | 0 | 9 |
 
 Cách đọc: IMPLEMENTED nghĩa là đã mở source và hành vi chính khớp; mỗi dòng ghi riêng phần chưa kiểm (nhiều dòng còn "UI/runtime NOT TESTED"). Đây là đối chiếu tĩnh, **không phải PASS chức năng**. UNKNOWN không bị đổi thành MISSING; MISSING (1 dòng) có nêu phạm vi quét.
 
@@ -87,7 +87,7 @@ Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 d�
 - Đây là đối chiếu **tĩnh**; không chạy app, test, CI hay VPS. Giá trị cấu hình thực trên VPS (APP_ENV, native gate, phiên bản điều khoản) là UNKNOWN.
 - Độ sâu đọc không đồng đều: các dòng có nhãn "CHƯA MỞ" trong cột bằng chứng nghĩa là chưa đọc đến dòng. Các verdict IMPLEMENTED có thể còn nhánh chưa kiểm; Codex nên kiểm mẫu có chủ đích, đặc biệt M01, M04, M10 và các dòng MISSING/MISMATCH.
 - MISSING cho M10-R-26 dựa vào phạm vi quét đã nêu (12 file có `PREPARING`, các sweeper, hàng đợi Admin); cần Codex xác nhận bằng cách quét độc lập.
-- 27 dòng UNKNOWN chủ yếu là hành vi giao diện/thiết bị/runtime; không dòng nào bị quy thành thiếu.
+- 19 dòng UNKNOWN chủ yếu là hành vi giao diện/thiết bị/runtime; không dòng nào bị quy thành thiếu.
 - Lead chưa tái lập thủ công con số 412 route/69 controller; dùng dữ liệu Phase 2 đã được review.
 
 ## 8. Chuyển giao Phase 4/5
@@ -113,6 +113,6 @@ Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 d�
 ## 10. Review độc lập và kết luận Lead
 
 - Codex (read-only, review 2026-11-05 trên head 8d522bd, trạng thái "commented"): **ĐÃ CHẠY, đã xử lý**. Mẫu 30 IMPLEMENTED: 23 đúng, 7 đúng một phần, 0 sai; mẫu 20 UNKNOWN/PARTIAL: 14 đúng, 6 sai (tỷ lệ 70%). Lead đã mở lại cả 6 dòng và đồng ý: M03-R-02, M03-R-09, M10-R-08, M10-R-14 lên IMPLEMENTED; M04-R-15 và M12-R-13 thành MISMATCH. Năm dòng IMPLEMENTED bị ghi "đúng một phần" (M04-R-04, M10-R-10, M10-R-22, M12-R-08, M12-R-11) hạ xuống PARTIAL; hai dòng còn lại (M01-R-04, M01-R-09) vốn đã ghi phần chưa kiểm trong ghi chú. Đã sửa kết luận limiter IP và ingest (nginx trong repo), cách ghi số AdminTransport và phạm vi `setInterval`, và thêm `view.ts` vào danh sách inventory thiếu. Codex không xác nhận được nguyên nhân 617 m vs 720 m từ source; vẫn UNKNOWN. Lưu ý: tỷ lệ 70% của mẫu 20 dòng chỉ cho thấy độ tin cậy của nhóm UNKNOWN/PARTIAL; các dòng UNKNOWN/PARTIAL còn lại chưa được rà lại độc lập.
-- Antigravity (read-only): CHƯA CHẠY. Brief: `/mnt/project-files/handoffs/antigravity-review-phase3-reconciliation.md`.
+- Antigravity (read-only, bình luận trên PR, head 8d522bd): **ĐÃ CHẠY, đã xử lý**. Lead mở lại từng bằng chứng. Chấp nhận: M14-R-12, M14-R-05, M08-R-13 lên IMPLEMENTED (tĩnh); M14-R-11 thành MISMATCH (backend không trả hình học tuyến, không màn nào truyền `route:`); M14-R-01, M14-R-14, M05-R-06, M07-R-10 từ UNKNOWN lên PARTIAL (Lead giữ PARTIAL vì chạy nền thật/UI/#299 chưa kiểm; Antigravity đề xuất IMPLEMENTED); M01-R-16 giữ PARTIAL. M08-R-05 giữ PARTIAL vì Lead chưa tự kiểm phần nhóm ngày. Bổ sung: lối vào thứ ba của #295 (`ship_tabs.dart:41`), quy tắc bỏ sự kiện quá 24 giờ của M08 (`STALE_EVENT`), `finance-view.ts` là màn chưa nối (`NOT_WIRED_FINANCE`) còn production dùng `finance-admin-view.ts`/`finance-ops-view.ts` (chưa tự kiểm thêm), nguyên nhân #294 theo Antigravity là hai cặp điểm khác nhau và đồ thị có hướng; Lead giữ UNKNOWN vì Codex và Lead không xác nhận được từ source.
 - Khuyến nghị của Lead: chưa nghiệm thu cho tới khi Antigravity xong và mọi finding được xử lý. Antigravity chưa trả kết quả.
 - Chỉ Owner quyết định ACCEPTED hoặc NOT ACCEPTED, và việc merge.
