@@ -51,6 +51,28 @@
 | `PublicReviewController` | GET shops/:shop_id/reviews | công khai: đánh giá của quán |
 | `ShopLogoController` | GET :shopId/logo | công khai: logo quán |
 
+## 3b. T10: workflow GitHub Actions và script vận hành (ĐÃ MỞ phần `on:`/quyền/secrets/checkout; KHÔNG đọc từng bước)
+
+Bổ sung sau review (trước đó ghi CHƯA LÀM). 11 workflow ở `.github/workflows/`:
+
+| Workflow | Kích hoạt | Quyền | Secrets / môi trường | Ghi chú |
+|---|---|---|---|---|
+| `ci.yml` | PR, push `main`, tay | `contents: read` | không | `ubuntu-24.04`, `windows-2022` |
+| `deploy-vps.yml` | **chỉ tay** (`workflow_dispatch`) | `contents: read` | môi trường `vps-production`; `VPS_SSH_PRIVATE_KEY`, `VPS_KNOWN_HOSTS`, `OPS_DEPLOY_INGEST_TOKEN` | job `ci-gate` (`:31,57`) chạy `scripts/deploy/ci-gate.mjs` rồi deploy `needs: ci-gate`, checkout `ref: needs.ci-gate.outputs.sha` (`:60,70`) |
+| `diagnose-vps-release.yml` | chỉ tay | `contents: read` | `vps-production`; SSH key | truy cập VPS bằng SSH |
+| `ai-governance.yml` | `pull_request_target` | `contents: read`, `pull-requests: read` | không | checkout nhánh mặc định, không chạy mã PR (`:3,20-22`) |
+| `update-progress.yml` | PR, `pull_request_target`, `push`, `workflow_run`, tay | `permissions: {}` ở cấp file | `GITHUB_TOKEN` | mọi `checkout` dùng `ref: default_branch` (`:75,108-110,135-137,174-176,219-221`); xử lý nhãn review |
+| `no-skip-ci.yml` | PR | `contents: read` | không | chặn marker bỏ qua CI |
+| `mobile-apk.yml` | chỉ tay | `contents: read` | keystore Android (4), `FCM_FOOD_API_KEY`, `FCM_SHIP_API_KEY` | phát hành APK |
+| `sms-gateway-apk.yml` | tay, PR theo path | `contents: read` | keystore Android (4) | |
+| `m14-gps-test.yml` | push `codex/m14-gps-test`, PR theo path | **`contents: write`** | keystore Android (4) | quyền ghi |
+| `m14-android-runtime.yml` | push `codex/m14-runtime-check`, tay | **`contents: write`**, `actions: read` | không | quyền ghi |
+| `m14-flutter-runtime.yml` | push `codex/m14-gps-test` theo path | `contents: read` | không | |
+
+Quan sát (chưa phải finding; Phase 5 đọc từng bước): (1) hai workflow `pull_request_target` đều checkout nhánh mặc định, phù hợp ghi chú trong file; chưa đọc các bước chạy script; (2) hai workflow M14 có `contents: write`; (3) `deploy-vps.yml` đúng với `AGENTS.md`: ci-gate + môi trường `vps-production`; (4) workflow bản trước ghi trong Phase 0 `recover-vps-*.yml` **không còn** trong thư mục; (5) các workflow chạy APK dùng keystore trong secrets.
+
+Script vận hành `scripts/` (ngoài `apps`, không vào graph), chỉ liệt kê: `admin-auth-init-limit-config.js`, `admin-auth-bootstrap-system.js`, `admin-auth-recover-system.js`, `db-migrate.js`, `db-migrate-remote.js`, `db-remote-target.js`, `ops-ctl.js`, `sms-gateway-ctl.js`, `staging-seed-fixtures.js`, `staging-db-upgrade-from-42.js`, `android-attestation-refresh.mjs`, `deploy/` (gồm `ci-gate.mjs`), `native-gateway*.mjs`, `test-sms-inbox.mjs`. **Chưa đọc nội dung** (đặc biệt `admin-auth-recover-system.js`, `db-migrate-remote.js`, `staging-seed-fixtures.js`).
+
 ## 4. Điểm cần Phase 5 xem kỹ (ghi nhận, chưa phải finding)
 1. `POST /v1/discovery/route-distances` không xác thực, mỗi lần gọi đến 20 quán × một lần Valhalla; chỉ có hạn mức đồng thời toàn hệ thống (`discovery-route-service.ts`). Chưa thấy hạn mức theo IP.
 2. `reset-test` (hai scope) chỉ có một cổng: biến cấu hình `accountRecoveryMode`. Nếu cấu hình sai trên môi trường thật thì đổi mật khẩu không cần OTP. Cần xác nhận cấu hình VPS (không thuộc graph).

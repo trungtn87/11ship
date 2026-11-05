@@ -40,7 +40,7 @@
 | G-4 | `cycles.md` | Xong | 2 nhóm vòng đều đã mở source |
 | G-5 | `dead-code-candidates.md` | **Một phần**: cấp file, cấp class xong; cấp hàm, bảng SQL, endpoint không ai gọi **NOT TESTED** | |
 | G-6 | `impact-areas.md` | Xong ở mức cận dưới (import) | Cần Antigravity bổ sung DI/outbox |
-| G-7 | `trust-boundaries.md` | **Một phần**: T10 (workflow/runner) CHƯA LÀM; nhiều route công khai chưa mở limiter | |
+| G-7 | `trust-boundaries.md` | **Một phần**: T10 đã liệt kê trigger/quyền/secrets (§3b) nhưng chưa đọc từng bước và script; nhiều route công khai chưa mở limiter | |
 | G-8 | `graph-baseline-links.csv` | 198/198 dòng; xem §4 | Liên kết ứng viên, KHÔNG phải kết luận |
 | G-9 | báo cáo này | Bản nháp | |
 
