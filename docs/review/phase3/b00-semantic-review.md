@@ -20,7 +20,7 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Nguồn: bảng gán của Codex
 
 ## Phát hiện về chính inventory B-00
 
-1. 14 nhãn route sai đường dẫn: `/v1/admin-auth/users*` và `administrators` thực là `/v1/admin/*`; 8 route kích hoạt `/v1/start…/complete` thực là `/v1/admin-activation/*`; `order-parameters/draft|apply|preview` thực là `/v1/admin/shipping-fee-policy/*`. 8 dòng `order-parameters` lặp nhãn nên không gán 1-1.
+1. 14 nhãn route sai đường dẫn: `/v1/admin-auth/users*` và `administrators` (3) thực là `/v1/admin/*`; 8 route kích hoạt `/v1/start…/complete` thực là `/v1/admin-activation/*`; `order-parameters/draft|apply|preview` (3) thực là `/v1/admin/shipping-fee-policy/*`. Thêm 5 dòng `order-parameters` (3 GET, 2 POST) lặp cùng một nhãn nên không gán 1-1. Tổng 19 dòng có nhãn không đáng tin.
 2. Inventory thiếu mục (ví dụ): màn admin `shops-view`, `zones-page`, `overview-view`, `ops-view`, `business-view`; workflow `deploy-vps.yml`, `mobile-apk.yml`, `sms-gateway-apk.yml`. Cần Codex xác nhận danh sách đầy đủ.
 3. Bảng không có yêu cầu baseline tương ứng (ứng viên baseline mới): `shipper_wallet_parameters` (mức nạp/rút tối thiểu), `wallet_commission_policies`, `review_moderations`, đối soát lệch sổ (`/admin/finance/reconciliation*`).
 4. Ánh xạ ngược quan trọng: `order_parameters` là `fee_answer_minutes` (M07-R-06), không phải M10-R-12; `shipping_eligibility_parameters` là M06-R-06/R-07, bán kính 3 km cố định; `ShopCallScreen` chỉ dựng trong test.

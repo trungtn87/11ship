@@ -53,7 +53,7 @@ Cách đọc: IMPLEMENTED nghĩa là đã mở source và hành vi chính khớp
 | LABEL_UNRELIABLE+WRONG | 1 |
 | **Tổng** | **234** |
 
-Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory, 8 dòng `order-parameters` lặp nhãn nên không gán 1-1, thiếu một số màn admin và workflow trong inventory, và nhiều ánh xạ gốc sai ngữ nghĩa (ví dụ `order_parameters` là `fee_answer_minutes` chứ không phải timeout đơn). Chi tiết trong `b00-semantic-review.md`.
+Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 dòng `order-parameters` lặp nhãn nên không gán 1-1 (tổng 19 dòng nhãn không đáng tin), thiếu một số màn admin và workflow trong inventory, và nhiều ánh xạ gốc sai ngữ nghĩa (ví dụ `order_parameters` là `fee_answer_minutes` chứ không phải timeout đơn). Chi tiết trong `b00-semantic-review.md`.
 
 ## 4. Câu hỏi bắt buộc Q1–Q9
 
