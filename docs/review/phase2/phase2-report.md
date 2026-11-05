@@ -2,7 +2,7 @@
 
 **SHA khảo sát:** `549572696efb4bbc18af3c362b7f56a5fcd335e6` (`main`, merge PR #298) · **Graphify:** graphifyy 0.9.100 · **Ngày:** 2026-11-02 · **Người lập:** Claude Lead (Executor Phase 2)
 
-**Trạng thái:** BẢN NHÁP CHỜ REVIEW ĐỘC LẬP (Codex, Antigravity) rồi Owner nghiệm thu. Phase 2 **không** tuyên bố code đúng, đạt baseline hay có lỗi. Chưa merge, chưa deploy, chưa APK, không sửa code sản phẩm.
+**Trạng thái:** BẢN NHÁP v2: đã áp review Antigravity (2026-11-05, xem §9); CHỜ review Codex rồi Owner nghiệm thu. Phase 2 **không** tuyên bố code đúng, đạt baseline hay có lỗi. Chưa merge, chưa deploy, chưa APK, không sửa code sản phẩm.
 
 
 **Quy ước độ tin:** `ĐÃ MỞ SOURCE` = người lập đã đọc đoạn mã nêu (file:dòng). `CHỈ TỪ GRAPH` = chỉ thấy trong graph, chưa mở source, không được xếp vào finding. `HEURISTIC` = suy từ script đọc source nhưng chưa đọc từng dòng.
@@ -89,3 +89,24 @@ Vì vậy Phase 2 **chưa** đủ điều kiện nghiệm thu; xem §8.
 ## 8. Việc còn lại trước khi trình Owner
 - Codex và Antigravity review theo brief ở `/mnt/project-files/handoffs/` (Owner chuyển tay).
 - Lead hoàn thiện phần "Một phần" của G-3, G-5, G-7 sau khi nhận review (hoặc Owner cho phép để sang Phase 3 với danh sách này).
+
+## 9. Disposition review Antigravity (comment PR #301, 2026-11-05)
+
+Người review chỉ đọc. Lead tự mở lại source cho từng ý trước khi nhận (ngoại trừ những ý ghi "chưa kiểm"). Antigravity không chạy hệ thống: các mục chạy thực tế đều NOT TESTED.
+
+| Mục AG | Nhận định của AG | Disposition | Ghi chú |
+|---|---|---|---|
+| 1.1 F2 không tạo chuyến giao | Đúng | **Đã áp** (flows F2) | `order-shop.controller.ts:78`, `order-shop-service.ts:256` |
+| 1.2 F3 `#preflight`, `complete()` | Đúng một phần | **Đã áp có hiệu chỉnh** | Preflight là một transaction đọc riêng (không phải "ngoài mọi transaction"); `complete()` đã đọc (`:559-591`) |
+| 1.3 F5/F7 chuỗi nạp → duyệt shipper | Đúng | **Đã áp** | `admin-shipper-service.ts:222-223`; ngưỡng 100k **chưa kiểm** |
+| 2.1 16 cổng DI | Đúng về bản chất; số khác | **Đã áp** (components §3b) | grep cho 24 token; 16 là cổng nghiệp vụ |
+| 2.2 startup gate, `WalletModule.onModuleInit` | Đúng | **Đã áp** | bản trước đếm hook sai (24 lần xuất hiện, thực: 10 + 2) |
+| 2.3 `IdempotencyCleanup` | Đúng, không khởi động ở đâu | **Đã áp** | Lead tự grep xác nhận; ghi nhận cho Phase 3/6 |
+| 2.4 timer, `NotificationSignal` | Đúng | **Đã áp** (components) | |
+| 2.5 workflow, runner, script CLI | Đúng | **Mở, chưa làm** (T10) | nhận làm ở bước hoàn thiện |
+| 3.1-3.4 H01/H05/H09/H10/H11 | Đúng | **Đã áp** (impact-areas) | các file Admin Web Lead chưa mở |
+| 4.1-4.3 scale ngang | An toàn dữ liệu, không leader lock | **Đã áp** (flows F10) | khóa hàng tự kiểm; hàm `#searchReminders`/`#pickupReminders` chưa mở; NOT TESTED |
+| 5.1 vòng Dart | Xác nhận | Giữ nguyên | |
+| 5.2 #295 "xác nhận lỗi code rõ ràng" | AG nâng mức | **Không nhận mức "lỗi"** | Ví chỉ là ứng viên nguyên nhân; chưa chạy app (NOT TESTED). AG cũng ghi NOT TESTED; "Guest bấm sẽ gặp lỗi" chưa kiểm. Giữ là dẫn mối cho Phase 3 |
+
+Việc còn lại sau review này: T10 (workflow/script), mở nốt F1/F4/F6, hai hàm delivery sweeper chưa mở, review Codex.

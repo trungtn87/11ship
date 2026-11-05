@@ -18,7 +18,7 @@
 | T7 | Backend → PostgreSQL | `pg` pool; có `config.tls` thì `ssl:{ca, rejectUnauthorized:true}`, không có thì **không SSL** (local/CI) | `database/create-pool.ts:12-34` | ĐÃ MỞ SOURCE |
 | T8 | Backend → FCM | OAuth JWT service account → `fcm.googleapis.com` | `notifications/push-provider.ts:61,104,152-176` | Một phần; FCM bị hoãn theo `M08-R-11` |
 | T9 | Tác vụ nền / runner | 11 tác vụ `setInterval` trong tiến trình API, không có API riêng | Components §3 | ĐÃ MỞ SOURCE |
-| T10 | Runner CI/deploy → VPS | `deploy-vps.yml`, `recover-*.yml`, workflow | Không nằm trong graph (YAML) | **CHƯA LÀM**; thuộc Phase 5 |
+| T10 | Runner CI/deploy → VPS; script vận hành | `deploy-vps.yml`, `recover-*.yml`, workflow; `scripts/` (ví dụ `admin-auth-init-limit-config.js` tạo HMAC rate limit, `admin-auth-bootstrap-system.js` tạo admin gốc, `sms-gateway-ctl.js`, `db-migrate.js` theo Antigravity) | Không nằm trong graph (YAML, script ngoài `apps`) | **CHƯA LÀM**; thuộc Phase 5. Ghi nhận thêm cổng khởi động `AdminLimitConfigVerifier` (`admin-limit-config-verifier.ts:19-34`): backend từ chối chạy nếu cấu hình HMAC rate limit không khớp DB |
 | T11 | Upload (ảnh món, logo, bằng chứng) | Base64 trong JSON, giới hạn 2 MB/3,5 MB/7,5 MB theo route | `app.setup.ts:68-85,98-104` | ĐÃ MỞ SOURCE |
 
 ## 2. Phân loại cơ chế xác thực của 412 route (script, `HEURISTIC`)

@@ -42,6 +42,7 @@
 
 **ĐÃ MỞ SOURCE (`orders/order-customer-service.ts:341-386`):** `place()` → `#prepare()` + `#route()` (hỏi M14 **ngoài** transaction, `:342-343,208`) → `executor.execute()` (idempotency theo `principal.userId` + `ORDER_OPERATIONS.place`) → trong transaction: `#customer(...)` (kiểm lại quyền khách), `findByClientRef` (đặt lại cùng `client_ref` trả đơn cũ), `lockShopShared` (khóa quán FOR SHARE) rồi khóa món theo thứ tự id. Tại lúc commit `#samePoint()` so lại pickup và điểm giao với bản đã dùng để báo giá (`:242-251,410-413,658-661`), lệch thì `unavailable`.
 **Ghi chú #294:** phí/khoảng cách ở đơn dùng `M14RouteClient.routeResult()`; màn Home dùng `route-distances` → `M14RouteClient.route()`; hai hàm cùng gọi `POST /route` (xem F8).
+**Ranh giới (bổ sung theo review Antigravity, ĐÃ MỞ SOURCE):** `place()` chỉ tạo bản ghi `orders`; **không** tạo chuyến giao. Chuyến giao chỉ được tạo khi quán gọi shipper: `POST /v1/shop/me/orders/:order_id/call-shipper` (`order-shop.controller.ts:78`) → `order-shop-service.ts:256 deliveryShop.createForOrder(context, …)`.
 **Chưa mở:** sửa đơn (M10-R-09), hủy đơn, `address-change/` (đổi địa chỉ sau tạo đơn).
 
 ## F3 Giao đơn cho shipper: nhận, hold hoa hồng, giao xong
@@ -61,7 +62,8 @@
 
 **ĐÃ MỞ SOURCE (`delivery/delivery-shipper-service.ts:173-250`, `accept`):** hỏi M14 ngoài transaction (`:173-177`) → `executor.execute` → `deliveries.lockById` → kiểm trạng thái `waiting_driver` và hạn tìm → xử lý thỏa thuận phí (`agreements.act` DRIVER_ACCEPT; `feeAllowsAssignment`) → `eligibility.confirm` (**M06**) → giới hạn đơn mở → `policies.current()` (hoa hồng hiện hành được chụp vào assignment) → `insertAssignment` → `commission.reserveCommission` (**M04 hold**, nếu `insufficient` thì `DELIVERY_NOT_ELIGIBLE`) → `#update(state: 'accepted')` → `addressChanges.expirePendingForDelivery` → `recorder.record(...)` (ghi sự kiện, outbox).
 Tức là một lần "nhận đơn" đi qua M06, M04, M10 (address-change), M07 trong **cùng một transaction**, khớp M00-R-08.
-**Chưa mở:** `release`, giao xong, hủy, `delivery-sweeper.ts` (30 s).
+**Hiệu chỉnh theo review Antigravity (ĐÃ MỞ SOURCE):** (a) trước bước M14 có một transaction **đọc riêng** (`withTransaction`, `delivery-shipper-service.ts:162-171`: actor, delivery, assignment đang giữ, vị trí, tham số), tức là "một lần nhận đơn" gồm một giao dịch đọc ngắn + M14 ngoài giao dịch + một giao dịch ghi; nhận định "cùng một transaction" chỉ đúng cho phần ghi (khóa, hold, assignment, trạng thái, sự kiện). (b) Giao xong **đã đọc**: `complete()` (`:559-591`) trong một `executor.execute`: `commission.captureCommission` (`:568`) + `orders.deliveryCompleted` (`:573`) + cập nhật trạng thái; báo cáo bản trước ghi "chưa mở" là thiếu.
+**Chưa mở:** `release`, hủy, `delivery-sweeper.ts` (30 s).
 
 ## F4 Shipper online và GPS
 
@@ -97,6 +99,7 @@ Tức là một lần "nhận đơn" đi qua M06, M04, M10 (address-change), M07
 
 **ĐÃ MỞ SOURCE:** hold hoa hồng ở F3. Admin xác nhận nạp: `POST /v1/admin/finance/topup-requests/:request_id/confirm` (`admin-topups/admin-topup.controller.ts:48`). Phía ví có `wallet/topup-posting-service.ts`, `topup-settlement-repository.ts`, `withdrawal-money-service.ts`, `wallet-adjustment-service.ts`, `wallet-commission-adjustment.adapter.ts`.
 **Cầu nối nối động (ĐÃ MỞ SOURCE):** M11 → M04 qua cổng `COMMISSION_ADJUSTMENT_PORT` (Symbol), bind `useExisting: WalletCommissionAdjustmentAdapter` ở `admin-auth.module.ts:264`. Graph chỉ thấy import `feedback-finance-port.ts`; cạnh tới `wallet/` chỉ xuất hiện qua adapter.
+**Chuỗi tiên quyết mobile ↔ Admin Web (bổ sung theo review Antigravity; phần ĐÃ MỞ SOURCE):** shipper nộp hồ sơ `POST /v1/driver/me/submit` (`shipper-self.controller.ts:56`) và tạo yêu cầu nạp trên mobile; Admin xác nhận nạp trên Web; chỉ khi đó Admin duyệt shipper: `admin-shipper-service.ts:222-223` ném `DRIVER_FUNDING_REQUIRED` nếu `wallet.fundingForActivation(...).funded` sai. Ngưỡng cụ thể (Antigravity ghi 100.000 đ) **chưa được Lead kiểm**. `fundingForActivation` đi qua cổng `DRIVER_WALLET_PORT` (`driver/driver-wallet-port.ts`): `DelegatingDriverWalletPort` mặc định trỏ `NotIntegratedDriverWalletPort` rồi được `WalletModule.onModuleInit()` gắn thật bằng `this.port.bind(this.wallet)` (`wallet/wallet.module.ts:34-36`): graph không thấy cạnh này.
 **Chưa mở:** thân hàm confirm, đối soát tiền đến muộn (M04-R-14), luồng rút tiền, cô lập quyền ví theo scope DRIVER (M04-R-15).
 
 ## F6 Thông báo
@@ -173,7 +176,7 @@ Push FCM: `push-provider.ts` (OAuth JWT → `messages:send`); trạng thái hoã
 
 **Yêu cầu liên quan:** M07-R-13, M10-R-11, M08-R-09, M11-R-10, M10-R-22
 
-Xem components.md §3 (11 tác vụ, mọi cái là `setInterval`, không `@Cron`). Chưa mở thân từng tác vụ; chạy trong tiến trình API (không phải worker riêng). Outbox an toàn khi nhiều instance (`FOR UPDATE SKIP LOCKED`, `outbox/outbox-dispatcher.ts:116`, `outbox-dispatch-store.ts:76,102`, ĐÃ MỞ SOURCE). Sweeper đơn/giao hàng (30 s) và các tác vụ còn lại: **chưa thấy** khóa leader/advisory lock bằng grep; chưa đọc thân, cần Antigravity xác nhận chúng có chạy đúng khi scale ngang.
+Xem components.md §3 (11 tác vụ, mọi cái là `setInterval`, không `@Cron`). Chưa mở thân từng tác vụ; chạy trong tiến trình API (không phải worker riêng). Outbox an toàn khi nhiều instance (`FOR UPDATE SKIP LOCKED`, `outbox/outbox-dispatcher.ts:116`, `outbox-dispatch-store.ts:76,102`, ĐÃ MỞ SOURCE). Sweeper (đã đối chiếu review Antigravity và tự kiểm lại các dòng khóa, KHÔNG chạy thử, NOT TESTED): không có leader election / `pg_try_advisory_lock` cho tác vụ nền (grep `advisory` chỉ ra `shared/lock-key.ts` và khóa ghi theo nghiệp vụ), nhưng an toàn dữ liệu nhờ khóa hàng: `orders/order-repository.ts:540` (`claimScheduleReminders`, `FOR UPDATE SKIP LOCKED`), `order-timeouts/order-timeout-sweeper.ts:16,54,110` (`SKIP LOCKED` + khóa hàng), `delivery/delivery-repository.ts:555` (`#stopExpired`, `SKIP LOCKED`), `sms-gateway/sms-gateway-repository.ts:250` (`claimNext`, `SKIP LOCKED`). Antigravity nêu thêm `#searchReminders`/`#pickupReminders` ở delivery chọn ứng viên **không** `SKIP LOCKED` nhưng khóa lại bằng `lockById` + kiểm version nên không lặp tác dụng phụ, chỉ có thể chờ khóa/tải DB khi chạy nhiều instance (Lead chưa mở hai hàm này). Hệ quả: không phải lỗi, là chi phí khi scale ngang.
 
 ## F11 Theo dõi công khai (token trong URL)
 

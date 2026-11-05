@@ -100,7 +100,16 @@ Nguồn: script `nest.py` đọc **49 file `*.module.ts`**, **69 controller**, *
 | Ops analytics (snapshot, phát hiện) | `ops-analytics/ops-analytics-runtime.ts` | 15 phút; 60 phút | onApplicationBootstrap |
 | Mini Business push | `business-dashboard/business-push-service.ts` | 10 s (bỏ qua khi appEnv=test) | onApplicationBootstrap |
 
-Chưa mở source: `idempotency/idempotency-cleanup.ts` (có lớp dọn, **chưa xác nhận nơi khởi động**), `audit/standalone-audit-recorder.ts` và `transaction/transaction-manager.ts` (`setTimeout` nội bộ, không phải tác vụ định kỳ). Đây là việc cho Antigravity (mục 7 handoff).
+**Hiệu chỉnh theo review Antigravity (đã tự kiểm lại ở source):**
+- `IdempotencyCleanup` **không được khởi động ở đâu**: chỉ là provider (`idempotency/idempotency.module.ts:33-38`, `useFactory`), không có `setInterval`/cron/script nào gọi (grep toàn `apps` và `scripts`); `README.md:120` xác nhận *"primitive gọi tay (chưa có scheduler)"*. Hệ quả: bảng `app.idempotency_records` chỉ được dọn nếu có người gọi tay; ghi nhận cho Phase 3/6 (chưa phải finding).
+- Cổng khởi động: `AdminLimitConfigVerifier.onApplicationBootstrap()` (`admin-auth/admin-limit-config-verifier.ts:19-34`) ném `StartupConfigError(['ADMIN_RATE_LIMIT_HMAC_KEY','ADMIN_RATE_LIMIT_KEY_ID'])` nếu bảng cấu hình không đọc được hoặc không khớp: backend từ chối khởi động. Báo cáo bản trước bỏ sót.
+- Gắn lúc khởi động: `WalletModule.onModuleInit()` (`wallet/wallet.module.ts:34-36`) gắn `DelegatingDriverWalletPort` vào `WalletDriverPort`.
+- Hook: 10 lớp `OnApplicationBootstrap` + 2 `OnModuleInit` (bản trước đếm 24 lần xuất hiện của mọi hook kể cả shutdown, gây hiểu nhầm).
+- `NotificationSignal` (`notifications/notification-signal.ts`) dùng `EventEmitter` trong tiến trình để đánh thức long-poll; không có cạnh trong graph.
+- Chưa mở: `audit/standalone-audit-recorder.ts`, `transaction/transaction-manager.ts` (`setTimeout` nội bộ, không phải tác vụ định kỳ).
+
+## 3b. Token DI (`provide: <TOKEN>`) trong các `*.module.ts` (grep, ĐÃ MỞ SOURCE)
+24 token khác nhau, Graphify không thấy cạnh từ người dùng token tới lớp bind: `OTP_PROVIDER` (2), `ACTIVATION_OTP_PROVIDER` (2), `CLIENT_DEVICE_TRUST` (2), `ACCOUNT_ORIGIN_POLICY` (2), `DRIVER_WALLET_PORT`, `ORDER_DELIVERY_PORT`, `FEEDBACK_ORDER_PORT`, `DELIVERY_OFFER_PORT`, `SHIPPER_WORK_PORT`, `SHIPPER_LOCATION_PORT`, `ROUTE_MATRIX_PORT`, `COMMISSION_ADJUSTMENT_PORT`, `AVAILABLE_BALANCE_PORT`, `PUSH_PROVIDER`, `PASSWORD_HASHER`, `OPS_SYSTEM_PROBE`, `OPS_DISCORD_CLIENT`, `M14_ROUTING`, `DATABASE_POOL`, `APP_CONFIG`, `APP_LOGGER`, `APP_COMPAT_MATRIX`, `CLIENT_AUTH_SETTINGS`, `ADMIN_LIMITER_KEY`, `TEST_SMS_LIFECYCLE`. (Antigravity đếm 16 cổng nghiệp vụ; con số 24 gồm cả token cấu hình/hạ tầng.)
 
 ## 4. Luồng sự kiện: outbox
 

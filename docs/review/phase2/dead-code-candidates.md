@@ -32,6 +32,7 @@ Lọc: tên không xuất hiện ở file sản phẩm khác (`grep -w`, tìm c�
 |---|---|---|---|
 | `NotIntegratedCommissionAdjustmentPort` | `feedback/feedback-finance-port.ts:30` | **Ứng viên thật** (`ĐÃ MỞ SOURCE`: 0 tham chiếu ở toàn repo kể cả test) | Comment trong file nói cố ý giữ cho bản build không nạp wallet package; thực tế `COMMISSION_ADJUSTMENT_PORT` luôn bind `WalletCommissionAdjustmentAdapter` (`admin-auth.module.ts:264`). Phase 3 quyết định giữ hay bỏ |
 | `NotIntegratedDeliveryOfferPort`, `…ShipperWorkPort`, `…ShipperLocationPort`, `…RouteMatrixPort` | `shipping-policy/shipping-ports.ts:69-90` | Chỉ dùng trong test | `tests/integration/m06-shipping-eligibility.int.spec.ts:304-307`; không có tham chiếu ở code sản phẩm. Stub phục vụ test, không phải mã chết nhưng **nằm trong code sản phẩm** |
+| `NotIntegratedDriverWalletPort` | `driver/driver-wallet-port.ts:27` | Không chết (đối chiếu review Antigravity, ĐÃ MỞ SOURCE) | là giá trị mặc định của `DelegatingDriverWalletPort` (`:47-48`), được thay bằng cổng thật lúc `WalletModule.onModuleInit` |
 | `WalletInvariantError` | `wallet/wallet-types.ts:68` | Không chết | ném ở `:45`, `:118` cùng file; test dùng |
 | `TestDisplayActivationOtpProvider` | `admin-activation/activation-otp-providers.ts:80` | Không chết | dựng ở `:127` cùng file |
 | `TransactionSession`, `BoundContext`, `ReadTransport`, `ChatRoutes`, `ConsumerPublisher`, `NotPersistedResult`, `ReplayAnswer` | nhiều file | Không chết | lớp nội bộ không export, dùng trong chính file (2-9 lần) |

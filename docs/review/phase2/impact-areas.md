@@ -25,6 +25,12 @@
 | H14 | Rút tiền | `wallet/withdrawal-money-service.ts`, `wallet/withdrawal-repository.ts` | 7 | 38 | notifications(8), driver-wallet(5), admin-finance(4), delivery(3), order-chat(3), address-change(1), app.module.ts(1), shipper-settlement(1) | 3 | 3 controller nhưng 18 thư mục |
 | H15 | Outbox | `outbox/outbox-dispatcher.ts` | 1 | 5 | notifications(2), main.ts(1), app.module.ts(1) | 0 | Dispatcher; consumer duy nhất là M08 |
 
+## Bổ sung theo review Antigravity (đã đối chiếu source, mục nào chưa kiểm ghi rõ)
+- **H01 Ví:** thiếu `DriverModule` (nối qua `DRIVER_WALLET_PORT`, `driver/driver-wallet-port.ts`, gắn bởi `WalletModule.onModuleInit`), `AdminShipperService` (`admin-shipper-service.ts:222-223`, điều kiện nạp tiền trước khi duyệt shipper), client 11Ship (`mobile/ship/lib/ship_tabs.dart:141,201`) và giao diện ví/nạp tiền của Admin Web (`apps/admin-web/src/core/finance.ts`; Lead chưa mở).
+- **H05 Hoa hồng:** chạm `reserveCommission` (nhận đơn, `delivery-shipper-service.ts:233`) và `captureCommission` (giao xong, `:568`) và `COMMISSION_ADJUSTMENT_PORT` (`admin-auth.module.ts:264`).
+- **H09 Thông báo:** mọi module ghi outbox đều là producer gián tiếp; còn client M08 (`mobile/packages/n11_shared/lib/src/m08/`) và hàng đợi việc thông báo của Admin Web (`apps/admin-web/src/core/notifications.ts`, Lead chưa mở) và cạnh `EventEmitter` `NotificationSignal`. Thay đổi payload outbox hoặc `NotificationEventService` ảnh hưởng toàn ứng dụng.
+- **H10/H11:** thêm các sweeper định kỳ (đều mở transaction), script CLI vận hành trong `scripts/` (nằm ngoài graph), và hợp đồng `Idempotency-Key` phía client (Dart `session_controller.dart`, Admin Web).
+
 ## Cách dùng
 Trước khi sửa một điểm nóng ở Phase 8, lấy danh sách này làm **checklist test tối thiểu**; sau đó mở file thật vì đây là cận dưới. Hai điểm nóng thuộc tầng nền (H10 Idempotency, H11 Giao dịch DB) chạm gần như toàn backend nên chỉ sửa với test hồi quy đầy đủ.
 
