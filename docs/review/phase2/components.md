@@ -84,6 +84,8 @@ Nguồn: script `nest.py` đọc **49 file `*.module.ts`**, **69 controller**, *
 
 ## 3. Tác vụ nền (không có `@Cron`/`@Interval`/`@OnEvent` nào trong `apps/backend/src`)
 
+**Định nghĩa số đếm (theo review Codex):** bảng dưới liệt kê **logical task** (11 dòng); số *runtime owner* khởi động bằng DI là **10** vì hai dòng cùng thuộc `NotificationRuntime` (tick outbox và retention) và `NotificationRuntime` còn chạy `ReminderBatcher` và `PushDispatcher` (`notifications/notification-runtime.ts:95-107`) mà bảng chưa tách; `ops-analytics-runtime.ts:28-47` có 2 timer; `delivery/delivery-tracking-public.controller.ts:214` có `setInterval` nhưng là script trình duyệt/poll theo request, **không** phải tác vụ nền. Tổng lần gọi `setInterval` trong code sản phẩm: 12 (Codex). Không dùng "11" như số scheduler.
+
 `ĐÃ MỞ SOURCE` (grep decorator = 0 kết quả; `setInterval` trong từng file bên dưới). Tất cả là `setInterval` khởi tạo trong `onApplicationBootstrap`. **Hệ quả cho G-5:** các lớp này không có cạnh "gọi" từ ai ngoài module khai báo; graph sẽ coi như không ai dùng. Loại trừ khỏi ứng viên mã chết.
 
 | Tác vụ | File (`apps/backend/src/…`) | Nhịp | Khởi động |

@@ -91,3 +91,16 @@ H.update({
 'M14-R-12': ['mobile/ship/lib/ship_home','shipping-policy/shipping-eligibility.ts'], 'M14-R-13': ['mobile/ship/lib/ship_online','shipper-self/shipper-self-service'], 'M14-R-14': ['mobile/packages/n11_m14/lib'],
 'M14-R-15': ['delivery/shipper-location','delivery/delivery-views'],
 })
+
+# --- v3 overrides after Codex review (2026-11-05) ---
+H.update({
+'M04-R-13': ['mobile/ship/lib/ship_tabs','mobile/ship/lib/ship_wallet','mobile/ship/lib/ship_home','mobile/packages/n11_shared/lib/src/wallet/wallet_http','driver-wallet/driver-wallet.controller'],
+'M12-R-13': ['admin-orders/admin-order-service','admin-orders/admin-order.controller','admin-orders/admin-order-chat-service'],
+'M04-R-07': ['wallet-topup/topup-request-service','wallet-topup/wallet-topup.controller'],
+'M04-R-08': ['admin-feedback/admin-feedback-service','wallet/wallet-adjustment-service','wallet/wallet-commission-adjustment.adapter'],
+'M04-R-02': ['wallet/commission-hold-service','wallet/topup-settlement-repository','wallet/wallet-adjustment-repository','wallet/withdrawal-money-service','wallet/wallet-repository'],
+'M04-R-03': ['wallet/commission-hold-service'],
+'M04-R-06': ['finance-access/finance-access.controller','finance-access/system-bank-account-service'],
+'M01-R-03': ['account-recovery/account-recovery.controller','account-recovery/account-recovery-service'],
+'M12-R-03': ['admin-access/admin-access.controller','admin-provisioning/','admin-activation/'],
+})

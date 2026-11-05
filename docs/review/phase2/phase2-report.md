@@ -2,7 +2,7 @@
 
 **SHA khảo sát:** `549572696efb4bbc18af3c362b7f56a5fcd335e6` (`main`, merge PR #298) · **Graphify:** graphifyy 0.9.100 · **Ngày:** 2026-11-02 · **Người lập:** Claude Lead (Executor Phase 2)
 
-**Trạng thái:** BẢN NHÁP v2: đã áp review Antigravity (2026-11-05, xem §9); CHỜ review Codex rồi Owner nghiệm thu. Phase 2 **không** tuyên bố code đúng, đạt baseline hay có lỗi. Chưa merge, chưa deploy, chưa APK, không sửa code sản phẩm.
+**Trạng thái:** BẢN NHÁP v3: đã áp review Antigravity (§9) và Codex (§10, 2026-11-05); chờ Owner nghiệm thu. Phase 2 **không** tuyên bố code đúng, đạt baseline hay có lỗi. Chưa merge, chưa deploy, chưa APK, không sửa code sản phẩm.
 
 
 **Quy ước độ tin:** `ĐÃ MỞ SOURCE` = người lập đã đọc đoạn mã nêu (file:dòng). `CHỈ TỪ GRAPH` = chỉ thấy trong graph, chưa mở source, không được xếp vào finding. `HEURISTIC` = suy từ script đọc source nhưng chưa đọc từng dòng.
@@ -23,10 +23,10 @@
 | Tầng | Thành phần | Số lượng / quy mô | Nối với |
 |---|---|---|---|
 | Client | 11Food (Flutter), 11Ship (Flutter), SMS Gateway (Flutter/Android), Admin Web (TS DOM) + Mini Business PWA, food-web/ship-web | 40 / 44 / 17 / 164 file | `n11_shared` (UI+controller chung), `n11_m14`, `n11_m14_map`; HTTP `/v1/*` |
-| Ranh giới vào | `app.setup.ts` (body parser, `rawBody`, prefix), `AllExceptionsFilter`, `SessionAuthGuard` (167 route), `AdminTransport` cookie+CSRF (129 route), `SmsGatewayAuthGuard` (4 route), 41 route không cơ chế thấy được | 412 route / 69 controller | Trust boundaries T1-T4 |
+| Ranh giới vào | `app.setup.ts` (body parser, `rawBody`, prefix), `AllExceptionsFilter`, `SessionAuthGuard` (167 route), `AdminTransport` cookie+CSRF (≈142 route theo Codex; script Lead 129), `SmsGatewayAuthGuard` (4 route), 41 route không cơ chế thấy được | 412 route / 69 controller | Trust boundaries T1-T4 |
 | Ứng dụng | 49 module NestJS (M00 nền → M14); `AdminAuthModule` gom admin | 811 file | Transaction, Idempotency, Outbox, Audit làm nền |
 | Nền chung | `TransactionManager`, `IdempotencyExecutor`, `OutboxDispatcher`, `audit/` | H10, H11, H15 | gần như mọi service |
-| Nền thời gian | 11 tác vụ `setInterval` trong tiến trình API | 2 s – 60 phút | DB, outbox |
+| Nền thời gian | 10 runtime owner định kỳ (`setInterval`), không `@Cron` | 2 s – 60 phút | DB, outbox |
 | Dữ liệu | PostgreSQL 17, 67 migration, 141 bảng | TLS bật bằng `config.tls` | `create-pool.ts` |
 | Ngoại vi | Valhalla/M14 (`POST /route`), FCM (OAuth JWT), SMS Gateway (kéo hàng đợi), GitHub Actions + VPS VinaHost | | Trust boundaries T5-T10 |
 
@@ -82,7 +82,7 @@
 | 4 | 198/198 dòng G-8 | Đạt (độ tin ghi từng dòng) |
 | 5 | Nêu giới hạn công cụ | Đạt (§5) |
 | 6 | Không đổi code sản phẩm/workflow/cấu hình | Đạt: PR chỉ thêm `docs/review/phase2/` |
-| 7 | Review độc lập có disposition | **Chưa**: chờ Codex, Antigravity |
+| 7 | Review độc lập có disposition | Đã có Antigravity (§9) và Codex (§10) với disposition từng điểm |
 
 Vì vậy Phase 2 **chưa** đủ điều kiện nghiệm thu; xem §8.
 
@@ -110,3 +110,22 @@ Người review chỉ đọc. Lead tự mở lại source cho từng ý trước
 | 5.2 #295 "xác nhận lỗi code rõ ràng" | AG nâng mức | **Không nhận mức "lỗi"** | Ví chỉ là ứng viên nguyên nhân; chưa chạy app (NOT TESTED). AG cũng ghi NOT TESTED; "Guest bấm sẽ gặp lỗi" chưa kiểm. Giữ là dẫn mối cho Phase 3 |
 
 Việc còn lại sau review này: T10 (workflow/script), mở nốt F1/F4/F6, hai hàm delivery sweeper chưa mở, review Codex.
+
+## 10. Disposition review Codex (review PR #301, 2026-11-05)
+
+Codex dựng lại graph độc lập: 29.524 node, 83.282 cạnh, INFERRED 5.941, sha256 `graph.json` **trùng tuyệt đối** với Run Record (G-1 đạt). Mẫu 15 mục: 14 đúng hoàn toàn, 1 đúng một phần (sai citation). Tổng route độc lập: 69 controller, 412 route, 167 route `SessionAuthGuard`, 4 SMS guard, 41 route không cơ chế: **khớp**; không có route công khai nào thực ra có guard mà bị bỏ sót.
+
+| Phát hiện Codex | Disposition | Việc đã làm |
+|---|---|---|
+| C-02: citation `reset_views.dart:4` sai, đúng là `:5` (và `m08_views.dart:7` có `show n11Route`) | **Chấp nhận** | Đã sửa `cycles.md` |
+| G-8: entry point nối bằng dấu cách thay vì `/` (0/15 URL đúng) | **Chấp nhận, đã sửa** | Sửa `g8b.py`; CSV dựng lại với `/v1/<controller>/<route>` |
+| G-8: `M04-R-13` hint chỉ trỏ backend, bỏ `ship_tabs.dart` (nơi sinh #295) | **Chấp nhận, đã sửa** | Hint thêm `ship_tabs`, `ship_wallet`, `ship_home`, `wallet_http` |
+| G-8: `M12-R-13` bỏ `AdminOrderService`, trúng false-positive | **Chấp nhận, đã sửa** | Hint trỏ `admin-order-service`, `admin-order.controller` |
+| G-8: `M04-R-07`, `M01-R-03` thiếu hoặc nhầm entry; `M04-R-02/03/06/08`, `M12-R-03` hint hẹp/rộng | **Chấp nhận một phần** | Đã chỉnh hint cho các dòng này. Entry vẫn có thể quá rộng. Không tuyên bố đã sửa hết 198 dòng |
+| Mẫu 20 dòng: component đúng 11, một phần 7, sai 2 | **Ghi nhận như tỉ lệ thật** | G-8 là danh sách ứng viên, đúng hoàn toàn khoảng 55% trên mẫu; **không dùng làm bảng entry point chính xác**. Phase 3 phải đọc lại ngữ nghĩa từng dòng. Các dòng ngoài mẫu **chưa được ai kiểm** |
+| T3: 129 route `AdminTransport` sai, thực tế 142 | **Chấp nhận** | Đổi nhãn trong `trust-boundaries.md`: 129 là cận dưới của script, 142 theo Codex; Lead tự đếm theo cách khác ra 154 (gồm cả `BusinessClientController`), nên con số chính xác phụ thuộc định nghĩa; **không** dùng làm số tuyệt đối |
+| "11 tác vụ" không nhất quán | **Chấp nhận** | Định nghĩa lại trong `components.md` §3: 11 logical task, 10 runtime owner, 12 lần gọi `setInterval`; bổ sung `ReminderBatcher`, `PushDispatcher`, poll tracking |
+| Ba ops ingest dùng machine credential, không thuộc 41 | Ghi nhận | Chưa mở `ops-client.controller.ts:62+`; để Phase 5 |
+| `IdempotencyCleanup`, `F3`, `F8`, `F9`, #295, #294 | Codex xác nhận đúng | Giữ nguyên |
+
+Sau hai review: G-1, G-2, G-4 đạt; G-5 cấp class đạt; G-6 là cận dưới đã bổ sung; G-3, G-7 còn phần chưa làm (T10 workflow/script, F1/F4/F6, hai hàm delivery sweeper); G-8 là ứng viên với độ chính xác đã đo trên mẫu.

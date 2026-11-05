@@ -21,8 +21,8 @@ Các cạnh khép vòng: `accounts.ts:8 import { Grants } from './menu.js'` · `
 `Kết luận:` không phải finding. Ghi để Phase 3 không báo lại. **Chưa kiểm** trình đóng gói thực tế (nếu dùng bundler khác `tsc` thì cần xem lại): NOT TESTED.
 
 ## C-02 `mobile/packages/n11_shared/lib/src`: 5 file, ĐÃ XÁC NHẬN ở source, vòng thật
-`shell.dart` → `m08/m08_views.dart` (`shell.dart:12`) → `account/account_views.dart` (`m08_views.dart:6`) → `shell.dart` (`account_views.dart:10`).
-Cạnh phụ: `account_views.dart` ⇄ `flows/reset_views.dart` (`reset_views.dart:4`, `account_views.dart:18`), `account_views.dart` ⇄ `flows/shop_views.dart` (`shop_views.dart:6`, `account_views.dart:16`), `m08_views.dart:9 → shell.dart`.
+`shell.dart` → `m08/m08_views.dart` (`shell.dart:12`) → `account/account_views.dart` (`m08_views.dart:7`, dạng `show n11Route`) → `shell.dart` (`account_views.dart:10`).
+Cạnh phụ: `account_views.dart` ⇄ `flows/reset_views.dart` (`reset_views.dart:5`, `account_views.dart:18`), `account_views.dart` ⇄ `flows/shop_views.dart` (`shop_views.dart:6`, `account_views.dart:16`), `m08_views.dart:9 → shell.dart` (citation đã sửa theo review Codex: `reset_views.dart:5`, `m08_views.dart:7`).
 Dart cho phép import vòng giữa các thư viện, nên đây không phải lỗi biên dịch. Đáng ghi vì: (a) `shell.dart`, `account_views.dart` là hai file trung tâm của cả hai app, (b) một vòng như vậy làm mọi thay đổi ở `account_views.dart` (chứa màn đăng xuất, #295) kéo theo cả `shell`, `m08`, `reset`, `shop`. `Mức:` quan sát cấu trúc, **không** phải finding sai chức năng.
 Ghi chú: ở `account_views.dart:16-19` file cũng import `m13_update`, `shop_controller`, `reset_controller`, tức là view biết cả controller của nhiều luồng.
 

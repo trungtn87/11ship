@@ -11,13 +11,13 @@
 |---|---|---|---|---|
 | T1 | Internet → API công khai | Khách chưa đăng nhập → 41 route không guard/transport | Xem §3: mỗi nhóm có cơ chế riêng (mode gate, limiter, token trong URL) | Mở source 4/13 nhóm |
 | T2 | App (11Food/11Ship) → API | Phiên native → 167 route dùng `SessionAuthGuard` | `auth/session-auth.guard.ts:12-21` (ĐÃ MỞ SOURCE phần đầu): Bearer token mờ; phiên PASSWORD mới **không** cần chứng minh thiết bị, phiên native cũ giữ proof thiết bị (`ClientDeviceProofService`, tùy chọn) cho đến khi đăng nhập lại bằng mật khẩu; chữ ký trên body cần `rawBody` (`app.setup.ts:92,116` nạp `rawBody` theo prefix) | Guard chưa đọc từng dòng |
-| T3 | Trình duyệt Admin → API | Cookie phiên + CSRF → 129 route qua `AdminTransport` | `AdminTransport.read/write` (`admin-shippers/admin-shipper.controller.ts:42`) + service **kiểm quyền lần hai** trong lock (comment `admin-order.controller.ts:13-15`); `noStoreMiddleware` áp bằng `forRoutes(...)` (`admin-auth.module.ts:318-323`) | Một phần |
+| T3 | Trình duyệt Admin → API | Cookie phiên + CSRF → khoảng 142 route qua `AdminTransport` trực tiếp hoặc qua hàm trợ giúp (Codex đếm độc lập theo block `@Controller`, 18 controller; script của Lead cho 129 khi chỉ tính handler gọi `transport.*`, và 154 nếu tính mọi route của controller có nhắc `AdminTransport`, gồm cả `BusinessClientController`) | `AdminTransport.read/write` (`admin-shippers/admin-shipper.controller.ts:42`) + service **kiểm quyền lần hai** trong lock (comment `admin-order.controller.ts:13-15`); `noStoreMiddleware` áp bằng `forRoutes(...)` (`admin-auth.module.ts:318-323`) | Một phần |
 | T4 | Thiết bị SMS Gateway → API | Bearer 256-bit → 4 route `SmsGatewayController` | `SmsGatewayAuthGuard` (`sms-gateway/sms-gateway-auth.guard.ts:1-30`): chỉ nhận token thiết bị, 401 đồng nhất | ĐÃ MỞ SOURCE (phần đầu) |
 | T5 | Backend → SMS Gateway | OTP đi qua hàng đợi, gateway kéo về | `SmsGatewayActivationOtpProvider`, `sms-queue-sweeper.ts` (30 s) | Chưa mở |
 | T6 | Backend → Valhalla/M14 | `POST {origin}/route`, 2 điểm, `AbortSignal.timeout(config.timeoutMs)`, ngoài transaction, không fallback | `delivery/m14-route-client.ts:6-8,80-85` | ĐÃ MỞ SOURCE (không thấy xác thực/ TLS riêng: phụ thuộc mạng nội bộ VPS: ghi cho Phase 5) |
 | T7 | Backend → PostgreSQL | `pg` pool; có `config.tls` thì `ssl:{ca, rejectUnauthorized:true}`, không có thì **không SSL** (local/CI) | `database/create-pool.ts:12-34` | ĐÃ MỞ SOURCE |
 | T8 | Backend → FCM | OAuth JWT service account → `fcm.googleapis.com` | `notifications/push-provider.ts:61,104,152-176` | Một phần; FCM bị hoãn theo `M08-R-11` |
-| T9 | Tác vụ nền / runner | 11 tác vụ `setInterval` trong tiến trình API, không có API riêng | Components §3 | ĐÃ MỞ SOURCE |
+| T9 | Tác vụ nền / runner | 10 "runtime owner" định kỳ trong tiến trình API (xem components.md §3), không có API riêng | Components §3 | ĐÃ MỞ SOURCE |
 | T10 | Runner CI/deploy → VPS; script vận hành | `deploy-vps.yml`, `recover-*.yml`, workflow; `scripts/` (ví dụ `admin-auth-init-limit-config.js` tạo HMAC rate limit, `admin-auth-bootstrap-system.js` tạo admin gốc, `sms-gateway-ctl.js`, `db-migrate.js` theo Antigravity) | Không nằm trong graph (YAML, script ngoài `apps`) | **CHƯA LÀM**; thuộc Phase 5. Ghi nhận thêm cổng khởi động `AdminLimitConfigVerifier` (`admin-limit-config-verifier.ts:19-34`): backend từ chối chạy nếu cấu hình HMAC rate limit không khớp DB |
 | T11 | Upload (ảnh món, logo, bằng chứng) | Base64 trong JSON, giới hạn 2 MB/3,5 MB/7,5 MB theo route | `app.setup.ts:68-85,98-104` | ĐÃ MỞ SOURCE |
 
@@ -26,7 +26,7 @@
 | Cơ chế | Số route |
 |---|---|
 | UseGuards(SessionAuthGuard) | 167 |
-| AdminTransport (cookie+CSRF) | 129 |
+| AdminTransport (cookie+CSRF) | 129 theo script (**cận dưới**: bỏ route gọi qua hàm trợ giúp như `#run`/`write`); Codex độc lập: 142 |
 | trong handler (heuristic) | 71 |
 | không thấy cơ chế (public hoặc cơ chế khác) | 41 |
 | UseGuards(SmsGatewayAuthGuard) | 4 |

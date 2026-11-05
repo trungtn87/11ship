@@ -56,7 +56,7 @@ for rid, mod, title in req:
     for f in comp:
         for cn, r in ctrl_by_file.get(f, []):
             cp = [c['path'] for c in nest['controllers'] if c['name'] == cn][0]
-            eps.append('%s /%s %s -> %s.%s @%s:%d' % (r['method'], cp.strip('/'), r['path'], cn, r['handler'], f.split('src/')[-1], r['line']))
+            eps.append('%s /v1/%s -> %s.%s @%s:%d' % (r['method'], '/'.join(x for x in [cp.strip('/'), r['path'].strip('/')] if x), cn, r['handler'], f.split('src/')[-1], r['line']))
     cs = set(comp)
     tests = sorted({src for src, dst in IMPT if dst in cs})
     comp_s = [f for f in comp if not f.endswith('.sql')]
