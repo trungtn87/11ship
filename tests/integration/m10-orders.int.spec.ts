@@ -1367,14 +1367,14 @@ describe('M10 — food orders', () => {
     // staff-style session the other tests use is restored at the end.
     const food = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: shop.user.phone.local, password: shop.user.password, device: { device_id: 'web-food-m10-link', platform: 'WEB', app: 'FOOD' } } });
     const foodToken = String(ok(food).access_token);
-    ok(await app.call('POST', '/auth/role/select', { bearer: foodToken, body: { role: 'SHOP' } }));
+    ok(await app.call('POST', '/client-auth/context', { bearer: foodToken, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } }));
     shop = { ...shop, token: foodToken };
     try {
       await everyNoticeOpensTheOrder(s, foodToken);
     } finally {
       const back = await loginUser(app, shop.user);
       const token = String(ok(back).access_token);
-      ok(await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } }));
+      ok(await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } }));
       shop = { ...shop, token, sessionId: await sessionIdOfToken(app.pool, token) };
     }
   });

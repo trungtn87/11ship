@@ -70,7 +70,7 @@ describe('M02-A — replay authorization', () => {
     const login = await loginUser(app, owner.user);
     expect(login.status).toBe(200);
     const token = String(dataOf(login).access_token);
-    expect((await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } })).status).toBe(200);
+    expect((await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } })).status).toBe(200);
     return token;
   }
 

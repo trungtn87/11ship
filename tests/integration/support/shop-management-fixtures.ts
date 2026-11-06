@@ -45,7 +45,7 @@ export async function createShopOwner(app: AuthApp, options: { areaId?: string }
   const areaId = options.areaId ?? (await createServiceArea(app.pool));
   await grantStrayRole(app.pool, user.userId, 'SHOP');
   const shopId = await createActiveShopFor(app.pool, user.userId, areaId);
-  const selected = await app.call('POST', '/auth/role/select', { bearer: user.accessToken, body: { role: 'SHOP' } });
+  const selected = await app.call('POST', '/client-auth/context', { bearer: user.accessToken, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } });
   expect(selected.status).toBe(200);
   return {
     user,

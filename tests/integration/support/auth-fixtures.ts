@@ -20,7 +20,10 @@ import { testPool } from './transaction-fixtures';
 
 export const PASSWORD = 'Correct-Horse-Battery-9';
 export const OTHER_PASSWORD = 'Another-Passw0rd-Entirely';
-export const DEVICE = Object.freeze({ device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' });
+// Client-auth devices (OD-1: the legacy /auth routes and their SHIP11 device labels are gone). WEB sessions need no native device proof.
+export const DEVICE = Object.freeze({ device_id: 'device-test-0001', platform: 'WEB', app: 'FOOD' });
+export const SHIP_DEVICE = Object.freeze({ device_id: 'device-test-0002', platform: 'WEB', app: 'SHIP' });
+export const CONSENT = Object.freeze({ terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' });
 
 export const TEST_OTP_KEY_BYTES = Buffer.alloc(32, 7);
 
@@ -544,6 +547,8 @@ export function registerBody(
     password: overrides.password ?? PASSWORD,
     verification_token: proofToken,
     device: overrides.device ?? { ...DEVICE },
+    full_name: 'Người dùng thử',
+    consent: { ...CONSENT },
     ...(overrides.extra ?? {}),
   };
 }
@@ -558,19 +563,19 @@ export interface Registered {
   readonly accessToken: string;
 }
 
-/** The whole happy path: OTP, proof, register. Throws unless register answered 201. */
+/** The whole happy path: OTP, proof, POST /client-auth/register. Throws unless it answered 201. FOOD web device unless 'ship' (SHIP web device) or an explicit device. */
 export async function registerUser(
   app: AuthApp,
-  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown> } = {},
+  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown>; ship?: boolean } = {},
 ): Promise<Registered> {
   const proof = await obtainProof(app, options.phone ?? randomPhone());
   const key = options.key ?? randomUUID();
   const password = options.password ?? PASSWORD;
-  const response = await app.call('POST', '/auth/register', {
+  const response = await app.call('POST', '/client-auth/register', {
     headers: { 'idempotency-key': key },
     body: registerBody(proof.phone, proof.proofToken, {
       password,
-      ...(options.device === undefined ? {} : { device: options.device }),
+      device: options.device ?? (options.ship === true ? { ...SHIP_DEVICE } : { ...DEVICE }),
     }),
   });
   if (response.status !== 201) {
@@ -588,12 +593,26 @@ export async function registerUser(
   };
 }
 
+/** POST /client-auth/login with a fresh Idempotency-Key. Default device: the FOOD web device. */
 export async function loginUser(
   app: AuthApp,
   user: { phone: Phone; password: string },
   device: Record<string, unknown> = { ...DEVICE },
 ): Promise<ApiResponse> {
-  return app.call('POST', '/auth/login', { body: { phone: user.phone.local, password: user.password, device } });
+  return app.call('POST', '/client-auth/login', {
+    headers: { 'idempotency-key': randomUUID() },
+    body: { phone: user.phone.local, password: user.password, device },
+  });
+}
+
+/** GET /client-auth/me (the identity of the session behind the token). */
+export function meOf(app: AuthApp, token: string): Promise<ApiResponse> {
+  return app.call('GET', '/client-auth/me', { bearer: token });
+}
+
+/** POST /client-auth/context: wear a public context (CUSTOMER, SHOP_OWNER, DRIVER) on the session. */
+export function selectContext(app: AuthApp, token: string, context: string): Promise<ApiResponse> {
+  return app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context } });
 }
 
 /** A service area fixture with a unique code. Removed by purgeTestServiceAreas when the app closes. */

@@ -84,7 +84,7 @@ describe('M02-A — Shop management', () => {
       // A user with both roles whose current context is DRIVER.
       const both = await createShopOwner(app);
       await grantRole(app.pool, both.userId, 'DRIVER');
-      expect((await app.call('POST', '/auth/role/select', { bearer: both.token, body: { role: 'DRIVER' } })).status).toBe(200);
+      expect((await app.call('POST', '/client-auth/context', { bearer: both.token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } })).status).toBe(200);
       const d = await getShop(app, both.token);
       expect([d.status, errorCode(d)]).toEqual([403, 'SHOP_ROLE_REQUIRED']);
       for (const response of [
