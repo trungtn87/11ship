@@ -5,6 +5,7 @@ import { Keyring } from '../crypto/keyring';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { TransactionModule } from '../transaction/transaction.module';
 import { IdempotencyCleanup } from './idempotency-cleanup';
+import { IdempotencyCleanupRuntime } from './idempotency-cleanup-runtime';
 import { IdempotencyExecutor } from './idempotency-executor';
 
 /**
@@ -34,6 +35,7 @@ export function requireKeyring(config: AppConfig): Keyring {
       inject: [TransactionManager],
       useFactory: (manager: TransactionManager) => new IdempotencyCleanup(manager),
     },
+    IdempotencyCleanupRuntime,
   ],
   exports: [IdempotencyExecutor, IdempotencyCleanup],
 })
