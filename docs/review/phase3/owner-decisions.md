@@ -50,3 +50,17 @@ SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. Mỗi mục: câu hỏi ngắn, 
 | OD-18 | Sửa baseline theo kiến trúc hiện hành: giỏ hàng server-authoritative theo tài khoản, app chỉ giữ cache cục bộ; địa chỉ mô tả rõ `pickup default` và `delivery default`, không ghi "chỉ một default" | sửa baseline |
 
 Ghi chú của Owner về #294: nguyên nhân kiến trúc đã giải thích được (Home đo GPS → quán; quote/đơn đo quán → địa chỉ giao; định tuyến có hướng nên hai số không cùng một phép đo). Yêu cầu lớn hơn về đồng bộ ý nghĩa khoảng cách và tuyến hiển thị vẫn **chưa nghiệm thu**, nhất là M14-R-11 MISMATCH.
+
+## Quyết định bổ sung của Owner (2026-11-06)
+
+Ba mục "chưa có OD" ở Phase 3: Owner chọn phương án A cho cả ba và **giữ nguyên baseline, không hạ yêu cầu để khớp code hiện tại**.
+
+| OD | Quyết định của Owner | Phase thực hiện |
+|---|---|---|
+| OD-19 (M01-R-11 / C-20) | Người dùng tự gửi yêu cầu xóa tài khoản từ app/web; Admin là người thực hiện xóa | Phase 5 — Functional & Authorization Fixes |
+| OD-20 (M04-R-15 / C-27) | Toàn bộ `wallet.*` và các bộ đếm liên quan phải kiểm scope DRIVER; có permission nhưng không có scope DRIVER thì 403. Làm cùng đợt rà phân quyền Admin | Phase 5 — Functional & Authorization Fixes |
+| OD-21 (M14-R-11 / #294) | Backend trả và lưu `geometry` + `route_version` của chính tuyến dùng để báo giá; app chỉ vẽ geometry đó. Nguyên tắc: tuyến hiển thị = tuyến báo giá đã lưu; routing engine mới không được đổi hình tuyến của báo giá/đơn cũ. Liên quan M14-R-10 | Phase 6 — M14 Routing & Quote Geometry |
+
+**M08 `STALE_EVENT` (quyết định Owner 2026-11-06):** không chấp nhận quy tắc "quá 24 giờ thì âm thầm bỏ" cho mọi loại sự kiện. Giữ ngưỡng 24 giờ cho thông báo thời điểm (offer/reminder đã hết ý nghĩa). Sự kiện tài chính, tài khoản và trạng thái kết thúc của order/delivery không được mất âm thầm: phải lưu audit, đối chiếu trạng thái hiện tại và đưa vào inbox hoặc hàng đợi xử lý phù hợp. Ghi metric/cảnh báo cho `STALE_EVENT`. Triển khai ở phase kỹ thuật M08, không nằm trong PR cleanup đầu tiên.
+
+**Trạng thái áp dụng vào baseline:** OD-3, 6, 7, 8, 9, 10, 14, 15, 16, 18, 19, 20, 21 đã được ghi vào `docs/baseline/requirements.md`. OD-17 (thêm requirement cho chính sách hoa hồng, kiểm duyệt đánh giá, đối soát, middleware truyền tải) **chưa được viết vào baseline**: nội dung nghiệp vụ cần Claude Lead soạn từ code rồi Owner duyệt trước; mức nạp/rút tối thiểu vẫn là policy chưa duyệt. OD-1, 2, 4, 5, 11, 12, 13 là việc code/vận hành, không phải sửa baseline (OD-13 đã xong ở PR #303).
