@@ -28,7 +28,7 @@ export function validate(body, { draft = false, createdAt = '1970-01-01T00:00:00
   }
   for (const key of REQUIRED) if (invalid(values.get(key))) errors.push('Missing usable ' + key);
   const exec = values.get('Executor') || '';
-  if (!/^(?:CLAUDE_LOCAL|CLAUDE_CLOUD|CODEX_CLOUD|CODEX_LOCAL)$/i.test(exec)) errors.push('Invalid Executor');
+  if (!/^(?:CLAUDE_LOCAL|CLAUDE_CLOUD|CODEX_CLOUD|CODEX_LOCAL|ANTIGRAVITY)$/i.test(exec)) errors.push('Invalid Executor');
   const read = values.get('Rules-read') || '';
   if (!read.includes('AGENTS.md') || !read.includes('docs/ai-governance/README.md'))
     errors.push('Rules-read must mention both mandatory entrypoints');
