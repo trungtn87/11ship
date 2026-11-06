@@ -17,8 +17,8 @@ function assertBatchSize(batchSize: number): void {
 }
 
 /**
- * Callable cleanup primitive for app.idempotency_records (ADR-003 section 5). There is NO scheduler
- * here: a later slice or an operator calls it. Each phase is one short transaction that
+ * Callable cleanup primitive for app.idempotency_records (ADR-003 section 5). The daily schedule lives in
+ * IdempotencyCleanupRuntime (OD-11); an operator may also call it. Each phase is one short transaction that
  *  - claims a bounded batch with FOR UPDATE SKIP LOCKED (a row held by an executor is skipped, so
  *    cleanup never nulls or deletes a row that is being replayed);
  *  - re-checks eligibility against a fresh clock_timestamp() on the claimed rows, in the same
