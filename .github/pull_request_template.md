@@ -15,7 +15,7 @@ The section between the markers is checked by the Governance readiness workflow 
 - Open-blockers: PENDING
 
 ## Required content and examples
-- Executor: CLAUDE_LOCAL | CLAUDE_CLOUD | CODEX_CLOUD | CODEX_LOCAL (one at a time).
+- Executor: CLAUDE_LOCAL | CLAUDE_CLOUD | CODEX_CLOUD | CODEX_LOCAL | ANTIGRAVITY (one at a time; ANTIGRAVITY only when the Owner explicitly assigned it as implementer).
 - Rules-read: Confirm reading `AGENTS.md`, `docs/ai-governance/README.md`, assigned workflow and role file (Claude: `CLAUDE.md`; Codex: `docs/ai-governance/CODEX-EXECUTION.md`), with actual timestamp.
 - Scope: Issue IDs, Owner-approved goals, acceptance criteria and any excluded changes.
 - Baseline-SHA / Remote-head-SHA: full 40-character commit SHA; never invent these.

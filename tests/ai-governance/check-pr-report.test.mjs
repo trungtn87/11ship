@@ -23,6 +23,14 @@ test('complete ready-to-review report passes', () => {
   assert.equal(result.passed, true);
   assert.deepEqual(result.errors, []);
 });
+test('ANTIGRAVITY is a valid executor; unknown executors are still rejected', () => {
+  const ag = validate(full.replace('CLAUDE_LOCAL', 'ANTIGRAVITY').replace(' CLAUDE.md ', ' '), { draft: false, createdAt, headSha });
+  assert.equal(ag.passed, true);
+  const unknown = validate(full.replace('CLAUDE_LOCAL', 'SOMEONE_ELSE'), { draft: false, createdAt, headSha });
+  assert.equal(unknown.passed, false);
+  assert.ok(unknown.errors.includes('Invalid Executor'));
+});
+
 test('missing reading acknowledgement fails on new ready PR', () => {
   const result = validate(full.replace('AGENTS.md', 'OTHER.md'), { createdAt, headSha });
   assert.equal(result.passed, false);
