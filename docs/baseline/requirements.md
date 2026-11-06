@@ -2,7 +2,7 @@
 
 **Phiên bản:** v0.9 (v0.8 đồng bộ OD-3..21; v0.9 thêm M04-R-16 và M11-R-11 theo OD-17/22/23; v0.7 áp review Codex B-02 và Antigravity, Owner chốt C-01..C-28 và B-04 ngày 02/11; v0.8 đồng bộ quyết định Owner 05–06/11: OD-3..21 và M08 STALE_EVENT) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-06 · **Người lập:** Claude Lead, cập nhật quyết định Owner
 **Trạng thái:** DRAFT chờ Owner duyệt. Owner đã chốt C-01…C-28 (01/11) và các quyết định B-04 (02/11). B-03 đã đóng khảo sát, chưa đạt nghiệm thu. Owner 05–06/11 đã quyết OD-1..OD-21 (xem `docs/review/phase3/owner-decisions.md`); OD-17 đã xử lý: hoa hồng (M04-R-16) và kiểm duyệt đánh giá (M11-R-11) vào baseline; đối soát và header truyền tải vào `docs/process/technical-ops-security-baseline.md`. **Đây là baseline tài liệu: chưa xác nhận code/runtime đạt baseline. PR #298 đã merge ngày 02/11 (`5495726`).**
-**Mốc tài liệu nguồn:** lập từ `main` tại `fb3ba2c` (sau #297); bản v0.8 sửa trên `main` tại `85467a8` (sau #303). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
+**Mốc tài liệu nguồn:** lập từ `main` tại `fb3ba2c` (sau #297); bản v0.8 sửa trên `main` tại `85467a8` (sau #303); bản v0.9 sửa trên `main` tại `d2d392e` (sau #304). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
 ## 0. Cách đọc tài liệu
 
