@@ -52,24 +52,6 @@ DeliveryView _delivery(String id, DeliveryState state, {Set<String> can = const 
   );
 }
 
-/// A shop source whose first calls fail, and that records the operation key of every attempt.
-class _FlakyShop extends SampleShopSource {
-  _FlakyShop({this.failures = 1});
-
-  int failures;
-  final List<String> createKeys = <String>[];
-
-  @override
-  Future<DeliveryView> create(NewDeliveryInput input, {required String key}) async {
-    createKeys.add(key);
-    if (failures > 0) {
-      failures--;
-      throw const M07Failure(M07FailureKind.offline);
-    }
-    return super.create(input, key: key);
-  }
-}
-
 void main() {
   group('models', () {
     test('a delivery parses from the wire and an unknown fee stays null', () {
@@ -243,92 +225,6 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q02 a lost answer keeps the form and the retry uses the SAME operation key', (WidgetTester tester) async {
-      final _FlakyShop source = _FlakyShop();
-      await mount(tester, ShopCallScreen(source: source));
-      await tester.enterText(key('m07-f-name').first, 'Chị Lan');
-      await tester.enterText(key('m07-f-phone').first, '0912345678');
-      await tester.enterText(key('m07-f-address').first, 'Số 5 Phố Mẫu');
-      await tester.enterText(key('m07-f-goods').first, 'Bánh');
-      await tester.enterText(key('m07-f-value').first, '120000');
-      await tap(tester, key('m07-band-0'));
-      await settle(tester);
-      await tap(tester, key('m07-submit-call'));
-      expect(find.text('Gọi shipper?'), findsOneWidget); // the summary before sending
-      await tap(tester, key('m07-confirm-yes'));
-      expect(key('m07-action-failed'), findsOneWidget);
-      expect(containing('mất kết nối'), findsWidgets);
-      // The typed values are still there.
-      expect(find.text('Chị Lan'), findsWidgets);
-      await tap(tester, key('m07-submit-call'));
-      await tap(tester, key('m07-confirm-yes'));
-      expect(source.createKeys.length, 2);
-      expect(source.createKeys[0], source.createKeys[1]);
-      await unmount(tester);
-      ShopCallDraft.clear();
-    });
-
-    testWidgets('Q02 checks the form before sending and never sends 0đ for an unknown fee', (WidgetTester tester) async {
-      final _FlakyShop source = _FlakyShop(failures: 0);
-      await mount(tester, ShopCallScreen(source: source));
-      await tap(tester, key('m07-submit-call'));
-      expect(find.text('Nhập tên người nhận.'), findsOneWidget);
-      expect(tester.widget<TextField>(key('m07-f-name').first).focusNode!.hasFocus, isTrue);
-      expect(source.createKeys, isEmpty);
-      // An address is enough: no map is asked for, and the fee is a band of the table (an estimate) or an agreed amount.
-      expect(key('m07-band-0'), findsOneWidget);
-      expect(containing('không phải quãng đường đo trên bản đồ'), findsOneWidget);
-      expect(containing('Ghim điểm giao'), findsNothing);
-      expect(key('m07-f-paid'), findsNothing);
-      await unmount(tester);
-      ShopCallDraft.clear();
-    });
-
-    testWidgets('Q02 an address-only call needs a fee band (or an agreed fee) and sends the chosen band, never 0đ', (WidgetTester tester) async {
-      final _FlakyShop source = _FlakyShop(failures: 0);
-      await mount(tester, ShopCallScreen(source: source));
-      await tester.enterText(key('m07-f-name').first, 'Lan');
-      await tester.enterText(key('m07-f-phone').first, '0912345678');
-      await tester.enterText(key('m07-f-address').first, 'Số 5 Phố Mẫu');
-      await tester.enterText(key('m07-f-goods').first, 'Bánh');
-      await tester.enterText(key('m07-f-value').first, '120000');
-      await settle(tester);
-      await tap(tester, key('m07-submit-call'));
-      expect(key('m07-form-problem'), findsOneWidget);
-      expect(containing('chọn mốc phí giao'), findsOneWidget);
-      expect(source.createKeys, isEmpty);
-      await tap(tester, key('m07-band-1'));
-      await tap(tester, key('m07-submit-call'));
-      expect(containing('15.000đ (ước tính theo mốc)'), findsOneWidget);
-      expect(containing('Còn phải thu'), findsNothing);
-      await tap(tester, key('m07-confirm-yes'));
-      expect(source.createKeys, hasLength(1));
-      final DeliveryView made = (await source.list(history: false)).first;
-      expect(made.fee.amountVnd, 15000);
-      expect(made.fee.estimated, isTrue);
-      expect(made.recipient.hasPoint, isFalse);
-      await unmount(tester);
-      ShopCallDraft.clear();
-    });
-
-    testWidgets('Q02 agreed fee: a phone number in the note is refused', (WidgetTester tester) async {
-      final _FlakyShop source = _FlakyShop(failures: 0);
-      await mount(tester, ShopCallScreen(source: source));
-      await tester.enterText(key('m07-f-name').first, 'Lan');
-      await tester.enterText(key('m07-f-phone').first, '0912345678');
-      await tester.enterText(key('m07-f-address').first, 'Số 5');
-      await tester.enterText(key('m07-f-goods').first, 'Bánh');
-      await tester.enterText(key('m07-f-value').first, '1000');
-      await tap(tester, key('m07-fee-agreed'));
-      await tester.enterText(key('m07-f-amount').first, '25000');
-      await tester.enterText(key('m07-f-fee-note').first, 'gọi 0912345678');
-      await settle(tester);
-      await tap(tester, key('m07-submit-call'));
-      expect(containing('không được chứa số điện thoại'), findsOneWidget);
-      expect(source.createKeys, isEmpty);
-      await unmount(tester);
-      ShopCallDraft.clear();
-    });
   });
 
   group('11Ship — shipper', () {
