@@ -650,7 +650,7 @@ describe('M01.03 — client register', () => {
     });
 
     it('fails closed (503, nothing written) when the server has no consent pair configured', async () => {
-      const unconfigured = await startAuthApp();
+      const unconfigured = await startAuthApp({}, { configOverride: { clientAuth: undefined } });
       try {
         const proof = await obtainProof(unconfigured, randomPhone());
         const response = await call(body(proof.phone, proof.proofToken), randomUUID(), unconfigured);

@@ -19,7 +19,7 @@ describe('M01-D-LOGIN - account origin guard in Auth Core', () => {
     const login = await loginUser(app, user);
     expect(login.status).toBe(200);
     const token = String((login.body.data as { access_token: string }).access_token);
-    const me = await app.call('GET', '/auth/me', { bearer: token });
+    const me = await app.call('GET', '/client-auth/me', { bearer: token });
     expect(me.status).toBe(200);
   });
 
@@ -39,13 +39,13 @@ describe('M01-D-LOGIN - account origin guard in Auth Core', () => {
 
   it('an existing application session of an account that becomes ADMIN_PROVISIONED is invalid', async () => {
     const user = await registerUser(app);
-    const before = await app.call('GET', '/auth/me', { bearer: user.accessToken });
+    const before = await app.call('GET', '/client-auth/me', { bearer: user.accessToken });
     expect(before.status).toBe(200);
     await app.pool.query(
       `UPDATE app.users SET account_origin = 'ADMIN_PROVISIONED', phone_verified_at = NULL WHERE user_id = $1::uuid`,
       [user.userId],
     );
-    const after = await app.call('GET', '/auth/me', { bearer: user.accessToken });
+    const after = await app.call('GET', '/client-auth/me', { bearer: user.accessToken });
     expect(after.status).toBe(401);
     expect(errorCode(after)).toBe('SESSION_INVALID');
   });

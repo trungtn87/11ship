@@ -151,6 +151,8 @@ export async function startAuthApp(
     ...base,
     crypto: fixtureKeyring(extra.activeKeyId ?? 'k1'),
     auth: authTestConfig(authOverrides),
+    // OD-1: every account is created through /client-auth, so the consent pair is configured unless a test passes its own (or clientAuth: undefined).
+    clientAuth: { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version },
     ...(extra.configOverride ?? {}),
   };
   const provider = new FakeOtpProvider();

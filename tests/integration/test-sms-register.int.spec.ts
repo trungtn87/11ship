@@ -68,7 +68,7 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
     expect(containsCode(verified.text, otp)).toBe(false);
     const proofToken = String(dataOf(verified).verification_token);
 
-    const registered = await app.call('POST', '/auth/register', {
+    const registered = await app.call('POST', '/client-auth/register', {
       headers: { 'idempotency-key': randomUUID() },
       body: registerBody(phone as never, proofToken),
     });
@@ -155,9 +155,9 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
     const id = String(dataOf(await requestOtp(phone)).verification_id);
     const verified = await verify(id, await readOtp(app.harness, 'REGISTER', phone.normalized));
     const proofToken = String(dataOf(verified).verification_token);
-    const first = await app.call('POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone as never, proofToken) });
+    const first = await app.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: registerBody(phone as never, proofToken) });
     expect(first.status).toBe(201);
-    const second = await app.call('POST', '/auth/register', {
+    const second = await app.call('POST', '/client-auth/register', {
       headers: { 'idempotency-key': randomUUID() },
       body: registerBody(phone as never, proofToken, { password: `${PASSWORD}-2` }),
     });
@@ -209,7 +209,7 @@ describe('M01.22 — REGISTER OTP through the test inbox', () => {
     const otp = await readOtp(app.harness, 'REGISTER', phone.normalized);
     const verified = await verify(id, otp);
     const proofToken = String(dataOf(verified).verification_token);
-    const registered = await app.call('POST', '/auth/register', {
+    const registered = await app.call('POST', '/client-auth/register', {
       headers: { 'idempotency-key': randomUUID() },
       body: registerBody(phone as never, proofToken),
     });

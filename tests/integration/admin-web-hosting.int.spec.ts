@@ -143,7 +143,7 @@ describe('issue #49 — Admin web hosted on the API origin', () => {
   });
 
   it('is installed in front of the body parser: the parser error of an API call keeps the API envelope, a static call never sees it', async () => {
-    const api = await send('POST', '/v1/auth/login', { body: '{"broken":', headers: { 'content-type': 'application/json' } });
+    const api = await send('POST', '/v1/client-auth/login', { body: '{"broken":', headers: { 'content-type': 'application/json' } });
     expect(api.status).toBeGreaterThanOrEqual(400);
     expect(api.status).toBeLessThan(500);
     expect(api.headers['content-type']).toContain('application/json');
