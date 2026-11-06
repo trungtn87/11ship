@@ -318,7 +318,7 @@ export class ProvisioningController {
     this.#set({ ...screen, draft, fieldErrors: {}, formError: undefined, notice: undefined, pending: true });
     // One idempotency key per logical request: created here, kept through every deliberate repeat of the business POST.
     const flow: Flow = { request: built.request, key: this.newKey() };
-    const result = await this.api.createOperation(csrf, built.request);
+    const result = await this.api.createOperation(csrf, built.request, flow.key);
     if (generation !== this.#generation || this.#screen.name !== 'compose') {
       return 'sent';
     }

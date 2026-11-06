@@ -156,12 +156,12 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
     it('create-operation (create / reissue target) and verify', async () => {
       const create = traced();
       const payload = createPayload();
-      const created = await create.services.operations.createOperation(cookie(), csrf(), createRequest(payload), meta());
-      expectOrdered(create.trace, [...ACTOR_WRITE, 'L9 admin_sensitive_operations'], { ownLockTimeout: true });
+      const created = await create.services.operations.createOperation(cookie(), csrf(), createRequest(payload), randomUUID(), meta());
+      expectOrdered(create.trace, ['L1 idempotency advisory', 'L1 idempotency record', ...ACTOR_WRITE, 'L9 admin_sensitive_operations'], { ownLockTimeout: true });
 
       await rewindAcceptedStep(app, system.account.userId);
       const verify = traced();
-      await verify.services.operations.verify(cookie(), csrf(), created.operation_id, totpNow(system.login.secret), meta());
+      await verify.services.operations.verify(cookie(), csrf(), (created.payload as { operation_id: string }).operation_id, totpNow(system.login.secret), meta());
       expectOrdered(verify.trace, ['L2 TOTP bucket', 'L2 TOTP bucket', ...ACTOR_WRITE, 'L9 admin_sensitive_operations'], {
         ownLockTimeout: true,
       });
@@ -173,9 +173,10 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         cookie(),
         csrf(),
         parseOperationBody({ action: 'REISSUE_INVITATION', payload: { invitation_id: invitation.invitationId, expected_version: 1, reason: 'r' } }),
+        randomUUID(),
         meta(),
       );
-      expectOrdered(reissue.trace, [...ACTOR_WRITE, 'L8 admin_invitations', 'L9 admin_sensitive_operations'], { ownLockTimeout: true });
+      expectOrdered(reissue.trace, ['L1 idempotency advisory', 'L1 idempotency record', ...ACTOR_WRITE, 'L8 admin_invitations', 'L9 admin_sensitive_operations'], { ownLockTimeout: true });
     });
 
     it('create / reissue / revoke (executor) and the sensitive replay', async () => {
@@ -265,15 +266,15 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
 
     it('S1 create-operation x create-operation, no live operation: the second waits, then replaces the first (no 23505)', async () => {
       const a = gated(USER_X);
-      const first = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const first = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await a.gate.reached.promise;
-      const second = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const second = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await waitForBlockedBackends(app.pool);
       a.gate.release.resolve();
       const [one, two] = await Promise.all([first, second]);
       expect(one.ok && two.ok).toBe(true);
-      const firstId = one.ok ? one.value.operation_id : '';
-      const secondId = two.ok ? two.value.operation_id : '';
+      const firstId = one.ok ? (one.value.payload as { operation_id: string }).operation_id : '';
+      const secondId = two.ok ? (two.value.payload as { operation_id: string }).operation_id : '';
       expect(await operationRow(app.pool, firstId)).toMatchObject({ status: 'INVALIDATED', invalidated_reason: 'REPLACED' });
       expect(await operationRow(app.pool, secondId)).toMatchObject({ status: 'PENDING' });
       expect(await liveOperations()).toBe(1);
@@ -282,16 +283,16 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
     it('S2 create-operation x create-operation with a live operation: both replace in lock order, one live row remains', async () => {
       const existing = await createOperation(app, system, 'CREATE_INVITATION', createPayload());
       const a = gated(LIVE_OPERATIONS);
-      const first = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const first = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await a.gate.reached.promise;
-      const second = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const second = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await waitForBlockedBackends(app.pool);
       a.gate.release.resolve();
       const [one, two] = await Promise.all([first, second]);
       expect(one.ok && two.ok).toBe(true);
       expect(await operationRow(app.pool, existing)).toMatchObject({ status: 'INVALIDATED', invalidated_reason: 'REPLACED' });
-      expect(await operationRow(app.pool, one.ok ? one.value.operation_id : '')).toMatchObject({ status: 'INVALIDATED', invalidated_reason: 'REPLACED' });
-      expect(await operationRow(app.pool, two.ok ? two.value.operation_id : '')).toMatchObject({ status: 'PENDING' });
+      expect(await operationRow(app.pool, one.ok ? (one.value.payload as { operation_id: string }).operation_id : '')).toMatchObject({ status: 'INVALIDATED', invalidated_reason: 'REPLACED' });
+      expect(await operationRow(app.pool, two.ok ? (two.value.payload as { operation_id: string }).operation_id : '')).toMatchObject({ status: 'PENDING' });
       expect(await liveOperations()).toBe(1);
     });
 
@@ -300,7 +301,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
       const payload = createPayload();
       const verified = await stepUp(app, system, 'CREATE_INVITATION', payload);
       const a = gated(USER_X);
-      const replacing = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const replacing = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await a.gate.reached.promise;
       const consuming = settle(
         plain().invitations.create(cookie(), csrf(), parseCreateInvitationBody({ operation_id: verified, ...payload }), randomUUID(), meta()),
@@ -322,7 +323,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         b.services.invitations.create(cookie(), csrf(), parseCreateInvitationBody({ operation_id: verified2, ...payload2 }), randomUUID(), meta()),
       );
       await b.gate.reached.promise;
-      const creating2 = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const creating2 = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await waitForBlockedBackends(app.pool);
       b.gate.release.resolve();
       const [consumed2, created2] = await Promise.all([consuming2, creating2]);
@@ -402,7 +403,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
       const a = gated(USER_X);
       const verifying = settle(a.services.operations.verify(cookie(), csrf(), op1, totpNow(system.login.secret), meta()));
       await a.gate.reached.promise;
-      const creating = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const creating = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await waitForBlockedBackends(app.pool);
       a.gate.release.resolve();
       const [verified, created] = await Promise.all([verifying, creating]);
@@ -414,7 +415,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
       const op2 = await createOperation(app, system, 'CREATE_INVITATION', createPayload());
       await rewindAcceptedStep(app, system.account.userId);
       const b = gated(USER_X);
-      const creating2 = settle(b.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const creating2 = settle(b.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await b.gate.reached.promise;
       const verifying2 = settle(plain().operations.verify(cookie(), csrf(), op2, totpNow(system.login.secret), meta()));
       await waitForBlockedBackends(app.pool);
@@ -472,7 +473,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
       const bootGate = newGate();
       const booting = settle(bootstrapOver(gatedSource(app.pool, USER_X, bootGate)).bootstrapSystem(input, limiter as NonNullable<typeof limiter>));
       await bootGate.reached.promise;
-      const creating = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const creating = settle(plain().operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await waitForBlockedBackends(app.pool);
       bootGate.release.resolve();
       const [booted, created] = await Promise.all([booting, creating]);
@@ -480,7 +481,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
       expect(created.ok).toBe(true);
 
       const a = gated(USER_X);
-      const creating2 = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+      const creating2 = settle(a.services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
       await a.gate.reached.promise;
       const booting2 = settle(bootstrapOver(poolClientSource(app.pool)).bootstrapSystem(input, limiter as NonNullable<typeof limiter>));
       await waitForBlockedBackends(app.pool);
@@ -550,7 +551,7 @@ describe('M01-D-ADMIN-1B - lock protocol: trace and barrier schedules', () => {
         try {
           await client.query('BEGIN');
           await client.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid FOR UPDATE', [system.account.userId]);
-          const failure = await failureOf(() => services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), meta()));
+          const failure = await failureOf(() => services.operations.createOperation(cookie(), csrf(), createRequest(createPayload()), randomUUID(), meta()));
           const sqlState = (failure as { code?: unknown; sqlState?: unknown }).sqlState ?? (failure as { code?: unknown }).code;
           expect(sqlState).toBe('55P03');
         } finally {

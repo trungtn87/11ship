@@ -12,6 +12,7 @@ export const INVITATION_REPLAY_SECONDS = 900;
 export const INVITATION_DEDUPE_SECONDS = 86_400;
 export const PROVISIONING_SCOPE_TYPE = 'admin_user';
 export const PROVISIONING_OPERATION_IDS = Object.freeze({
+  createOperation: 'admin.operation.create.v1',
   create: 'admin.invitation.create.v1',
   reissue: 'admin.invitation.reissue.v1',
   revoke: 'admin.invitation.revoke.v1',
