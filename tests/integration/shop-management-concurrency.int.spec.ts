@@ -11,6 +11,7 @@ import {
   errorCode,
   grantRole,
   loginUser,
+  selectContext,
   rowLockWaiters,
   rowLockWaitersRunning,
   sessionIdOfToken,
@@ -70,7 +71,7 @@ describe('M02-A — Shop management concurrency', () => {
   }
 
   const select = (token: string, role: string): Promise<ApiResponse> =>
-    app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    selectContext(app, token, role === 'SHOP' ? 'SHOP_OWNER' : role);
 
   describe('A10 — one writer per version', () => {
     it('a profile update and an hours replacement at the same version: exactly one succeeds, the other is VERSION_CONFLICT', async () => {

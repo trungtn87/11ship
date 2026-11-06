@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { createAccountOriginPolicy, standardAccountOriginPolicy } from '../../apps/backend/src/auth/account-origin';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
@@ -33,7 +33,21 @@ describe('issue #49 — staging fixture mode (application Auth)', () => {
     );
     return userId;
   }
-  const me = (app: AuthApp, token: string) => api(app.running.baseUrl, 'GET', '/auth/me', { bearer: token });
+  const me = (app: AuthApp, token: string) => api(app.running.baseUrl, 'GET', '/client-auth/me', { bearer: token });
+  /**
+   * OD-1: no client login exists for a STAGING_FIXTURE account (the legacy /auth/login that served it is gone), so a fixture
+   * session is minted as the removed login left it: a WEB/FOOD session row of the account, token digest = SHA-256 of the token.
+   */
+  async function mintSession(phone: Phone): Promise<string> {
+    const token = randomBytes(32).toString('base64url');
+    await fixtureApp.pool.query(
+      `INSERT INTO app.sessions (session_id, user_id, token_digest, device_id, platform, app, active_role, expires_at, created_at, updated_at)
+       SELECT $1::uuid, user_id, $2, 'fixture-device-1', 'WEB', 'FOOD', NULL, clock_timestamp() + interval '1 hour', clock_timestamp(), clock_timestamp()
+         FROM app.users WHERE phone_normalized = $3`,
+      [randomUUID(), createHash('sha256').update(token, 'utf8').digest('hex'), phone.normalized],
+    );
+    return token;
+  }
 
   beforeAll(async () => {
     hash = await hasher.hash(PASSWORD);
@@ -55,21 +69,17 @@ describe('issue #49 — staging fixture mode (application Auth)', () => {
     await fixtureApp.close();
   });
 
-  it('an allowlisted fixture signs in with its password: UNVERIFIED_TEST, no role, /me works', async () => {
+  it('an allowlisted fixture has no client login (like an unknown phone), and a fixture-origin session is no client session', async () => {
+    // OD-1 (N): the legacy /auth/login that signed a fixture in (UNVERIFIED_TEST, no role) is gone and /client-auth has no
+    // equivalent: client login and the client session guard both refuse a STAGING_FIXTURE origin in every mode.
     const response = await loginUser(fixtureApp, { phone: allowed, password: PASSWORD });
-    expect(response.status).toBe(200);
-    const data = dataOf(response);
-    expect(data.phone_verification_status).toBe('UNVERIFIED_TEST');
-    expect(data.available_roles).toEqual([]);
-    expect(data.active_role).toBeNull();
-    const profile = await me(fixtureApp, String(data.access_token));
-    expect(profile.status).toBe(200);
-    // No role can be selected: the fixture owns no role, shop or driver profile.
-    for (const role of ['CUSTOMER', 'SHOP', 'DRIVER']) {
-      const selected = await api(fixtureApp.running.baseUrl, 'POST', '/auth/role/select', { bearer: String(data.access_token), body: { role } });
-      expect(selected.status).toBeGreaterThanOrEqual(400);
-    }
-    const roles = await fixtureApp.pool.query('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [String(data.user_id)]);
+    expect([response.status, errorCode(response)]).toEqual([401, 'INVALID_CREDENTIALS']);
+    const denied = await me(fixtureApp, await mintSession(allowed));
+    expect([denied.status, errorCode(denied)]).toEqual([401, 'SESSION_INVALID']);
+    const roles = await fixtureApp.pool.query(
+      'SELECT 1 FROM app.user_roles r JOIN app.users u ON u.user_id = r.user_id WHERE u.phone_normalized = $1',
+      [allowed.normalized],
+    );
     expect(roles.rowCount).toBe(0);
   });
 
@@ -102,35 +112,18 @@ describe('issue #49 — staging fixture mode (application Auth)', () => {
     expect(standardAccountOriginPolicy().fixtureMode).toBe(false);
   });
 
-  it('narrowing the allowlist invalidates the old session in the new process, WITHOUT revoking it, and the old process still accepts it', async () => {
-    const login = await loginUser(fixtureApp, { phone: removed, password: PASSWORD });
-    expect(login.status).toBe(200);
-    const token = String(dataOf(login).access_token);
-    expect((await me(fixtureApp, token)).status).toBe(200);
-
-    const denied = await me(narrowedApp, token);
-    expect([denied.status, errorCode(denied)]).toEqual([401, 'SESSION_INVALID']);
-    const row = await fixtureApp.pool.query<{ revoked_at: Date | null }>(
-      `SELECT s.revoked_at FROM app.sessions s JOIN app.users u ON u.user_id = s.user_id WHERE u.phone_normalized = $1`,
-      [removed.normalized],
-    );
-    expect(row.rows.length).toBeGreaterThan(0);
-    expect(row.rows.every((r) => r.revoked_at === null)).toBe(true);
-    // Allowing the number again (the first process) works with the same, never revoked, token.
-    expect((await me(fixtureApp, token)).status).toBe(200);
-    // And the login itself is refused by the narrowed process.
+  it('narrowing the allowlist: the narrowed process still refuses the removed number at login', async () => {
     const refused = await loginUser(narrowedApp, { phone: removed, password: PASSWORD });
     expect([refused.status, errorCode(refused)]).toEqual([401, 'INVALID_CREDENTIALS']);
   });
 
-  it('a session of a verified account is not usable in fixture mode, nor a fixture session in the standard process', async () => {
+  it('a session of a verified account is not usable in fixture mode, nor a minted fixture session in the standard process', async () => {
     const verified = await loginUser(standardApp, { phone: verifiedPhone, password: PASSWORD });
     const verifiedToken = String(dataOf(verified).access_token);
     const denied = await me(fixtureApp, verifiedToken);
     expect([denied.status, errorCode(denied)]).toEqual([401, 'SESSION_INVALID']);
 
-    const fixture = await loginUser(fixtureApp, { phone: allowed, password: PASSWORD });
-    const deniedStandard = await me(standardApp, String(dataOf(fixture).access_token));
+    const deniedStandard = await me(standardApp, await mintSession(allowed));
     expect([deniedStandard.status, errorCode(deniedStandard)]).toEqual([401, 'SESSION_INVALID']);
   });
 });

@@ -8,9 +8,12 @@ import {
   countRows,
   createServiceArea,
   dataOf,
+  loginUser,
+  SHIP_DEVICE,
   driverBody,
   errorCode,
   installDriverInsertStall,
+  meOf,
   registerUser,
   Registered,
   removeDriverInsertStall,
@@ -40,7 +43,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
   const create = (token: string, body: unknown, key: string = randomUUID()): Promise<ApiResponse> =>
     app.call('POST', '/onboarding/driver', { bearer: token, body, headers: { 'idempotency-key': key } });
-  const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+  const me = (token: string): Promise<ApiResponse> => meOf(app, token);
 
   async function lockUserRow(userId: string): Promise<LockHolder> {
     const holder = await LockHolder.begin(app.pool);
@@ -143,7 +146,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
         expect(await driverCount(user.userId)).toBe(1);
         expect(await eventCount(user.userId)).toBe(1);
         expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'shop.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(1);
-        expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['DRIVER', 'SHOP']);
+        expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['CUSTOMER', 'SHOP_OWNER', 'DRIVER']);
       } finally {
         if (!released) {
           await holder.rollback();
@@ -159,8 +162,10 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
     it('/auth/me started while the create holds the user row WAITS for it, then reports DRIVER available and ACTIVE', async () => {
       const user: Registered = await registerUser(app);
-      expect(dataOf(await me(user.accessToken))).toMatchObject({
-        available_roles: [],
+      // The driver hint (onboarding_required) belongs to the SHIP app, so the snapshot is read on a SHIP session.
+      const ship = String(dataOf(await loginUser(app, user, { ...SHIP_DEVICE })).access_token);
+      expect(dataOf(await me(ship))).toMatchObject({
+        available_roles: ['CUSTOMER'],
         onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
         onboarding_required: true,
       });
@@ -179,7 +184,7 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
         expect(await roleCount(user.userId, 'DRIVER')).toBe(0);
 
         let meSettled = false;
-        const pending = me(user.accessToken).finally(() => {
+        const pending = me(ship).finally(() => {
           meSettled = true;
         });
         await eventually(async () => (await meWaiters()) === 1, '/auth/me blocked on the user row behind the create');
@@ -194,11 +199,11 @@ describe('M01-A2D — Driver onboarding concurrency', () => {
 
         // The coherent final projection: never "profile exists but role not listed" or the reverse.
         const data = dataOf(response);
-        expect(data.available_roles).toEqual(['DRIVER']);
+        expect(data.available_roles).toEqual(['CUSTOMER', 'DRIVER']);
         expect(data.onboarding).toEqual({ shop: 'NOT_STARTED', driver: 'ACTIVE' });
         expect(data.onboarding_required).toBe(false);
-        expect(data.role_selection_required).toBe(true);
-        expect(data.active_role).toBeNull();
+        expect(data.role_selection_required).toBe(false);
+        expect(data.active_role).toBe('CUSTOMER');
         expect(await meWaiters()).toBe(0);
       } finally {
         if (gateOpen) {

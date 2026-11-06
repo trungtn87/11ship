@@ -15,6 +15,7 @@ import {
   errorCode,
   grantRole,
   loginUser,
+  selectContext,
   registerUser,
   Registered,
   rowLockWaitersRunning,
@@ -71,7 +72,7 @@ describe('M00/M01 repair §1 — session authorization inside onboarding transac
   const post = (path: string, token: string, body: unknown, key: string): Promise<ApiResponse> =>
     app.call('POST', path, { bearer: token, body, headers: { 'idempotency-key': key } });
   const select = (token: string, role: string): Promise<ApiResponse> =>
-    app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    selectContext(app, token, role === 'SHOP' ? 'SHOP_OWNER' : role);
 
   const OPERATIONS: Operation[] = [
     {
@@ -384,7 +385,7 @@ describe('M00/M01 repair §1 — session authorization inside onboarding transac
 
       const [selected, refused] = await Promise.all([selecting, driver]);
       expect(selected.status).toBe(200);
-      expect(dataOf(selected).active_role).toBe('SHOP');
+      expect(dataOf(selected).active_role).toBe('SHOP_OWNER');
       expect([refused.status, errorCode(refused)]).toEqual([401, 'SESSION_REVOKED']);
     } finally {
       if (!released) {
