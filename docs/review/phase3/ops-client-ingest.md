@@ -1,0 +1,23 @@
+# Phase 3 — `ops-client.controller.ts` (carry-over G-7)
+
+SHA `549572696efb4bbc18af3c362b7f56a5fcd335e6`. **ĐÃ MỞ SOURCE**: `ops/ops-client.controller.ts` (toàn bộ), `ops/ops-ingest-service.ts:25-103,318-340`, `ops/ops-validation.ts:335-435`, `http/client-auth-transport.middleware.ts`, `app.setup.ts:43-46`. Runtime NOT TESTED.
+
+Controller không có tiền tố `@Controller('x')`; route nằm ở `ops/...` và `app-updates/...` dưới global prefix `/v1`.
+
+| Route | Authentication | Authorization | Input validation | Rate limit | Giới hạn nguồn |
+|---|---|---|---|---|---|
+| `POST /v1/ops/ingest/probe` | Bearer token 40-64 ký tự `[A-Za-z0-9_-]`, băm sha256 và tra khóa ACTIVE trong DB (`findActiveIngestKey`); `touchIngestKey` cập nhật lần dùng (`ops-ingest-service.ts:86-103`) | Mỗi khóa đúng **một scope**: `PROBE`. Khóa lạ, thu hồi hay sai scope đều trả cùng lỗi `OPS_INGEST_UNAUTHORIZED` (`:98-101`) | `parseProbeBody`: khóa chính xác (`shaped`), tối đa 50 report, `episode_id` 8-64 ký tự theo regex, `code` `[A-Z0-9_]{1,32}` (`ops-validation.ts:339-353`) | **Không có limiter ở controller/service** (không tìm thấy trong `ops-ingest-service.ts`). Chỉ có giới hạn kích thước body toàn cục (xem dưới) | Không có allowlist IP/nguồn trong code đã đọc; thông tin xác thực là bí mật khóa |
+| `POST /v1/ops/ingest/backup` | Như trên | Scope `BACKUP` | `parseBackupBody`: `kind` ∈ {BACKUP, RESTORE_TEST}, `finished_at` không quá 5 phút trong tương lai, `detail_code` regex (`:356-368`) | Không thấy | Như trên |
+| `POST /v1/ops/ingest/deploy` | Như trên | Scope `DEPLOY` | `parseDeployBody`: `action` start/finish, `component` thuộc `RELEASE_COMPONENTS`, version theo regex, `deploy_id` uuid (`:370-395`) | Không thấy; chống phát lại: `DEPLOY_START_REPLAY_MS = 30 phút` (`ops-ingest-service.ts:42`) | Như trên |
+| `POST /v1/ops/client/logs` | `SessionAuthGuard` (phiên app thường) | Không có kiểm vai trò riêng: mọi principal đã đăng nhập | `parseClientLogs`: 1-50 mục, `kind` từ danh sách cố định, mã/phiên bản theo regex, thời điểm không quá 7 ngày cũ hay 5 phút tương lai (`:397-415`) | **Có**: 300 dòng log/giờ/tài khoản, phần vượt bị đếm và bỏ (`ops-ingest-service.ts:30`) | Văn bản tự do bị redact khi lưu (chú thích `:395`) |
+| `POST /v1/ops/client/version` | `SessionAuthGuard` | Mọi principal đã đăng nhập | `parseVersionReport` (component FOOD/SHIP, versionName regex, versionCode 1..2e9) (`:424-430`) | Không thấy | — |
+| `GET /v1/app-updates/check` | **Cố ý công khai** (chú thích controller: "public, read-only") | Không | `parseAppUpdateCheck` (component FOOD/SHIP, `version_code` số ≤ 2e9) (`:417-422`) | Không thấy | Chỉ đọc |
+| `GET /v1/app-updates/compatibility` | Công khai, chỉ đọc (chú thích `ops-client.controller.ts:68`) | Không | Không có tham số | Không thấy | Chỉ đọc |
+| `GET /v1/app-updates/download/:release_id` | Công khai | Chỉ tải được release `PUBLISHED`, component FOOD/SHIP (Android) | `parseReleaseId` yêu cầu UUID chuẩn | Không thấy | Đường dẫn artifact do server chọn từ DB (`release.artifactName`), kiểm `path.dirname(full) === dir`, không symlink, đúng kích thước (`ops-ingest-service.ts:318-340`); header `no-store`, `X-Checksum-SHA256` |
+
+**Middleware chung:** `/v1/ops` và `/v1/app-updates` đi qua `clientAuthTransportMiddleware` (chỉ đặt header `Cache-Control: no-store`, `Pragma`, `Referrer-Policy`, `X-Content-Type-Options`; không quyết định gì) (`app.setup.ts:45-46`; `client-auth-transport.middleware.ts:25-30`). Parser JSON: các route ops không nằm trong danh sách parser lớn (chỉ logo 2 MB, bằng chứng 7,5 MB, ảnh 3,5 MB có giới hạn riêng, `app.setup.ts:68-99`), nên dùng parser mặc định của express (`app.setup.ts:56-58`: "the same default limit"; giá trị mặc định 100 kB là kiến thức về express, chưa chạy kiểm).
+
+## Kết luận
+- Ba route `ingest/*` **được bảo vệ** bằng khóa máy băm, một scope một khóa. Không có cơ chế giới hạn tần suất hoặc IP trong code ứng dụng đã đọc; nginx trong repo (`ops/vinahost/nginx-11ship-staging.conf`) cũng không có `limit_req`: mức rủi ro nếu khóa bị lộ là ghi báo cáo giả vào M13 (probe/backup/deploy), không đổi đơn/ví/phí (chú thích controller và service, ĐÃ MỞ SOURCE). Phân loại: **ứng viên Phase 5 (security)**, chưa xác nhận là lỗ hổng. NOT TESTED.
+- Ba route `app-updates/*` **cố ý công khai**, chỉ đọc; `download` có kiểm tra đường dẫn. Không có rate limit trong code đã đọc; có thể được kiểm soát ở tầng reverse proxy (không có trong repo đã đọc: UNKNOWN).
+- Hai route `ops/client/*` dùng phiên app thường, **không phân quyền theo vai trò** (đúng ý đồ: app nào đăng nhập cũng báo log/phiên bản), nhưng có giới hạn 300 dòng/giờ cho `logs`.
