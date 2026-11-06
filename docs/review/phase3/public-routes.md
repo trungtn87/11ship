@@ -50,10 +50,10 @@ Danh mục cơ chế (viết tắt dùng trong bảng): **[OTP-Q]** hạn mức 
 
 ## Tổng kết 41 route
 - Công khai có chủ ý, chỉ đọc hoặc không dữ liệu cá nhân: #1-3, #11-13, #16-26 (trừ #27), #31, #35 (cộng #16 ghi chú Phase 5).
-- Có giới hạn tần suất/quota đã đọc: #4-6, #8 *(không)*, #9-10, #15, #28-30, #32-34, #37-39, #40.
+- Có giới hạn tần suất/quota đã đọc: #4-6, #9-10, #15, #28-30, #32-34, #37-39, #40.
 - Đóng bằng cấu hình (mode): #27, #36, và nhóm OTP khi `accountRecoveryMode != SMS_OTP`.
 - Legacy: #7, #8 (không client trong repo gọi); #4-6 là legacy theo tên nhưng đang được dùng.
-- Không route nào trong 41 được phân loại là "không bảo vệ" mà không có cơ chế. Hai điểm cần Phase 5 chứng minh: #8 (không thấy limiter ở đường legacy khi cổng native tắt) và #16 (không theo IP).
+- Không route nào trong 41 được phân loại là "không bảo vệ" mà không có cơ chế. Hai điểm cần Phase 5 chứng minh: #8 (không thấy limiter ở đường legacy khi cổng native tắt; Owner OD-1: gỡ route legacy sớm, trong lúc chưa gỡ phải cùng limiter với đường hiện hành) và #16 (không theo IP).
 
 ## Q1 — `AuthController` vs `ClientAuthController`
 | Câu hỏi | Kết luận (ĐÃ MỞ SOURCE) |

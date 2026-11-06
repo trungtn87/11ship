@@ -44,8 +44,8 @@ Cách đọc: IMPLEMENTED nghĩa là đã mở source và hành vi chính khớp
 | Kết luận | Số dòng |
 |---|---:|
 | CONFIRMED | 132 |
-| TOO_NARROW | 34 |
-| WRONG | 24 |
+| TOO_NARROW | 36 |
+| WRONG | 22 |
 | TOO_BROAD | 15 |
 | NO_REQUIREMENT | 10 |
 | LABEL_UNRELIABLE+CONFIRMED | 10 |
@@ -114,5 +114,5 @@ Phát hiện chính: 14 nhãn route sai đường dẫn trong inventory và 5 d�
 
 - Codex (read-only, review 2026-11-05 trên head 8d522bd, trạng thái "commented"): **ĐÃ CHẠY, đã xử lý**. Mẫu 30 IMPLEMENTED: 23 đúng, 7 đúng một phần, 0 sai; mẫu 20 UNKNOWN/PARTIAL: 14 đúng, 6 sai (tỷ lệ 70%). Lead đã mở lại cả 6 dòng và đồng ý: M03-R-02, M03-R-09, M10-R-08, M10-R-14 lên IMPLEMENTED; M04-R-15 và M12-R-13 thành MISMATCH. Năm dòng IMPLEMENTED bị ghi "đúng một phần" (M04-R-04, M10-R-10, M10-R-22, M12-R-08, M12-R-11) hạ xuống PARTIAL; hai dòng còn lại (M01-R-04, M01-R-09) vốn đã ghi phần chưa kiểm trong ghi chú. Đã sửa kết luận limiter IP và ingest (nginx trong repo), cách ghi số AdminTransport và phạm vi `setInterval`, và thêm `view.ts` vào danh sách inventory thiếu. Codex không xác nhận được nguyên nhân 617 m vs 720 m từ source; vẫn UNKNOWN. Lưu ý: tỷ lệ 70% của mẫu 20 dòng chỉ cho thấy độ tin cậy của nhóm UNKNOWN/PARTIAL; các dòng UNKNOWN/PARTIAL còn lại chưa được rà lại độc lập.
 - Antigravity (read-only, bình luận trên PR, head 8d522bd): **ĐÃ CHẠY, đã xử lý**. Lead mở lại từng bằng chứng. Chấp nhận: M14-R-12, M14-R-05, M08-R-13 lên IMPLEMENTED (tĩnh); M14-R-11 thành MISMATCH (backend không trả hình học tuyến, không màn nào truyền `route:`); M14-R-01, M14-R-14, M05-R-06, M07-R-10 từ UNKNOWN lên PARTIAL (Lead giữ PARTIAL vì chạy nền thật/UI/#299 chưa kiểm; Antigravity đề xuất IMPLEMENTED); M01-R-16 giữ PARTIAL. M08-R-05 giữ PARTIAL vì Lead chưa tự kiểm phần nhóm ngày. Bổ sung: lối vào thứ ba của #295 (`ship_tabs.dart:41`), quy tắc bỏ sự kiện quá 24 giờ của M08 (`STALE_EVENT`), `finance-view.ts` là màn chưa nối (`NOT_WIRED_FINANCE`) còn production dùng `finance-admin-view.ts`/`finance-ops-view.ts` (chưa tự kiểm thêm), nguyên nhân #294 theo Antigravity là hai cặp điểm khác nhau và đồ thị có hướng; Lead giữ UNKNOWN vì Codex và Lead không xác nhận được từ source.
-- Khuyến nghị của Lead: chưa nghiệm thu cho tới khi Antigravity xong và mọi finding được xử lý. Antigravity chưa trả kết quả.
+- Khuyến nghị của Lead: Owner đã nghiệm thu có giới hạn (xem đầu tài liệu) sau khi cả hai review xong và mọi finding được xử lý.
 - Chỉ Owner quyết định ACCEPTED hoặc NOT ACCEPTED, và việc merge.
