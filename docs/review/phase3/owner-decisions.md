@@ -63,4 +63,14 @@ Ba mục "chưa có OD" ở Phase 3: Owner chọn phương án A cho cả ba và
 
 **M08 `STALE_EVENT` (quyết định Owner 2026-11-06):** không chấp nhận quy tắc "quá 24 giờ thì âm thầm bỏ" cho mọi loại sự kiện. Giữ ngưỡng 24 giờ cho thông báo thời điểm (offer/reminder đã hết ý nghĩa). Sự kiện tài chính, tài khoản và trạng thái kết thúc của order/delivery không được mất âm thầm: phải lưu audit, đối chiếu trạng thái hiện tại và đưa vào inbox hoặc hàng đợi xử lý phù hợp. Ghi metric/cảnh báo cho `STALE_EVENT`. Triển khai ở phase kỹ thuật M08, không nằm trong PR cleanup đầu tiên.
 
-**Trạng thái áp dụng vào baseline:** OD-3, 6, 7, 8, 9, 10, 14, 15, 16, 18, 19, 20, 21 đã được ghi vào `docs/baseline/requirements.md`. OD-17 (thêm requirement cho chính sách hoa hồng, kiểm duyệt đánh giá, đối soát, middleware truyền tải) **chưa được viết vào baseline**: nội dung nghiệp vụ cần Claude Lead soạn từ code rồi Owner duyệt trước; mức nạp/rút tối thiểu vẫn là policy chưa duyệt. OD-1, 2, 4, 5, 11, 12, 13 là việc code/vận hành, không phải sửa baseline (OD-13 đã xong ở PR #303).
+**Trạng thái áp dụng vào baseline:** OD-3, 6, 7, 8, 9, 10, 14, 15, 16, 18, 19, 20, 21 đã được ghi vào `docs/baseline/requirements.md`. OD-17 đã được xử lý bằng OD-22..24 (xem mục dưới); mức nạp/rút tối thiểu vẫn là policy chưa duyệt. OD-1, 2, 4, 5, 11, 12, 13 là việc code/vận hành, không phải sửa baseline (OD-13 đã xong ở PR #303).
+
+## Quyết định bổ sung của Owner (2026-11-06) — OD-17
+
+| OD | Quyết định của Owner | Ghi vào |
+|---|---|---|
+| OD-22 | Hoa hồng là số tiền cố định mỗi đơn; **mức 1 000 VND là mức chính thức**; hoa hồng cố định không hiển thị mỗi lần shipper nhận đơn | `requirements.md` M04-R-16 |
+| OD-23 | Giữ chức năng Admin ẩn/khôi phục đánh giá (phương án A) | `requirements.md` M11-R-11 |
+| OD-24 | Đối soát lệch sổ ví và header truyền tải lưu trong `docs/process/` | `docs/process/technical-ops-security-baseline.md` |
+
+Còn mở (chưa có quyết định, không chặn): khi đánh giá bị ẩn/khôi phục, có thông báo cho người bị đánh giá hoặc khách hay không.
