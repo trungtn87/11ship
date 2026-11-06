@@ -34,15 +34,12 @@ import { CustomerProvisioningParticipant } from './customer-provisioning-partici
 import { AdminIdentityParticipant } from './admin-identity-participant';
 import { AdminUserAccountParticipant } from './admin-user-account-participant';
 import { AdminPasswordVerifier } from './admin-password-verifier';
-import { LoginService } from './login-service';
 import { OTP_PROVIDER, OtpProvider } from './otp-provider';
 import { isSmsGatewayBinding, SmsGatewayBinding } from './otp-provider-binding';
 import { SmsGatewayModule } from '../sms-gateway/sms-gateway.module';
 import { SmsGatewayOtpProvider } from '../sms-gateway/sms-gateway-otp-provider';
 import { Argon2idPasswordHasher, PASSWORD_HASHER } from './password-hasher';
 import { ProofRepository } from './proof-repository';
-import { RegistrationService } from './registration-service';
-import { RoleContextService } from './role-context-service';
 import { RoleGrantParticipant } from './role-grant-participant';
 import { SessionAuthGuard } from './session-auth.guard';
 import { SessionAuthorizationParticipant } from './session-authorization-participant';
@@ -160,10 +157,7 @@ export class AuthModule {
         AccountRecordReader,
         AccountActivityRegistry,
         VerificationService,
-        RegistrationService,
-        LoginService,
         SessionService,
-        RoleContextService,
         RoleGrantParticipant,
         CustomerProvisioningParticipant,
         SessionAuthorizationParticipant,
