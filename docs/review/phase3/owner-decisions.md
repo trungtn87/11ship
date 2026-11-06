@@ -72,6 +72,6 @@ Ba mục "chưa có OD" ở Phase 3: Owner chọn phương án A cho cả ba và
 | OD-22 | Hoa hồng là số tiền cố định mỗi đơn; **mức 1 000 VND là mức chính thức**; hoa hồng cố định không hiển thị mỗi lần shipper nhận đơn | `requirements.md` M04-R-16 |
 | OD-23 | Giữ chức năng Admin ẩn/khôi phục đánh giá (phương án A) | `requirements.md` M11-R-11 |
 | OD-24 | Đối soát lệch sổ ví và header truyền tải lưu trong `docs/process/` | `docs/process/technical-ops-security-baseline.md` |
-| OD-25 | Khi Admin ẩn hoặc khôi phục đánh giá, thông báo cho cả bên được đánh giá (quán hoặc shipper) và khách đã viết đánh giá (Owner 06/11). Owner duyệt 06/11 nội dung thông báo (không nêu mã lý do nội bộ; mẫu câu trong M11-R-11) | M11-R-11 |
+| OD-25 | Khi Admin ẩn hoặc khôi phục đánh giá, thông báo cho cả bên được đánh giá và chính tác giả đánh giá, ở cả ba loại đánh giá (Owner 06/11 chốt "cả hai"; việc áp cho `SHIPPER_BY_SHOP` với quán là tác giả do Lead suy ra từ review Codex, chờ Owner xác nhận). Owner duyệt 06/11 nội dung thông báo (không nêu mã lý do nội bộ; mẫu câu trong M11-R-11) | M11-R-11 |
 
-Còn mở (chưa có quyết định, không chặn): khi đánh giá bị ẩn/khôi phục, có thông báo cho người bị đánh giá hoặc khách hay không.
+Còn mở: Owner xác nhận quán tác giả (`SHIPPER_BY_SHOP`) cũng nhận thông báo như đã ghi trong OD-25.
