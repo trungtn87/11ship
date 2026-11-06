@@ -1122,4 +1122,205 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       expect(await ipRows()).toBe(2);
     });
   });
+
+  describe('OD-2 item 5: SMS jobs/claim idempotency and lost response protection', () => {
+    it('(a) lost claim response retry returns the exact same job and attempt_id, and does not claim the next queued job', async () => {
+      const phone1 = randomPhone();
+      const phone2 = randomPhone();
+      app.track(phone1.normalized);
+      app.track(phone2.normalized);
+
+      await requestRegisterOtp(phone1);
+      const id2 = String(dataOf(await requestRegisterOtp(phone2)).verification_id);
+
+      const claimReqId = randomUUID();
+      const firstRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(firstRes.status).toBe(200);
+      const job1 = dataOf(firstRes).job as { job_id: string; attempt_id: string; to: string; text: string };
+      expect(job1).not.toBeNull();
+      expect(job1.attempt_id).toBe(claimReqId);
+
+      const j2Before = await jobOf(id2);
+      expect(j2Before?.status).toBe('QUEUED');
+
+      // Retry with the exact same claim_request_id (simulating lost response)
+      const retryRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(retryRes.status).toBe(200);
+      const retryJob = dataOf(retryRes).job as { job_id: string; attempt_id: string; to: string; text: string };
+      expect(retryJob).not.toBeNull();
+      expect(retryJob.job_id).toBe(job1.job_id);
+      expect(retryJob.attempt_id).toBe(claimReqId);
+      expect(retryJob.text).toBe(job1.text);
+
+      // Verify job2 was NOT claimed by the retry
+      const j2After = await jobOf(id2);
+      expect(j2After?.status).toBe('QUEUED');
+
+      await ack(job1, 'SENT');
+      const j2Claim = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
+      await ack(j2Claim, 'SENT');
+    });
+
+    it('(b) same claim_request_id from a different device is rejected with 409 conflict, and changed paused/permission does not return the job', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await requestRegisterOtp(phone);
+
+      const claimReqId = randomUUID();
+      const firstRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(firstRes.status).toBe(200);
+      const job = dataOf(firstRes).job as { job_id: string; attempt_id: string };
+
+      // Pair a second device
+      const otherDevice = await pair('Second phone for conflict test');
+      const conflictRes = await gw(otherDevice.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(conflictRes.status).toBe(409);
+      expect(errorCode(conflictRes)).toBe('GATEWAY_CLAIM_CONFLICT');
+
+      // Retry with paused = true or sms_permission = false returns no job
+      const pausedRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: true,
+      });
+      expect(pausedRes.status).toBe(200);
+      expect(dataOf(pausedRes).job).toBeNull();
+
+      await ack(job, 'SENT');
+    });
+
+    it('(c) concurrent claims with the same claim_request_id create only one attempt and return the same job', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await requestRegisterOtp(phone);
+
+      const concurrentReqId = randomUUID();
+      const [res1, res2] = await Promise.all([
+        gw(device.token, '/jobs/claim', {
+          claim_request_id: concurrentReqId,
+          sms_permission: true,
+          paused: false,
+        }),
+        gw(device.token, '/jobs/claim', {
+          claim_request_id: concurrentReqId,
+          sms_permission: true,
+          paused: false,
+        }),
+      ]);
+
+      expect(res1.status).toBe(200);
+      expect(res2.status).toBe(200);
+      const j1 = dataOf(res1).job as { job_id: string; attempt_id: string };
+      const j2 = dataOf(res2).job as { job_id: string; attempt_id: string };
+      expect(j1.job_id).toBe(j2.job_id);
+      expect(j1.attempt_id).toBe(concurrentReqId);
+      expect(j2.attempt_id).toBe(concurrentReqId);
+
+      const attemptCount = await count(
+        app.pool,
+        'SELECT 1 FROM app.sms_jobs WHERE attempt_id = $1::uuid',
+        [concurrentReqId],
+      );
+      expect(attemptCount).toBe(1);
+
+      await ack(j1, 'SENT');
+    });
+
+    it('(d) retrying after lease expired returns null and does not resend the expired attempt', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      const id = String(dataOf(await requestRegisterOtp(phone)).verification_id);
+
+      const expiredReqId = randomUUID();
+      const firstRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: expiredReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(firstRes.status).toBe(200);
+      expect(dataOf(firstRes).job).not.toBeNull();
+
+      // Expire the lease in the database and run sweep
+      await app.pool.query(
+        `UPDATE app.sms_jobs SET lease_expires_at = now() - interval '1 second' WHERE attempt_id = $1::uuid`,
+        [expiredReqId],
+      );
+      await app.running.app.get(SmsQueueService).sweep();
+
+      const closed = await jobOf(id);
+      expect(closed?.status).toBe('UNKNOWN');
+      expect(closed?.result_code).toBe('LEASE_EXPIRED');
+
+      // Retry with the expired request ID
+      const retryRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: expiredReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(retryRes.status).toBe(200);
+      expect(dataOf(retryRes).job).toBeNull();
+    });
+
+    it('(e) a fresh claim_request_id claims the next queued job normally', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await requestRegisterOtp(phone);
+
+      const freshReqId = randomUUID();
+      const freshRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: freshReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      expect(freshRes.status).toBe(200);
+      const freshJob = dataOf(freshRes).job as { job_id: string; attempt_id: string };
+      expect(freshJob).not.toBeNull();
+      expect(freshJob.attempt_id).toBe(freshReqId);
+
+      await ack(freshJob, 'SENT');
+    });
+
+    it('(f) SMS plaintext/OTP content does NOT appear in app.idempotency_records', async () => {
+      const phone = randomPhone();
+      app.track(phone.normalized);
+      await requestRegisterOtp(phone);
+
+      const claimReqId = randomUUID();
+      const claimRes = await gw(device.token, '/jobs/claim', {
+        claim_request_id: claimReqId,
+        sms_permission: true,
+        paused: false,
+      });
+      const job = dataOf(claimRes).job as { job_id: string; attempt_id: string; text: string };
+      const otp = otpOf(job.text);
+
+      const recordsCount = await count(
+        app.pool,
+        `SELECT 1 FROM app.idempotency_records
+          WHERE request_payload::text LIKE '%' || $1 || '%'
+             OR response_body::text LIKE '%' || $1 || '%'
+             OR response_body::text LIKE '%' || $2 || '%'`,
+        [claimReqId, otp],
+      );
+      expect(recordsCount).toBe(0);
+
+      await ack(job, 'SENT');
+    });
+  });
 });

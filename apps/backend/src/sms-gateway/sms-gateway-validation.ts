@@ -87,9 +87,27 @@ export function parseHeartbeatBody(body: unknown): HeartbeatInput {
   };
 }
 
-export function parseClaimBody(body: unknown): { readonly smsPermission: boolean | null; readonly paused: boolean | null } {
-  const parsed = objectWithOnly(body, ['sms_permission', 'paused']);
-  return { smsPermission: optionalBoolean(parsed.sms_permission), paused: optionalBoolean(parsed.paused) };
+export interface ClaimInput {
+  readonly claimRequestId: string | null;
+  readonly smsPermission: boolean | null;
+  readonly paused: boolean | null;
+}
+
+export function parseClaimBody(body: unknown): ClaimInput {
+  const parsed = objectWithOnly(body, ['claim_request_id', 'sms_permission', 'paused']);
+  const claimRequestId = parsed.claim_request_id;
+  if (
+    claimRequestId !== undefined &&
+    claimRequestId !== null &&
+    (typeof claimRequestId !== 'string' || !isCanonicalUuid(claimRequestId))
+  ) {
+    throw new BadRequestException();
+  }
+  return {
+    claimRequestId: typeof claimRequestId === 'string' ? claimRequestId : null,
+    smsPermission: optionalBoolean(parsed.sms_permission),
+    paused: optionalBoolean(parsed.paused),
+  };
 }
 
 export interface AckInput {

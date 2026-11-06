@@ -72,6 +72,7 @@ export const APP_ERROR_DEFINITIONS = {
   GATEWAY_UNAUTHORIZED: { status: 401, message: 'The gateway credential is not valid' },
   GATEWAY_JOB_NOT_FOUND: { status: 404, message: 'The job was not found for this gateway attempt' },
   GATEWAY_ACK_CONFLICT: { status: 409, message: 'The job already has a different final result' },
+  GATEWAY_CLAIM_CONFLICT: { status: 409, message: 'The claim request ID was already used by a different device' },
 
   // Shop onboarding (M01-A2S, handoff section 10). Fixed messages: they never echo what the client sent,
   // never name a database constraint and never reveal another account's data.

@@ -40,6 +40,7 @@ object GatewayStore {
     private const val K_PEND_RES = "pending_result"
     private const val K_PEND_ERR = "pending_error"
     private const val K_UPDATE_HINT = "update_hint"
+    private const val K_CLAIM_REQ_ID = "claim_request_id"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -207,6 +208,21 @@ object GatewayStore {
     fun clearPending(ctx: Context) {
         prefs(ctx).edit().remove(K_PEND_JOB).remove(K_PEND_ATT).remove(K_PEND_RES).remove(K_PEND_ERR).commit()
     }
+
+    fun getOrCreateClaimRequestId(ctx: Context): String {
+        val p = prefs(ctx)
+        val existing = p.getString(K_CLAIM_REQ_ID, null)
+        if (existing != null) return existing
+        val fresh = java.util.UUID.randomUUID().toString()
+        p.edit().putString(K_CLAIM_REQ_ID, fresh).commit()
+        return fresh
+    }
+
+    fun clearClaimRequestId(ctx: Context) {
+        prefs(ctx).edit().remove(K_CLAIM_REQ_ID).commit()
+    }
+
+    fun claimRequestId(ctx: Context): String? = prefs(ctx).getString(K_CLAIM_REQ_ID, null)
 }
 
 /** The durable pending slot of the gateway, backed by [GatewayStore]. */

@@ -17,11 +17,11 @@ import {
   SmsAckResult,
   SmsPurpose,
 } from './sms-gateway-constants';
-import { JobOwner, SmsGatewayRepository } from './sms-gateway-repository';
+import { ClaimedJob, JobOwner, SmsGatewayRepository } from './sms-gateway-repository';
 import { OpsTelemetryRepository } from '../ops/ops-telemetry-repository';
 import { OpsGatewayUpdate } from '../ops/ops-gateway-update';
 import { JsonObject } from '../idempotency/idempotency-executor';
-import { HeartbeatTelemetry } from './sms-gateway-validation';
+import { ClaimInput, HeartbeatTelemetry } from './sms-gateway-validation';
 
 export interface SmsDelivery {
   readonly verificationId: string;
@@ -232,8 +232,8 @@ export class SmsQueueService {
   }
 
   /** Hands out at most one job. Expired work is closed first so that no stale OTP is ever delivered. */
-  async claim(deviceId: string, device: { paused: boolean | null; smsPermission: boolean | null }): Promise<{ sendingEnabled: boolean; message: ClaimedMessage | undefined }> {
-    const attemptId = randomUUID();
+  async claim(deviceId: string, device: ClaimInput): Promise<{ sendingEnabled: boolean; message: ClaimedMessage | undefined }> {
+    const attemptId = device.claimRequestId ?? randomUUID();
     return this.transactions.withTransaction(async (context) => {
       if (!(await this.repository.recordHeartbeat(context, { deviceId, appVersion: null, smsPermission: device.smsPermission, paused: device.paused }))) {
         throw new AppError('GATEWAY_UNAUTHORIZED');
@@ -243,7 +243,59 @@ export class SmsQueueService {
       if (!sendingEnabled || device.paused === true || device.smsPermission === false) {
         return { sendingEnabled, message: undefined };
       }
-      const job = await this.repository.claimNext(context, { deviceId, attemptId, leaseSeconds: this.config.leaseSeconds });
+
+      let job: ClaimedJob | undefined;
+      if (device.claimRequestId !== null && device.claimRequestId !== undefined) {
+        const existing = await this.repository.findJobByAttempt(context, attemptId);
+        if (existing !== undefined) {
+          if (existing.claimedBy !== deviceId) {
+            throw new AppError('GATEWAY_CLAIM_CONFLICT');
+          }
+          if (existing.status === 'CLAIMED' && existing.sealed !== null && existing.leaseExpiresAtMs > Date.now()) {
+            job = {
+              jobId: existing.jobId,
+              attemptId: existing.attemptId,
+              purpose: existing.purpose,
+              sealed: existing.sealed,
+              expiresAtMs: existing.expiresAtMs,
+              leaseExpiresAtMs: existing.leaseExpiresAtMs,
+            };
+          } else {
+            // Attempt concluded or lease expired: no active message for this attempt.
+            return { sendingEnabled, message: undefined };
+          }
+        }
+      }
+
+      if (job === undefined) {
+        try {
+          job = await this.repository.claimNext(context, { deviceId, attemptId, leaseSeconds: this.config.leaseSeconds });
+        } catch (error) {
+          if ((error as { code?: string }).code === '23505' && device.claimRequestId !== null) {
+            const existing = await this.repository.findJobByAttempt(context, attemptId);
+            if (
+              existing !== undefined &&
+              existing.claimedBy === deviceId &&
+              existing.status === 'CLAIMED' &&
+              existing.sealed !== null &&
+              existing.leaseExpiresAtMs > Date.now()
+            ) {
+              job = {
+                jobId: existing.jobId,
+                attemptId: existing.attemptId,
+                purpose: existing.purpose,
+                sealed: existing.sealed,
+                expiresAtMs: existing.expiresAtMs,
+                leaseExpiresAtMs: existing.leaseExpiresAtMs,
+              };
+            }
+          }
+          if (job === undefined) {
+            throw error;
+          }
+        }
+      }
+
       if (job === undefined) {
         return { sendingEnabled, message: undefined };
       }

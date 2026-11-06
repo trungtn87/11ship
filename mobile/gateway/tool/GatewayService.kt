@@ -200,7 +200,9 @@ class GatewayService : Service() {
                         if (!sleepSeconds(pollSeconds)) break
                         continue
                     }
-                    val claim = client.claim(permission, false)
+                    val claimReqId = GatewayStore.getOrCreateClaimRequestId(this)
+                    val claim = client.claim(permission, false, claimReqId)
+                    GatewayStore.clearClaimRequestId(this)
                     GatewayStore.recordConnection(this, true, null, claim.sendingEnabled)
                     backoffSeconds = 0
                     setStatus(if (claim.sendingEnabled) "Đã kết nối VPS" else "Đã kết nối, VPS đang tắt gửi SMS")
