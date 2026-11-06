@@ -3,6 +3,7 @@ import { AppConfig } from '../config/app-config';
 import { IdempotencyCleanup } from './idempotency-cleanup';
 import {
   IDEMPOTENCY_CLEANUP_EVERY_MS,
+  IDEMPOTENCY_CLEANUP_INITIAL_DELAY_MS,
   IDEMPOTENCY_CLEANUP_MAX_BATCHES,
   IdempotencyCleanupRuntime,
 } from './idempotency-cleanup-runtime';
@@ -67,5 +68,29 @@ describe('IdempotencyCleanupRuntime', () => {
     expect(spy).toHaveBeenCalledWith(expect.any(Function), IDEMPOTENCY_CLEANUP_EVERY_MS);
     runtime.onApplicationShutdown();
     spy.mockRestore();
+  });
+
+  it('runs the first pass shortly after start-up, not only after a full day, and not after shutdown', async () => {
+    jest.useFakeTimers();
+    try {
+      const runOnce = jest.fn<IdempotencyCleanup['runOnce']>().mockResolvedValue({ replayCleared: 0, recordsDeleted: 0 });
+      const runtime = runtimeWith(runOnce);
+      runtime.onApplicationBootstrap();
+      expect(runOnce).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(IDEMPOTENCY_CLEANUP_INITIAL_DELAY_MS);
+      expect(runOnce).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(IDEMPOTENCY_CLEANUP_EVERY_MS);
+      expect(runOnce).toHaveBeenCalledTimes(2);
+      runtime.onApplicationShutdown();
+
+      const stopped = jest.fn<IdempotencyCleanup['runOnce']>();
+      const early = runtimeWith(stopped);
+      early.onApplicationBootstrap();
+      early.onApplicationShutdown();
+      await jest.advanceTimersByTimeAsync(IDEMPOTENCY_CLEANUP_EVERY_MS);
+      expect(stopped).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

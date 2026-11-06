@@ -8,6 +8,8 @@ import { DEFAULT_CLEANUP_BATCH_SIZE, IdempotencyCleanup } from './idempotency-cl
 
 /** One pass per day (Owner OD-11, 2026-11-05). */
 export const IDEMPOTENCY_CLEANUP_EVERY_MS = 24 * 60 * 60_000;
+/** First pass after start-up, so frequent restarts cannot postpone the schedule forever. */
+export const IDEMPOTENCY_CLEANUP_INITIAL_DELAY_MS = 60_000;
 /** Bounds one tick to this many batches per phase; the rest waits for the next tick. */
 export const IDEMPOTENCY_CLEANUP_MAX_BATCHES = 50;
 
@@ -19,6 +21,7 @@ export const IDEMPOTENCY_CLEANUP_MAX_BATCHES = 50;
 @Injectable()
 export class IdempotencyCleanupRuntime implements OnApplicationBootstrap, OnApplicationShutdown {
   #timer: ReturnType<typeof setInterval> | undefined;
+  #first: ReturnType<typeof setTimeout> | undefined;
   #running = false;
 
   constructor(
@@ -33,9 +36,15 @@ export class IdempotencyCleanupRuntime implements OnApplicationBootstrap, OnAppl
     }
     this.#timer = setInterval(() => void this.tick(), IDEMPOTENCY_CLEANUP_EVERY_MS);
     this.#timer.unref();
+    this.#first = setTimeout(() => void this.tick(), IDEMPOTENCY_CLEANUP_INITIAL_DELAY_MS);
+    this.#first.unref();
   }
 
   onApplicationShutdown(): void {
+    if (this.#first !== undefined) {
+      clearTimeout(this.#first);
+      this.#first = undefined;
+    }
     if (this.#timer !== undefined) {
       clearInterval(this.#timer);
       this.#timer = undefined;
