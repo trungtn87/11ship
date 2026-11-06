@@ -21,8 +21,10 @@ export const SEARCH_MINUTES = 30;
 export const SEARCH_MS = SEARCH_MINUTES * 60_000;
 /** The shop is reminded at these minutes of the search (once each). At the end the search stops; the Order is not cancelled. */
 export const REMINDER_MINUTES: readonly number[] = [5, 15];
-/** A Shipper who has accepted and not picked up is reminded every 5 minutes. */
+/** A Shipper who has accepted and not picked up is reminded every 5 minutes, at most MAX_PICKUP_REMINDERS times. */
 export const PICKUP_REMINDER_MS = 5 * 60_000;
+/** At most this many pickup reminders per assignment (OD-10); after that the timeout / escalation of the delivery handles a Shipper who never picks up. */
+export const MAX_PICKUP_REMINDERS = 3;
 
 /** The latest position is LIVE for 2 minutes, STALE until 10 minutes, LOST after that. */
 export const LOCATION_LIVE_SECONDS = 120;

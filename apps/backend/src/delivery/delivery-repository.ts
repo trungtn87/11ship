@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
-import { ActorType, AssignmentStatus, Custody, DeliveryState, FeeMode, FeePayer, GoodsCondition, FailReasonCode } from './delivery-constants';
+import { ActorType, AssignmentStatus, Custody, DeliveryState, FeeMode, FeePayer, GoodsCondition, FailReasonCode, MAX_PICKUP_REMINDERS } from './delivery-constants';
 
 // SQL of app.deliveries, app.delivery_assignments, app.delivery_events and app.delivery_incidents (M07 owns the four). Every method takes the
 // caller's TransactionContext: none of them begins, commits or rolls back. Times are read as epoch milliseconds and written with the database clock;
@@ -245,6 +245,9 @@ export interface AssignmentRow {
   readonly endReason: string | null;
   readonly version: number;
 }
+
+/** The event the sweeper records for each pickup reminder (the recorder prefixes the type with `delivery.`). */
+const PICKUP_REMINDER_EVENT = 'delivery.pickup_reminder';
 
 interface RawAssignment {
   assignment_id: string;
@@ -671,11 +674,21 @@ export class DeliveryRepository {
     return result.rowCount === 1;
   }
 
+  /** How many pickup reminders this assignment has already had (OD-10): the recorded events are the count, so no column or backfill is needed. */
+  async countPickupReminders(context: TransactionContext, assignmentId: string): Promise<number> {
+    const result = await context.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM app.delivery_events WHERE assignment_id = $1::uuid AND event_type = '${PICKUP_REMINDER_EVENT}'`,
+      [assignmentId],
+    );
+    return Number(result.rows[0]?.n ?? '0');
+  }
+
   /** Active assignments that are accepted, not picked up and owe a reminder (the sweeper re-checks under the delivery lock). */
   async listPickupReminderCandidates(context: TransactionContext, limit: number): Promise<AssignmentRow[]> {
     const result = await context.query<RawAssignment>(
       `SELECT ${A_COLUMNS} FROM app.delivery_assignments a
         WHERE a.status = 'ACTIVE' AND a.picked_up_at IS NULL
+          AND (SELECT count(*) FROM app.delivery_events e WHERE e.delivery_id = a.delivery_id AND e.assignment_id = a.assignment_id AND e.event_type = '${PICKUP_REMINDER_EVENT}') < ${String(MAX_PICKUP_REMINDERS)}
           AND COALESCE(a.last_pickup_reminder_at, a.accepted_at) + interval '5 minutes' <= ${CLOCK}
         ORDER BY COALESCE(a.last_pickup_reminder_at, a.accepted_at), a.assignment_id LIMIT $1`,
       [limit],
