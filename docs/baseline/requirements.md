@@ -1,8 +1,8 @@
 # 11Ship — Functional Baseline (B-01)
 
-**Phiên bản:** v0.7 (áp review Codex B-02 và Antigravity; Owner đã chốt C-01..C-28 và quyết định B-04 ngày 02/11) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-02 · **Người lập:** Claude Lead, cập nhật quyết định Owner
-**Trạng thái:** DRAFT chờ Owner duyệt. Owner đã chốt C-01…C-28 (01/11) và các quyết định B-04 (02/11). B-03 đã đóng khảo sát, chưa đạt nghiệm thu. **Đây là baseline tài liệu: chưa xác nhận code/runtime đạt baseline. PR #298 chưa merge.**
-**Mốc tài liệu nguồn:** `main` tại `fb3ba2c` (sau #297). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
+**Phiên bản:** v0.8 (v0.7 áp review Codex B-02 và Antigravity, Owner chốt C-01..C-28 và B-04 ngày 02/11; v0.8 đồng bộ quyết định Owner 05–06/11: OD-3..21 và M08 STALE_EVENT) · **Ngày lập:** 2026-11-01 · **Cập nhật quyết định Owner:** 2026-11-06 · **Người lập:** Claude Lead, cập nhật quyết định Owner
+**Trạng thái:** DRAFT chờ Owner duyệt. Owner đã chốt C-01…C-28 (01/11) và các quyết định B-04 (02/11). B-03 đã đóng khảo sát, chưa đạt nghiệm thu. Owner 05–06/11 đã quyết OD-1..OD-21 (xem `docs/review/phase3/owner-decisions.md`); OD-17 (requirement mới cho hoa hồng, kiểm duyệt đánh giá, đối soát) chưa viết vào baseline. **Đây là baseline tài liệu: chưa xác nhận code/runtime đạt baseline. PR #298 đã merge ngày 02/11 (`5495726`).**
+**Mốc tài liệu nguồn:** lập từ `main` tại `fb3ba2c` (sau #297); bản v0.8 sửa trên `main` tại `85467a8` (sau #303). Baseline SHA chính thức do luồng đóng Phase 0 ghim.
 
 ## 0. Cách đọc tài liệu
 
@@ -124,7 +124,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 |---|---|---|---|---|---|---|---|---|
 | M05-R-01 | M05 | Hồ sơ khách | `GET /v1/customers/me` | Mỗi user tối đa một hồ sơ khách, tạo khi cần, không cần OTP lại | `customers` (user_id unique) | KH | — | M05-design-approved (15/10) |
 | M05-R-02 | M05 | Sổ địa chỉ nhiều mục | `GET/POST /v1/customers/me/addresses`, `PATCH/DELETE .../{id}` | Nhãn Nhà/Cơ quan/Khác; SĐT liên hệ và mô tả địa chỉ bắt buộc; ghim GPS tùy chọn (lat/lng cùng null hoặc cùng hợp lệ) | `customer_addresses` | KH (sở hữu theo phiên) | ID không thuộc mình → không truy cập được | M05-design-approved |
-| M05-R-03 | M05 | Một địa chỉ mặc định | `PUT .../{id}/default` | Địa chỉ đầu tiên tự làm mặc định; hai mục đích mặc định tách riêng, mỗi mục đích tối đa 1 địa chỉ active: `pickup default` (`is_pickup_default`) và `delivery default` (`is_delivery_default`, tương đương `is_default`) (Owner 05/11 OD-18); đổi nguyên tử | — | KH | Race → chỉ một thắng | M05-design-approved |
+| M05-R-03 | M05 | Hai địa chỉ mặc định theo mục đích (lấy hàng, giao hàng) | `PUT/DELETE /customers/me/addresses/{id}/defaults/{kind}`; `PUT .../addresses/{id}/default` là alias tương thích cho delivery default | Địa chỉ đầu tiên tự làm mặc định; hai mục đích mặc định tách riêng, mỗi mục đích tối đa 1 địa chỉ active: `pickup default` (`is_pickup_default`) và `delivery default` (`is_delivery_default`, tương đương `is_default`) (Owner 05/11 OD-18); đổi nguyên tử | — | KH | Race → chỉ một thắng | M05-design-approved |
 | M05-R-04 | M05 | Xóa mềm | `DELETE .../{id}` | Xóa sau xác nhận; xóa mặc định thì chọn địa chỉ active cập nhật gần nhất | is_active | KH | — | M05-design-approved |
 | M05-R-05 | M05 | Snapshot đơn bất biến | — | Sửa/xóa địa chỉ không đổi snapshot của đơn cũ | Snapshot Order | — | — | M05-design-approved; M10 §13 |
 | M05-R-06 | M05 | Bộ chọn địa chỉ dùng chung | Checkout, sổ địa chỉ, setup quán | Lưu cùng lúc chữ và điểm ghim; Quay lại không áp dụng sửa đổi; lỗi GPS không làm mất ghim cũ; không tạo tọa độ giả từ địa chỉ chữ | — | KH, CQ | — | shared-address-picker (19/10) |
@@ -179,7 +179,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M08-R-06 | M08 | Cài đặt thông báo | Tài khoản → Cài đặt thông báo | Mặc định bật hết; tắt nhóm vẫn giữ mục hộp thư; tắt âm thanh không tắt nhận đơn; timer nghiệp vụ không chỉnh được | — | Chủ tài khoản | — | M08 §7 |
 | M08-R-07 | M08 | Đồng bộ và chống trùng | `GET /v1/notifications/changes` | Mở lại/reconnect/chạm push đều đọc lại máy chủ; event cũ không đè version mới; retry không nhân đôi | — | — | Mất mạng → "Mất kết nối — dữ liệu có thể chưa cập nhật" | M08 §8; M08-implementation |
 | M08-R-08 | M08 | Thiết bị, phiên, riêng tư | — | Push gắn phiên; đăng nhập máy mới thu hồi liên kết cũ; logout ngừng gửi riêng. Nội dung khóa màn hình không chứa OTP/mật khẩu/SĐT/địa chỉ/ngân hàng | Token push theo session | — | — | M08 §9 |
-| M08-R-09 | M08 | Lưu trữ | — | Hộp thư 90 ngày, sau đó lưu trữ, xóa sau tổng 365 ngày. Sự kiện cũ hơn 24 giờ không phát | — | — | STALE_EVENT | M08 §11; M08-implementation |
+| M08-R-09 | M08 | Lưu trữ | — | Hộp thư 90 ngày, sau đó lưu trữ, xóa sau tổng 365 ngày. Sự kiện cũ hơn 24 giờ: chỉ thông báo thời điểm (offer, reminder đã hết ý nghĩa) được bỏ và ghi `STALE_EVENT`. Sự kiện tài chính, tài khoản và trạng thái kết thúc của order/delivery không được mất âm thầm: phải lưu audit, đối chiếu trạng thái hiện tại và đưa vào inbox hoặc hàng đợi xử lý phù hợp. Mỗi `STALE_EVENT` có metric/cảnh báo (Owner 06/11; triển khai ở phase kỹ thuật M08) | — | — | STALE_EVENT | M08 §11; M08-implementation |
 | M08-R-10 | M08 | Admin Thông báo | Admin Web › Vận hành › Thông báo | Việc cần xử lý / Tra cứu / Cấu hình. Không có nút gửi, phát lại hay phát hàng loạt. Chỉ SYS sửa cấu hình | — | SYS; AD theo app được xem | — | M08 §10 |
 | M08-R-11 | M08 | FCM hoãn; kết quả rút tiền trong hộp thư | Hộp thông báo 11Ship | Push thật hoãn tới khi chuẩn bị Google Play. Kết quả rút tiền đi vào hộp thư trong app (chi tiết M08-R-14); đọc được ở CLOSING/SUSPENDED/CLOSED, không phụ thuộc FCM | — | SP | Thiếu cấu hình → PROVIDER_NOT_CONFIGURED | Owner 18/10; #259 (29/10) |
 | M08-R-12 | M08 | Counter Admin có scope | Admin Web | Bộ đếm việc cần xử lý chỉ đếm trong scope của ADMIN | — | AD | — | #259 |
@@ -217,7 +217,7 @@ Tài liệu này trả lời câu hỏi **"hệ thống phải làm gì"**. Nó 
 | M10-R-23 | M10 | Đơn cũ bất biến `[P8]` | Chi tiết đơn cũ | Quãng đường/phí đơn cũ không đổi (ví dụ K01-0006 giữ 3.838 m). Nếu vẽ tuyến hiện tại cho đơn cũ phải ghi "chỉ tham khảo" | Snapshot | — | — | #294 |
 | M10-R-24 | M10 | Lịch sử giá/số lượng bất biến | Chi tiết đơn | Lưu giá và số lượng gốc/chốt cùng actor, thời điểm, version, lý do; câu chữ không ngụ ý khách đã đồng ý | Snapshot | CQ sửa; KH xem | — | #260 (29/10) |
 | M10-R-25 | M10 | Hiển thị đúng bên hủy | 11Food, Admin | Phân biệt hiển thị hủy bởi Admin/quán/hệ thống | actor hủy | — | — | #260 (29/10) |
-| M10-R-26 | M10 | Đơn đã xác nhận nhưng chưa gọi shipper (C-22) | — | Không tự hủy. Nhắc quán và chuyển vào hàng đợi Admin theo mốc do SYSTEM cấu hình. Owner 05/11 OD-6 chốt mặc định: nhắc quán sau 20 phút, vào hàng đợi Admin sau 40 phút, giữ mốc tự hủy hiện hành 60 phút; phải nối M10 → M08 → M12 Action Queue | Mốc cấu hình | SYS cấu hình; AD xử lý | — | Owner 01/11 C-22; M10-timeouts |
+| M10-R-26 | M10 | Đơn đã xác nhận nhưng chưa gọi shipper (C-22) | — | Không tự hủy tại mốc nhắc quán (20 phút) hay mốc vào hàng đợi Admin (40 phút); SYSTEM tự hủy ở phút 60 nếu điều kiện timeout vẫn còn đúng (`docs/current/M10-timeouts-20261021.md`). Nhắc quán và chuyển vào hàng đợi Admin theo mốc do SYSTEM cấu hình. Owner 05/11 OD-6 chốt mặc định: nhắc quán sau 20 phút, vào hàng đợi Admin sau 40 phút, giữ mốc tự hủy hiện hành 60 phút; phải nối M10 → M08 → M12 Action Queue | Mốc cấu hình | SYS cấu hình; AD xử lý | — | Owner 01/11 C-22; M10-timeouts |
 
 ## 11. M11 — Đánh giá và phản ánh
 
