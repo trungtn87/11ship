@@ -674,11 +674,11 @@ export class DeliveryRepository {
     return result.rowCount === 1;
   }
 
-  /** How many pickup reminders this assignment has already had (OD-10): the recorded events are the count, so no column or backfill is needed. */
-  async countPickupReminders(context: TransactionContext, assignmentId: string): Promise<number> {
+  /** How many pickup reminders this assignment has already had (OD-10): the recorded events are the count, so no column or backfill is needed. Filtered by delivery_id first so the (delivery_id, seq) index bounds the scan to one delivery's events. */
+  async countPickupReminders(context: TransactionContext, deliveryId: string, assignmentId: string): Promise<number> {
     const result = await context.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM app.delivery_events WHERE assignment_id = $1::uuid AND event_type = '${PICKUP_REMINDER_EVENT}'`,
-      [assignmentId],
+      `SELECT count(*)::text AS n FROM app.delivery_events WHERE delivery_id = $1::uuid AND assignment_id = $2::uuid AND event_type = '${PICKUP_REMINDER_EVENT}'`,
+      [deliveryId, assignmentId],
     );
     return Number(result.rows[0]?.n ?? '0');
   }

@@ -105,7 +105,7 @@ export class DeliverySweeper {
         if (delivery === undefined || assignment === undefined || assignment.pickedUpAtMs !== null || (delivery.state !== 'accepted' && delivery.state !== 'location_confirmed')) {
           continue;
         }
-        if (!pickupReminderDue(await freshClockMs(context), assignment.acceptedAtMs, assignment.lastPickupReminderAtMs, await this.deliveries.countPickupReminders(context, assignment.assignmentId))) {
+        if (!pickupReminderDue(await freshClockMs(context), assignment.acceptedAtMs, assignment.lastPickupReminderAtMs, await this.deliveries.countPickupReminders(context, assignment.deliveryId, assignment.assignmentId))) {
           continue;
         }
         if (!(await this.deliveries.touchAssignment(context, assignment.assignmentId, assignment.version, 'reminder'))) {
