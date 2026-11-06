@@ -26,7 +26,7 @@ export interface SweepResult {
  * The timers of M07, driven ONLY by the stored server times, so a restart or a second instance never resets or doubles anything:
  *  - a search that reached 30 minutes STOPS (the food order is not cancelled);
  *  - the shop is reminded once at minute 5 and once at minute 15 of a search (each mark is stored when it is sent);
- *  - a Shipper who accepted and has not picked up is reminded every 5 minutes (the last reminder is stored on the assignment);
+ *  - a Shipper who accepted and has not picked up is reminded every 5 minutes, at most 3 times (the last reminder is stored on the assignment; the count is the number of recorded `pickup_reminder` events);
  *  - a fee offer of a Shipper that the payer did not answer in the configured time is dropped and the earlier fee stays (FeeAnswerExpiry); it never extends the search.
  * Every pass re-reads the row under its lock and decides again, so a Shipper accepting at the very moment the search ends is not overtaken: whoever
  * holds the delivery row first wins, and the other finds the new state. The reminders are outbox events; notifying people is M08's job.
@@ -105,7 +105,7 @@ export class DeliverySweeper {
         if (delivery === undefined || assignment === undefined || assignment.pickedUpAtMs !== null || (delivery.state !== 'accepted' && delivery.state !== 'location_confirmed')) {
           continue;
         }
-        if (!pickupReminderDue(await freshClockMs(context), assignment.acceptedAtMs, assignment.lastPickupReminderAtMs)) {
+        if (!pickupReminderDue(await freshClockMs(context), assignment.acceptedAtMs, assignment.lastPickupReminderAtMs, await this.deliveries.countPickupReminders(context, assignment.deliveryId, assignment.assignmentId))) {
           continue;
         }
         if (!(await this.deliveries.touchAssignment(context, assignment.assignmentId, assignment.version, 'reminder'))) {

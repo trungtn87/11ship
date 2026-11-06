@@ -768,6 +768,40 @@ describe('M07 — delivery flow', () => {
     expect(await stateOf(id)).toBe('waiting_driver');
   });
 
+  it('the pickup reminder repeats every 5 minutes but stops after 3 (OD-10); the timeout of the delivery handles the rest', async () => {
+    const s = await newShipper();
+    const view = await acceptNew(s);
+    const id = String(view.delivery_id);
+    /** Moves the accept and the last reminder 6 minutes into the past, so the next reminder is due (the assignment guard is lifted for this statement only). */
+    const makeDue = async (): Promise<void> => {
+      const client = await app.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('ALTER TABLE app.delivery_assignments DISABLE TRIGGER delivery_assignments_guard');
+        await client.query(
+          `UPDATE app.delivery_assignments SET accepted_at = accepted_at - interval '6 minutes', last_pickup_reminder_at = last_pickup_reminder_at - interval '6 minutes'
+            WHERE delivery_id = $1::uuid AND status = 'ACTIVE'`,
+          [id],
+        );
+        await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+        await client.query('ALTER TABLE app.delivery_assignments ENABLE TRIGGER delivery_assignments_guard');
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    expect(await eventsOf(id, 'delivery.pickup_reminder')).toBe(0);
+    for (let round = 1; round <= 5; round += 1) {
+      await makeDue();
+      await sweeper().sweep();
+      await sweeper().sweep(); // the stored mark: a second pass in the same window sends nothing more
+      expect(await eventsOf(id, 'delivery.pickup_reminder')).toBe(Math.min(round, 3));
+    }
+  });
+
   it('a Shipper who gives the delivery back after the window has closed ends the search; it does not restart', async () => {
     const s = await newShipper();
     const view = await acceptNew(s);

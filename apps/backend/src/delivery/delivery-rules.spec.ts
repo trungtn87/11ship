@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { DELIVERY_STATES } from './delivery-constants';
+import { DELIVERY_STATES, MAX_PICKUP_REMINDERS } from './delivery-constants';
 import { shouldShareLocation } from './shipper-location';
 import {
   dropoffAreaOf,
@@ -85,6 +85,14 @@ describe('M07 rules — search clock and reminders', () => {
     expect(pickupReminderDue(T0 + 5 * MIN, T0, null)).toBe(true);
     expect(pickupReminderDue(T0 + 7 * MIN, T0, T0 + 5 * MIN)).toBe(false);
     expect(pickupReminderDue(T0 + 10 * MIN, T0, T0 + 5 * MIN)).toBe(true);
+  });
+
+  it('the pickup reminder stops after 3 reminders, however late it is (OD-10)', () => {
+    expect(MAX_PICKUP_REMINDERS).toBe(3);
+    expect(pickupReminderDue(T0 + 30 * MIN, T0, T0 + 10 * MIN, 0)).toBe(true);
+    expect(pickupReminderDue(T0 + 30 * MIN, T0, T0 + 10 * MIN, 2)).toBe(true);
+    expect(pickupReminderDue(T0 + 30 * MIN, T0, T0 + 10 * MIN, 3)).toBe(false);
+    expect(pickupReminderDue(T0 + 60 * MIN, T0, null, 3)).toBe(false);
   });
 });
 

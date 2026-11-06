@@ -6,6 +6,7 @@ import {
   LOCATION_LIVE_SECONDS,
   LOCATION_MAX_ACCURACY_M,
   LOCATION_STALE_SECONDS,
+  MAX_PICKUP_REMINDERS,
   PICKUP_REMINDER_MS,
   REMINDER_MINUTES,
   RUNNING_STATES,
@@ -72,9 +73,9 @@ export function dueSearchReminders(nowMs: number, searchStartedAtMs: number, sen
   return REMINDER_MINUTES.filter((minute) => elapsed >= minute * 60_000 && nowMs < searchExpiresAtMs && !(minute === 5 ? sent.m5 : sent.m15));
 }
 
-/** Whether a Shipper who accepted and has not picked up is due another "pick up the goods" reminder (every 5 minutes since the last one, or the accept). */
-export function pickupReminderDue(nowMs: number, acceptedAtMs: number, lastReminderAtMs: number | null): boolean {
-  return nowMs - (lastReminderAtMs ?? acceptedAtMs) >= PICKUP_REMINDER_MS;
+/** Whether a Shipper who accepted and has not picked up is due another "pick up the goods" reminder (every 5 minutes since the last one, or the accept, and at most MAX_PICKUP_REMINDERS in all). */
+export function pickupReminderDue(nowMs: number, acceptedAtMs: number, lastReminderAtMs: number | null, remindersSent = 0): boolean {
+  return remindersSent < MAX_PICKUP_REMINDERS && nowMs - (lastReminderAtMs ?? acceptedAtMs) >= PICKUP_REMINDER_MS;
 }
 
 /**
