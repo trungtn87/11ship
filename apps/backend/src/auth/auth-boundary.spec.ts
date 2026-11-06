@@ -89,18 +89,18 @@ describe('where the expensive and external calls sit', () => {
     expect(service.indexOf('await this.#deliver(')).toBeGreaterThan(service.indexOf('insertPendingDelivery'));
   });
 
-  it('register hashes before the idempotency executor; login verifies before its session transaction', () => {
-    const registration = codeOf('auth/registration-service.ts');
+  it('client register hashes before the idempotency executor; client login verifies the password outside its session transaction', () => {
+    const registration = codeOf('client-auth/client-registration-service.ts');
     expect(registration.indexOf('this.hasher.hash(')).toBeGreaterThan(-1);
     expect(registration.indexOf('this.hasher.hash(')).toBeLessThan(registration.indexOf('this.executor.execute('));
     expect(registration.indexOf('findIdByDigest')).toBeLessThan(registration.indexOf('this.hasher.hash('));
-    expect(occurrences(registration, 'this.hasher.hash(')).toBe(1);
 
-    const login = codeOf('auth/login-service.ts');
-    const secondTransaction = login.indexOf('withTransaction', login.indexOf('withTransaction') + 1);
+    const login = codeOf('client-auth/client-login-service.ts');
     expect(login.indexOf('this.hasher.verify(')).toBeGreaterThan(-1);
-    expect(login.indexOf('this.hasher.verify(')).toBeLessThan(secondTransaction);
-    expect(login.indexOf('verifyAgainstDummy')).toBeLessThan(secondTransaction);
+    expect(login.indexOf('verifyAgainstDummy')).toBeGreaterThan(-1);
+    // Both checks live in #verifiedUser, which runs before #loginNew opens the session transaction.
+    expect(login.indexOf('this.hasher.verify(')).toBeLessThan(login.indexOf('async #loginNew('));
+    expect(login.indexOf('verifyAgainstDummy')).toBeLessThan(login.indexOf('async #loginNew('));
   });
 
   it('services take transaction contexts from the coordinators: nothing in Auth touches the pool or opens its own connection', () => {

@@ -11,7 +11,6 @@ import {
 } from './auth-validation';
 
 const DEVICE = { device_id: 'device-1', platform: 'ANDROID', app: 'SHIP11' };
-const TOKEN = 'A'.repeat(43);
 
 function code(run: () => unknown): string {
   try {

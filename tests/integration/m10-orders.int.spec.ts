@@ -405,7 +405,9 @@ describe('M10 — food orders', () => {
     expect(refused(await asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: 1 }, undefined, otherShop))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
     // A customer is not a shop and a shop owner is not a customer of the shop routes.
     expect(refused(await asCustomer(alice, 'GET', '/shop/me/orders')).status).toBeGreaterThanOrEqual(403);
-    expect(refused(await call(shop.token, 'GET', '/customers/me/orders')).status).toBeGreaterThanOrEqual(401);
+    // OD-1 (N): every client-auth account holds CUSTOMER, so a shop owner reads the customer route too, but only its OWN (empty) list.
+    const ownerAsCustomer = await call(shop.token, 'GET', '/customers/me/orders');
+    expect([ownerAsCustomer.status, (ok(ownerAsCustomer).orders as Json[]).length]).toEqual([200, 0]);
     expect((await app.call('GET', '/customers/me/orders', {})).status).toBe(401);
     // The lists carry only the caller's own Orders.
     const mine = ok(await asCustomer(bob, 'GET', '/customers/me/orders?scope=processing')).orders as Json[];
