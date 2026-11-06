@@ -10,7 +10,7 @@ import {
   obtainProof,
   PASSWORD,
   randomPhone,
-  registerUser,
+  registerLegacyUser,
   setUserStatus,
   startAuthApp,
 } from './support/auth-fixtures';
@@ -174,7 +174,7 @@ describe('M01 — shop onboarding service-area list', () => {
 
   it('an account without the CUSTOMER role is ROLE_NOT_AVAILABLE', async () => {
     // A legacy account: ordinary and verified, with no CUSTOMER role and no profile row.
-    const legacy = await registerUser(app);
+    const legacy = await registerLegacyUser(app);
     const login = await app.call('POST', '/client-auth/login', {
       headers: { 'idempotency-key': randomUUID() },
       body: { phone: legacy.phone.local, password: legacy.password, device: { ...WEB_FOOD } },

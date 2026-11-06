@@ -15,7 +15,7 @@ import {
   PASSWORD,
   Phone,
   randomPhone,
-  registerUser,
+  registerLegacyUser,
   removeFault,
   sessionIdOfToken,
   setUserStatus,
@@ -102,7 +102,7 @@ describe('M01.05 — own profile read model', () => {
 
   /** A legacy account: ordinary and verified, with no CUSTOMER role and no profile row. */
   async function legacyAccount(): Promise<Account> {
-    const legacy = await registerUser(app);
+    const legacy = await registerLegacyUser(app);
     return { phone: legacy.phone, password: legacy.password, userId: legacy.userId };
   }
 

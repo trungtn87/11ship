@@ -568,17 +568,28 @@ export interface Registered {
 /** The whole happy path: OTP, proof, POST /client-auth/register. Throws unless it answered 201. FOOD web device unless 'ship' (SHIP web device) or an explicit device. */
 export async function registerUser(
   app: AuthApp,
-  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown>; ship?: boolean } = {},
+  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown>; ship?: boolean; unverified?: boolean } = {},
 ): Promise<Registered> {
-  const proof = await obtainProof(app, options.phone ?? randomPhone());
+  // unverified: the DISABLED_TEST register mode takes no proof at all (the body must not carry a verification_token).
+  const phone = options.phone ?? randomPhone();
+  if (options.unverified === true) {
+    app.track(phone.normalized);
+  }
+  const proof = options.unverified === true ? { phone, proofToken: '' } : await obtainProof(app, phone);
   const key = options.key ?? randomUUID();
   const password = options.password ?? PASSWORD;
   const response = await app.call('POST', '/client-auth/register', {
     headers: { 'idempotency-key': key },
-    body: registerBody(proof.phone, proof.proofToken, {
-      password,
-      device: options.device ?? (options.ship === true ? { ...SHIP_DEVICE } : { ...DEVICE }),
-    }),
+    body: (() => {
+      const body = registerBody(proof.phone, proof.proofToken, {
+        password,
+        device: options.device ?? (options.ship === true ? { ...SHIP_DEVICE } : { ...DEVICE }),
+      });
+      if (options.unverified === true) {
+        delete body.verification_token;
+      }
+      return body;
+    })(),
   });
   if (response.status !== 201) {
     throw new Error(`register failed: ${response.status} ${response.text}`);
@@ -593,6 +604,18 @@ export async function registerUser(
     userId: String(data.user_id),
     accessToken: String(data.access_token),
   };
+}
+
+/**
+ * An account as the removed legacy register left it: ACTIVE, with a password and NO CUSTOMER role or profile (OD-1: the route is gone,
+ * so the state is rebuilt from a client-auth registration). Its registration session is revoked-free but roleless in effect.
+ */
+export async function registerLegacyUser(app: AuthApp, options: Parameters<typeof registerUser>[1] = {}): Promise<Registered> {
+  const user = await registerUser(app, options);
+  await app.pool.query("DELETE FROM app.user_roles WHERE user_id = $1::uuid AND role = 'CUSTOMER'", [user.userId]);
+  await app.pool.query('DELETE FROM app.customer_profiles WHERE user_id = $1::uuid', [user.userId]);
+  await app.pool.query('UPDATE app.sessions SET active_role = NULL WHERE user_id = $1::uuid', [user.userId]);
+  return user;
 }
 
 /** POST /client-auth/login with a fresh Idempotency-Key. Default device: the FOOD web device. */

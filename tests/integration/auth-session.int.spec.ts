@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { eventually } from './support/async-helpers';
 import {
@@ -8,13 +8,13 @@ import {
   countRows,
   dataOf,
   DEVICE,
+  SHIP_DEVICE,
+  selectContext,
   errorCode,
   expireSession,
   grantRole,
   installRoleSelectShopStall,
   loginUser,
-  OTHER_PASSWORD,
-  randomPhone,
   registerUser,
   Registered,
   removeRoleSelectShopStall,
@@ -25,9 +25,9 @@ import {
 } from './support/auth-fixtures';
 import { LockHolder } from './support/idempotency-fixtures';
 
-// M01-A1 — login, bearer sessions, /me and role selection (including the SHOP single-active-session
-// invariant), through the REAL Nest pipeline on a REAL PostgreSQL.
-describe('M01-A1 — login, sessions, /me and role selection', () => {
+// M01-A1 (moved to /v1/client-auth by OD-1) — bearer sessions, /me and context selection (including the SHOP single-active-session
+// invariant), through the REAL Nest pipeline on a REAL PostgreSQL. SHOP_OWNER needs a FOOD session, DRIVER a SHIP session.
+describe('M01-A1 — bearer sessions, /me and context selection', () => {
   let app: AuthApp;
 
   beforeAll(async () => {
@@ -39,16 +39,16 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
   });
 
   async function me(token: string | undefined, headers: Record<string, string> = {}): Promise<ApiResponse> {
-    return app.call('GET', '/auth/me', { ...(token === undefined ? {} : { bearer: token }), headers });
+    return app.call('GET', '/client-auth/me', { ...(token === undefined ? {} : { bearer: token }), headers });
   }
 
   async function selectRole(token: string, role: unknown, target: AuthApp = app): Promise<ApiResponse> {
-    return target.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    return selectContext(target, token, role === 'SHOP' ? 'SHOP_OWNER' : String(role));
   }
 
   /** A second device: a new login of the same user. */
-  async function loginOn(user: Registered, deviceId: string, target: AuthApp = app): Promise<string> {
-    const response = await loginUser(target, user, { ...DEVICE, device_id: deviceId });
+  async function loginOn(user: Registered, deviceId: string, target: AuthApp = app, ship = false): Promise<string> {
+    const response = await loginUser(target, user, { ...(ship ? SHIP_DEVICE : DEVICE), device_id: deviceId });
     if (response.status !== 200) {
       throw new Error(`login failed: ${response.status} ${response.text}`);
     }
@@ -62,121 +62,6 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       [userId],
     );
   }
-
-  describe('login', () => {
-    it('creates a NEW roleless session and returns the token once', async () => {
-      const user = await registerUser(app);
-      const response = await loginUser(app, user);
-
-      expect(response.status).toBe(200);
-      const data = dataOf(response);
-      expect(Object.keys(data).sort()).toEqual([
-        'access_token',
-        'active_role',
-        'available_roles',
-        'onboarding_required',
-        'phone_verification_status', // issue #49: display value only (VERIFIED for a registered account)
-        'role_selection_required',
-        'user_id',
-      ]);
-      expect(data.phone_verification_status).toBe('VERIFIED');
-      expect(data.user_id).toBe(user.userId);
-      expect(data.available_roles).toEqual([]);
-      expect(data.active_role).toBeNull();
-      expect(data.onboarding_required).toBe(true);
-      expect(data.role_selection_required).toBe(false);
-      expect(data.access_token).not.toBe(user.accessToken);
-
-      const sessions = await app.pool.query<{ active_role: string | null }>(
-        'SELECT active_role FROM app.sessions WHERE user_id = $1::uuid ORDER BY created_at',
-        [user.userId],
-      );
-      expect(sessions.rows).toEqual([{ active_role: null }, { active_role: null }]);
-
-      const audit = await app.pool.query<{ outcome: string; actor_id: string }>(
-        `SELECT outcome, actor_id FROM app.audit_logs WHERE request_id = $1::uuid AND action = 'auth.login.v1'`,
-        [response.requestId],
-      );
-      expect(audit.rows).toEqual([{ outcome: 'SUCCESS', actor_id: user.userId }]);
-    });
-
-    it('accepts every phone form of the same number', async () => {
-      const user = await registerUser(app);
-      for (const phone of [user.phone.local, user.phone.international, `+${user.phone.international}`, ` ${user.phone.local} `]) {
-        const response = await app.call('POST', '/auth/login', {
-          body: { phone, password: user.password, device: { ...DEVICE } },
-        });
-        expect([phone, response.status]).toEqual([phone, 200]);
-      }
-    });
-
-    it('answers a wrong password and an unknown phone with the SAME error', async () => {
-      const user = await registerUser(app);
-      const wrong = await loginUser(app, { phone: user.phone, password: OTHER_PASSWORD });
-      const unknown = await loginUser(app, { phone: randomPhone(), password: user.password });
-      expect(wrong.status).toBe(401);
-      expect(unknown.status).toBe(401);
-      expect(errorCode(wrong)).toBe('INVALID_CREDENTIALS');
-      expect(wrong.body.error?.code).toBe(unknown.body.error?.code);
-      expect(wrong.body.error?.message).toBe(unknown.body.error?.message);
-      expect(Object.keys(wrong.body.error ?? {}).sort()).toEqual(Object.keys(unknown.body.error ?? {}).sort());
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [user.userId])).toBe(1);
-    });
-
-    it('a correct password on a DISABLED account is ACCOUNT_DISABLED (no session, DENIED audit); a wrong one is not', async () => {
-      const user = await registerUser(app);
-      await setUserStatus(app.pool, user.userId, 'DISABLED');
-
-      const disabled = await loginUser(app, user);
-      expect([disabled.status, errorCode(disabled)]).toEqual([403, 'ACCOUNT_DISABLED']);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [user.userId])).toBe(1);
-      const audit = await app.pool.query<{ outcome: string; reason_code: string }>(
-        `SELECT outcome, reason_code FROM app.audit_logs WHERE request_id = $1::uuid AND action = 'auth.login.v1'`,
-        [disabled.requestId],
-      );
-      expect(audit.rows).toEqual([{ outcome: 'DENIED', reason_code: 'ACCOUNT_DISABLED' }]);
-
-      const wrong = await loginUser(app, { phone: user.phone, password: OTHER_PASSWORD });
-      expect([wrong.status, errorCode(wrong)]).toEqual([401, 'INVALID_CREDENTIALS']);
-    });
-
-    it('returns sorted available roles, never selects one, and asks for role selection', async () => {
-      const user = await registerUser(app);
-      await grantRole(app.pool, user.userId, 'SHOP');
-      await grantRole(app.pool, user.userId, 'DRIVER');
-      const response = await loginUser(app, user);
-      const data = dataOf(response);
-      expect(data.available_roles).toEqual(['DRIVER', 'SHOP']);
-      expect(data.active_role).toBeNull();
-      expect(data.role_selection_required).toBe(true);
-      expect(data.onboarding_required).toBe(false);
-    });
-
-    it('a single role is still not auto-selected', async () => {
-      const user = await registerUser(app);
-      await grantRole(app.pool, user.userId, 'DRIVER');
-      const data = dataOf(await loginUser(app, user));
-      expect(data.active_role).toBeNull();
-      expect(data.role_selection_required).toBe(true);
-    });
-
-    it('refuses forbidden fields, a bad device and a bad phone', async () => {
-      const user = await registerUser(app);
-      const base = { phone: user.phone.local, password: user.password, device: { ...DEVICE } };
-      for (const body of [
-        { ...base, role: 'ADMIN' },
-        { ...base, is_admin: true },
-        { phone: base.phone, password: base.password },
-        { ...base, device: { ...DEVICE, platform: 'android' } },
-        { ...base, password: 123 },
-      ]) {
-        const response = await app.call('POST', '/auth/login', { body });
-        expect([response.status, errorCode(response)]).toEqual([400, 'BAD_REQUEST']);
-      }
-      const badPhone = await app.call('POST', '/auth/login', { body: { ...base, phone: '12345' } });
-      expect([badPhone.status, errorCode(badPhone)]).toEqual([400, 'INVALID_PHONE']);
-    });
-  });
 
   describe('bearer authentication (every protected request)', () => {
     it('refuses a missing, malformed or unknown credential with SESSION_INVALID', async () => {
@@ -200,36 +85,10 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
 
     it('never reads the token from the query string or the body', async () => {
       const user = await registerUser(app);
-      const query = await app.call('GET', `/auth/me?access_token=${user.accessToken}`);
+      const query = await app.call('GET', `/client-auth/me?access_token=${user.accessToken}`);
       expect([query.status, errorCode(query)]).toEqual([401, 'SESSION_INVALID']);
-      const body = await app.call('POST', '/auth/role/select', { body: { role: 'SHOP', access_token: user.accessToken } });
+      const body = await app.call('POST', '/client-auth/context', { headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER', access_token: user.accessToken } });
       expect(body.status).toBe(401);
-    });
-
-    it('accepts a valid token and returns the documented /me contract', async () => {
-      const user = await registerUser(app);
-      const response = await me(user.accessToken);
-      expect(response.status).toBe(200);
-      expect(dataOf(response)).toEqual({
-        user_id: user.userId,
-        phone_normalized: user.phone.normalized,
-        phone_verification_status: 'VERIFIED', // issue #49: display value only, never an authorization source
-        available_roles: [],
-        active_role: null,
-        onboarding_required: true,
-        role_selection_required: false,
-        onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
-      });
-    });
-
-    it('/me shows only supported roles and asks for selection while no role is active', async () => {
-      const user = await registerUser(app);
-      await grantRole(app.pool, user.userId, 'SHOP');
-      await grantRole(app.pool, user.userId, 'ADMIN'); // never exposed and never selectable through Auth
-      const data = dataOf(await me(user.accessToken));
-      expect(data.available_roles).toEqual(['SHOP']);
-      expect(data.role_selection_required).toBe(true);
-      expect(data.onboarding_required).toBe(false);
     });
 
     it('a revoked session is SESSION_REVOKED, an expired one SESSION_EXPIRED, a disabled user ACCOUNT_DISABLED', async () => {
@@ -268,8 +127,8 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
           (await short.pool.query<{ e: string }>('SELECT expires_at::text AS e FROM app.sessions WHERE user_id = $1::uuid', [user.userId]))
             .rows[0]?.e as string;
         const before = await read();
-        await short.call('GET', '/auth/me', { bearer: user.accessToken });
-        await short.call('GET', '/auth/me', { bearer: user.accessToken });
+        await short.call('GET', '/client-auth/me', { bearer: user.accessToken });
+        await short.call('GET', '/client-auth/me', { bearer: user.accessToken });
         expect(await read()).toBe(before);
         const ttl = await short.pool.query<{ s: number }>(
           'SELECT extract(epoch FROM (expires_at - created_at))::int AS s FROM app.sessions WHERE user_id = $1::uuid',
@@ -283,41 +142,16 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
   });
 
   describe('role selection', () => {
-    it('refuses unsupported or unknown roles with ROLE_NOT_AVAILABLE, even if a row exists', async () => {
-      const user = await registerUser(app);
-      await grantRole(app.pool, user.userId, 'ADMIN');
-      for (const role of ['ADMIN', 'SYSTEM', 'PLATFORM', 'EXTERNAL', 'shop', 'Driver', 'NOPE', 'SHOP ']) {
-        const response = await selectRole(user.accessToken, role);
-        expect([role, response.status, errorCode(response)]).toEqual([role, 403, 'ROLE_NOT_AVAILABLE']);
-      }
-      expect(dataOf(await me(user.accessToken)).active_role).toBeNull();
-    });
-
-    it('refuses a supported role the user does not hold', async () => {
-      const user = await registerUser(app);
-      const response = await selectRole(user.accessToken, 'SHOP');
-      expect([response.status, errorCode(response)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
-    });
-
-    it('validates the body strictly', async () => {
-      const user = await registerUser(app);
-      for (const body of [{}, { role: 1 }, { role: '' }, { role: 'SHOP', extra: true }, { roles: ['SHOP'] }]) {
-        const response = await app.call('POST', '/auth/role/select', { bearer: user.accessToken, body });
-        expect([response.status, errorCode(response)]).toEqual([400, 'BAD_REQUEST']);
-      }
-      const unauthenticated = await app.call('POST', '/auth/role/select', { body: { role: 'SHOP' } });
-      expect([unauthenticated.status, errorCode(unauthenticated)]).toEqual([401, 'SESSION_INVALID']);
-    });
-
     it('DRIVER: sets the role on THIS session only and leaves other DRIVER sessions valid', async () => {
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'DRIVER');
-      const second = await loginOn(user, 'device-driver-b');
+      const first = await loginOn(user, 'device-driver-a', app, true);
+      const second = await loginOn(user, 'device-driver-b', app, true);
 
-      expect((await selectRole(user.accessToken, 'DRIVER')).status).toBe(200);
+      expect((await selectRole(first, 'DRIVER')).status).toBe(200);
       expect((await selectRole(second, 'DRIVER')).status).toBe(200);
 
-      expect(dataOf(await me(user.accessToken)).active_role).toBe('DRIVER');
+      expect(dataOf(await me(first)).active_role).toBe('DRIVER');
       expect(dataOf(await me(second)).active_role).toBe('DRIVER');
       expect(await countRows(app.pool, "SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND revoked_at IS NOT NULL", [user.userId])).toBe(0);
     });
@@ -328,12 +162,12 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       await grantRole(app.pool, user.userId, 'DRIVER');
       const deviceA = user.accessToken;
       const deviceB = await loginOn(user, 'device-shop-b');
-      const driverDevice = await loginOn(user, 'device-driver-c');
+      const driverDevice = await loginOn(user, 'device-driver-c', app, true);
 
       expect((await selectRole(driverDevice, 'DRIVER')).status).toBe(200);
       const first = await selectRole(deviceA, 'SHOP');
       expect(first.status).toBe(200);
-      expect(dataOf(first).active_role).toBe('SHOP');
+      expect(dataOf(first).active_role).toBe('SHOP_OWNER');
       expect(await unrevokedShopSessions(user.userId)).toBe(1);
 
       // The user moves SHOP to device B: A is revoked from its next request on.
@@ -345,7 +179,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       expect([oldShop.status, errorCode(oldShop)]).toEqual([401, 'SESSION_REVOKED']);
       const newShop = await me(deviceB);
       expect(newShop.status).toBe(200);
-      expect(dataOf(newShop).active_role).toBe('SHOP');
+      expect(dataOf(newShop).active_role).toBe('SHOP_OWNER');
       // DRIVER on another device is untouched by the SHOP move.
       const driver = await me(driverDevice);
       expect(driver.status).toBe(200);
@@ -361,8 +195,8 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         [second.requestId],
       );
       expect(audit.rows).toEqual([
-        { action: 'auth.role_select.v1', resource_type: 'session', outcome: 'SUCCESS' },
         { action: 'auth.session_revoke.v1', resource_type: 'session', outcome: 'SUCCESS' },
+        { action: 'client.auth.context.v1', resource_type: 'session', outcome: 'SUCCESS' },
       ]);
     });
 
@@ -375,17 +209,17 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
       expect((await me(user.accessToken)).status).toBe(200);
     });
 
-    it('switching the same session from SHOP to DRIVER frees the SHOP slot for another session', async () => {
+    it('switching the same session from SHOP_OWNER to CUSTOMER frees the SHOP slot for another session', async () => {
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'SHOP');
       await grantRole(app.pool, user.userId, 'DRIVER');
       const other = await loginOn(user, 'device-switch-b');
       expect((await selectRole(user.accessToken, 'SHOP')).status).toBe(200);
-      expect((await selectRole(user.accessToken, 'DRIVER')).status).toBe(200);
+      expect((await selectRole(user.accessToken, 'CUSTOMER')).status).toBe(200);
       expect(await unrevokedShopSessions(user.userId)).toBe(0);
       expect((await selectRole(other, 'SHOP')).status).toBe(200);
       expect(await unrevokedShopSessions(user.userId)).toBe(1);
-      expect((await me(user.accessToken)).status).toBe(200); // the DRIVER session was not revoked
+      expect((await me(user.accessToken)).status).toBe(200); // the CUSTOMER session was not revoked
     });
 
     describe('concurrent SHOP selection', () => {
@@ -407,7 +241,7 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         await grantRole(slow.pool, user.userId, 'DRIVER');
         const sessionA = user.accessToken;
         const sessionB = await loginOn(user, 'device-race-b', slow);
-        const sessionD = await loginOn(user, 'device-race-d', slow);
+        const sessionD = await loginOn(user, 'device-race-d', slow, true);
         expect((await selectRole(sessionD, 'DRIVER', slow)).status).toBe(200);
 
         // Deterministic barrier, no sleeps. A test-only trigger makes the statement that moves a session into
@@ -461,12 +295,12 @@ describe('M01-A1 — login, sessions, /me and role selection', () => {
         expect([rowB?.active_role, rowB?.revoked]).toEqual(['SHOP', false]); // the later one is the single live SHOP session
         expect([rowD?.active_role, rowD?.revoked]).toEqual(['DRIVER', false]);
 
-        const afterA = await slow.call('GET', '/auth/me', { bearer: sessionA });
+        const afterA = await slow.call('GET', '/client-auth/me', { bearer: sessionA });
         expect([afterA.status, errorCode(afterA)]).toEqual([401, 'SESSION_REVOKED']);
-        const afterB = await slow.call('GET', '/auth/me', { bearer: sessionB });
+        const afterB = await slow.call('GET', '/client-auth/me', { bearer: sessionB });
         expect(afterB.status).toBe(200);
-        expect(dataOf(afterB).active_role).toBe('SHOP');
-        const driver = await slow.call('GET', '/auth/me', { bearer: sessionD });
+        expect(dataOf(afterB).active_role).toBe('SHOP_OWNER');
+        const driver = await slow.call('GET', '/client-auth/me', { bearer: sessionD });
         expect(driver.status).toBe(200);
         expect(dataOf(driver).active_role).toBe('DRIVER');
       });

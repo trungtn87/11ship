@@ -11,7 +11,7 @@ import {
   PASSWORD,
   Phone,
   randomPhone,
-  registerUser,
+  registerLegacyUser,
   removeFault,
   setUserStatus,
   startAuthApp,
@@ -92,7 +92,7 @@ describe('M05 — customer record and address book', () => {
 
   /** A legacy account: ordinary and verified, with no CUSTOMER role. */
   async function legacyAccount(): Promise<Account> {
-    const legacy = await registerUser(app);
+    const legacy = await registerLegacyUser(app);
     return { phone: legacy.phone, password: legacy.password, userId: legacy.userId };
   }
 
