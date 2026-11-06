@@ -4,13 +4,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
-import '../m06/m06_models.dart';
-import '../m06/m06_views.dart' show kFeeNotePrivacyHint, noteLooksLikePhone, parseAgreedFee;
 import '../tokens.dart';
-import '../wallet/wallet_models.dart';
 import '../widgets/components.dart';
 import '../widgets/shop_order_filters.dart';
-import '../widgets/form_feedback.dart';
 import '../m10/order_chat_models.dart';
 import '../m10/order_chat_view.dart';
 import '../m10/order_sections.dart';
@@ -19,8 +15,7 @@ import 'm07_source.dart';
 import 'm07_widgets.dart';
 
 // 11Food, the shop's side of M07 (screens Q01-Q08 of docs/current/M07-implementation-20261018.md):
-//   Q01 ShopDeliveryHub        list: "Đang xử lý" / "Lịch sử", search by code or recipient, "Gọi shipper"
-//   Q02 ShopCallScreen         the call form with a summary before sending
+//   Q01 ShopDeliveryHub        list: "Đang xử lý" / "Lịch sử", search by code or recipient (historical DIRECT)
 //   Q03-Q08 ShopDeliveryDetailScreen   one screen that shows the state the server reports:
 //        Q03 searching (server timer, 5/15/30 marks, cancel)   Q04 accepted (Shipper, cancel)   Q05 delivering (status; cancel only for the creator)
 //        Q06 search stopped (call again / cancel)   Q07 result and timeline (read only)   Q08 goods handling after a cancelled-after-pickup request
@@ -32,14 +27,6 @@ const String kCancelExplain = 'Yêu cầu giao sẽ kết thúc, shipper (nếu 
 const String kCancelAfterPickupExplain = 'Shipper đã lấy hàng. Hủy bây giờ thì yêu cầu giao kết thúc, hoa hồng của shipper không bị thu, và hàng vẫn ở shipper cho tới khi bạn xác nhận đã nhận lại hoặc đã xử lý.';
 
 String _short(String text, int max) => text.length <= max ? text : '${text.substring(0, max - 1)}…';
-
-/// Draft of the call form kept while the app runs, so a lost connection never makes the shop retype. Only a server answer clears it.
-class ShopCallDraft {
-  static final Map<String, String> _fields = <String, String>{};
-  static String get(String field) => _fields[field] ?? '';
-  static void put(String field, String value) => _fields[field] = value;
-  static void clear() => _fields.clear();
-}
 
 // ---- Q01: list -------------------------------------------------------------------------------------------------------
 
@@ -218,258 +205,6 @@ class _DeliveryCard extends StatelessWidget {
     );
   }
 }
-
-// ---- Q02: call a shipper ---------------------------------------------------------------------------------------------
-
-class ShopCallScreen extends StatefulWidget {
-  const ShopCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder});
-
-  final ShopDeliverySource source;
-  final M07PinPickerBuilder? pinPicker;
-  final M07MapBuilder? mapBuilder;
-
-  @override
-  State<ShopCallScreen> createState() => _ShopCallScreenState();
-}
-
-class _ShopCallScreenState extends State<ShopCallScreen> with M07Actions<ShopCallScreen> {
-  final Map<String, TextEditingController> _c = <String, TextEditingController>{};
-  String _payer = 'CUSTOMER';
-  bool _agreed = false;
-  String _reason = 'URGENT';
-  int? _band;
-  List<FeeBand>? _bands;
-  String? _problem;
-
-  static const List<String> _fields = <String>['name', 'phone', 'address', 'goods', 'value', 'note', 'amount', 'feeNote'];
-
-  TextEditingController _field(String name) => _c.putIfAbsent(name, () => TextEditingController(text: ShopCallDraft.get(name))..addListener(() => ShopCallDraft.put(name, _c[name]!.text)));
-
-  @override
-  void initState() {
-    super.initState();
-    for (final String f in _fields) {
-      _field(f);
-    }
-    widget.source.feeBands().then((List<FeeBand> bands) {
-      if (mounted) setState(() => _bands = bands);
-    }).catchError((Object _) {
-      if (mounted) setState(() => _bands = const <FeeBand>[]);
-    });
-  }
-
-  @override
-  void dispose() {
-    for (final TextEditingController c in _c.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  /// Validates the form; returns the input or null with [_problem] set.
-  NewDeliveryInput? _build() {
-    final String name = _field('name').text.trim();
-    final String phone = _field('phone').text.replaceAll(RegExp(r'[\s.\-]'), '');
-    final String address = _field('address').text.trim();
-    final String goods = _field('goods').text.trim();
-    final int? value = parseVndInput(_field('value').text) ?? (_field('value').text.trim().isEmpty ? null : -1);
-    String? problem;
-    if (name.isEmpty || address.isEmpty || goods.isEmpty) {
-      problem = 'Hãy nhập tên người nhận, địa chỉ và mô tả hàng.';
-    } else if (!RegExp(r'^(0|\+84)\d{9}$').hasMatch(phone)) {
-      problem = 'Số điện thoại người nhận chưa đúng (10 số, bắt đầu bằng 0).';
-    } else if (value == null || value < 0) {
-      problem = 'Hãy nhập giá trị hàng (số nguyên, có thể là 0).';
-    } else if (!_agreed && _band == null) {
-      problem = 'Hãy chọn mốc phí giao, hoặc chọn "Thỏa thuận" và nhập mức phí đề xuất.';
-    }
-    int? amount;
-    if (problem == null && _agreed) {
-      amount = parseAgreedFee(_field('amount').text);
-      final String feeNote = _field('feeNote').text.trim();
-      if (amount == null) {
-        problem = 'Mức phí thỏa thuận phải là số nguyên từ 0 đến 10.000.000đ.';
-      } else if (noteLooksLikePhone(feeNote)) {
-        problem = 'Ghi chú cho shipper không được chứa số điện thoại.';
-      } else if (_reason == 'OTHER' && feeNote.isEmpty) {
-        problem = 'Lý do "Khác" cần có ghi chú.';
-      }
-    }
-    setState(() => _problem = problem);
-    if (problem != null) {
-      return null;
-    }
-    return NewDeliveryInput(
-      recipientName: name,
-      recipientPhone: phone,
-      addressText: address,
-      goodsDescription: goods,
-      goodsValueVnd: value!,
-      paidVnd: 0,
-      feePayer: _payer,
-      note: _field('note').text.trim(),
-      agreedReasonCode: _agreed ? _reason : null,
-      agreedReasonNote: _agreed ? _field('feeNote').text.trim() : null,
-      agreedAmountVnd: amount,
-      feeBand: _agreed ? null : _band,
-    );
-  }
-
-  Future<void> _submit() async {
-    final NewDeliveryInput? input = _build();
-    if (input == null) {
-      return;
-    }
-    final bool yes = await showConfirmDialog(
-      context,
-      title: 'Gọi shipper?',
-      confirmLabel: 'Gọi shipper',
-      content: KeyValueRows(<(String, String)>[
-        ('Người nhận', input.recipientName),
-        ('Điện thoại', input.recipientPhone),
-        ('Giao đến', input.addressText),
-        ('Hàng', input.goodsDescription),
-        ('Giá trị hàng', m07Vnd(input.goodsValueVnd)),
-        ('Phí giao', input.agreed ? '${m07Vnd(input.agreedAmountVnd)} (thỏa thuận)' : '${m07Vnd(_bandOf(input.feeBand)?.feeVnd)} (ước tính theo mốc)'),
-        ('Người trả phí', input.feePayer == 'CUSTOMER' ? 'Khách trả ship' : 'Quán trả ship'),
-      ]),
-    );
-    if (!yes || !mounted) {
-      return;
-    }
-    DeliveryView? made;
-    final bool ok = await act('create', (String key) async => made = await widget.source.create(input, key: key));
-    if (!ok || made == null || !mounted) {
-      return;
-    }
-    ShopCallDraft.clear();
-    final DeliveryView created = made!;
-    await Navigator.of(context).pushReplacement(n11Route(ShopDeliveryDetailScreen(source: widget.source, deliveryId: created.deliveryId, mapBuilder: widget.mapBuilder, pinPicker: widget.pinPicker)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return m07Page(
-      'Gọi shipper',
-      widget.source.isSample,
-      <Widget>[
-        N11Field(requiredInput: true, fieldKey: const Key('m07-f-name'), label: 'Tên người nhận', controller: _field('name'), maxLength: 80),
-        N11Field(validator: recipientPhoneError, fieldKey: const Key('m07-f-phone'), label: 'Số điện thoại người nhận', controller: _field('phone'), keyboard: TextInputType.phone, maxLength: 15),
-        N11Field(requiredInput: true, fieldKey: const Key('m07-f-address'), label: 'Địa chỉ giao (mô tả)', controller: _field('address'), maxLength: 200, hint: 'Ghi rõ để shipper tìm được. Không cần ghim bản đồ.'),
-        N11Field(requiredInput: true, fieldKey: const Key('m07-f-goods'), label: 'Mô tả hàng', controller: _field('goods'), maxLength: 120),
-        N11Field(validator: (String value) => parseVndInput(value) == null ? 'Nhập giá trị hàng là số nguyên, có thể là 0.' : null, fieldKey: const Key('m07-f-value'), label: 'Giá trị hàng (đ)', controller: _field('value'), keyboard: TextInputType.number, maxLength: 12),
-        _payerSection(),
-        _feeSection(),
-        N11Field(fieldKey: const Key('m07-f-note'), label: 'Ghi chú', controller: _field('note'), maxLength: 200, optionalLabel: true),
-        if (_problem != null) N11Banner(key: const Key('m07-form-problem'), kind: BannerKind.error, title: 'Chưa gửi được', text: _problem),
-        actionBanner(),
-      ],
-      bottom: N11Button(key: const Key('m07-submit-call'), validate: true, label: 'Gọi shipper', icon: Icons.two_wheeler, loading: busy, onPressed: busy ? null : _submit),
-    );
-  }
-
-  FeeBand? _bandOf(int? index) {
-    final List<FeeBand> bands = _bands ?? const <FeeBand>[];
-    for (final FeeBand b in bands) {
-      if (b.index == index) return b;
-    }
-    return null;
-  }
-
-  Widget _payerSection() {
-    return N11Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Ai trả phí giao?', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
-          Wrap(
-            spacing: N11Space.gap3,
-            runSpacing: N11Space.gap2,
-            children: <Widget>[
-              N11Button(key: const Key('m07-payer-customer'), label: 'Khách trả', compact: true, kind: _payer == 'CUSTOMER' ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _payer = 'CUSTOMER')),
-              N11Button(key: const Key('m07-payer-shop'), label: 'Quán trả', compact: true, kind: _payer == 'SHOP' ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _payer = 'SHOP')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _feeSection() {
-    return N11Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('Phí giao', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
-          Wrap(
-            spacing: N11Space.gap3,
-            runSpacing: N11Space.gap2,
-            children: <Widget>[
-              N11Button(key: const Key('m07-fee-standard'), label: 'Theo bảng giá', compact: true, kind: _agreed ? ButtonKind.secondary : ButtonKind.primary, onPressed: () => setState(() => _agreed = false)),
-              N11Button(key: const Key('m07-fee-agreed'), label: 'Thỏa thuận', compact: true, kind: _agreed ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _agreed = true)),
-            ],
-          ),
-          const SizedBox(height: N11Space.gap2),
-          if (!_agreed) ...<Widget>[
-            if (_bands == null)
-              const Text('Đang tải bảng giá...', style: N11Text.caption)
-            else if (_bands!.isEmpty)
-              const ReasonNote('Chưa có bảng giá để chọn mốc. Hãy chọn "Thỏa thuận" và nhập mức phí đề xuất cho shipper.')
-            else ...<Widget>[
-              const Text('Chọn mốc quãng đường ước tính', style: N11Text.caption),
-              const SizedBox(height: N11Space.gap2),
-              Wrap(
-                spacing: N11Space.gap2,
-                runSpacing: N11Space.gap2,
-                children: <Widget>[
-                  for (final FeeBand b in _bands!)
-                    ChoiceChip(
-                      key: Key('m07-band-${b.index}'),
-                      label: Text('${b.rangeText} · ${m07Vnd(b.feeVnd)}'),
-                      selected: _band == b.index,
-                      onSelected: (bool _) => setState(() => _band = b.index),
-                    ),
-                ],
-              ),
-              const SizedBox(height: N11Space.gap2),
-              const ReasonNote('Đây là phí ước tính theo mốc bạn chọn, không phải quãng đường đo trên bản đồ. Shipper có thể đề xuất mức khác và bên trả phí quyết định.'),
-            ],
-          ]
-          else ...<Widget>[
-            Wrap(
-              spacing: N11Space.gap2,
-              children: <Widget>[
-                for (final FeeReason r in FeeReason.values)
-                  if (r != FeeReason.outsideTable)
-                    ChoiceChip(
-                      key: Key('m07-reason-${_wire(r)}'),
-                      label: Text(feeReasonText(r)),
-                      selected: _reason == _wire(r),
-                      onSelected: (bool _) => setState(() => _reason = _wire(r)),
-                    ),
-              ],
-            ),
-            const SizedBox(height: N11Space.gap3),
-            N11Field(validator: (String value) => parseAgreedFee(value) == null ? 'Nhập phí là số nguyên từ 0 đến 10.000.000đ.' : null, fieldKey: const Key('m07-f-amount'), label: 'Mức phí đề xuất (đ)', controller: _field('amount'), keyboard: TextInputType.number, maxLength: 10),
-            N11Field(validator: (String value) => noteLooksLikePhone(value) ? 'Ghi chú cho shipper không được chứa số điện thoại.' : _reason == 'OTHER' && value.trim().isEmpty ? 'Lý do Khác cần có ghi chú.' : null, fieldKey: const Key('m07-f-fee-note'), label: 'Ghi chú cho shipper', controller: _field('feeNote'), maxLength: 200, optionalLabel: true, hint: kFeeNotePrivacyHint),
-            if (_payer == 'CUSTOMER') const ReasonNote('Khách trả ship: mức khác bảng giá cần khách đồng ý trước khi chốt.'),
-          ],
-        ],
-      ),
-    );
-  }
-
-  static String _wire(FeeReason r) => switch (r) {
-        FeeReason.urgent => 'URGENT',
-        FeeReason.bulky => 'BULKY',
-        FeeReason.badWeather => 'BAD_WEATHER',
-        FeeReason.outsideTable => 'OUT_OF_PRICE_RANGE',
-        FeeReason.other => 'OTHER',
-      };
-}
-
 
 // ---- the delivery part of a page: shipper, fee talks, goods handling -------------------------------------------------
 
