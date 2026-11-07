@@ -246,7 +246,7 @@ describe('CustomerProvisioningParticipant — boundaries', () => {
 // test policy is on; a verification time on it, an admin membership, or the policy being off refuses it before any write.
 describe('CustomerProvisioningParticipant.provision — TEST_UNVERIFIED account', () => {
   const TEST_ACCOUNT: CustomerEligibility = { accountOrigin: 'TEST_UNVERIFIED', phoneVerified: false, hasAdminMembership: false };
-  const testPolicy = createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+  const testPolicy = createAccountOriginPolicy({ appEnv: 'test', unverifiedTestModeEnabled: true });
 
   it('is provisioned under the no-proof test policy', async () => {
     const { participant, grantRole, insertProfileIfAbsent } = rig(TEST_ACCOUNT, testPolicy);
@@ -262,10 +262,10 @@ describe('CustomerProvisioningParticipant.provision — TEST_UNVERIFIED account'
   it('is refused without the policy (the default policy, or the mode switched off), before any write', async () => {
     for (const policy of [
       undefined,
-      createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: false }),
+      createAccountOriginPolicy({ appEnv: 'test', unverifiedTestModeEnabled: false }),
       // The mode is honoured for development/test only, whatever else is passed.
-      createAccountOriginPolicy({ appEnv: 'production', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
-      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
+      createAccountOriginPolicy({ appEnv: 'production', unverifiedTestModeEnabled: true }),
+      createAccountOriginPolicy({ appEnv: 'staging', unverifiedTestModeEnabled: true }),
     ]) {
       const { participant, grantRole, insertProfileIfAbsent, insertConsentIfAbsent } = rig(TEST_ACCOUNT, policy);
       expect(await failureOf(participant.provision(CONTEXT, USER_ID, CONSENT))).toBeInstanceOf(TechnicalError);

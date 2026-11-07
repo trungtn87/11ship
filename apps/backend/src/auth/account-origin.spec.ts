@@ -1,6 +1,4 @@
 import { describe, expect, it } from '@jest/globals';
-import { AppError } from '../common/app-errors';
-import { PhoneAllowlist } from '../config/staging-fixtures-config';
 import {
   createAccountOriginPolicy,
   isAccountOrigin,
@@ -10,91 +8,46 @@ import {
   standardAccountOriginPolicy,
 } from './account-origin';
 import { bindOtpProvider } from './otp-provider-binding';
-import { DisabledOtpProvider } from './disabled-otp-provider';
 import { FakeOtpProvider } from './fake-otp-provider';
 import { StartupConfigError } from '../config/startup-config-error';
 
 const PHONE = '+84911111111';
-const OTHER = '+84922222222';
-const allowlist = new PhoneAllowlist([PHONE]);
 const verified = { accountOrigin: 'PHONE_VERIFIED', phoneNormalized: PHONE } as const;
 const fixture = { accountOrigin: 'STAGING_FIXTURE', phoneNormalized: PHONE } as const;
 const administration = { accountOrigin: 'ADMIN_PROVISIONED', phoneNormalized: PHONE } as const;
 
-describe('account origin policy (M00-D2 design section 4, reconciled with the administration origin)', () => {
-  it('the standard policy (no fixture mode) allows verified accounts and never a fixture; registration is open', () => {
+describe('account origin policy (staging fixture mode removed, Owner 2026-11-07)', () => {
+  it('the standard policy allows verified accounts and never a legacy fixture or an administration account', () => {
     const policy = standardAccountOriginPolicy();
-    expect(policy.fixtureMode).toBe(false);
     expect(policy.allows(verified)).toBe(true);
+    expect(policy.allows({ accountOrigin: 'PHONE_UNVERIFIED', phoneNormalized: PHONE })).toBe(true);
     expect(policy.allows(fixture)).toBe(false);
-    expect(() => policy.assertRegistrationOpen()).not.toThrow();
+    expect(policy.allows(administration)).toBe(false);
   });
 
-  it('staging with the mode on allows only an allowlisted fixture, refuses verified accounts, and closes registration', () => {
-    const policy = createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: true, allowedPhones: allowlist });
-    expect(policy.fixtureMode).toBe(true);
-    expect(policy.allows(fixture)).toBe(true);
-    expect(policy.allows({ ...fixture, phoneNormalized: OTHER })).toBe(false);
-    expect(policy.allows(verified)).toBe(false);
-    expect(() => policy.assertRegistrationOpen()).toThrow(AppError);
-    try {
-      policy.assertRegistrationOpen();
-    } catch (error) {
-      expect((error as AppError).code).toBe('AUTH_REGISTRATION_UNAVAILABLE');
-      expect((error as AppError).status).toBe(503);
-    }
-  });
-
-  it('staging with the mode off, or without an allowlist, behaves like the standard policy', () => {
-    for (const policy of [
-      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: false, allowedPhones: allowlist }),
-      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: true, allowedPhones: undefined }),
-    ]) {
-      expect(policy.fixtureMode).toBe(false);
-      expect(policy.allows(fixture)).toBe(false);
-      expect(policy.allows(verified)).toBe(true);
-    }
-  });
-
-  it.each(['production', 'development', 'test', undefined] as const)(
-    'a policy built for %s can NEVER allow a fixture, even with the mode forced on and the phone allowlisted',
+  it.each(['production', 'staging', 'development', 'test', undefined] as const)(
+    'a policy built for %s NEVER allows a legacy STAGING_FIXTURE row, whatever else is passed in',
     (appEnv) => {
-      const policy = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: true, allowedPhones: allowlist });
-      expect(policy.fixtureMode).toBe(false);
+      const policy = createAccountOriginPolicy({ appEnv, unverifiedTestModeEnabled: true });
       expect(policy.allows(fixture)).toBe(false);
-      expect(() => policy.assertRegistrationOpen()).not.toThrow();
+      expect(policy.allows(administration)).toBe(false);
+      expect(policy.allows(verified)).toBe(true);
     },
   );
 
-  it('an administration account is NEVER allowed through the application Auth, in any environment, mode or allowlist', () => {
-    const policies = [
-      standardAccountOriginPolicy(),
-      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: true, allowedPhones: allowlist }),
-      createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: false, allowedPhones: allowlist }),
-      createAccountOriginPolicy({ appEnv: 'production', fixtureModeEnabled: true, allowedPhones: allowlist }),
-      createAccountOriginPolicy({ appEnv: 'development', fixtureModeEnabled: false, allowedPhones: undefined }),
-    ];
-    for (const policy of policies) {
-      expect(policy.allows(administration)).toBe(false);
-      // Even when its phone is on the fixture allowlist: the allowlist only ever concerns STAGING_FIXTURE rows.
-      expect(policy.allows({ ...administration, phoneNormalized: PHONE })).toBe(false);
-    }
-  });
-
   it('an origin the code does not know is never allowed', () => {
-    const policy = createAccountOriginPolicy({ appEnv: 'staging', fixtureModeEnabled: true, allowedPhones: allowlist });
-    expect(policy.allows({ accountOrigin: 'SOMETHING_ELSE' as never, phoneNormalized: PHONE })).toBe(false);
+    expect(createAccountOriginPolicy({ appEnv: 'staging' }).allows({ accountOrigin: 'SOMETHING_ELSE' as never, phoneNormalized: PHONE })).toBe(false);
     expect(standardAccountOriginPolicy().allows({ accountOrigin: 'SOMETHING_ELSE' as never, phoneNormalized: PHONE })).toBe(false);
   });
 
-  it('maps origin to the display status, and recognises exactly the four origins', () => {
+  it('maps origin to the display status, and still recognises the stored origins (the legacy one included)', () => {
     expect(phoneVerificationStatusOf('PHONE_VERIFIED')).toBe('VERIFIED');
     expect(phoneVerificationStatusOf('STAGING_FIXTURE')).toBe('UNVERIFIED_TEST');
     // A no-proof test account is never shown as VERIFIED.
     expect(phoneVerificationStatusOf('TEST_UNVERIFIED')).toBe('UNVERIFIED_TEST');
     expect(isAccountOrigin('TEST_UNVERIFIED')).toBe(true);
     expect(isAccountOrigin('PHONE_VERIFIED')).toBe(true);
-    expect(isAccountOrigin('STAGING_FIXTURE')).toBe(true);
+    expect(isAccountOrigin('STAGING_FIXTURE')).toBe(true); // the CHECK constraint still allows it: reading such a row must not crash
     expect(isAccountOrigin('ADMIN_PROVISIONED')).toBe(true);
     for (const value of ['', 'verified', null, undefined, 1, 'ADMIN', 'admin_provisioned']) {
       expect(isAccountOrigin(value)).toBe(false);
@@ -102,21 +55,9 @@ describe('account origin policy (M00-D2 design section 4, reconciled with the ad
   });
 });
 
-describe('bindOtpProvider with the staging fixture mode (M00-D2 section 3)', () => {
-  it('binds the explicit DisabledOtpProvider on staging with the mode on, never a fake', () => {
-    const provider = bindOtpProvider('staging', { stagingFixtureMode: true });
-    expect(provider).toBeInstanceOf(DisabledOtpProvider);
-    expect(provider).not.toBeInstanceOf(FakeOtpProvider);
-  });
-
-  it('still refuses staging without the mode, and production with or without it, naming only OTP_PROVIDER', () => {
-    const attempts: Array<() => unknown> = [
-      () => bindOtpProvider('staging'),
-      () => bindOtpProvider('staging', { stagingFixtureMode: false }),
-      () => bindOtpProvider('production'),
-      () => bindOtpProvider('production', { stagingFixtureMode: true }),
-    ];
-    for (const attempt of attempts) {
+describe('bindOtpProvider (no staging fixture mode any more)', () => {
+  it('refuses staging and production without the SMS gateway, naming only OTP_PROVIDER', () => {
+    for (const attempt of [() => bindOtpProvider('staging'), () => bindOtpProvider('production')]) {
       try {
         attempt();
         throw new Error('expected a failure');
@@ -129,17 +70,7 @@ describe('bindOtpProvider with the staging fixture mode (M00-D2 section 3)', () 
 
   it('the fake stays development and test only', () => {
     expect(bindOtpProvider('development')).toBeInstanceOf(FakeOtpProvider);
-    expect(bindOtpProvider('test', { stagingFixtureMode: true })).toBeInstanceOf(FakeOtpProvider);
-  });
-
-  it('the disabled provider fails every send without carrying the phone number or the code', async () => {
-    const provider = new DisabledOtpProvider();
-    await expect((provider as unknown as { sendRegisterOtp(p: string, o: string): Promise<void> }).sendRegisterOtp('+84977777777', '987654')).rejects.toThrow();
-    try {
-      await (provider as unknown as { sendRegisterOtp(p: string, o: string): Promise<void> }).sendRegisterOtp('+84977777777', '987654');
-    } catch (error) {
-      expect(String((error as Error).message)).not.toMatch(/977777777|987654/);
-    }
+    expect(bindOtpProvider('test')).toBeInstanceOf(FakeOtpProvider);
   });
 });
 
@@ -148,13 +79,12 @@ const testUnverified = { accountOrigin: 'TEST_UNVERIFIED', phoneNormalized: PHON
 describe('account origin policy — TEST_UNVERIFIED (no-OTP test registration)', () => {
   it('is allowed only while the no-proof test mode is on in development/test', () => {
     for (const appEnv of ['development', 'test'] as const) {
-      const on = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+      const on = createAccountOriginPolicy({ appEnv, unverifiedTestModeEnabled: true });
       expect(on.unverifiedTestMode).toBe(true);
       expect(on.allows(testUnverified)).toBe(true);
       // Verified accounts keep working next to it; registration stays open.
       expect(on.allows(verified)).toBe(true);
-      expect(() => on.assertRegistrationOpen()).not.toThrow();
-      const off = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: false });
+      const off = createAccountOriginPolicy({ appEnv, unverifiedTestModeEnabled: false });
       expect(off.unverifiedTestMode).toBe(false);
       expect(off.allows(testUnverified)).toBe(false);
     }
@@ -162,7 +92,7 @@ describe('account origin policy — TEST_UNVERIFIED (no-OTP test registration)',
 
   it('is never allowed in staging, production or an unknown environment, whatever is passed in', () => {
     for (const appEnv of ['staging', 'production', undefined] as const) {
-      const policy = createAccountOriginPolicy({ appEnv, fixtureModeEnabled: true, allowedPhones: allowlist, unverifiedTestModeEnabled: true });
+      const policy = createAccountOriginPolicy({ appEnv, unverifiedTestModeEnabled: true });
       expect(policy.unverifiedTestMode).toBe(false);
       expect(policy.allows(testUnverified)).toBe(false);
     }
@@ -170,8 +100,8 @@ describe('account origin policy — TEST_UNVERIFIED (no-OTP test registration)',
     expect(standardAccountOriginPolicy().allows(testUnverified)).toBe(false);
   });
 
-  it('does not change who a fixture or an administration account is', () => {
-    const policy = createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true });
+  it('does not change who a legacy fixture or an administration account is', () => {
+    const policy = createAccountOriginPolicy({ appEnv: 'test', unverifiedTestModeEnabled: true });
     expect(policy.allows(fixture)).toBe(false);
     expect(policy.allows(administration)).toBe(false);
   });

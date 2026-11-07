@@ -103,7 +103,7 @@ export class SessionAuthorizationParticipant {
   }
 
   /**
-   * For a reader (/auth/me): user FOR SHARE, then session FOR SHARE. Any number of readers of one user run
+   * For a reader (/client-auth/me): user FOR SHARE, then session FOR SHARE. Any number of readers of one user run
    * together; a role selection, a revocation or an onboarding command (FOR UPDATE) is waited for. Returns the
    * active role read from the LOCKED session row.
    */

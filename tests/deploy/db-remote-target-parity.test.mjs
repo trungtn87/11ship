@@ -1,4 +1,4 @@
-// M00-VPS-01 package A: the JavaScript operator commands (db:migrate:remote, staging:seed-fixtures) and the TypeScript
+// M00-VPS-01 package A: the JavaScript operator commands (db:migrate:remote) and the TypeScript
 // administration CLI guard (admin-auth:init-limit-config / bootstrap-system) must accept and refuse exactly the same
 // remote targets. The two implementations are separate code (JS scripts cannot import the TS source), so this test runs
 // ONE case matrix through all three and fails if any verdict differs. No database, no network: a gate that passes is
@@ -27,7 +27,6 @@ createRequire(cliFile)('reflect-metadata');
 const tsCli = require(cliFile);
 const jsTarget = require('../../scripts/db-remote-target.js');
 const migrate = require('../../scripts/db-migrate-remote.js');
-const seed = require('../../scripts/staging-seed-fixtures.js');
 
 const CA = readFileSync(root('tests/fixtures/selfhosted-test-ca.pem'), 'utf8');
 const PASSWORD = 'SECRET_MARKER_PARITY_71c';
@@ -73,28 +72,6 @@ async function migrateAccepts(env) {
     migrationsDir: root('database/migrations'),
   };
   await migrate.main({ argv: [], env, deps, out: () => undefined, err: () => undefined });
-  return reached;
-}
-
-async function seedAccepts(env) {
-  let reached = false;
-  const deps = {
-    parseStagingFixtures: () => ({ ok: true, config: { allowedPhones: [] } }),
-    resolveDatabaseTls: tsTls.resolveDatabaseTls,
-    safeErrorCode: () => 'STOP',
-    parseSeedPayload: () => ({ ok: false, problem: 'SHAPE' }),
-    StagingSeedConflictError: class extends Error {},
-    createSeeder: () => ({ prepare: async () => [] }),
-    createClient: () => {
-      throw new Error('no client expected');
-    },
-    readStdin: async () => {
-      reached = true;
-      throw Object.assign(new Error('stop'), { code: 'STDIN_IS_TTY' });
-    },
-    newRequestId: () => 'id',
-  };
-  await seed.main({ argv: [], env, deps, out: () => undefined, err: () => undefined });
   return reached;
 }
 
@@ -153,25 +130,23 @@ const CASES = [
   ['pair: unknown selector and good rest', { DB_REMOTE_TARGET: 'SELF-HOSTED', MIGRATION_CONFIRM_TARGET: 'localhost:5432/ship11_staging' }, false],
 ];
 
-describe('one case matrix through db:migrate:remote, staging:seed-fixtures and the TypeScript admin CLI guard', () => {
+describe('one case matrix through db:migrate:remote and the TypeScript admin CLI guard', () => {
   for (const [name, mutation, expected] of CASES) {
     test(`${expected ? 'accepts' : 'refuses'}: ${name}`, async () => {
       const env = { ...GOOD, ...mutation };
       for (const key of Object.keys(env)) {
         if (env[key] === undefined) delete env[key];
       }
-      const verdicts = { typescript: tsAccepts(env), migrate: await migrateAccepts(env), seed: await seedAccepts(env) };
-      // The fixture seed is staging-only by design (production never gets fixture accounts), whatever the target says.
-      const seedExpected = expected && env.APP_ENV !== 'production';
-      assert.deepEqual(verdicts, { typescript: expected, migrate: expected, seed: seedExpected }, name);
-      // The pure gate shared by migrate and seed never accepts what the full command refuses for a TARGET reason.
+      const verdicts = { typescript: tsAccepts(env), migrate: await migrateAccepts(env) };
+      assert.deepEqual(verdicts, { typescript: expected, migrate: expected }, name);
+      // The pure gate of migrate never accepts what the full command refuses for a TARGET reason.
       if (expected) {
         assert.equal(migrate.checkRemoteTargets(env).problem, undefined);
       }
     });
   }
 
-  test('the Supabase path is untouched: no selector, or SUPABASE, with the Supabase URLs, passes the target gates in all three', async () => {
+  test('the Supabase path is untouched: no selector, or SUPABASE, with the Supabase URLs, passes the target gates in both', async () => {
     const ref = 'abcdefghij0123456789';
     const supabase = {
       APP_ENV: 'staging',
@@ -184,13 +159,11 @@ describe('one case matrix through db:migrate:remote, staging:seed-fixtures and t
       const env = { ...supabase, ...(selector === undefined ? {} : { DB_REMOTE_TARGET: selector }) };
       assert.equal(tsAccepts(env), true, String(selector));
       assert.equal(await migrateAccepts(env), true, String(selector));
-      assert.equal(await seedAccepts(env), true, String(selector));
     }
-    // And SELF_HOSTED with the Supabase URLs is refused by all three.
+    // And SELF_HOSTED with the Supabase URLs is refused by both.
     const mixed = { ...supabase, DB_REMOTE_TARGET: 'SELF_HOSTED' };
     assert.equal(tsAccepts(mixed), false);
     assert.equal(await migrateAccepts(mixed), false);
-    assert.equal(await seedAccepts(mixed), false);
   });
 });
 
@@ -251,11 +224,10 @@ describe('development and test never reach a remote target, and the selector is 
 
   for (const appEnv of ['development', 'test']) {
     for (const selector of REFUSED_SELECTORS) {
-      test(`${appEnv} + DB_REMOTE_TARGET=${JSON.stringify(selector)} is refused by all three before any connection`, async () => {
+      test(`${appEnv} + DB_REMOTE_TARGET=${JSON.stringify(selector)} is refused by both before any connection`, async () => {
         const env = { APP_ENV: appEnv, DB_REMOTE_TARGET: selector, DATABASE_URL: LOCAL[appEnv], MIGRATION_DATABASE_URL: MIGRATION_URL, MIGRATION_CONFIRM_TARGET: 'localhost:5432/ship11_staging', DB_SSL_CA: CA };
         assert.equal(tsAccepts(env), false);
         assert.equal(await migrateAccepts(env), false);
-        assert.equal(await seedAccepts(env), false);
       });
     }
 
@@ -263,7 +235,6 @@ describe('development and test never reach a remote target, and the selector is 
       const env = { ...GOOD, APP_ENV: appEnv };
       assert.equal(tsAccepts(env), false);
       assert.equal(await migrateAccepts(env), false);
-      assert.equal(await seedAccepts(env), false);
     });
 
     for (const selector of [undefined, 'SUPABASE']) {

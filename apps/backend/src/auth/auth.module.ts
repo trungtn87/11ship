@@ -109,8 +109,6 @@ export class AuthModule {
               useFactory: (config: AppConfig): AccountOriginPolicy =>
                 createAccountOriginPolicy({
                   appEnv: config.appEnv,
-                  fixtureModeEnabled: config.stagingFixtures !== undefined,
-                  allowedPhones: config.stagingFixtures?.allowedPhones,
                   unverifiedTestModeEnabled: config.clientPhoneVerificationMode === 'DISABLED_TEST',
                 }),
             }

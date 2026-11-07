@@ -18,7 +18,7 @@ import { AdminAuthConfig, loadLimiterConfig } from '../../../apps/backend/src/co
 import { AppConfig } from '../../../apps/backend/src/config/app-config';
 import { Keyring } from '../../../apps/backend/src/crypto/keyring';
 import { fixtureKeyring } from '../../../apps/backend/src/crypto/test-keys.fixture';
-import { authTestConfig, CONSENT, purgePhone, randomPhone } from './auth-fixtures';
+import { authTestConfig, purgePhone, randomPhone } from './auth-fixtures';
 import { loadIntegrationConfig, RunningApp, startApp } from './test-helpers';
 import { testPool } from './transaction-fixtures';
 
@@ -276,7 +276,6 @@ export async function startAdminApp(options: StartAdminOptions = {}): Promise<Ad
     idempotency: { ...loaded.idempotency, businessLockTimeoutMs: options.businessLockTimeoutMs ?? 10_000 },
     crypto: options.keyring ?? fixtureKeyring(options.activeKeyId ?? 'k1'),
     auth: authTestConfig(),
-    clientAuth: loaded.clientAuth ?? { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version },
     adminAuth,
     ...(options.accountRecovery === true ? { accountRecoveryMode: 'DISABLED_TEST' as const } : {}),
     ...(options.smsGateway === undefined ? {} : { smsGateway: options.smsGateway, accountRecoveryMode: 'SMS_OTP' as const }),

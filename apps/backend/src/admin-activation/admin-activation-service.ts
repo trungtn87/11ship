@@ -748,7 +748,7 @@ export class AdminActivationService {
         throw linkInvalid();
       }
       if (!inserted) {
-        // Lost a race with /auth/register on the unique phone while still valid: the same closing path, the code is NOT counted.
+        // Lost a race with a client registration (/client-auth/register) on the unique phone while still valid: the same closing path, the code is NOT counted.
         return this.#phoneConflict(context, meta, invitation, [attempt], challenges, doneMs);
       }
       await this.repo.insertMembership(context, { userId: attempt.userId, atMs: doneMs });

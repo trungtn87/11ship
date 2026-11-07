@@ -81,8 +81,6 @@ describe('bindings keep the previous behaviour and add TEST_INBOX only by explic
     expect(bindOtpProvider('test', { testInboxProvider: adapter })).toBe(adapter);
     for (const appEnv of ['staging', 'production'] as const) {
       expect(() => bindOtpProvider(appEnv, { testInboxProvider: adapter })).toThrow(StartupConfigError);
-      // Not even the staging fixture mode lets the adapter in: it is refused before anything is opened.
-      expect(() => bindOtpProvider(appEnv, { testInboxProvider: adapter, stagingFixtureMode: true })).toThrow(StartupConfigError);
     }
   });
 

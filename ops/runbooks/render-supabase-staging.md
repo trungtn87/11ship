@@ -14,7 +14,7 @@ Tokyo (ap-northeast-1). Render: one Free web service from `render.yaml` (`11ship
 
 | Item | State |
 |---|---|
-| M00-D2 (staging fixtures, OTP binding) | **Implemented in code (issue #49), not deployed.** `APP_ENV=staging` starts only in the staging fixture mode (§8). Do not set `APP_ENV=development` on Render to get around it. |
+| M00-D2 (staging fixtures, OTP binding) | **Fixture mode removed (2026-11-07).** `APP_ENV=staging` now needs the SMS gateway (§8). Do not set `APP_ENV=development` on Render to get around it. |
 | Admin web hosted by the service | **Implemented in code (issue #49), not deployed.** Same origin as the API (§9). |
 | Frontend / app for the Owner | The Admin web only; no mobile app. |
 | Remote migrations | Not applied. |
@@ -293,7 +293,7 @@ any remote database by this package**; the Owner decides when. Procedure when th
    routes ignore `CUSTOMER`, so old code keeps working against the new schema.
 2. The migration refuses to run (message starting `M01.02 prerequisite failed:`) when `app.users`, `app.user_roles`,
    `app.admin_memberships`, `users.account_origin` or the role CHECK are not what it expects. That is schema drift:
-   stop and report it (issue #49); never mask it with `IF EXISTS` or a hand-made enum/fixture.
+   stop and report it (issue #49); never mask it with `IF EXISTS` or a hand-made enum.
 3. Grant the runtime role exactly the two new rows of the table above, as admin:
 
 ```sql
@@ -384,33 +384,9 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 - The whole of §8 and §9 on a real Render service and the real Supabase project (nothing was deployed, seeded or
   migrated remotely by issue #49).
 
-## 8. Staging fixtures (issue #49, from M00-D2)
+## 8. Staging fixtures (REMOVED)
 
-Staging has no SMS provider, so the service runs in a **closed fixture mode**: `AUTH_STAGING_FIXTURES_ENABLED=true` (in
-`render.yaml`) and `AUTH_STAGING_ALLOWED_PHONES` (dashboard; JSON array of at most 20 normalized `+84…` numbers).
-
-- `DisabledOtpProvider` is bound; registration and OTP request/verify answer `503 AUTH_REGISTRATION_UNAVAILABLE`.
-- Only accounts with `account_origin = 'STAGING_FIXTURE'` whose phone is in the allowlist can sign in through the
-  application Auth, and verified (`PHONE_VERIFIED`) accounts are **not** accepted while the mode is on. Removing a number
-  from the allowlist (or switching the mode off) invalidates that account's existing sessions at the next request: the
-  policy is applied again at every bearer authentication and under the row locks of every command.
-- A fixture has no role, no profile and no session until it logs in, and it can **never** hold an administration
-  membership (the database refuses it; see `1792454400000`). `ADMIN`/`SYSTEM` are never created by the seed.
-- Production: the flag is refused at startup (`APP_ENV=production` + the flag stops the process naming the variable),
-  and the policy ignores it a second time.
-- The mode is for the Owner's staging only; it is not a way to test real OTP.
-
-Seed (operator machine, **never** Render, **never** run by the assistant against the Owner's database):
-
-1. `npm ci && npm run build`; set the same shell variables as §4 plus `AUTH_STAGING_FIXTURES_ENABLED=true` and
-   `AUTH_STAGING_ALLOWED_PHONES`.
-2. Apply the migrations first (§4). The seed checks that `users_account_origin_ck` accepts `STAGING_FIXTURE` and stops
-   otherwise.
-3. Pipe the accounts on standard input (no argument exists, so nothing reaches a process list):
-   `printf '%s' '[{"phone":"+84…","password":"…"}]' | npm run staging:seed-fixtures`
-4. The command prints only counts. One transaction, one advisory lock: a batch that meets a verified or an
-   administration account writes nothing; an existing fixture is left unchanged (re-running is safe, passwords are not
-   reset).
+Removed on 2026-11-07 (Owner decision, PR #313): the staging fixture mode, its seed command and the `AUTH_STAGING_*` variables no longer exist. Staging serves real accounts only, with OTP through the SMS gateway. Setting `AUTH_STAGING_FIXTURES_ENABLED=true` now stops startup naming that variable. Existing `STAGING_FIXTURE` rows (if any) stay in the database, are never served, and are NOT deleted by this change; the Owner decides when to remove them (check: `SELECT count(*) FROM app.users WHERE account_origin = 'STAGING_FIXTURE'`).
 
 ## 9. Admin web on the same origin (issue #49, from PR #42)
 

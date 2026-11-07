@@ -31,7 +31,6 @@ export const COPY_ENTRIES = [
   ['database/migrations', 'database/migrations'],
   ['scripts/db-migrate-remote.js', 'scripts/db-migrate-remote.js'],
   ['scripts/db-remote-target.js', 'scripts/db-remote-target.js'],
-  ['scripts/staging-seed-fixtures.js', 'scripts/staging-seed-fixtures.js'],
   ['scripts/admin-auth-init-limit-config.js', 'scripts/admin-auth-init-limit-config.js'],
   ['scripts/admin-auth-bootstrap-system.js', 'scripts/admin-auth-bootstrap-system.js'],
   ['scripts/admin-auth-recover-system.js', 'scripts/admin-auth-recover-system.js'],
@@ -195,7 +194,6 @@ function runtimePackageJson(sha) {
     scripts: {
       start: 'node apps/backend/dist/main.js',
       'db:migrate:remote': 'node scripts/db-migrate-remote.js',
-      'staging:seed-fixtures': 'node scripts/staging-seed-fixtures.js',
       'admin-auth:init-limit-config': 'node scripts/admin-auth-init-limit-config.js',
       'admin-auth:bootstrap-system': 'node scripts/admin-auth-bootstrap-system.js',
       'admin-auth:recover-system': 'node scripts/admin-auth-recover-system.js',

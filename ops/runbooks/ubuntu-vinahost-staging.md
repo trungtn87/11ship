@@ -21,7 +21,7 @@ máy + nginx. Phần cơ sở dữ liệu (CA, `pg_hba.conf`, role, grant, lện
 | Thư mục | `/opt/11ship/releases/<sha>` (bất biến, `root:root`), `/opt/11ship/current` → release đang chạy, `/etc/11ship` (cấu hình), `/var/backups/11ship` |
 | Backend | `127.0.0.1:3000`, `DB_POOL_MAX=2`; chỉ nginx nghe công khai (80/443) |
 | Cùng một origin | Admin web + API cùng `https://103.9.78.67.sslip.io` (cookie quản trị là `__Host-`) |
-| Đóng | `ADMIN_ACTIVATION_ENABLED=false`; không có provider OTP `TEST_INBOX`; OTP/đăng ký đóng (chế độ fixture) |
+| Đóng | `ADMIN_ACTIVATION_ENABLED=false`; không có provider OTP `TEST_INBOX`; không có chế độ fixture (đã gỡ 2026-11-07); OTP qua SMS gateway |
 | Cổng | Chỉ mở SSH, 80, 443. PostgreSQL 5432 **không** mở ra ngoài |
 
 ## 1. Artifact và cách kiểm tra
@@ -112,7 +112,7 @@ ${EDITOR:-nano} /etc/11ship/staging.env
 - `AUTH_OTP_HMAC_SECRET`, `ADMIN_RATE_LIMIT_HMAC_KEY`, `CRYPTO_KEYRING`: `openssl rand -base64 32` (đúng 32 byte). Cặp
   `ADMIN_RATE_LIMIT_KEY_ID` / `ADMIN_RATE_LIMIT_HMAC_KEY` **trùng đúng** giá trị đã dùng cho `admin-auth:init-limit-config` (đổi là
   dịch vụ bị từ chối khởi động). Sao lưu khóa mã hóa + khóa limiter ngoài VPS: mất khóa = dữ liệu mã hóa không giải được.
-- `AUTH_STAGING_ALLOWED_PHONES`: do Owner chọn (dữ liệu cá nhân); tối đa 20 số.
+- `SMS_GATEWAY_ALLOWLIST`: do Owner chọn (dữ liệu cá nhân); chỉ các số này nhận được mã khi `SMS_GATEWAY_RECIPIENT_MODE=ALLOWLIST`.
 - `ADMIN_AUTH_ALLOWED_ORIGINS` / `ADMIN_ACTIVATION_ORIGIN`: đúng một origin HTTPS `https://103.9.78.67.sslip.io` (không đường dẫn,
   không `/` cuối); `ADMIN_ACTIVATION_ORIGIN` phải nằm trong danh sách trên. Giữ `ADMIN_ACTIVATION_ENABLED=false`.
 - Không thêm `OTP_PROVIDER`, `ADMIN_ACTIVATION_OTP_MODE`, `APP_ENV=development`, hay `NODE_TLS_REJECT_UNAUTHORIZED`.

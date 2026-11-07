@@ -64,16 +64,7 @@ describe('nothing secret can be logged', () => {
 
   it('the fake provider is the only code that sees the OTP besides the service that generates it', () => {
     const holders = authFiles().filter((file) => /sendRegisterOtp/.test(codeOf(file)));
-    // M00-D2: the DisabledOtpProvider (staging fixture mode) implements the port too, but its method declares NO
-    // parameter, so it can never read the phone number or the OTP it is called with; it only fails.
-    expect(holders.sort()).toEqual([
-      'auth/disabled-otp-provider.ts',
-      'auth/fake-otp-provider.ts',
-      'auth/otp-provider.ts',
-      'auth/verification-service.ts',
-    ]);
-    expect(codeOf('auth/disabled-otp-provider.ts')).toMatch(/async sendRegisterOtp\(\): Promise<void>/);
-    expect(codeOf('auth/disabled-otp-provider.ts')).not.toMatch(/phoneNormalized|console|\blog/i);
+    expect(holders.sort()).toEqual(['auth/fake-otp-provider.ts', 'auth/otp-provider.ts', 'auth/verification-service.ts']);
   });
 });
 

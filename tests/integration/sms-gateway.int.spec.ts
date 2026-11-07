@@ -26,6 +26,9 @@ import { loadIntegrationConfig, setOtpPolicy } from './support/test-helpers';
 // credential the pairing tool printed; the OTP is read from the claim response, exactly where a real phone gets it.
 
 const NEW_PASSWORD = 'Brand-New-Passw0rd-7';
+// OD-1: accounts are created through /client-auth, which needs the consent pair configured in this application.
+const CLIENT_AUTH_ON = { clientAuth: { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version } };
+
 const OPEN: SmsGatewayConfig = {
   recipientMode: 'OPEN',
   allowlist: new Set(),
@@ -116,8 +119,8 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
   }
 
   beforeAll(async () => {
-    app = await startAdminApp({ smsGateway: OPEN });
-    closed = await startAdminApp();
+    app = await startAdminApp({ smsGateway: OPEN, configOverride: CLIENT_AUTH_ON });
+    closed = await startAdminApp({ configOverride: CLIENT_AUTH_ON });
     await wipeQueue();
     await app.pool.query('DELETE FROM app.sms_gateway_devices');
     device = await pair();
@@ -644,6 +647,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       }
       const strict = await startAdminApp({
         smsGateway: { ...OPEN, recipientMode: 'ALLOWLIST', allowlist: new Set([allowed.normalized]), limitGlobalPerDay: 2 },
+        configOverride: CLIENT_AUTH_ON,
       });
       try {
         await wipeQueue(strict.pool);

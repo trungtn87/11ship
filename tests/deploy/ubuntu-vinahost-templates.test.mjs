@@ -87,7 +87,7 @@ describe('env template', () => {
     assert.equal(env.HOST, '127.0.0.1');
     assert.equal(env.PORT, '3000');
     assert.equal(env.DB_POOL_MAX, '2');
-    for (const key of ['DATABASE_URL', 'AUTH_STAGING_ALLOWED_PHONES', 'AUTH_OTP_HMAC_SECRET', 'CRYPTO_KEYRING', 'ADMIN_RATE_LIMIT_HMAC_KEY']) {
+    for (const key of ['DATABASE_URL', 'SMS_GATEWAY_ALLOWLIST', 'AUTH_OTP_HMAC_SECRET', 'CRYPTO_KEYRING', 'ADMIN_RATE_LIMIT_HMAC_KEY']) {
       assert.match(env[key], /<[^>]+>/, `${key} must stay a placeholder`);
     }
   });
@@ -99,12 +99,14 @@ describe('env template', () => {
     assert.equal(env.DB_SSL_CA, undefined);
   });
 
-  test('keeps the public-host closures: no test OTP provider, activation off, fixtures only', () => {
+  test('keeps the public-host closures: no test OTP provider, activation off, no fixture mode, real SMS gateway', () => {
     assert.equal(env.ADMIN_ACTIVATION_ENABLED, 'false');
     assert.equal(env.OTP_PROVIDER, undefined);
     assert.equal(env.ADMIN_ACTIVATION_OTP_MODE, undefined);
     assert.doesNotMatch(code(envExample), /TEST_INBOX|TEST_DISPLAY|FAKE/);
-    assert.equal(env.AUTH_STAGING_FIXTURES_ENABLED, 'true');
+    assert.equal(env.AUTH_STAGING_FIXTURES_ENABLED, undefined);
+    assert.equal(env.AUTH_STAGING_ALLOWED_PHONES, undefined);
+    assert.equal(env.SMS_GATEWAY_ENABLED, 'true');
     assert.notEqual(env.APP_ENV, 'development');
   });
 
@@ -124,7 +126,7 @@ describe('env template', () => {
       ...env,
       DATABASE_URL: 'postgres://ship11_app:0123456789abcdef@localhost:5432/ship11_staging',
       DB_SSL_CA_FILE: path('tests/fixtures/selfhosted-test-ca.pem'),
-      AUTH_STAGING_ALLOWED_PHONES: '["+84900000001"]',
+      SMS_GATEWAY_ALLOWLIST: '0912345678',
       AUTH_OTP_HMAC_SECRET: key32,
       CRYPTO_KEYRING: `staging-1:${key32}`,
       ADMIN_RATE_LIMIT_HMAC_KEY: key32,

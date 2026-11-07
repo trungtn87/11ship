@@ -2,8 +2,6 @@ import { purgeBusinessFinanceOfPhone } from './business-finance-fixtures';
 import { purgeShopDisplayCodes } from './shop-display-fixtures';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
-import { DisabledOtpProvider } from '../../../apps/backend/src/auth/disabled-otp-provider';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { ClientDeviceTrust } from '../../../apps/backend/src/client-device/client-device-trust';
 import { unverifiedTestScopeId } from '../../../apps/backend/src/client-auth/client-registration-service';
@@ -127,7 +125,6 @@ export async function startAuthApp(
   extra: {
     activeKeyId?: string;
     relaxTimeouts?: boolean;
-    fixturePolicy?: AccountOriginPolicy;
     /** M01.03: configuration fields to override on top of the loaded one (clientAuth, host, appEnv). */
     configOverride?: Partial<AppConfig>;
     /** M01-ANDROID: the FIXTURE device trust (roots, signers, revocation, clock) injected by dependency injection. */
@@ -156,13 +153,9 @@ export async function startAuthApp(
     ...(extra.configOverride ?? {}),
   };
   const provider = new FakeOtpProvider();
-  // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
   const running = await startApp(config, {
     ...(extra.overrides === undefined ? {} : { overrides: extra.overrides }),
-    auth:
-      extra.fixturePolicy === undefined
-        ? { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) }
-        : { otpProvider: new DisabledOtpProvider(), accountOriginPolicy: extra.fixturePolicy },
+    auth: { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) },
   });
   const pool = testPool(loaded.database, { poolMax: 6 });
   const tracked = new Set<string>();
@@ -801,52 +794,11 @@ export async function proofIdOfToken(pool: Pool, proofToken: string): Promise<st
   return row.proof_id;
 }
 
-export interface RegisterRecord {
-  record_id: string;
-  response_status: number;
-  replay_guard: Record<string, unknown>;
-  replay_ciphertext: Buffer | null;
-}
-
-export async function registerRecordsOf(pool: Pool, proofId: string): Promise<RegisterRecord[]> {
-  const result = await pool.query<RegisterRecord>(
-    `SELECT record_id, response_status, replay_guard, replay_ciphertext
-       FROM app.idempotency_records
-      WHERE scope_type = 'verification_proof' AND scope_id = $1 AND operation_id = 'auth.register.v1'`,
-    [proofId],
-  );
-  return result.rows;
-}
-
-/**
- * Moves a register idempotency record back in time (all three instants together, CHECK-safe) until its
- * replay window, or its whole dedupe window, has just elapsed. No sleeping.
- */
-export async function ageRegisterRecord(pool: Pool, proofId: string, window: 'replay' | 'dedupe'): Promise<void> {
-  const column = window === 'replay' ? 'replay_expires_at' : 'dedupe_expires_at';
-  const result = await pool.query(
-    `UPDATE app.idempotency_records r
-        SET created_at = r.created_at - s.shift,
-            replay_expires_at = r.replay_expires_at - s.shift,
-            dedupe_expires_at = r.dedupe_expires_at - s.shift
-       FROM (
-         SELECT record_id, make_interval(secs => extract(epoch FROM (${column} - created_at)) + 10) AS shift
-           FROM app.idempotency_records
-          WHERE scope_type = 'verification_proof' AND scope_id = $1 AND operation_id = 'auth.register.v1'
-       ) s
-      WHERE r.record_id = s.record_id`,
-    [proofId],
-  );
-  if (result.rowCount !== 1) {
-    throw new Error('register record to age was not found');
-  }
-}
-
 /** Installs a stall: a row trigger on app.audit_logs that waits for an advisory lock a test holds. */
 export async function installRegisterAuditStall(
   pool: Pool,
   key: readonly [number, number],
-  action = 'auth.register.v1',
+  action: string,
 ): Promise<void> {
   await pool.query(
     `CREATE FUNCTION app.test_stall_register_audit() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -932,14 +884,6 @@ export async function advisoryWaiterExists(pool: Pool, key: readonly [number, nu
     [key[0], key[1]],
   );
   return (result.rowCount ?? 0) > 0;
-}
-
-/** Number of backends currently waiting for a transaction id (a row lock or a unique-index conflict). */
-export async function transactionWaiters(pool: Pool): Promise<number> {
-  const result = await pool.query<{ n: number }>(
-    "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted",
-  );
-  return result.rows[0]?.n ?? 0;
 }
 
 /** Fault injection: a trigger that raises a non-AppError server error for matching rows. */

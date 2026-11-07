@@ -21,8 +21,7 @@ describe('bindOtpProvider with the SMS gateway (issue #102)', () => {
     }
   });
 
-  it('cannot be combined with the staging fixture mode or the test inbox', () => {
-    expect(() => bindOtpProvider('staging', { smsGatewayEnabled: true, stagingFixtureMode: true })).toThrow(StartupConfigError);
+  it('cannot be combined with the test inbox', () => {
     expect(() => bindOtpProvider('development', { smsGatewayEnabled: true, testInboxProvider: new FakeOtpProvider() })).toThrow(StartupConfigError);
   });
 });

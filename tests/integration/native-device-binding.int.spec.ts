@@ -513,7 +513,7 @@ describe('native device binding (fixture attestation)', () => {
       const participant = new SessionAuthorizationParticipant(
         new UserRepository(),
         new SessionRepository(),
-        createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
+        createAccountOriginPolicy({ appEnv: 'test', unverifiedTestModeEnabled: true }),
         new ClientDeviceRepository(),
       );
       const actor = { userId: food.userId, sessionId: await sessionIdOfToken(app.pool, food.token) };

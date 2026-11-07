@@ -113,7 +113,7 @@ describe('Shop onboarding error registry (M01-A2S)', () => {
   });
 });
 
-describe('Staging fixture registration error (M00-D2)', () => {
+describe('Registration unavailable error (M00-D2)', () => {
   it('AUTH_REGISTRATION_UNAVAILABLE is a fixed 503 that names no phone, account or configuration', () => {
     const definition = APP_ERROR_DEFINITIONS.AUTH_REGISTRATION_UNAVAILABLE;
     expect(definition.status).toBe(503);

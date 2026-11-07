@@ -91,7 +91,7 @@ function checkSessionPoolerTarget(raw, variable) {
 }
 
 /**
- * The shared target gates of every remote operator command (db:migrate:remote, staging:seed-fixtures). The operator
+ * The shared target gates of every remote operator command (db:migrate:remote). The operator
  * picks the target with DB_REMOTE_TARGET (see ./db-remote-target.js): SELF_HOSTED goes to its own gates; SUPABASE, or the
  * variable not set at all, keeps the Supabase path below exactly as it was; any other value fails here, before anything
  * connects. Pure; names only, never a value.

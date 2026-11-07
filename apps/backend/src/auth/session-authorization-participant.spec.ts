@@ -6,7 +6,6 @@ import { SessionActor, SessionAuthorizationParticipant } from './session-authori
 import { LockedSession, SessionRepository, SharedLockedSession } from './session-repository';
 import { UserRepository, UserRow } from './user-repository';
 import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
-import { PhoneAllowlist } from '../config/staging-fixtures-config';
 
 // Post-merge repair, section 1: the participant that re-authorizes the caller INSIDE a business transaction.
 // These specs pin ORDER (user, then session, then the database clock), PRECEDENCE of the error codes and the
@@ -288,13 +287,9 @@ describe('SessionAuthorizationParticipant Shop variants (M02-A)', () => {
 
 // M00-D2: the account origin policy is re-checked on the LOCKED user row, inside the transaction, at every entry
 // point (M00-D2 design (PR #26) section 4).
-describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () => {
+describe('SessionAuthorizationParticipant account origin policy (legacy STAGING_FIXTURE rows are never served)', () => {
   const FIXTURE: UserRow = { ...USER, accountOrigin: 'STAGING_FIXTURE' };
   const SHOP_SESSION: SharedLockedSession = { ...SESSION, activeRole: 'SHOP' };
-  const policyOf = (appEnv: 'staging' | 'production', mode: boolean, phones: string[]) =>
-    createAccountOriginPolicy({ appEnv, fixtureModeEnabled: mode, allowedPhones: new PhoneAllowlist(phones) });
-  const STAGING_ON = policyOf('staging', true, [USER.phoneNormalized]);
-
   type Entry = 'writer' | 'reader' | 'shopWriter' | 'shopReader';
   const entries: readonly Entry[] = ['writer', 'reader', 'shopWriter', 'shopReader'];
   const call = (r: ReturnType<typeof rig>, entry: Entry): Promise<unknown> => {
@@ -311,16 +306,6 @@ describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () =>
     }
   };
 
-  it.each(entries)('%s: an allowed fixture passes and the shared reader reports UNVERIFIED_TEST from the locked row', async (entry) => {
-    const r = rig({ user: FIXTURE, session: SHOP_SESSION, roles: ['SHOP'], policy: STAGING_ON });
-    expect(await codeOf(() => call(r, entry))).toBe('OK');
-    if (entry === 'reader') {
-      const shared = rig({ user: FIXTURE, policy: STAGING_ON });
-      const state = await shared.participant.lockAuthorizedActorShared(fakeContext(NOW, shared.events), ACTOR);
-      expect(state.phoneVerificationStatus).toBe('UNVERIFIED_TEST');
-    }
-  });
-
   it('a verified user is reported as VERIFIED', async () => {
     const r = rig();
     const state = await r.participant.lockAuthorizedActorShared(fakeContext(NOW, r.events), ACTOR);
@@ -328,10 +313,9 @@ describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () =>
   });
 
   const denied: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [
-    ['no fixture mode', undefined],
-    ['the mode switched off', policyOf('staging', false, [USER.phoneNormalized])],
-    ['production with the mode forced on', policyOf('production', true, [USER.phoneNormalized])],
-    ['the phone removed from the allowlist', policyOf('staging', true, ['+84900000000'])],
+    ['the default policy', undefined],
+    ['staging', createAccountOriginPolicy({ appEnv: 'staging' })],
+    ['production', createAccountOriginPolicy({ appEnv: 'production' })],
   ];
   for (const [label, policy] of denied) {
     it.each(entries)(`%s: a fixture is SESSION_INVALID under ${label}, after both locks and BEFORE the clock`, async (entry) => {
@@ -347,26 +331,5 @@ describe('SessionAuthorizationParticipant account origin policy (M00-D2)', () =>
       const r = rig({ user: FIXTURE, ...change });
       expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
     }
-  });
-
-  it('a verified user is refused while the fixture mode is on (the check is on the locked row, not on the guard principal)', async () => {
-    const r = rig({ policy: STAGING_ON });
-    expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
-  });
-
-  it('a policy that changes between two calls (mode switched off) is honoured by the next lock, never cached', async () => {
-    let mode = true;
-    const toggling: AccountOriginPolicy = {
-      get fixtureMode() {
-        return mode;
-      },
-      unverifiedTestMode: false,
-      allows: (subject) => subject.accountOrigin === 'STAGING_FIXTURE' && mode,
-      assertRegistrationOpen: () => undefined,
-    };
-    const r = rig({ user: FIXTURE, policy: toggling });
-    expect(await codeOf(() => call(r, 'writer'))).toBe('OK');
-    mode = false;
-    expect(await codeOf(() => call(r, 'writer'))).toBe('SESSION_INVALID');
   });
 });

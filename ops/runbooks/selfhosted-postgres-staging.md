@@ -228,7 +228,7 @@ rt "select 1 from app.audit_logs"                      # ERROR: permission denie
 rt "create table app.x (id int)"                       # ERROR: permission denied (42501)
 ```
 
-## 8. Cấu hình limiter, SYSTEM, fixture (operator, đọc bí mật từ stdin)
+## 8. Cấu hình limiter, SYSTEM (operator, đọc bí mật từ stdin)
 
 Khóa limiter dùng **một lần và không đổi**; cùng cặp giá trị phải có trong environment dịch vụ (gói B) khi bật admin auth:
 
@@ -239,19 +239,15 @@ node scripts/admin-auth-init-limit-config.js                        # lần đ�
 ```
 
 `admin-auth-bootstrap-system.js` (một tài khoản SYSTEM, chỉ sau khi Owner duyệt; **không có đường khôi phục** nếu mất mật khẩu
-hoặc authenticator của tài khoản duy nhất này) và `staging-seed-fixtures.js` đọc dữ liệu **chỉ từ stdin**, từ file quyền 600
+hoặc authenticator của tài khoản duy nhất này) đọc dữ liệu **chỉ từ stdin**, từ file quyền 600
 rồi xóa ngay; không đưa vào argv, log, PR hay evidence:
 
 ```bash
 node scripts/admin-auth-bootstrap-system.js < /root/ship11-secrets/bootstrap.json      # {"phone": "+84...", "password": "..."}
-# fixture: cần AUTH_STAGING_FIXTURES_ENABLED=true và AUTH_STAGING_ALLOWED_PHONES (JSON, tối đa 20 số, bí mật) trong shell
-node scripts/staging-seed-fixtures.js < /root/ship11-secrets/fixtures.json              # [{"phone": "...", "password": "..."}]
-shred -u /root/ship11-secrets/bootstrap.json /root/ship11-secrets/fixtures.json
+shred -u /root/ship11-secrets/bootstrap.json
 ```
 
-Số lượng và danh tính fixture/tài khoản bootstrap do Owner chọn qua kênh bí mật phù hợp. Fixture không bao giờ có membership
-quản trị; lệnh seed chạy lại cho kết quả `skipped` (không đổi dữ liệu); số điện thoại thuộc tài khoản không phải fixture làm hủy
-cả lô.
+Chế độ fixture đã bị gỡ ngày 2026-11-07 (quyết định Owner, PR #313): không còn lệnh seed và các biến `AUTH_STAGING_*` bị từ chối khi khởi động. Staging chỉ dùng tài khoản thật qua OTP của SMS gateway. Dòng `STAGING_FIXTURE` còn sót trong DB (nếu có) không được phục vụ và không bị xóa tự động; Owner quyết định khi nào xóa.
 
 ## 9. Cập nhật, sao lưu, phục hồi (hướng dẫn — CHƯA kiểm thử phục hồi)
 
