@@ -42,8 +42,11 @@ object GatewayStore {
     private const val K_UPDATE_HINT = "update_hint"
     private const val K_CLAIM_REQ_ID = "claim_request_id"
 
-    private fun prefs(ctx: Context): SharedPreferences =
-        ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    @Volatile
+    internal var testPrefs: SharedPreferences? = null
+
+    private fun prefs(ctx: Context?): SharedPreferences =
+        testPrefs ?: ctx!!.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -62,7 +65,7 @@ object GatewayStore {
     }
 
     @Synchronized
-    fun saveCredential(ctx: Context, credential: String) {
+    fun saveCredential(ctx: Context?, credential: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val sealed = cipher.doFinal(credential.toByteArray(Charsets.UTF_8))
@@ -70,7 +73,8 @@ object GatewayStore {
             .putString(K_CRED_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString(K_CRED, Base64.encodeToString(sealed, Base64.NO_WRAP))
             .putBoolean(K_AUTH_FAILED, false)
-            .apply()
+            .remove(K_CLAIM_REQ_ID)
+            .commit()
     }
 
     @Synchronized
@@ -101,8 +105,8 @@ object GatewayStore {
     }
 
     @Synchronized
-    fun unpair(ctx: Context) {
-        prefs(ctx).edit().clear().apply()
+    fun unpair(ctx: Context?) {
+        prefs(ctx).edit().clear().commit()
         try {
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(KEY_ALIAS)
         } catch (e: Exception) {
@@ -209,7 +213,7 @@ object GatewayStore {
         prefs(ctx).edit().remove(K_PEND_JOB).remove(K_PEND_ATT).remove(K_PEND_RES).remove(K_PEND_ERR).commit()
     }
 
-    fun getOrCreateClaimRequestId(ctx: Context): String {
+    fun getOrCreateClaimRequestId(ctx: Context? = null): String {
         val p = prefs(ctx)
         val existing = p.getString(K_CLAIM_REQ_ID, null)
         if (existing != null) return existing
@@ -218,11 +222,11 @@ object GatewayStore {
         return fresh
     }
 
-    fun clearClaimRequestId(ctx: Context) {
+    fun clearClaimRequestId(ctx: Context? = null) {
         prefs(ctx).edit().remove(K_CLAIM_REQ_ID).commit()
     }
 
-    fun claimRequestId(ctx: Context): String? = prefs(ctx).getString(K_CLAIM_REQ_ID, null)
+    fun claimRequestId(ctx: Context? = null): String? = prefs(ctx).getString(K_CLAIM_REQ_ID, null)
 }
 
 /** The durable pending slot of the gateway, backed by [GatewayStore]. */

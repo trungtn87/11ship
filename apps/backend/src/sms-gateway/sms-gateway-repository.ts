@@ -29,6 +29,7 @@ export interface JobByAttempt {
   readonly sealed: SealedPayload | null;
   readonly expiresAtMs: number;
   readonly leaseExpiresAtMs: number;
+  readonly leaseActive: boolean;
 }
 
 /** The challenge a job belongs to: an account OTP (phone_verifications) or an admin activation OTP (its own challenge table). */
@@ -291,6 +292,7 @@ export class SmsGatewayRepository {
       crypto_key_id: string;
       expires_ms: string;
       lease_ms: string;
+      lease_active: boolean;
     }>(
       `SELECT j.job_id, j.attempt_id, j.purpose, j.status, j.claimed_by,
               j.payload_iv, j.payload_tag, j.payload_ciphertext, j.crypto_key_id,
@@ -316,6 +318,7 @@ export class SmsGatewayRepository {
           : null,
       expiresAtMs: toSafeInteger(row.expires_ms),
       leaseExpiresAtMs: toSafeInteger(row.lease_ms),
+      leaseActive: Boolean(row.lease_active),
     };
   }
 

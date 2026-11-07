@@ -36,7 +36,11 @@ class GatewayApi(baseUrl: String, private val credential: String) {
         require(baseUrl.startsWith("https://")) { "HTTPS is required" }
     }
 
+    @Volatile
+    internal var httpTransport: ((path: String, body: JSONObject) -> JSONObject)? = null
+
     private fun post(path: String, body: JSONObject): JSONObject {
+        httpTransport?.let { return it(path, body) }
         val connection = URL(root + path).openConnection() as HttpsURLConnection
         try {
             connection.requestMethod = "POST"

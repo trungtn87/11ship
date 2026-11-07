@@ -202,7 +202,6 @@ class GatewayService : Service() {
                     }
                     val claimReqId = GatewayStore.getOrCreateClaimRequestId(this)
                     val claim = client.claim(permission, false, claimReqId)
-                    GatewayStore.clearClaimRequestId(this)
                     GatewayStore.recordConnection(this, true, null, claim.sendingEnabled)
                     backoffSeconds = 0
                     setStatus(if (claim.sendingEnabled) "Đã kết nối VPS" else "Đã kết nối, VPS đang tắt gửi SMS")
@@ -211,12 +210,17 @@ class GatewayService : Service() {
                         process(client, job)
                         continue
                     }
+                    GatewayStore.clearClaimRequestId(this)
                 } catch (e: GatewayApi.Unauthorized) {
+                    GatewayStore.clearClaimRequestId(this)
                     GatewayStore.setAuthFailed(this, true)
                     GatewayStore.setEnabled(this, false)
                     GatewayStore.recordConnection(this, false, "UNAUTHORIZED", null)
                     break
                 } catch (e: Exception) {
+                    if (e is GatewayApi.Rejected && e.status != 429) {
+                        GatewayStore.clearClaimRequestId(this)
+                    }
                     backoffSeconds = if (backoffSeconds == 0) 5 else minOf(60, backoffSeconds * 2)
                     GatewayStore.recordConnection(this, false, errorCode(e), null)
                     setStatus("Mất kết nối VPS, thử lại sau ${backoffSeconds}s")
@@ -264,15 +268,18 @@ class GatewayService : Service() {
 
     private fun process(api: GatewayApi, job: GatewayApi.Job) {
         if (!PHONE.matches(job.to) || !TEXT.matches(job.text) || job.text.length > 160) {
+            GatewayStore.clearClaimRequestId(this)
             report(api, job.jobId, job.attemptId, "FAILED", "REJECTED_TEMPLATE")
             return
         }
         if (!hasSmsPermission()) {
+            GatewayStore.clearClaimRequestId(this)
             report(api, job.jobId, job.attemptId, "FAILED", "NO_PERMISSION")
             return
         }
         // Written BEFORE the radio is touched: if the process dies from here on, the next start reports UNKNOWN and never resends.
         GatewayStore.markAttempt(this, job.jobId, job.attemptId)
+        GatewayStore.clearClaimRequestId(this)
         currentTask = "SENDING"
         val results = LinkedBlockingQueue<Int>()
         sentResults[job.jobId] = results

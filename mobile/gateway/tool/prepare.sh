@@ -89,3 +89,4 @@ cp tool/ReportFlusher.kt android/app/src/main/kotlin/vn/eleven/gateway/ReportFlu
 cp tool/UpdateSupport.kt android/app/src/main/kotlin/vn/eleven/gateway/UpdateSupport.kt
 cp tool/test/ReportFlusherTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ReportFlusherTest.kt
 cp tool/test/UpdateRulesTest.kt android/app/src/test/kotlin/vn/eleven/gateway/UpdateRulesTest.kt
+cp tool/test/ClaimRequestIdTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ClaimRequestIdTest.kt

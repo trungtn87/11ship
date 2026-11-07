@@ -251,7 +251,7 @@ export class SmsQueueService {
           if (existing.claimedBy !== deviceId) {
             throw new AppError('GATEWAY_CLAIM_CONFLICT');
           }
-          if (existing.status === 'CLAIMED' && existing.sealed !== null && existing.leaseExpiresAtMs > Date.now()) {
+          if (existing.status === 'CLAIMED' && existing.sealed !== null && existing.leaseActive) {
             job = {
               jobId: existing.jobId,
               attemptId: existing.attemptId,
@@ -268,32 +268,7 @@ export class SmsQueueService {
       }
 
       if (job === undefined) {
-        try {
-          job = await this.repository.claimNext(context, { deviceId, attemptId, leaseSeconds: this.config.leaseSeconds });
-        } catch (error) {
-          if ((error as { code?: string }).code === '23505' && device.claimRequestId !== null) {
-            const existing = await this.repository.findJobByAttempt(context, attemptId);
-            if (
-              existing !== undefined &&
-              existing.claimedBy === deviceId &&
-              existing.status === 'CLAIMED' &&
-              existing.sealed !== null &&
-              existing.leaseExpiresAtMs > Date.now()
-            ) {
-              job = {
-                jobId: existing.jobId,
-                attemptId: existing.attemptId,
-                purpose: existing.purpose,
-                sealed: existing.sealed,
-                expiresAtMs: existing.expiresAtMs,
-                leaseExpiresAtMs: existing.leaseExpiresAtMs,
-              };
-            }
-          }
-          if (job === undefined) {
-            throw error;
-          }
-        }
+        job = await this.repository.claimNext(context, { deviceId, attemptId, leaseSeconds: this.config.leaseSeconds });
       }
 
       if (job === undefined) {
