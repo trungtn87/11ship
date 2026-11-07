@@ -470,7 +470,13 @@ export class DeliveryCustomerService {
         throw new AppError('DELIVERY_NOT_FOUND');
       }
 
-      const ended = ['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(delivery.state);
+      // Two requests with DIFFERENT keys for one delivery must not both leave a live link: serialize them on the delivery row
+      // before anything is read, revoked or inserted, and read the state as it is after the lock.
+      const locked = await this.deliveries.lockById(context, deliveryId);
+      if (locked === undefined) {
+        throw new AppError('DELIVERY_NOT_FOUND');
+      }
+      const ended = ['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(locked.state);
       if (ended) {
         throw new AppError('DELIVERY_STATE_CONFLICT');
       }
