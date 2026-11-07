@@ -279,20 +279,21 @@ describe('M01-D-ADMIN-1B - idempotency, replay before decryption, unknown COMMIT
     // The operation is created while k2 is active (fingerprint_key_id = k2); the session itself was issued under k1.
     const k2Active = directServices(app, poolClientSource(app.pool), { keyring: fixtureKeyring('k2') });
     const request = { action: 'CREATE_INVITATION' as const, payload: parseCreateInvitationBody({ operation_id: randomUUID(), ...payload }).payload };
-    const created = await k2Active.operations.createOperation(system.login.cookie, system.login.csrf, request, { requestId: randomUUID() });
+    const createdOutcome = await k2Active.operations.createOperation(system.login.cookie, system.login.csrf, request, randomUUID(), { requestId: randomUUID() });
+    const createdId = String((createdOutcome.payload as { operation_id: string }).operation_id);
     const row = await app.pool.query<{ fingerprint_key_id: string }>(
       'SELECT fingerprint_key_id FROM app.admin_sensitive_operations WHERE operation_id = $1::uuid',
-      [created.operation_id],
+      [createdId],
     );
     expect(row.rows[0]?.fingerprint_key_id).toBe('k2');
-    expect((await verifyOperation(app, system, created.operation_id)).status).toBe(200);
+    expect((await verifyOperation(app, system, createdId)).status).toBe(200);
 
     const onlyK1 = directServices(app, poolClientSource(app.pool), { keyring: new Keyring([{ id: 'k1', master: FIXTURE_MASTER_K1 }], 'k1') });
-    const input = parseCreateInvitationBody({ operation_id: created.operation_id, ...payload });
+    const input = parseCreateInvitationBody({ operation_id: createdId, ...payload });
     const failure = await failureOf(() => onlyK1.invitations.create(system.login.cookie, system.login.csrf, input, randomUUID(), { requestId: randomUUID() }));
     expect(failure).toBeInstanceOf(TechnicalError);
     expect((failure as TechnicalError).kind).toBe('unavailable');
-    expect((await operationRow(app.pool, created.operation_id))?.status).toBe('VERIFIED');
+    expect((await operationRow(app.pool, createdId))?.status).toBe('VERIFIED');
     expect(await count(app.pool, 'SELECT 1 FROM app.admin_invitations')).toBe(0);
   });
 

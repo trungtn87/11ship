@@ -284,9 +284,9 @@ function actionOf(value: unknown): OperationAction | undefined {
 
 export class AdminProvisioningApi extends ApiClient {
   /** Step 1 of every mutation: the server fingerprints the payload and opens a 120 s operation. */
-  createOperation(csrf: string, request: OperationRequest): Promise<ApiResult<OperationCreated>> {
+  createOperation(csrf: string, request: OperationRequest, idempotencyKey: string): Promise<ApiResult<OperationCreated>> {
     return this.call(
-      { method: 'POST', path: '/operations', body: { action: request.action, payload: operationPayload(request) }, csrf },
+      { method: 'POST', path: '/operations', body: { action: request.action, payload: operationPayload(request) }, csrf, idempotencyKey },
       (data) => {
         const action = actionOf(data.action);
         const expiresAt = str(data.expires_at);

@@ -54,7 +54,9 @@ import { randomPhone } from './auth-fixtures';
 export const PROVISIONING_BASE = '/v1/admin';
 
 export function api(app: AdminApp, method: 'GET' | 'POST', path: string, options: AdminCallOptions = {}): Promise<AdminResponse> {
-  return app.call(method, path, { ...options, basePath: PROVISIONING_BASE });
+  // OD-2: create-operation needs an Idempotency-Key; a call that sets no headers at all gets a fresh one (pass headers: {} to send none).
+  const withKey = method === 'POST' && path === '/operations' && options.headers === undefined ? { ...options, headers: { 'idempotency-key': randomUUID() } } : options;
+  return app.call(method, path, { ...withKey, basePath: PROVISIONING_BASE });
 }
 
 export interface SystemSession {
@@ -120,7 +122,7 @@ export async function createOperation(
   action: 'CREATE_INVITATION' | 'REISSUE_INVITATION' | 'REVOKE_INVITATION',
   payload: Record<string, unknown>,
 ): Promise<string> {
-  const response = await api(app, 'POST', '/operations', { body: { action, payload }, ...sessionOf(session) });
+  const response = await api(app, 'POST', '/operations', { body: { action, payload }, ...sessionOf(session), headers: { 'idempotency-key': randomUUID() } });
   if (response.status !== 201) {
     throw new Error(`create-operation failed: ${response.status} ${response.text}`);
   }
@@ -336,6 +338,7 @@ export function directServices(
   const audit = new AuditWriter(options.audit);
   const operations = new AdminOperationService(
     manager,
+    new IdempotencyExecutor(executorManager, options.executorKeyring ?? keyring, config.idempotency),
     actor,
     operationsRepository,
     reader,

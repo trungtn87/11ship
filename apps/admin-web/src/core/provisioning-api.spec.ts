@@ -33,10 +33,10 @@ describe('admin web 1B client - wire shapes', () => {
   it('createOperation sends {action,payload}+CSRF and accepts only 201 with a PENDING operation', async () => {
     const server = new FakeServer().on('POST', '/operations', operationCreated()).on('POST', '/operations', { status: 200, body: operationCreated().body });
     const api = server.provisioningApi();
-    const first = await api.createOperation('csrf-s', create);
+    const first = await api.createOperation('csrf-s', create, 'key-1');
     expect(first).toEqual({ kind: 'ok', data: { operationId: OPERATION_ID, action: 'CREATE_INVITATION', expiresAt: '2026-10-09T09:02:00.000Z' } });
-    expect(server.requests[0]).toEqual({ method: 'POST', path: '/operations', csrf: 'csrf-s', body: { action: 'CREATE_INVITATION', payload: operationPayload(create) } });
-    expect((await api.createOperation('csrf-s', create)).kind).toBe('network'); // 200 is not the documented success
+    expect(server.requests[0]).toEqual({ method: 'POST', path: '/operations', csrf: 'csrf-s', idempotencyKey: 'key-1', body: { action: 'CREATE_INVITATION', payload: operationPayload(create) } });
+    expect((await api.createOperation('csrf-s', create, 'key-1')).kind).toBe('network'); // 200 is not the documented success
   });
 
   it('createInvitation sends the Idempotency-Key and operation_id; the link must be a real activation link', async () => {

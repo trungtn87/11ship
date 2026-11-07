@@ -57,16 +57,20 @@ export class AdminProvisioningController {
   }
 
   @Post('operations')
-  @HttpCode(201)
   async createOperation(
     @Body() body: unknown,
     @Req() request: AdminRequest,
+    @Res({ passthrough: true }) response: StatusResponse,
     @Headers('x-csrf-token') csrf: string | string[] | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
   ) {
     await this.#postIngress(request);
     const input = parseOperationBody(body);
-    const data = await this.operations.createOperation(this.#session(request), csrf, input, { requestId: requestIdOf(request) });
-    return { data };
+    const outcome = await this.operations.createOperation(this.#session(request), csrf, input, idempotencyKey, {
+      requestId: requestIdOf(request),
+    });
+    response.status(outcome.status);
+    return { data: outcome.payload };
   }
 
   @Post('operations/:operation_id/verify')

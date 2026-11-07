@@ -20,6 +20,7 @@ import {
   IssuedInvitation,
   OperationRequest,
   Permission,
+  operationPayload,
 } from './provisioning-api.js';
 
 // SYSTEM invitation management as a DOM-free state machine (unit tested in Node).
@@ -160,6 +161,15 @@ export class ProvisioningController {
   #listeners = new Set<Listener>();
   #generation = 0;
   #flow: Flow | undefined;
+  /**
+   * OD-2: the Idempotency-Key of the create-operation request of the user's CURRENT action. It is made once per action and kept
+   * through every repeat of the same request (a lost answer, a network error, a timeout, any 5xx such as 503
+   * TRANSACTION_OUTCOME_UNKNOWN or SERVICE_UNAVAILABLE, a rate limit), so the server returns the operation it already opened
+   * instead of opening a second one. It is dropped when the action ends clearly (a definite business refusal, the flow ending,
+   * or a CSRF refusal: that one is rejected before anything ran, the form is reset with a fresh token and the next send is a new
+   * action) and replaced when the person changes the request.
+   */
+  #createKey: { readonly signature: string; readonly key: string } | undefined;
   #timer: unknown;
   #lockTimer: unknown;
 
@@ -316,9 +326,12 @@ export class ProvisioningController {
     }
     const generation = this.#advance();
     this.#set({ ...screen, draft, fieldErrors: {}, formError: undefined, notice: undefined, pending: true });
-    // One idempotency key per logical request: created here, kept through every deliberate repeat of the business POST.
-    const flow: Flow = { request: built.request, key: this.newKey() };
-    const result = await this.api.createOperation(csrf, built.request);
+    // One idempotency key per action: made once, kept through every repeat of the same request (create AND business POST).
+    const signature = JSON.stringify([built.request.action, operationPayload(built.request)]);
+    const key = this.#createKey?.signature === signature ? this.#createKey.key : this.newKey();
+    this.#createKey = { signature, key };
+    const flow: Flow = { request: built.request, key };
+    const result = await this.api.createOperation(csrf, built.request, flow.key);
     if (generation !== this.#generation || this.#screen.name !== 'compose') {
       return 'sent';
     }
@@ -534,6 +547,7 @@ export class ProvisioningController {
     const current = this.#screen;
     if (result.kind === 'ok') {
       this.#flow = undefined;
+      this.#createKey = undefined;
       this.#set({ ...current, phase: 'done', pending: false, result: result.data, codeError: undefined, formError: undefined });
       return;
     }
@@ -557,6 +571,7 @@ export class ProvisioningController {
         // Consumed or expired. If an earlier try executed, the replay would have answered; say the outcome is unclear.
         this.#set({ ...current, phase: 'retry', pending: false, formError: ADMIN_COPY.outcomeUnknownFinal });
         this.#flow = undefined;
+        this.#createKey = undefined;
         return;
       case 'ADMIN_AUTH_RATE_LIMITED':
         this.#set({ ...current, phase: 'retry', pending: false, formError: ADMIN_COPY.rateLimited, ...this.#lockFrom(result) });
@@ -583,8 +598,15 @@ export class ProvisioningController {
       this.#set({ ...current, phase: 'form', pending: false, formError: ADMIN_COPY.rateLimited });
       return;
     }
+    if (result.status >= 500) {
+      // 5xx (503 TRANSACTION_OUTCOME_UNKNOWN, SERVICE_UNAVAILABLE...): the server may have committed. Keep the SAME key so the
+      // next send of the same request returns that operation instead of opening a second one.
+      this.#set({ ...current, phase: 'form', pending: false, formError: ADMIN_COPY.connectionLost });
+      return;
+    }
     const message = this.#messageOf(result.code);
     this.#flow = undefined;
+    this.#createKey = undefined;
     this.#clearTimer();
     this.#set({ ...current, phase: 'form', pending: false, formError: message });
   }
@@ -623,6 +645,7 @@ export class ProvisioningController {
     }
     if (refreshed) {
       this.#flow = undefined;
+      this.#createKey = undefined;
       this.#clearTimer();
       this.#set({ ...current, phase: 'form', pending: false, formError: ADMIN_COPY.stepChangedAdmin });
     }
@@ -659,6 +682,7 @@ export class ProvisioningController {
 
   #backToForm(current: Extract<ProvisioningScreen, { name: 'compose' }>, notice: string | undefined): void {
     this.#flow = undefined;
+    this.#createKey = undefined;
     this.#clearTimer();
     this.#set({
       ...current,
@@ -678,12 +702,14 @@ export class ProvisioningController {
     }
     if (result.status === 401) {
       this.#flow = undefined;
+      this.#createKey = undefined;
       this.#clearTimer();
       this.session.lost();
       return true;
     }
     if (result.status === 403 && result.code === 'ADMIN_FORBIDDEN') {
       this.#flow = undefined;
+      this.#createKey = undefined;
       this.#clearTimer();
       this.#set({ name: 'forbidden' });
       return true;
@@ -735,6 +761,7 @@ export class ProvisioningController {
   /** Leaving a screen: older answers are ignored, the flow (key, operation, link) is dropped. */
   #reset(): number {
     this.#flow = undefined;
+    this.#createKey = undefined;
     this.#clearTimer();
     return this.#advance();
   }

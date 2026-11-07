@@ -15,15 +15,19 @@ import { AuditWriter } from '../audit/audit-writer';
 import { AdminAuthRateLimitError, AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
-import { JsonObject } from '../idempotency/idempotency-executor';
+import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AdminInvitationReader, InvitationDetail } from './admin-invitation-reader';
 import { AdminOperationRepository, OperationRow } from './admin-operation-repository';
 import {
   ACTOR_TYPE_SYSTEM,
+  INVITATION_DEDUPE_SECONDS,
+  INVITATION_REPLAY_SECONDS,
   OPERATION_ATTEMPT_LIMIT,
   OperationAction,
   PROVISIONING_AUDIT_ACTIONS,
+  PROVISIONING_OPERATION_IDS,
+  PROVISIONING_SCOPE_TYPE,
   RESOURCE_OPERATION,
 } from './admin-provisioning-constants';
 import { setBusinessLockTimeout } from './admin-provisioning-locks';
@@ -77,6 +81,7 @@ export class AdminOperationService {
 
   constructor(
     private readonly transactions: TransactionManager,
+    private readonly executor: IdempotencyExecutor,
     private readonly actor: AdminSystemActor,
     private readonly operations: AdminOperationRepository,
     private readonly invitations: AdminInvitationReader,
@@ -100,12 +105,25 @@ export class AdminOperationService {
     sessionToken: string | undefined,
     csrfHeader: unknown,
     request: OperationRequest,
+    idempotencyKey: string | readonly string[] | undefined,
     meta: { requestId: string },
-  ): Promise<CreatedOperation> {
+  ): Promise<IdempotentOutcome> {
     const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
     const canonical = canonicalPayload(request);
     const { targetId, expectedVersion } = targetOf(request);
-    return this.transactions.withTransaction(async (context): Promise<CreatedOperation> => {
+    // OD-2: the same key + the same request returns the operation created the first time (stored response, nothing
+    // replaced, nothing inserted); a new key is a new user action and replaces the live operation as before.
+    return this.executor.execute(
+      {
+        scopeType: PROVISIONING_SCOPE_TYPE,
+        scopeId: known.userId,
+        operationId: PROVISIONING_OPERATION_IDS.createOperation,
+        idempotencyKey,
+        logicalRequest: { action: request.action, payload: canonical },
+        replay: { kind: 'non-sensitive' },
+        ttl: { replaySeconds: INVITATION_REPLAY_SECONDS, dedupeSeconds: INVITATION_DEDUPE_SECONDS },
+      },
+      async (context) => {
       await setBusinessLockTimeout(context, this.#lockTimeoutMs);
       const actor = await this.actor.lock(context, known, { user: 'write', factor: 'read' });
       // L8 before L9: the INSERT below takes FOR KEY SHARE on the target, which this transaction then already holds.
@@ -181,8 +199,10 @@ export class AdminOperationService {
         outcome: 'SUCCESS',
         metadata,
       });
-      return { operation_id: operationId, action: request.action, status: 'PENDING', expires_at: iso(expiresAtMs) };
-    });
+      const created: CreatedOperation = { operation_id: operationId, action: request.action, status: 'PENDING', expires_at: iso(expiresAtMs) };
+      return { status: 201, replayGuard: { operation_id: operationId }, payload: { ...created } };
+      },
+    );
   }
 
   /**
