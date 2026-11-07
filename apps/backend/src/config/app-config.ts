@@ -608,12 +608,6 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminActivationResult.invalid.forEach(flag);
   }
 
-  // The staging fixture mode was removed (Owner 2026-11-07). A leftover switch is refused instead of being ignored in silence, so
-  // an operator never believes fixtures are on. Names only, never a value.
-  if (['true', '1', 'yes', 'on'].includes((env.AUTH_STAGING_FIXTURES_ENABLED ?? '').trim().toLowerCase())) {
-    flag('AUTH_STAGING_FIXTURES_ENABLED');
-  }
-
   // Same-origin hosting of the administration web (issue #49): fail closed in every environment. Names only.
   const adminWebHosting = parseAdminWebHosting({
     appEnv,

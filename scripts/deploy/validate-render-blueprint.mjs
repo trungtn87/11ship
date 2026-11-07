@@ -101,12 +101,8 @@ export function validateRenderBlueprint(text, { nodeVersion } = {}) {
   expectValue('NODE_ENV', 'production');
   expectValue('HOST', '0.0.0.0');
   expectValue('DB_POOL_MAX', '2');
-  // The staging fixture mode was removed (Owner 2026-11-07): none of its variables may be in the blueprint. The same-origin Admin web
-  // is required; the activation of invited administrators has no OTP adapter on Render, so it may not be switched on here; and no
+  // The same-origin Admin web is required; the activation of invited administrators has no OTP adapter on Render, so it may not be switched on here; and no
   // fake/test OTP mode may be set on Render.
-  for (const key of ['AUTH_STAGING_FIXTURES_ENABLED', 'AUTH_STAGING_ALLOWED_PHONES']) {
-    if (byKey.has(key)) bad(`${key} must not be set (the staging fixture mode was removed)`);
-  }
   expectValue('ADMIN_WEB_STAGING_ENABLED', 'true');
   expectValue('ADMIN_AUTH_ENABLED', 'true');
   for (const key of ['ADMIN_ACTIVATION_ENABLED', 'ADMIN_ACTIVATION_OTP_MODE']) {

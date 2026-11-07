@@ -298,7 +298,7 @@ export class ClientSessionService {
       if (found === undefined) {
         throw new AppError('SESSION_INVALID');
       }
-      // An origin this process does not serve (administration account, fixture outside fixture mode) is no session of this
+      // An origin this process does not serve (administration account, legacy STAGING_FIXTURE row) is no session of this
       // API: the same answer as an unknown token, so nothing is disclosed.
       if (!this.originPolicy.allows({ accountOrigin: found.accountOrigin, phoneNormalized: found.phoneNormalized })) {
         throw new AppError('SESSION_INVALID');

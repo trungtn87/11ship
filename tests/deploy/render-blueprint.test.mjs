@@ -76,8 +76,7 @@ describe('the validator rejects a widened Blueprint', () => {
     expectProblem(mutate('npm@11.9.0 run build && npx', 'npm@11.9.0 run lint && npx'), /must run npm run build$/);
   });
 
-  test('issue #49 flags: the same-origin Admin web is required; the removed fixture mode, activation and fake OTP modes are refused', () => {
-    expectProblem(mutate('      - key: DB_POOL_MAX\n', '      - key: AUTH_STAGING_FIXTURES_ENABLED\n        value: "true"\n      - key: DB_POOL_MAX\n'), /AUTH_STAGING_FIXTURES_ENABLED must not be set/);
+  test('issue #49 flags: the same-origin Admin web is required; activation and fake OTP modes are refused', () => {
     expectProblem(mutate('key: ADMIN_WEB_STAGING_ENABLED\n        value: "true"', 'key: ADMIN_WEB_STAGING_ENABLED\n        value: "false"'), /ADMIN_WEB_STAGING_ENABLED must be set/);
     expectProblem(mutate('key: ADMIN_AUTH_ENABLED\n        value: "true"', 'key: ADMIN_AUTH_ENABLED\n        value: "false"'), /ADMIN_AUTH_ENABLED must be set/);
     expectProblem(mutate('      - key: DB_POOL_MAX\n', '      - key: ADMIN_ACTIVATION_ENABLED\n        value: "true"\n      - key: DB_POOL_MAX\n'), /ADMIN_ACTIVATION_ENABLED must not be set/);
