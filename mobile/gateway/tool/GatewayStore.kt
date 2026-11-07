@@ -197,8 +197,8 @@ object GatewayStore {
 
     // --- crash safety: what was being sent / what could not be reported yet (identifiers only, never the text) ---------------
 
-    fun markAttempt(ctx: Context? = null, jobId: String, attemptId: String) {
-        prefs(ctx).edit().putString(K_ATT_JOB, jobId).putString(K_ATT_ID, attemptId).commit()
+    fun markAttempt(ctx: Context? = null, jobId: String, attemptId: String): Boolean {
+        return prefs(ctx).edit().putString(K_ATT_JOB, jobId).putString(K_ATT_ID, attemptId).commit()
     }
 
     fun clearAttempt(ctx: Context? = null) {
@@ -236,7 +236,10 @@ object GatewayStore {
         val existing = p.getString(K_CLAIM_REQ_ID, null)
         if (existing != null) return existing
         val fresh = java.util.UUID.randomUUID().toString()
-        p.edit().putString(K_CLAIM_REQ_ID, fresh).commit()
+        val ok = p.edit().putString(K_CLAIM_REQ_ID, fresh).commit()
+        if (!ok) {
+            throw IllegalStateException("Failed to commit claim_request_id")
+        }
         return fresh
     }
 

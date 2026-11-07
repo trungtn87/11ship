@@ -200,7 +200,14 @@ class GatewayService : Service() {
                         if (!sleepSeconds(pollSeconds)) break
                         continue
                     }
-                    val claimReqId = GatewayStore.getOrCreateClaimRequestId(this)
+                    val claimReqId = try {
+                        GatewayStore.getOrCreateClaimRequestId(this)
+                    } catch (e: IllegalStateException) {
+                        GatewayStore.recordConnection(this, false, "STORAGE", null)
+                        setStatus("Lỗi lưu trữ thiết bị, thử lại sau ${pollSeconds}s")
+                        if (!sleepSeconds(pollSeconds)) break
+                        continue
+                    }
                     val claim = client.claim(permission, false, claimReqId)
                     GatewayStore.recordConnection(this, true, null, claim.sendingEnabled)
                     backoffSeconds = 0
@@ -261,6 +268,7 @@ class GatewayService : Service() {
         is java.net.UnknownHostException -> "DNS"
         is java.net.SocketTimeoutException -> "TIMEOUT"
         is IOException -> "NETWORK"
+        is IllegalStateException -> "STORAGE"
         else -> "ERROR"
     }
 
@@ -278,7 +286,11 @@ class GatewayService : Service() {
             return
         }
         // Written BEFORE the radio is touched: if the process dies from here on, the next start reports UNKNOWN and never resends.
-        GatewayStore.markAttempt(this, job.jobId, job.attemptId)
+        if (!GatewayStore.markAttempt(this, job.jobId, job.attemptId)) {
+            // Commit failed: fail closed. Do NOT clear claim_request_id, do NOT touch radio / send SMS.
+            // Leave the job to be swept by server lease expiry.
+            return
+        }
         GatewayStore.clearClaimRequestId(this)
         currentTask = "SENDING"
         val results = LinkedBlockingQueue<Int>()

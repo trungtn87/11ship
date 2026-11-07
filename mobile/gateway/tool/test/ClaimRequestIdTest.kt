@@ -19,7 +19,7 @@ import org.junit.Test
  */
 class ClaimRequestIdTest {
 
-    private class TestPreferences(private val backing: MutableMap<String, Any?>) : SharedPreferences {
+    private class TestPreferences(private val backing: MutableMap<String, Any?>, private val commitSuccess: Boolean = true) : SharedPreferences {
         override fun getAll(): MutableMap<String, *> = HashMap(backing)
         override fun getString(key: String?, defValue: String?): String? =
             if (key != null && backing.containsKey(key)) backing[key] as? String else defValue
@@ -35,12 +35,12 @@ class ClaimRequestIdTest {
         override fun getBoolean(key: String?, defValue: Boolean): Boolean =
             (backing[key] as? Boolean) ?: defValue
         override fun contains(key: String?): Boolean = key != null && backing.containsKey(key)
-        override fun edit(): SharedPreferences.Editor = TestEditor(backing)
+        override fun edit(): SharedPreferences.Editor = TestEditor(backing, commitSuccess)
         override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {}
         override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {}
     }
 
-    private class TestEditor(private val backing: MutableMap<String, Any?>) : SharedPreferences.Editor {
+    private class TestEditor(private val backing: MutableMap<String, Any?>, private val commitSuccess: Boolean = true) : SharedPreferences.Editor {
         private val staged = mutableMapOf<String, Any?>()
         private val removed = mutableSetOf<String>()
         private var clearAll = false
@@ -84,6 +84,7 @@ class ClaimRequestIdTest {
             return this
         }
         override fun commit(): Boolean {
+            if (!commitSuccess) return false
             if (clearAll) backing.clear()
             for (k in removed) backing.remove(k)
             backing.putAll(staged)
@@ -231,5 +232,64 @@ class ClaimRequestIdTest {
         GatewayStore.getOrCreateClaimRequestId()
         GatewayStore.unpair(null)
         assertNull("unpair must clear claim_request_id", GatewayStore.claimRequestId())
+    }
+    @Test
+    fun getOrCreateClaimRequestIdFailsWhenCommitReturnsFalseAndDoesNotClaim() {
+        // Given an editor where commit() returns false
+        GatewayStore.testPrefs = TestPreferences(backingMap, commitSuccess = false)
+        var exceptionThrown = false
+        try {
+            GatewayStore.getOrCreateClaimRequestId()
+        } catch (e: IllegalStateException) {
+            exceptionThrown = true
+        }
+        assertTrue("getOrCreateClaimRequestId must throw IllegalStateException when commit() returns false", exceptionThrown)
+        assertNull("claim_request_id must not be saved when commit fails", GatewayStore.claimRequestId())
+
+        // Verify GatewayApi.claim is NOT called when claimRequestId cannot be persisted
+        var claimCalled = false
+        val api = GatewayApi("https://gateway.example.com", "dummy_credential_for_tests_43_characters_len")
+        api.httpTransport = { path, _ ->
+            if (path == "/jobs/claim") claimCalled = true
+            JSONObject().put("sending_enabled", true)
+        }
+
+        try {
+            val id = GatewayStore.getOrCreateClaimRequestId()
+            api.claim(smsPermission = true, paused = false, claimRequestId = id)
+        } catch (e: IllegalStateException) {
+            // Expected: fail closed
+        }
+        assertFalse("Gateway must NOT call /jobs/claim when claim_request_id was not durably committed", claimCalled)
+    }
+
+    @Test
+    fun markAttemptFailsWhenCommitReturnsFalseAndDoesNotSendOrClearClaimId() {
+        // 1. Establish an existing claim_request_id with working storage
+        GatewayStore.testPrefs = TestPreferences(backingMap, commitSuccess = true)
+        val claimId = GatewayStore.getOrCreateClaimRequestId()
+        assertEquals(claimId, GatewayStore.claimRequestId())
+
+        // 2. Switch to failing storage where commit() returns false
+        GatewayStore.testPrefs = TestPreferences(backingMap, commitSuccess = false)
+        val markResult = GatewayStore.markAttempt(null as android.content.Context?, "job-123", "att-456")
+        assertFalse("markAttempt must return false when commit fails", markResult)
+        assertNull("Attempt must not be saved in storage when commit fails", GatewayStore.attempt())
+        assertEquals("claim_request_id must NOT be cleared when markAttempt fails", claimId, GatewayStore.claimRequestId())
+
+        // 3. Verify process() simulation: radio is NOT touched, claim_request_id is NOT cleared
+        var radioTouched = false
+        var claimIdCleared = false
+        val processSim = {
+            if (GatewayStore.markAttempt(null as android.content.Context?, "job-123", "att-456")) {
+                GatewayStore.clearClaimRequestId()
+                claimIdCleared = true
+                radioTouched = true
+            }
+        }
+        processSim()
+        assertFalse("Radio / SMS must NOT be touched when attempt cannot be saved durably", radioTouched)
+        assertFalse("claim_request_id must NOT be cleared when attempt cannot be saved durably", claimIdCleared)
+        assertEquals("claim_request_id must remain preserved for retry", claimId, GatewayStore.claimRequestId())
     }
 }
