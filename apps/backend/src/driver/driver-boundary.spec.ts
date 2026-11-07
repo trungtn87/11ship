@@ -102,10 +102,9 @@ describe('Driver (M03) module boundary', () => {
 });
 
 describe('Auth reads the Driver only through the owner read port', () => {
-  it('Auth imports from the Driver module only the eligibility reader and the shared types, never the repository or the guard', () => {
+  it('Auth imports from the Driver module only the shared types and the module, never the repository, the guard or (since OD-1 removed RoleContextService, its only user) the eligibility reader', () => {
     const imports = codeIn('auth').match(/from '\.\.\/driver\/[^']+'/g) ?? [];
     expect([...new Set(imports)].sort()).toEqual([
-      "from '../driver/driver-eligibility-reader'",
       "from '../driver/driver-types'",
       "from '../driver/driver.module'",
     ]);
