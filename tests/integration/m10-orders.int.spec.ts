@@ -10,6 +10,7 @@ import { OrderSweeper } from '../../apps/backend/src/orders/order-sweeper';
 import { ApiResponse, AuthApp, countRows, dataOf, loginUser, sessionIdOfToken, startAuthApp } from './support/auth-fixtures';
 import { ageDelivery, cleanupOrders, codeOf, Customer, Dish, Json, newCustomer, newDish, newShipper, openAllWeek, PRIVACY, Shipper, setHours, TERMS, vietnamInstant, vietnamWeekday, walletOf } from './support/m10-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
+import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 import { hideDish } from './support/m10-menu';
 
 // M10 on a REAL Nest pipeline and PostgreSQL: the cart, the check and the sending of an Order (prices, hours, the retry that must not make two), the shop
@@ -1303,6 +1304,8 @@ describe('M10 — food orders', () => {
 
   // ---- one page per order: lists, notifications and the story ------------------------------------------------------------
 
+  // POST /shop/me/deliveries is closed (OD-5): a DIRECT delivery is built by the fixture and read back through the shop's own route.
+  const createDirect = (body: Json): Promise<Json> => createLegacyDirectDeliveryView(app, shop, body);
   const directBody = (over: Json = {}): Json => ({ recipient_name: 'Khách gọi riêng', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER', ...over });
   const listAll = async (query: string): Promise<Json[]> => {
     const rows: Json[] = [];
@@ -1316,8 +1319,8 @@ describe('M10 — food orders', () => {
 
   it('"Giao hàng" lists only direct calls — active and history, every filter, search and page — and a call for an order never becomes a row of its own, even after calling again', async () => {
     const s = await shipper();
-    const direct = ok(await asShop('POST', '/shop/me/deliveries', directBody()), 201);
-    const history = ok(await asShop('POST', '/shop/me/deliveries', directBody({ recipient_name: 'Khách đã hủy' })), 201);
+    const direct = await createDirect(directBody());
+    const history = await createDirect(directBody({ recipient_name: 'Khách đã hủy' }));
     ok(await asShop('POST', `/shop/me/deliveries/${String(history.delivery_id)}/cancel`, { reason: 'Đổi ý', expected_version: history.version }));
     // An order with two calls: the first ended (history), the second still searching (active); a third order is delivered and complete.
     const order = await confirmed(alice, [line(pho, 1)], { recipient_name: 'Người nhận đơn món' });
@@ -1427,7 +1430,7 @@ describe('M10 — food orders', () => {
     // The customer's notices of the same order already open the order; a direct delivery's notice still opens that delivery.
     const customerRows = (await app.pool.query(`SELECT notification_id::text, target_type, target_id::text FROM app.notifications WHERE recipient_user_id = $1::uuid AND target_id = $2::uuid`, [alice.userId, oid])).rows;
     expect(customerRows.length).toBeGreaterThan(0);
-    const direct = ok(await asShop('POST', '/shop/me/deliveries', directBody()), 201);
+    const direct = await createDirect(directBody());
     ok(await asShipper(s, 'POST', `/driver/deliveries/${String(direct.delivery_id)}/accept`, {}));
     for (let pass = 0; pass < 200; pass += 1) {
       if ((await runtime().dispatcher.dispatchOnce()).claimed === 0) break;
@@ -1680,7 +1683,7 @@ describe('M10 — food orders', () => {
     const s = await shipper();
     // A DIRECT call paid by the customer: the shop decides on the customer's behalf.
     const direct = async (): Promise<string> => {
-      const created = ok(await asShop('POST', '/shop/me/deliveries', { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER', agreed_fee: { reason_code: 'URGENT', amount_vnd: 14_000 } }), 201);
+      const created = await createDirect({ recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER', agreed_fee: { reason_code: 'URGENT', amount_vnd: 14_000 } });
       return String(created.delivery_id);
     };
     const did = await direct();
@@ -1698,7 +1701,7 @@ describe('M10 — food orders', () => {
     ok(await asShop('POST', `/shop/me/deliveries/${did2}/fee/customer-confirm`, { expected_version: (await view(did2)).version }));
     expect((await agreementEvents(did2, 'CUSTOMER_CONFIRMED'))[0]).toMatchObject({ actor_type: 'SHOP', actor_id: shop.userId, on_behalf_of: 'CUSTOMER', fee_payer: 'CUSTOMER' });
     // When the shop itself pays, its own acceptance is not "on behalf of" anybody.
-    const own = ok(await asShop('POST', '/shop/me/deliveries', { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'SHOP', agreed_fee: { reason_code: 'URGENT', amount_vnd: 14_000 } }), 201);
+    const own = await createDirect({ recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'SHOP', agreed_fee: { reason_code: 'URGENT', amount_vnd: 14_000 } });
     const did3 = String(own.delivery_id);
     const s3 = await shipper();
     ok(await counter(s3, did3, 15_000));
@@ -1757,8 +1760,8 @@ describe('M10 — food orders', () => {
   const acceptOf = (s: Shipper, did: string): Promise<ApiResponse> => asShipper(s, 'POST', `/driver/deliveries/${did}/accept`, {});
   const deliveryRow = async (did: string): Promise<Json> => (await app.pool.query('SELECT * FROM app.deliveries WHERE delivery_id = $1::uuid', [did])).rows[0] as Json;
   const assignmentStatuses = async (did: string): Promise<string[]> => (await app.pool.query('SELECT status FROM app.delivery_assignments WHERE delivery_id = $1::uuid ORDER BY accepted_at, assignment_id', [did])).rows.map((r) => String(r.status));
-  const tableCall = async (over: Json = {}): Promise<Json> => ok(await asShop('POST', '/shop/me/deliveries', directBody({ dropoff_lat: undefined, dropoff_lng: undefined, fee_band: 1, ...over })), 201);
-  const agreedCall = async (over: Json = {}): Promise<string> => String(ok(await asShop('POST', '/shop/me/deliveries', directBody({ agreed_fee: { reason_code: 'URGENT', amount_vnd: 15_000 }, ...over })), 201).delivery_id);
+  const tableCall = async (over: Json = {}): Promise<Json> => await createDirect(directBody({ dropoff_lat: undefined, dropoff_lng: undefined, fee_band: 1, ...over }));
+  const agreedCall = async (over: Json = {}): Promise<string> => String((await createDirect(directBody({ agreed_fee: { reason_code: 'URGENT', amount_vnd: 15_000 }, ...over }))).delivery_id);
 
   it('BUG 1: an agreed fee accepted for Shipper A, A takes the delivery and gives it up: it goes back to the search at the shop\'s own fee, B sees and takes it, nothing stays bound to A, the commission is released once and the history is kept', async () => {
     const a = await shipper();

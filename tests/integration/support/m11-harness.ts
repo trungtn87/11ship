@@ -18,6 +18,7 @@ import { begin, ok, post } from './activation-fixtures';
 import { api, ApiResponse, AuthApp, countRows, dataOf, obtainProof, PASSWORD, Phone, randomPhone, startAuthApp } from './auth-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './provisioning-fixtures';
 import { NotificationRuntime } from '../../../apps/backend/src/notifications/notification-runtime';
+import { createLegacyDirectDeliveryView } from './legacy-direct-delivery';
 import { createShopOwner, ShopOwner } from './shop-management-fixtures';
 
 // The world M11 is tested in: a REAL Nest pipeline and PostgreSQL, a real local M14 routing server, one shop, Shippers and customers that go through
@@ -409,7 +410,8 @@ export class M11World {
   // ---- deliveries (the real M07 routes) --------------------------------------------------------------------------------------
 
   async newDelivery(over: Json = {}): Promise<Json> {
-    const created = await this.asShop('POST', '/shop/me/deliveries', {
+    // POST /shop/me/deliveries is closed (OD-5): the DIRECT delivery is built by the fixture.
+    return createLegacyDirectDeliveryView(this.app, this.shop, {
       recipient_name: 'Khách nhận',
       recipient_phone: '0912345678',
       dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội',
@@ -421,8 +423,6 @@ export class M11World {
       fee_payer: 'CUSTOMER',
       ...over,
     });
-    expect([created.status, created.text.slice(0, 200)]).toEqual([201, created.text.slice(0, 200)]);
-    return dataOf(created) as Json;
   }
 
   /** Accepts and picks up, leaving the delivery `delivering`. Returns the delivery id and its current version. */

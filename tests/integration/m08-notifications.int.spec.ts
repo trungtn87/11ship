@@ -12,6 +12,7 @@ import { NotificationEventService } from '../../apps/backend/src/notifications/n
 import { NotificationRuntime, NotificationRetention } from '../../apps/backend/src/notifications/notification-runtime';
 import { PushDispatcher } from '../../apps/backend/src/notifications/push-dispatcher';
 import { ReminderBatcher } from '../../apps/backend/src/notifications/reminder-batcher';
+import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 import { ApiResponse, AuthApp, createActiveShopFor, createServiceArea, dataOf, errorCode, grantStrayRole, obtainProof, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 
 // M08 on a REAL Nest pipeline and PostgreSQL: the outbox events of M07 become inbox rows and pushes. The push provider is the REAL FCM client talking
@@ -264,9 +265,8 @@ describe('M08 — notifications, reminders and sync', () => {
   });
 
   async function newDelivery(): Promise<Json> {
-    const created = await asShop('POST', '/shop/me/deliveries', createBody());
-    expect([created.status, created.text.slice(0, 200)]).toEqual([201, created.text.slice(0, 200)]);
-    return dataOf(created) as Json;
+    // POST /shop/me/deliveries is closed (OD-5): the DIRECT delivery is built by the fixture.
+    return createLegacyDirectDeliveryView(app, shop, createBody());
   }
 
   /** Drain due events, including the backlog left by earlier suites; never silently stop before this scenario's event is consumed. */
