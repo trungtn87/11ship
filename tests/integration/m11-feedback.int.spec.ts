@@ -274,7 +274,7 @@ describe('M11.02 complaints', () => {
   });
 
   const complaint = (over: Json = {}): Json => ({ category: 'DELIVERY_RESULT', body: 'Đơn báo giao thành công nhưng tôi chưa nhận được hàng.', ...over });
-  const upload = (token: string, family: string, base64 = PNG_BASE64, type = 'image/png') => w.app.call('POST', `/${family}/complaints/attachments`, { bearer: token, body: { content_type: type, data_base64: base64 } });
+  const upload = (token: string, family: string, base64 = PNG_BASE64, type = 'image/png', key = randomUUID()) => w.app.call('POST', `/${family}/complaints/attachments`, { bearer: token, body: { content_type: type, data_base64: base64 }, headers: { 'idempotency-key': key } });
   const q = (sql: string, values: unknown[] = []): Promise<Json[]> => w.app.pool.query(sql, values).then((r) => r.rows as Json[]);
 
   /** Test-only: closes a complaint the way the Administration will (the guard of the database still applies), `ago` before now. */
@@ -374,6 +374,35 @@ describe('M11.02 complaints', () => {
     expect(errorCode(await w.asShipper(s, 'GET', `/driver/complaints/${complaintId}`))).toBe('COMPLAINT_NOT_FOUND');
     expect(errorCode(await w.asShipper(mine, 'GET', '/driver/deliveries/offers'))).toBe('ROLE_NOT_AVAILABLE');
     expect(await w.count(`SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND status = 'SUSPENDED' AND accepting_deliveries = false`, [mine.driverId])).toBe(1);
+  });
+
+  it('OD-2: a picture upload needs an Idempotency-Key; a retry returns the first picture and takes no further place; other bytes under the key are refused; concurrent retries store one', async () => {
+    const countOf = async (): Promise<number> => (await q('SELECT 1 FROM app.complaint_attachments WHERE complaint_id IS NULL AND uploader_user_id = $1::uuid', [w.shop.userId])).length;
+    const before = await countOf();
+
+    const key = randomUUID();
+    const first = await upload(w.shop.token, 'shop/me', PNG_BASE64, 'image/png', key);
+    expect(first.status).toBe(201);
+    const retry = await upload(w.shop.token, 'shop/me', PNG_BASE64, 'image/png', key);
+    expect([retry.status, dataOf(retry)]).toEqual([201, dataOf(first)]);
+    expect(await countOf()).toBe(before + 1);
+
+    const other = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24, 3)]).toString('base64');
+    const reused = await upload(w.shop.token, 'shop/me', other, 'image/png', key);
+    expect([reused.status, errorCode(reused)]).toEqual([409, 'IDEMPOTENCY_KEY_REUSED']);
+    expect(await countOf()).toBe(before + 1);
+
+    const raceKey = randomUUID();
+    const [x, y] = await Promise.all([upload(w.shop.token, 'shop/me', other, 'image/png', raceKey), upload(w.shop.token, 'shop/me', other, 'image/png', raceKey)]);
+    expect([x.status, y.status]).toEqual([201, 201]);
+    expect(dataOf(x)).toEqual(dataOf(y));
+    expect(await countOf()).toBe(before + 2);
+
+    const noKey = await w.app.call('POST', '/shop/me/complaints/attachments', { bearer: w.shop.token, body: { content_type: 'image/png', data_base64: PNG_BASE64 } });
+    expect([noKey.status, errorCode(noKey)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
+    // A new key is a new picture, still bounded by the per-account limit of unattached pictures.
+    expect((await upload(w.shop.token, 'shop/me', PNG_BASE64, 'image/png', randomUUID())).status).toBe(201);
+    expect(await countOf()).toBe(before + 3);
   });
 
   it('#261 janitor (Owner: 24 h): a never-attached picture older than 24 h is removed; a fresh one, and every picture linked to a complaint, stay; the database refuses any other delete', async () => {

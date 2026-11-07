@@ -45,8 +45,8 @@ const call = (app: AuthApp, method: 'GET' | 'POST' | 'PUT', path: string, token:
 
 export const getMenu = (app: AuthApp, token: string | undefined): Promise<ApiResponse> => call(app, 'GET', '/shop/me/menu', token);
 
-export const uploadImage = (app: AuthApp, token: string | undefined, body: unknown): Promise<ApiResponse> =>
-  call(app, 'POST', '/shop/me/menu/images', token, body);
+export const uploadImage = (app: AuthApp, token: string | undefined, body: unknown, key: string | null = randomUUID()): Promise<ApiResponse> =>
+  call(app, 'POST', '/shop/me/menu/images', token, body, key);
 
 export const createItem = (app: AuthApp, token: string | undefined, body: unknown, key: string | null = randomUUID()): Promise<ApiResponse> =>
   call(app, 'POST', '/shop/me/menu/items', token, body, key);

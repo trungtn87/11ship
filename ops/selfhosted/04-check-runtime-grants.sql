@@ -45,7 +45,7 @@ WITH expected(table_name, privileges) AS (
     ('sms_gateway_control', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('sms_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('menu_categories', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
-    ('menu_images', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('menu_images', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
     ('menu_items', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('system_settings', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('system_setting_changes', ARRAY['SELECT', 'INSERT']::text[]),

@@ -231,7 +231,7 @@ describe('M11.03 — administration, moderation and adjustments', () => {
   // ---- pictures ------------------------------------------------------------------------------------------------------------------------
 
   it('the Administration opens the pictures of a complaint; an anonymous caller and another complaint\'s id cannot', async () => {
-    const pic = await w.app.call('POST', '/shop/me/complaints/attachments', { bearer: w.shop.token, body: { content_type: 'image/png', data_base64: PNG_BASE64 } });
+    const pic = await w.app.call('POST', '/shop/me/complaints/attachments', { bearer: w.shop.token, body: { content_type: 'image/png', data_base64: PNG_BASE64 }, headers: { 'idempotency-key': randomUUID() } });
     const attachmentId = String((dataOf(pic) as Json).attachment_id);
     const c = await file({ attachment_ids: [attachmentId] });
     const other = await file({ category: 'OTHER' });

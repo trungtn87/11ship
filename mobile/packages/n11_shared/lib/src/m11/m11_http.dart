@@ -134,7 +134,7 @@ class HttpM11Source extends M11Source {
 
   @override
   Future<String> uploadEvidence(M11Role role, PickedImage image) async {
-    final Object? data = await _call('POST', '${_family(role)}/attachments', body: <String, Object?>{'content_type': image.contentType, 'data_base64': base64Encode(image.bytes)}, ok: const <int>{201});
+    final Object? data = await _call('POST', '${_family(role)}/attachments', body: <String, Object?>{'content_type': image.contentType, 'data_base64': base64Encode(image.bytes)}, key: image.idempotencyKey, ok: const <int>{201});
     return _parse(data, (Object? v) => v is Map<String, Object?> && v['attachment_id'] is String ? v['attachment_id']! as String : throw const FormatException('attachment'));
   }
 

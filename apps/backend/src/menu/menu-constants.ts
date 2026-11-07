@@ -4,6 +4,7 @@
 
 export const MENU_SCOPE_TYPE = 'user';
 export const MENU_ITEM_CREATE_OPERATION_ID = 'menu.item.create.v1';
+export const MENU_IMAGE_UPLOAD_OPERATION_ID = 'menu.image.upload.v1';
 export const MENU_ITEM_UPDATE_OPERATION_ID = 'menu.item.update.v1';
 export const MENU_ITEM_HIDE_OPERATION_ID = 'menu.item.hide.v1';
 export const MENU_ITEM_SHOW_OPERATION_ID = 'menu.item.show.v1';

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthPrincipal } from '../auth/auth-principal';
 import { AppError, TechnicalError } from '../common/app-errors';
@@ -59,16 +59,25 @@ export class ComplaintService {
 
   // ---- pictures ------------------------------------------------------------------------------------------------------------------
 
-  /** Uploads one picture, unattached and owned by the caller. Not idempotent on purpose (like the menu pictures): a repeat only adds one unattached picture, bounded per account. */
-  async upload(principal: AuthPrincipal, role: PartyRole, upload: AttachmentUpload): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
-      const caller = await this.actors.resolve(context, principal, role, 'update');
+  /**
+   * Uploads one picture, unattached and owned by the caller (OD-2). One Idempotency-Key per picture the person chose: a retry returns the
+   * metadata of the picture stored the first time and adds nothing, so it takes no further place in the per-account limit of unattached
+   * pictures. The logical request is the SHA-256 of the bytes, their type and size (never the bytes themselves).
+   */
+  async upload(principal: AuthPrincipal, role: PartyRole, upload: AttachmentUpload, key: Key, requestId: string): Promise<IdempotentOutcome> {
+    void requestId;
+    const logical: JsonObject = {
+      content_type: upload.contentType,
+      byte_size: upload.bytes.length,
+      sha256: createHash('sha256').update(upload.bytes).digest('hex'),
+    };
+    return this.#write(principal, role, OPERATIONS.complaintAttachment, logical, key, async (context, caller) => {
       if ((await this.complaints.countUnlinked(context, caller.userId)) >= UNLINKED_ATTACHMENT_LIMIT) {
         throw new AppError('COMPLAINT_ATTACHMENT_LIMIT');
       }
       const attachmentId = randomUUID();
       await this.complaints.insertAttachment(context, { attachmentId, uploaderUserId: caller.userId, contentType: upload.contentType, bytes: upload.bytes });
-      return { attachment_id: attachmentId, content_type: upload.contentType, byte_size: upload.bytes.length };
+      return { status: 201, payload: { attachment_id: attachmentId, content_type: upload.contentType, byte_size: upload.bytes.length } };
     });
   }
 
