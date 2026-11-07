@@ -1310,13 +1310,21 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const job = dataOf(claimRes).job as { job_id: string; attempt_id: string; text: string };
       const otp = otpOf(job.text);
 
+      // Dò toàn bộ bảng app.idempotency_records qua t::text (mọi cột của row)
+      // và kiểm tra tường minh các cột văn bản / JSONB (scope_id, operation_id, idempotency_key, replay_guard)
       const recordsCount = await count(
         app.pool,
-        `SELECT 1 FROM app.idempotency_records
-          WHERE request_payload::text LIKE '%' || $1 || '%'
-             OR response_body::text LIKE '%' || $1 || '%'
-             OR response_body::text LIKE '%' || $2 || '%'`,
-        [claimReqId, otp],
+        `SELECT 1 FROM app.idempotency_records t
+          WHERE t::text LIKE '%' || $1 || '%'
+             OR t::text LIKE '%' || $2 || '%'
+             OR t::text LIKE '%' || $3 || '%'
+             OR scope_id LIKE '%' || $1 || '%'
+             OR operation_id LIKE '%' || $1 || '%'
+             OR idempotency_key LIKE '%' || $1 || '%'
+             OR replay_guard::text LIKE '%' || $1 || '%'
+             OR replay_guard::text LIKE '%' || $2 || '%'
+             OR replay_guard::text LIKE '%' || $3 || '%'`,
+        [claimReqId, otp, phone.normalized],
       );
       expect(recordsCount).toBe(0);
 
