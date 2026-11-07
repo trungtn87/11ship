@@ -269,6 +269,7 @@ describe('AllExceptionsFilter', () => {
         'FINANCE_GRANT_STATE_CONFLICT',
         'FINANCE_VERSION_CONFLICT',
         'GATEWAY_ACK_CONFLICT',
+        'GATEWAY_CLAIM_CONFLICT',
         'GATEWAY_JOB_NOT_FOUND',
         'GATEWAY_UNAUTHORIZED',
         'IDEMPOTENCY_BUSY',

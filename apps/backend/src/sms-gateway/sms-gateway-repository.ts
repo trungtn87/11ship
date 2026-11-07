@@ -20,6 +20,18 @@ export interface ClaimedJob {
   readonly leaseExpiresAtMs: number;
 }
 
+export interface JobByAttempt {
+  readonly jobId: string;
+  readonly attemptId: string;
+  readonly purpose: SmsPurpose;
+  readonly status: SmsJobStatus;
+  readonly claimedBy: string;
+  readonly sealed: SealedPayload | null;
+  readonly expiresAtMs: number;
+  readonly leaseExpiresAtMs: number;
+  readonly leaseActive: boolean;
+}
+
 /** The challenge a job belongs to: an account OTP (phone_verifications) or an admin activation OTP (its own challenge table). */
 export type JobOwner =
   | { readonly kind: 'VERIFICATION'; readonly id: string }
@@ -264,6 +276,50 @@ export class SmsGatewayRepository {
       sealed: { iv: row.payload_iv, tag: row.payload_tag, ciphertext: row.payload_ciphertext, keyId: row.crypto_key_id },
       expiresAtMs: toSafeInteger(row.expires_ms),
       leaseExpiresAtMs: toSafeInteger(row.lease_ms),
+    };
+  }
+
+  async findJobByAttempt(context: TransactionContext, attemptId: string): Promise<JobByAttempt | undefined> {
+    const result = await context.query<{
+      job_id: string;
+      attempt_id: string;
+      purpose: SmsPurpose;
+      status: SmsJobStatus;
+      claimed_by: string;
+      payload_iv: Buffer | null;
+      payload_tag: Buffer | null;
+      payload_ciphertext: Buffer | null;
+      crypto_key_id: string;
+      expires_ms: string;
+      lease_ms: string;
+      lease_active: boolean;
+    }>(
+      `SELECT j.job_id, j.attempt_id, j.purpose, j.status, j.claimed_by,
+              j.payload_iv, j.payload_tag, j.payload_ciphertext, j.crypto_key_id,
+              ${epochMs('j.expires_at')} AS expires_ms, ${epochMs('j.lease_expires_at')} AS lease_ms,
+              (j.lease_expires_at > clock_timestamp()) AS lease_active
+         FROM app.sms_jobs j
+        WHERE j.attempt_id = $1::uuid
+        FOR UPDATE`,
+      [attemptId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    return {
+      jobId: row.job_id,
+      attemptId: row.attempt_id,
+      purpose: row.purpose,
+      status: row.status,
+      claimedBy: row.claimed_by,
+      sealed:
+        row.payload_ciphertext !== null && row.payload_iv !== null && row.payload_tag !== null
+          ? { iv: row.payload_iv, tag: row.payload_tag, ciphertext: row.payload_ciphertext, keyId: row.crypto_key_id }
+          : null,
+      expiresAtMs: toSafeInteger(row.expires_ms),
+      leaseExpiresAtMs: toSafeInteger(row.lease_ms),
+      leaseActive: Boolean(row.lease_active),
     };
   }
 

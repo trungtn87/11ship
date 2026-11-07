@@ -36,7 +36,11 @@ class GatewayApi(baseUrl: String, private val credential: String) {
         require(baseUrl.startsWith("https://")) { "HTTPS is required" }
     }
 
+    @Volatile
+    internal var httpTransport: ((path: String, body: JSONObject) -> JSONObject)? = null
+
     private fun post(path: String, body: JSONObject): JSONObject {
+        httpTransport?.let { return it(path, body) }
         val connection = URL(root + path).openConnection() as HttpsURLConnection
         try {
             connection.requestMethod = "POST"
@@ -123,8 +127,12 @@ class GatewayApi(baseUrl: String, private val credential: String) {
         }
     }
 
-    fun claim(smsPermission: Boolean, paused: Boolean): ClaimResult {
-        val data = post("/jobs/claim", JSONObject().put("sms_permission", smsPermission).put("paused", paused))
+    fun claim(smsPermission: Boolean, paused: Boolean, claimRequestId: String? = null): ClaimResult {
+        val body = JSONObject().put("sms_permission", smsPermission).put("paused", paused)
+        if (claimRequestId != null) {
+            body.put("claim_request_id", claimRequestId)
+        }
+        val data = post("/jobs/claim", body)
         val job = data.optJSONObject("job")?.let {
             Job(it.getString("job_id"), it.getString("attempt_id"), it.getString("to"), it.getString("text"))
         }

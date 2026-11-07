@@ -99,7 +99,7 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 1 account read code (M01 account read: USER_NOT_AVAILABLE)
     // + 3 USER lock/unlock codes (M01 account lock, D15: USER_ACCOUNT_VERSION_CONFLICT, USER_ACCOUNT_ALREADY_IN_STATE, USER_ACCOUNT_IMPACT_REVIEW_REQUIRED):
     // + 4 native device codes (M01-ANDROID: DEVICE_PROOF_INVALID, DEVICE_PROOF_EXPIRED, DEVICE_PROOF_UNSUPPORTED, DEVICE_RATE_LIMITED)
-    // + 3 SMS gateway codes (issue #102: GATEWAY_UNAUTHORIZED, GATEWAY_JOB_NOT_FOUND, GATEWAY_ACK_CONFLICT)
+    // + 4 SMS gateway codes (issue #102: GATEWAY_UNAUTHORIZED, GATEWAY_JOB_NOT_FOUND, GATEWAY_ACK_CONFLICT; OD-2 #51: GATEWAY_CLAIM_CONFLICT)
     // + 1 own-password change code (M01 client apps, reused from #114: CURRENT_PASSWORD_INVALID)
     // + 6 menu/discovery codes (M02: MENU_ITEM_NOT_FOUND, MENU_CATEGORY_NOT_AVAILABLE, INVALID_MENU_IMAGE, MENU_LIMIT_REACHED, MENU_IMAGE_NOT_FOUND, SHOP_UNAVAILABLE)
     // + 6 account lifecycle codes (M01 final package: SYSTEM_SETTING_VERSION_CONFLICT, PHONE_VERIFICATION_NOT_REQUIRED, PHONE_VERIFICATION_REQUIRED,
@@ -138,8 +138,8 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 1 order edit code (#238: ORDER_EDIT_LOCKED)
     // + 1 operations analytics code (#242: ANOMALY_CASE_NOT_FOUND)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(238);
-    expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED']));
+    expect(codes).toHaveLength(239);
+    expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED', 'GATEWAY_CLAIM_CONFLICT']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);
     expect(codes).toContain('TRANSACTION_OUTCOME_UNKNOWN');

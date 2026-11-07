@@ -200,7 +200,15 @@ class GatewayService : Service() {
                         if (!sleepSeconds(pollSeconds)) break
                         continue
                     }
-                    val claim = client.claim(permission, false)
+                    val claimReqId = try {
+                        GatewayStore.getOrCreateClaimRequestId(this)
+                    } catch (e: IllegalStateException) {
+                        GatewayStore.recordConnection(this, false, "STORAGE", null)
+                        setStatus("Lỗi lưu trữ thiết bị, thử lại sau ${pollSeconds}s")
+                        if (!sleepSeconds(pollSeconds)) break
+                        continue
+                    }
+                    val claim = client.claim(permission, false, claimReqId)
                     GatewayStore.recordConnection(this, true, null, claim.sendingEnabled)
                     backoffSeconds = 0
                     setStatus(if (claim.sendingEnabled) "Đã kết nối VPS" else "Đã kết nối, VPS đang tắt gửi SMS")
@@ -209,12 +217,17 @@ class GatewayService : Service() {
                         process(client, job)
                         continue
                     }
+                    GatewayStore.clearClaimRequestId(this)
                 } catch (e: GatewayApi.Unauthorized) {
+                    GatewayStore.clearClaimRequestId(this)
                     GatewayStore.setAuthFailed(this, true)
                     GatewayStore.setEnabled(this, false)
                     GatewayStore.recordConnection(this, false, "UNAUTHORIZED", null)
                     break
                 } catch (e: Exception) {
+                    if (e is GatewayApi.Rejected && e.status != 429) {
+                        GatewayStore.clearClaimRequestId(this)
+                    }
                     backoffSeconds = if (backoffSeconds == 0) 5 else minOf(60, backoffSeconds * 2)
                     GatewayStore.recordConnection(this, false, errorCode(e), null)
                     setStatus("Mất kết nối VPS, thử lại sau ${backoffSeconds}s")
@@ -255,6 +268,7 @@ class GatewayService : Service() {
         is java.net.UnknownHostException -> "DNS"
         is java.net.SocketTimeoutException -> "TIMEOUT"
         is IOException -> "NETWORK"
+        is IllegalStateException -> "STORAGE"
         else -> "ERROR"
     }
 
@@ -262,15 +276,22 @@ class GatewayService : Service() {
 
     private fun process(api: GatewayApi, job: GatewayApi.Job) {
         if (!PHONE.matches(job.to) || !TEXT.matches(job.text) || job.text.length > 160) {
+            GatewayStore.clearClaimRequestId(this)
             report(api, job.jobId, job.attemptId, "FAILED", "REJECTED_TEMPLATE")
             return
         }
         if (!hasSmsPermission()) {
+            GatewayStore.clearClaimRequestId(this)
             report(api, job.jobId, job.attemptId, "FAILED", "NO_PERMISSION")
             return
         }
         // Written BEFORE the radio is touched: if the process dies from here on, the next start reports UNKNOWN and never resends.
-        GatewayStore.markAttempt(this, job.jobId, job.attemptId)
+        if (!GatewayStore.markAttempt(this, job.jobId, job.attemptId)) {
+            // Commit failed: fail closed. Do NOT clear claim_request_id, do NOT touch radio / send SMS.
+            // Leave the job to be swept by server lease expiry.
+            return
+        }
+        GatewayStore.clearClaimRequestId(this)
         currentTask = "SENDING"
         val results = LinkedBlockingQueue<Int>()
         sentResults[job.jobId] = results

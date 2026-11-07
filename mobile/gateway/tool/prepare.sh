@@ -70,7 +70,9 @@ s, n = re.subn(r"minSdk\s*=\s*[^\n]+", "minSdk = 24", s, count=1)
 assert n == 1, "minSdk line not found"
 # JVM unit tests of the pure-Kotlin parts (tool/test): the pending-report slot of the gateway.
 if "testImplementation" not in s:
-    s += '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n'
+    s += '\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n    testImplementation("org.json:json:20240303")\n}\n'
+if "testOptions" not in s:
+    s += '\nandroid {\n    testOptions {\n        unitTests.isReturnDefaultValues = true\n    }\n}\n'
 gradle.write_text(s)
 PY
 mkdir -p android/app/src/main/kotlin/vn/eleven/gateway
@@ -89,3 +91,4 @@ cp tool/ReportFlusher.kt android/app/src/main/kotlin/vn/eleven/gateway/ReportFlu
 cp tool/UpdateSupport.kt android/app/src/main/kotlin/vn/eleven/gateway/UpdateSupport.kt
 cp tool/test/ReportFlusherTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ReportFlusherTest.kt
 cp tool/test/UpdateRulesTest.kt android/app/src/test/kotlin/vn/eleven/gateway/UpdateRulesTest.kt
+cp tool/test/ClaimRequestIdTest.kt android/app/src/test/kotlin/vn/eleven/gateway/ClaimRequestIdTest.kt

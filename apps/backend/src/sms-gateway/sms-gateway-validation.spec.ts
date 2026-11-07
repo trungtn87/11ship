@@ -14,7 +14,12 @@ describe('gateway request validation', () => {
       appVersionCode: 12,
       telemetry: { batteryPercent: 18, charging: false, simState: 'READY', pendingReports: 0, currentTask: 'IDLE', lastErrorCode: 'NO_SERVICE' },
     });
-    expect(parseClaimBody({ sms_permission: false })).toEqual({ smsPermission: false, paused: null });
+    expect(parseClaimBody({ sms_permission: false })).toEqual({ claimRequestId: null, smsPermission: false, paused: null });
+    expect(parseClaimBody({ claim_request_id: ATTEMPT, sms_permission: true, paused: false })).toEqual({
+      claimRequestId: ATTEMPT,
+      smsPermission: true,
+      paused: false,
+    });
   });
 
   it('refuses a recipient, a text or any other field, and wrong types', () => {
@@ -22,6 +27,8 @@ describe('gateway request validation', () => {
       expect(() => parseHeartbeatBody(body)).toThrow();
     }
     expect(() => parseClaimBody({ to: '+84900000000', text: 'hello' })).toThrow();
+    expect(() => parseClaimBody({ claim_request_id: 'not-a-uuid' })).toThrow();
+    expect(() => parseClaimBody({ claim_request_id: 123 })).toThrow();
   });
 
   it('parses an acknowledgement strictly', () => {

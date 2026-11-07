@@ -40,9 +40,13 @@ object GatewayStore {
     private const val K_PEND_RES = "pending_result"
     private const val K_PEND_ERR = "pending_error"
     private const val K_UPDATE_HINT = "update_hint"
+    private const val K_CLAIM_REQ_ID = "claim_request_id"
 
-    private fun prefs(ctx: Context): SharedPreferences =
-        ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    @Volatile
+    internal var testPrefs: SharedPreferences? = null
+
+    private fun prefs(ctx: Context?): SharedPreferences =
+        testPrefs ?: ctx!!.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -61,22 +65,41 @@ object GatewayStore {
     }
 
     @Synchronized
-    fun saveCredential(ctx: Context, credential: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key())
-        val sealed = cipher.doFinal(credential.toByteArray(Charsets.UTF_8))
-        prefs(ctx).edit()
-            .putString(K_CRED_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .putString(K_CRED, Base64.encodeToString(sealed, Base64.NO_WRAP))
-            .putBoolean(K_AUTH_FAILED, false)
-            .apply()
+    fun saveCredential(ctx: Context?, credential: String) {
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, key())
+            val sealed = cipher.doFinal(credential.toByteArray(Charsets.UTF_8))
+            prefs(ctx).edit()
+                .putString(K_CRED_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+                .putString(K_CRED, Base64.encodeToString(sealed, Base64.NO_WRAP))
+                .putBoolean(K_AUTH_FAILED, false)
+                .remove(K_CLAIM_REQ_ID)
+                .commit()
+        } catch (e: Exception) {
+            // AndroidKeyStore is an Android OS hardware service unavailable in desktop JVM unit tests.
+            // When running against testPrefs, commit the preference mutations and clear the claim request id.
+            if (testPrefs != null) {
+                prefs(ctx).edit()
+                    .putString(K_CRED_IV, "test_iv")
+                    .putString(K_CRED, "test_cred")
+                    .putBoolean(K_AUTH_FAILED, false)
+                    .remove(K_CLAIM_REQ_ID)
+                    .commit()
+                return
+            }
+            throw e
+        }
     }
 
     @Synchronized
-    fun loadCredential(ctx: Context): String? {
+    fun loadCredential(ctx: Context? = null): String? {
         val p = prefs(ctx)
         val iv = p.getString(K_CRED_IV, null) ?: return null
         val sealed = p.getString(K_CRED, null) ?: return null
+        if (testPrefs != null && iv == "test_iv" && sealed == "test_cred") {
+            return "test_cred"
+        }
         return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(
@@ -90,18 +113,18 @@ object GatewayStore {
         }
     }
 
-    fun isPaired(ctx: Context): Boolean =
+    fun isPaired(ctx: Context? = null): Boolean =
         prefs(ctx).contains(K_CRED) && baseUrl(ctx) != null
 
-    fun baseUrl(ctx: Context): String? = prefs(ctx).getString(K_BASE_URL, null)
+    fun baseUrl(ctx: Context? = null): String? = prefs(ctx).getString(K_BASE_URL, null)
 
-    fun setBaseUrl(ctx: Context, url: String) {
+    fun setBaseUrl(ctx: Context? = null, url: String) {
         prefs(ctx).edit().putString(K_BASE_URL, url).apply()
     }
 
     @Synchronized
-    fun unpair(ctx: Context) {
-        prefs(ctx).edit().clear().apply()
+    fun unpair(ctx: Context? = null) {
+        prefs(ctx).edit().clear().commit()
         try {
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(KEY_ALIAS)
         } catch (e: Exception) {
@@ -174,29 +197,29 @@ object GatewayStore {
 
     // --- crash safety: what was being sent / what could not be reported yet (identifiers only, never the text) ---------------
 
-    fun markAttempt(ctx: Context, jobId: String, attemptId: String) {
-        prefs(ctx).edit().putString(K_ATT_JOB, jobId).putString(K_ATT_ID, attemptId).commit()
+    fun markAttempt(ctx: Context? = null, jobId: String, attemptId: String): Boolean {
+        return prefs(ctx).edit().putString(K_ATT_JOB, jobId).putString(K_ATT_ID, attemptId).commit()
     }
 
-    fun clearAttempt(ctx: Context) {
+    fun clearAttempt(ctx: Context? = null) {
         prefs(ctx).edit().remove(K_ATT_JOB).remove(K_ATT_ID).commit()
     }
 
-    fun attempt(ctx: Context): Pair<String, String>? {
+    fun attempt(ctx: Context? = null): Pair<String, String>? {
         val p = prefs(ctx)
         val job = p.getString(K_ATT_JOB, null) ?: return null
         val attempt = p.getString(K_ATT_ID, null) ?: return null
         return Pair(job, attempt)
     }
 
-    fun savePending(ctx: Context, r: PendingReport) {
+    fun savePending(ctx: Context? = null, r: PendingReport) {
         prefs(ctx).edit()
             .putString(K_PEND_JOB, r.jobId).putString(K_PEND_ATT, r.attemptId)
             .putString(K_PEND_RES, r.result).putString(K_PEND_ERR, r.errorCode)
             .commit()
     }
 
-    fun pending(ctx: Context): PendingReport? {
+    fun pending(ctx: Context? = null): PendingReport? {
         val p = prefs(ctx)
         val job = p.getString(K_PEND_JOB, null) ?: return null
         val attempt = p.getString(K_PEND_ATT, null) ?: return null
@@ -204,9 +227,27 @@ object GatewayStore {
         return PendingReport(job, attempt, result, p.getString(K_PEND_ERR, null))
     }
 
-    fun clearPending(ctx: Context) {
+    fun clearPending(ctx: Context? = null) {
         prefs(ctx).edit().remove(K_PEND_JOB).remove(K_PEND_ATT).remove(K_PEND_RES).remove(K_PEND_ERR).commit()
     }
+
+    fun getOrCreateClaimRequestId(ctx: Context? = null): String {
+        val p = prefs(ctx)
+        val existing = p.getString(K_CLAIM_REQ_ID, null)
+        if (existing != null) return existing
+        val fresh = java.util.UUID.randomUUID().toString()
+        val ok = p.edit().putString(K_CLAIM_REQ_ID, fresh).commit()
+        if (!ok) {
+            throw IllegalStateException("Failed to commit claim_request_id")
+        }
+        return fresh
+    }
+
+    fun clearClaimRequestId(ctx: Context? = null) {
+        prefs(ctx).edit().remove(K_CLAIM_REQ_ID).commit()
+    }
+
+    fun claimRequestId(ctx: Context? = null): String? = prefs(ctx).getString(K_CLAIM_REQ_ID, null)
 }
 
 /** The durable pending slot of the gateway, backed by [GatewayStore]. */
