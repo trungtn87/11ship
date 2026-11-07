@@ -5,7 +5,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { DeliveryShopService } from './delivery-shop-service';
-import { parseCreateBody, parseCustodyBody, parseDeliveryId, parseEmptyBody, parseReasonBody, parseShopListQuery, parseVersionBody } from './delivery-validation';
+import { parseCustodyBody, parseDeliveryId, parseEmptyBody, parseReasonBody, parseShopListQuery, parseVersionBody } from './delivery-validation';
 
 type Key = string | string[] | undefined;
 
@@ -32,9 +32,10 @@ export class DeliveryShopController {
 
   @Post('deliveries')
   @HttpCode(201)
-  async create(@Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
-    const outcome = await this.shop.create(this.#principal(request), parseCreateBody(body), key, requestIdOf(request));
-    return { data: outcome.payload };
+  create(): never {
+    // Closed (OD-5): a shop no longer opens a delivery on its own; a delivery is born from an order. Refused before the body, the Idempotency-Key
+    // and the transaction are looked at, so nothing is written (no delivery row, no audit, no outbox) and nothing is recorded for replay.
+    throw new AppError('DELIVERY_DIRECT_CREATE_DISABLED');
   }
 
   /** The three bands of the fee table, so the shop can choose one for an address without a map point. */

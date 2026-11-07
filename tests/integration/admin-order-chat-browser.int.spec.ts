@@ -14,6 +14,7 @@ import { ApiResponse, AuthApp, dataOf, Phone, randomPhone, startAuthApp } from '
 import { Browser, launchChrome, Page } from './support/cdp';
 import { cleanupOrders, Customer, Dish, Json, newCustomer, newDish, openAllWeek, PRIVACY, TERMS } from './support/m10-fixtures';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
+import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 
 // Issue #191, Administration web in a REAL Chrome against the real front, backend and PostgreSQL: "Trao đổi đơn hàng" and "Lưu lịch sử trao đổi" in the order
@@ -511,10 +512,7 @@ describe('admin order chat (real browser)', () => {
     await customerSays(id, 'Tin của đơn có giao hàng');
     const called = good(await call(shop.token, 'POST', `/shop/me/orders/${id}/call-shipper`, { expected_version: order.version }), 201);
     const orderDelivery = called.delivery as Json;
-    const direct = good(
-      await call(shop.token, 'POST', '/shop/me/deliveries', { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER' }),
-      201,
-    );
+    const direct = await createLegacyDirectDeliveryView(app, shop, { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER' });
     const directId = String(direct.delivery_id);
     good(await call(shop.token, 'POST', `/shop/me/deliveries/${directId}/chat`, { body: 'Tin giao trực tiếp' }), 201);
     const rooms = async (): Promise<number> => (await app.pool.query('SELECT 1 FROM app.order_chat_messages WHERE order_id = $1::uuid OR delivery_id = $2::uuid', [id, directId])).rowCount ?? 0;
