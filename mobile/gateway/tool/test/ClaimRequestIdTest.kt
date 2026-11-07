@@ -141,7 +141,7 @@ class ClaimRequestIdTest {
         api.httpTransport = { path, body ->
             recordedPath = path
             recordedBody = body
-            JSONObject().put("data", JSONObject().put("sending_enabled", true))
+            JSONObject().put("sending_enabled", true)
         }
 
         val testId = "550e8400-e29b-41d4-a716-446655440000"
@@ -158,7 +158,9 @@ class ClaimRequestIdTest {
 
         // When claimRequestId is null, the field is omitted
         api.claim(smsPermission = true, paused = false, claimRequestId = null)
-        assertFalse("Request body must omit 'claim_request_id' when null", recordedBody!!.has("claim_request_id"))
+        val secondBody = recordedBody
+        assertNotNull(secondBody)
+        assertFalse("Request body must omit 'claim_request_id' when null", secondBody!!.has("claim_request_id"))
     }
 
     @Test
