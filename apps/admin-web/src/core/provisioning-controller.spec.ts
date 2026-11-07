@@ -28,7 +28,7 @@ import {
 // Unit tests of the SYSTEM invitation flow against a SCRIPTED server. Not integration tests: the real backend and a real
 // browser are exercised by tests/integration/admin-web-browser.int.spec.ts.
 
-function setup(server: FakeServer, csrf: string | undefined = 'csrf-s') {
+function setup(server: FakeServer, csrf: string | undefined = 'csrf-s', newKey: () => string = () => KEY_1) {
   const clock = new FakeClock();
   const calls = { lost: 0, refresh: 0 };
   const controller = new ProvisioningController(
@@ -44,7 +44,7 @@ function setup(server: FakeServer, csrf: string | undefined = 'csrf-s') {
       },
     },
     clock,
-    () => KEY_1,
+    newKey,
   );
   const screens: ProvisioningScreen[] = [];
   controller.subscribe((screen) => screens.push(screen));
@@ -183,6 +183,42 @@ describe('create invitation (step-up)', () => {
     await settle();
     expect(server.count('POST', `/operations/${OPERATION_ID}/verify`)).toBe(1);
     expect(server.count('POST', '/invitations')).toBe(0);
+  });
+
+  it('OD-2: a create-operation whose answer is lost is retried with the SAME key (no second operation); a new action gets a new key', async () => {
+    const KEY_2 = '44444444-4444-4444-8444-444444444444';
+    const keys = [KEY_1, KEY_2];
+    const server = new FakeServer().on('POST', '/operations', 'network', operationCreated());
+    const { controller } = setup(server, 'csrf-s', () => keys.shift() as string);
+    await controller.openCompose('create');
+    // first send: the answer is lost; the form stays and says so
+    expect(await controller.submitForm(validDraft)).toBe('sent');
+    expect(compose(controller)).toMatchObject({ phase: 'form', pending: false, formError: ADMIN_COPY.connectionLost });
+    // the person sends the same request again: the SAME key goes, so the server returns the operation it already opened
+    expect(await controller.submitForm(validDraft)).toBe('sent');
+    expect(compose(controller).phase).toBe('code');
+    const creates = server.requests.filter((request) => request.path === '/operations');
+    expect(creates.map((request) => request.idempotencyKey)).toEqual([KEY_1, KEY_1]);
+    expect(creates[0]?.body).toEqual(creates[1]?.body);
+    expect(keys).toEqual([KEY_2]); // the key factory was asked once for this action
+  });
+
+  it('OD-2: the create-operation key changes with the request and is dropped after a business refusal', async () => {
+    const KEY_2 = '44444444-4444-4444-8444-444444444444';
+    const KEY_3 = '55555555-5555-4555-8555-555555555555';
+    const keys = [KEY_1, KEY_2, KEY_3];
+    const server = new FakeServer().on('POST', '/operations', 'network', 'network', fail(409, 'ADMIN_PHONE_CONFLICT'), operationCreated());
+    const { controller } = setup(server, 'csrf-s', () => keys.shift() as string);
+    await controller.openCompose('create');
+    await controller.submitForm(validDraft); // lost -> KEY_1
+    // another request (another phone) is another action: a new key
+    await controller.submitForm({ ...validDraft, phone: '0987654321' }); // lost -> KEY_2
+    // the business refusal ends that action; the next send of the same request starts a new action
+    await controller.submitForm({ ...validDraft, phone: '0987654321' }); // KEY_2 again, answered 409 phone conflict
+    expect(compose(controller).phase).toBe('form');
+    await controller.submitForm({ ...validDraft, phone: '0987654321' }); // new action -> KEY_3
+    const sent = server.requests.filter((request) => request.path === '/operations').map((request) => request.idempotencyKey);
+    expect(sent).toEqual([KEY_1, KEY_2, KEY_2, KEY_3]);
   });
 
   it('lost answer to the business POST: retry sends the SAME key and operation id, with no new code and no new operation', async () => {
