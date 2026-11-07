@@ -203,6 +203,22 @@ describe('create invitation (step-up)', () => {
     expect(keys).toEqual([KEY_2]); // the key factory was asked once for this action
   });
 
+  it.each([
+    ['TRANSACTION_OUTCOME_UNKNOWN', 503],
+    ['SERVICE_UNAVAILABLE', 503],
+  ] as const)('OD-2: create-operation answered %s (5xx) is retried with the SAME key', async (code, status) => {
+    const keys = [KEY_1, '44444444-4444-4444-8444-444444444444'];
+    const server = new FakeServer().on('POST', '/operations', fail(status, code), operationCreated());
+    const { controller } = setup(server, 'csrf-s', () => keys.shift() as string);
+    await controller.openCompose('create');
+    await controller.submitForm(validDraft);
+    expect(compose(controller).phase).toBe('form');
+    await controller.submitForm(validDraft);
+    expect(compose(controller).phase).toBe('code');
+    const sent = server.requests.filter((request) => request.path === '/operations').map((request) => request.idempotencyKey);
+    expect(sent).toEqual([KEY_1, KEY_1]);
+  });
+
   it('OD-2: the create-operation key changes with the request and is dropped after a business refusal', async () => {
     const KEY_2 = '44444444-4444-4444-8444-444444444444';
     const KEY_3 = '55555555-5555-4555-8555-555555555555';

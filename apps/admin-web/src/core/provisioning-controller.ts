@@ -163,9 +163,11 @@ export class ProvisioningController {
   #flow: Flow | undefined;
   /**
    * OD-2: the Idempotency-Key of the create-operation request of the user's CURRENT action. It is made once per action and kept
-   * through every repeat of the same request (a lost answer, a network error, a timeout, a CSRF refresh, a rate limit), so the
-   * server returns the operation it already opened instead of opening a second one. It is dropped when the action ends clearly
-   * (a business refusal, or the flow ending) and replaced when the person changes the request.
+   * through every repeat of the same request (a lost answer, a network error, a timeout, any 5xx such as 503
+   * TRANSACTION_OUTCOME_UNKNOWN or SERVICE_UNAVAILABLE, a rate limit), so the server returns the operation it already opened
+   * instead of opening a second one. It is dropped when the action ends clearly (a definite business refusal, the flow ending,
+   * or a CSRF refusal: that one is rejected before anything ran, the form is reset with a fresh token and the next send is a new
+   * action) and replaced when the person changes the request.
    */
   #createKey: { readonly signature: string; readonly key: string } | undefined;
   #timer: unknown;
@@ -594,6 +596,12 @@ export class ProvisioningController {
     }
     if (result.code === 'ADMIN_AUTH_RATE_LIMITED') {
       this.#set({ ...current, phase: 'form', pending: false, formError: ADMIN_COPY.rateLimited });
+      return;
+    }
+    if (result.status >= 500) {
+      // 5xx (503 TRANSACTION_OUTCOME_UNKNOWN, SERVICE_UNAVAILABLE...): the server may have committed. Keep the SAME key so the
+      // next send of the same request returns that operation instead of opening a second one.
+      this.#set({ ...current, phase: 'form', pending: false, formError: ADMIN_COPY.connectionLost });
       return;
     }
     const message = this.#messageOf(result.code);

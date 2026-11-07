@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { AdminApp, adminData, adminErrorCode, count, startAdminApp } from './support/admin-fixtures';
+import { eventually } from './support/async-helpers';
+import { LockHolder, lockPairOf } from './support/idempotency-fixtures';
 import { api, createPayload, operationRow, sessionOf, SystemSession, systemSession } from './support/provisioning-fixtures';
 
 // OD-2 item 1 — POST /v1/admin/operations carries an Idempotency-Key. Same key + same request = the operation created the
@@ -84,7 +86,22 @@ describe('OD-2.1 — create-operation idempotency', () => {
   it('two concurrent requests with one key create one operation and answer alike', async () => {
     const payload = createPayload();
     const key = randomUUID();
-    const [a, b] = await Promise.all([create(payload, key), create(payload, key)]);
+    // Barrier: an outside transaction holds the key's advisory lock until BOTH requests are provably waiting for it, so the two
+    // really overlap (the second one cannot arrive after the first has finished).
+    const holder = await LockHolder.begin(app.pool);
+    await holder.advisory(lockPairOf('admin_user', system.account.userId, 'admin.operation.create.v1', key));
+    const both = Promise.all([create(payload, key), create(payload, key)]);
+    await eventually(
+      async () => {
+        const waiting = await app.pool.query(
+          "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND objsubid = 2",
+        );
+        return (waiting.rows[0]?.n ?? 0) >= 2;
+      },
+      'both requests wait for the advisory lock of the key',
+    );
+    await holder.commit();
+    const [a, b] = await both;
     expect([a.status, b.status]).toEqual([201, 201]);
     expect(adminData(a)).toEqual(adminData(b));
     expect(await operations()).toBe(1);
