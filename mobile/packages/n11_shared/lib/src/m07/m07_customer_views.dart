@@ -554,15 +554,16 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
   }
 
   Future<void> _createLink() async {
-    try {
-      final TrackingLinkResult res = await widget.source.createTrackingLink(widget.deliveryId);
+    // OD-2: one Idempotency-Key per tap, kept by act() while the outcome is unknown, so a retry returns the same link.
+    await act('tracking-link', (String key) async {
+      final TrackingLinkResult res = await widget.source.createTrackingLink(widget.deliveryId, key: key);
       if (mounted) {
         setState(() {
           _trackingLink = res;
           _trackingStatus = TrackingLinkStatus(hasActiveLink: true, shareLocation: res.shareLocation);
         });
       }
-    } catch (_) {}
+    });
   }
 
   Future<void> _toggleLocation(bool val) async {

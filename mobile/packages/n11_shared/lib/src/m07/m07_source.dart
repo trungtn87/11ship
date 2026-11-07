@@ -298,7 +298,7 @@ abstract class CustomerDeliverySource {
   Future<DeliveryView> cancelAfterPickup(String id, {required String reason, required int expectedVersion, required String key});
   Future<DeliveryView> counterAccept(String id, {required int expectedVersion, required String key});
   Future<DeliveryView> counterReject(String id, {required int expectedVersion, required String key});
-  Future<TrackingLinkResult> createTrackingLink(String id);
+  Future<TrackingLinkResult> createTrackingLink(String id, {required String key});
   Future<TrackingLinkStatus> getTrackingLinkStatus(String id);
   Future<TrackingLinkStatus> toggleTrackingLocation(String id, {required bool shareLocation});
   Future<void> revokeTrackingLink(String id);

@@ -89,9 +89,10 @@ export class DeliveryCustomerController {
 
   @Post('deliveries/:delivery_id/tracking-link')
   @HttpCode(201)
-  async createTrackingLink(@Param('delivery_id') id: string, @Req() request: AuthenticatedRequest) {
+  async createTrackingLink(@Param('delivery_id') id: string, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     const baseUrl = canonicalBaseUrl(request);
-    return { data: await this.customer.createTrackingLink(this.#principal(request), parseDeliveryId(id), baseUrl) };
+    const outcome = await this.customer.createTrackingLink(this.#principal(request), parseDeliveryId(id), key, baseUrl);
+    return { data: outcome.payload };
   }
 
   @Get('deliveries/:delivery_id/tracking-link')

@@ -393,6 +393,55 @@ describe('F5 Integration: Customer Courier & COD Lifecycle (PostgreSQL 17)', () 
     expect([403, 404]).toContain(cancelTry.status);
   });
 
+  it('8b. OD-2: the tracking-link POST needs an Idempotency-Key; a retry returns the same link and revokes nothing; a new key issues a new link and revokes the old one', async () => {
+    const created = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
+      recipient_name: 'Khách Nhận Khóa',
+      recipient_phone: '0911223355',
+      pickup_address_text: 'Điểm nhận hàng',
+      dropoff_address_text: 'Điểm giao hàng',
+      goods_description: 'Hàng mẫu',
+      cod_vnd: 0,
+      fee_payer: 'RECIPIENT',
+      agreed_fee: { amount_vnd: 25000 },
+    });
+    const deliveryId = String((dataOf(created) as Json).delivery_id);
+    createdDeliveryIds.push(deliveryId);
+    const path = `/customers/me/deliveries/${deliveryId}/tracking-link`;
+    const withKey = (key: string, bearer = alice.token) => app.call('POST', path, { bearer, headers: { 'idempotency-key': key } });
+
+    // (e) no key -> 400
+    const missing = await app.call('POST', path, { bearer: alice.token });
+    expect([missing.status, errorCode(missing)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
+
+    // (a) same key: the same link, the old one is not revoked, no second row
+    const key = randomUUID();
+    const first = await withKey(key);
+    expect(first.status).toBe(201);
+    const retry = await withKey(key);
+    expect([retry.status, dataOf(retry)]).toEqual([201, dataOf(first)]);
+    const rows = () => app.pool.query<{ revoked: boolean }>('SELECT revoked FROM app.delivery_tracking_links WHERE delivery_id = $1::uuid', [deliveryId]);
+    expect((await rows()).rows.map((r) => r.revoked)).toEqual([false]);
+    expect((await app.call('GET', `/public/tracking/${String((dataOf(first) as Json).token)}`)).status).toBe(200);
+
+    // (b) the same key for another delivery is a different request
+    const reused = await app.call('POST', `/customers/me/deliveries/${randomUUID()}/tracking-link`, { bearer: alice.token, headers: { 'idempotency-key': key } });
+    expect([reused.status, errorCode(reused)]).toEqual([409, 'IDEMPOTENCY_KEY_REUSED']);
+
+    // (c) two concurrent requests with one key: one link
+    const raceKey = randomUUID();
+    const [x, y] = await Promise.all([withKey(raceKey), withKey(raceKey)]);
+    expect([x.status, y.status]).toEqual([201, 201]);
+    expect(dataOf(x)).toEqual(dataOf(y));
+    expect((await rows()).rows).toHaveLength(2); // the first link (now revoked by the deliberate new action) + the race link
+
+    // (d) a new key is a new link; the previous one is revoked as before
+    const next = await withKey(randomUUID());
+    expect(next.status).toBe(201);
+    expect(String((dataOf(next) as Json).token)).not.toBe(String((dataOf(first) as Json).token));
+    expect((await rows()).rows.filter((r) => !r.revoked)).toHaveLength(1); // only the newest link is live
+    expect(((await app.call('GET', `/public/tracking/${String((dataOf(first) as Json).token)}`)).body as { data?: { status?: string } }).data?.status).toBe('EXPIRED');
+  });
+
   it('8. Public tracking link generation, security headers, dynamic data, map & revocation', async () => {
     const res = await asCustomer(alice, 'POST', '/customers/me/deliveries', {
       recipient_name: 'Khách Nhận Tracking',

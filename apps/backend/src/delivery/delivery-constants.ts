@@ -69,6 +69,7 @@ export const OPERATIONS = {
   cancelAfterPickup: 'delivery.cancel_after_pickup.v1',
   customerFee: 'delivery.fee.customer_decide.v1',
   customerCreate: 'delivery.customer_create.v1',
+  customerTrackingLink: 'delivery.customer_tracking_link.v1',
   customerCancel: 'delivery.customer_cancel.v1',
   customerCancelAfterPickup: 'delivery.customer_cancel_after_pickup.v1',
   trackingLink: 'delivery.tracking_link.v1',
