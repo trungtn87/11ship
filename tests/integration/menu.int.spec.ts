@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { MenuImageJanitor } from '../../apps/backend/src/menu/menu-image-janitor';
+import { MenuImageJanitor, orphanRetentionSeconds } from '../../apps/backend/src/menu/menu-image-janitor';
 import { AuthApp, createServiceArea, dataOf, errorCode, startAuthApp } from './support/auth-fixtures';
 import {
   createCategory,
@@ -15,6 +15,7 @@ import {
   updateItem,
   uploadImage,
 } from './support/menu-fixtures';
+import { loadIntegrationConfig } from './support/test-helpers';
 import { completeSetup, createShopOwner, insertHours, ShopOwner } from './support/shop-management-fixtures';
 
 // M02-MON / M02-XEM — the menu and the public shop view through the REAL Nest pipeline on a REAL PostgreSQL.
@@ -326,6 +327,38 @@ describe('M02 — menu and public shop view', () => {
       expect((await janitor.runOnce()).count).toBe(0);
       // The place is free again: the shop's count fell by the removed picture.
       expect(await count(o.shopId)).toBe(2);
+    });
+  });
+
+  describe('OD-2 review — the janitor keeps a picture while its upload can still be replayed', () => {
+    it('orphanRetentionSeconds is never below 24 h nor below the replay TTL', () => {
+      expect(orphanRetentionSeconds(900)).toBe(24 * 3600);
+      expect(orphanRetentionSeconds(7 * 24 * 3600)).toBeGreaterThanOrEqual(7 * 24 * 3600);
+      for (const ttl of [1, 900, 86_400, 300_000, 604_800]) {
+        expect(orphanRetentionSeconds(ttl)).toBeGreaterThanOrEqual(Math.max(24 * 3600, ttl));
+      }
+    });
+
+    it('with a 7-day replay TTL, a 3-day-old unattached picture is kept and its retry still returns it; past the window it goes', async () => {
+      const long = await startAuthApp({}, { configOverride: { idempotency: { ...loadIntegrationConfig().idempotency, replayTtlSeconds: 604_800, dedupeTtlSeconds: 604_800 } } });
+      try {
+        const o = await createShopOwner(long);
+        const key = randomUUID();
+        const first = await uploadImage(long, o.token, { content_type: 'image/jpeg', data_base64: jpegBase64(30) }, key);
+        expect(first.status).toBe(201);
+        const imageId = String(dataOf(first).image_id);
+        await long.pool.query("UPDATE app.menu_images SET created_at = now() - interval '3 days' WHERE image_id = $1::uuid", [imageId]);
+        const janitor = long.running.app.get(MenuImageJanitor);
+        await janitor.runOnce();
+        expect((await long.pool.query('SELECT 1 FROM app.menu_images WHERE image_id = $1::uuid', [imageId])).rowCount).toBe(1);
+        const retry = await uploadImage(long, o.token, { content_type: 'image/jpeg', data_base64: jpegBase64(30) }, key);
+        expect([retry.status, dataOf(retry)]).toEqual([201, dataOf(first)]);
+        await long.pool.query("UPDATE app.menu_images SET created_at = now() - interval '8 days' WHERE image_id = $1::uuid", [imageId]);
+        await janitor.runOnce();
+        expect((await long.pool.query('SELECT 1 FROM app.menu_images WHERE image_id = $1::uuid', [imageId])).rowCount).toBe(0);
+      } finally {
+        await long.close();
+      }
     });
   });
 

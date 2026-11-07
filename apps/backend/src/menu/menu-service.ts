@@ -180,7 +180,7 @@ export class MenuService {
   /**
    * POST /v1/shop/me/menu/images (OD-2). One Idempotency-Key per picture the owner chose: a retry returns the metadata of the picture
    * stored the first time and adds nothing, so it does not take another place of the per-shop limit. The logical request is the SHA-256 of
-   * the bytes, their type and size. A picture that is uploaded and never attached to a dish is removed by MenuImageJanitor after 24 hours.
+   * the bytes, their type and size. A picture that is uploaded and never attached to a dish is removed by MenuImageJanitor after 24 hours, or after the replay window of the upload when that is longer.
    */
   async uploadImage(actor: SessionActor, input: ImageUploadInput, idempotencyKey: string | readonly string[] | undefined): Promise<MenuOutcome> {
     return this.executor.execute(
