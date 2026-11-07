@@ -172,7 +172,7 @@ describe('M01-A2S — Shop onboarding fault matrix', () => {
       );
       expect(shop.rows[0]).toMatchObject({ status: 'INCOMPLETE', accepting_orders: false });
       expect(Number(shop.rows[0]?.version)).toBe(version);
-      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
       expect(await count('SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid AND action = $2', [failed.requestId, COMPLETE])).toBe(0);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'shop.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(0);
       expect(
@@ -182,7 +182,7 @@ describe('M01-A2S — Shop onboarding fault matrix', () => {
       const retry = await post(user.accessToken, { expected_version: version }, key);
       expect(retry.status).toBe(200);
       expect(dataOf(retry)).toMatchObject({ shop_id: shopId, status: 'ACTIVE', role_granted: true, version: version + 1 });
-      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
+      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(2);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'shop.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(1);
     });
   }

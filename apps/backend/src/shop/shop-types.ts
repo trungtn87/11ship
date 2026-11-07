@@ -10,7 +10,7 @@ export type ServiceAreaStatus = (typeof SERVICE_AREA_STATUSES)[number];
 /** The only membership role A2S creates. Later slices may add others; the OWNER invariants stay as they are. */
 export const OWNER_MEMBER_ROLE = 'OWNER';
 
-/** How far a user got with Shop onboarding, as /auth/me reports it. */
+/** How far a user got with Shop onboarding, as /client-auth/me reports it. */
 export type ShopOnboardingState = 'NOT_STARTED' | 'INCOMPLETE' | 'COMPLETED';
 
 /**

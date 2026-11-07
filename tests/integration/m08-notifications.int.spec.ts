@@ -177,7 +177,7 @@ describe('M08 — notifications, reminders and sync', () => {
     const loggedIn = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: phone.local, password: PASSWORD, device: { ...WEB_FOOD } } });
     expect(loggedIn.status).toBe(200);
     const token = String(dataOf(loggedIn).access_token);
-    const selected = await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } });
+    const selected = await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } });
     expect([selected.status, selected.text.slice(0, 200)]).toEqual([200, selected.text.slice(0, 200)]);
     return { userId, token, shopId };
   }
@@ -220,7 +220,7 @@ describe('M08 — notifications, reminders and sync', () => {
        VALUES ($1::uuid, 'VCB', 'Vietcombank', '0123456789', 'SHIPPER', 'VERIFIED', $2::uuid, now(), now(), now())`,
       [driverId, userId],
     );
-    const selected = await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } });
+    const selected = await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } });
     expect(selected.status).toBe(200);
     const walletId = await fund(driverId, 50_000);
     drivers.push(driverId);

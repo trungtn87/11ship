@@ -134,7 +134,7 @@ describe('M07 — delivery flow', () => {
        VALUES ($1::uuid, 'VCB', 'Vietcombank', '0123456789', 'SHIPPER', 'VERIFIED', $2::uuid, now(), now(), now())`,
       [driverId, userId],
     );
-    const selected = await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } });
+    const selected = await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } });
     expect([selected.status, selected.text.slice(0, 200)]).toEqual([200, selected.text.slice(0, 200)]);
     const walletId = await fund(driverId, funds);
     drivers.push(driverId);

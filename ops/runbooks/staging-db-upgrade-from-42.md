@@ -23,7 +23,7 @@ one audit row (`ops.staging_db_rebuild.v1`) and commits. The history is never ed
 transaction back **when the failure is before COMMIT**. A failure *during* COMMIT (connection lost, acknowledgement lost) leaves the outcome **unknown**: the tool says so (`COMMIT_OUTCOME_UNKNOWN`, exit code 2), sends nothing more, and the read-only `--verify` tells what happened (section 5).
 
 It does **not**: touch roles, passwords of database roles, the keyring, Render, Supabase settings, or any other schema; carry
-fixture accounts (re-seed them afterwards with `npm run staging:seed-fixtures`, runbook §8); grant the runtime role access to
+fixture accounts (the fixture mode was removed on 2026-11-07, so they are not re-seeded); grant the runtime role access to
 the tables that did not exist before (do that from §3).
 
 ## 0. Preconditions (all of them)
@@ -80,7 +80,7 @@ for them (runtime role, including the M01.02 customer grants of the main runbook
 1. `npm run db:migrate:remote` must report nothing pending (history equals the files).
 2. Re-run the section 1 queries: now 16 migrations, `has_d2_name` false, one SYSTEM, one active factor; `app.admin_sessions` and `app.sessions` empty.
 3. Apply missing runtime grants (§3), start the service (§5), and let the Owner log in with the **old** phone/password and the **old** Authenticator.
-   Re-seed fixtures if the Owner wants them (§8). Staging activation remains un-accepted (no OTP adapter).
+   Fixture accounts are not re-seeded (the mode was removed on 2026-11-07). Staging activation remains un-accepted (no OTP adapter).
 4. Keep the snapshot file and the key (in separate places) until the Owner accepts the staging login, then delete both. After a `COMMIT_OUTCOME_UNKNOWN` never delete them before `--verify` has said `UPGRADED_OK`.
 
 ## 5. If something goes wrong

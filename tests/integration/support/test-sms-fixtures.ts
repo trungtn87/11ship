@@ -10,7 +10,7 @@ import { RunningTestSmsListener, startTestSmsListener } from '../../../apps/back
 import { TestInboxActivationOtpProvider, TestInboxOtpProvider } from '../../../apps/backend/src/test-sms/test-sms-providers';
 import { TestSmsPurpose } from '../../../apps/backend/src/test-sms/test-sms-types';
 import { ToolClient, createToolClient } from '../../../apps/backend/src/test-sms/tool-client';
-import { api, ApiOptions, ApiResponse, authTestConfig, purgePhone, purgeTestServiceAreas } from './auth-fixtures';
+import { api, ApiOptions, ApiResponse, authTestConfig, CONSENT, purgePhone, purgeTestServiceAreas } from './auth-fixtures';
 import { loadIntegrationConfig, RunningApp, startApp } from './test-helpers';
 import { testPool } from './transaction-fixtures';
 
@@ -159,7 +159,7 @@ export async function startInboxAuthApp(
   configOverride: Partial<AppConfig> = {},
 ): Promise<InboxAuthApp> {
   const loaded = loadIntegrationConfig();
-  const config: AppConfig = { ...loaded, crypto: fixtureKeyring('k1'), auth: authTestConfig(authOverrides), ...configOverride };
+  const config: AppConfig = { ...loaded, crypto: fixtureKeyring('k1'), auth: authTestConfig(authOverrides), clientAuth: { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version }, ...configOverride };
   const harness = await startInboxHarness();
   const provider = new ScriptedRegisterInbox(harness.inbox);
   const running = await startApp(config, { auth: { otpProvider: provider } });

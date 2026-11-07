@@ -1,7 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { OwnerDriverEligibility } from '../driver/driver-types';
 import { OwnerShopEligibility } from '../shop/shop-types';
-import { codeOf } from '../shared/source-scan.fixture';
 import { availableRoles, effectiveActiveRole, roleContext } from './available-roles';
 
 // The single rule behind `available_roles`, `onboarding_required` and `role_selection_required` (A2S review
@@ -206,16 +205,5 @@ describe('roleContext', () => {
       onboarding_required: false,
       role_selection_required: false,
     });
-  });
-
-  it('login and /me both report through roleContext and compute neither flag themselves', () => {
-    for (const file of ['auth/login-service.ts', 'auth/role-context-service.ts']) {
-      const code = codeOf(file);
-      expect([file, code.includes('roleContext(')]).toEqual([file, true]);
-      expect([file, /onboarding_required: [^,\n]*length|role_selection_required: [^,\n]*length/.test(code)]).toEqual([
-        file,
-        false,
-      ]);
-    }
   });
 });

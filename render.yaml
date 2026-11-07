@@ -2,8 +2,8 @@
 #
 # STATUS: configuration only. Nothing here has been deployed or validated by Render's own tooling. Deploying is a
 # separate, controlled step after review (see ops/runbooks/render-supabase-staging.md). Staging refuses to start
-# without an OTP provider (bindOtpProvider), so it runs in the staging FIXTURE mode (AUTH_STAGING_FIXTURES_ENABLED,
-# issue #49): operator-seeded fixture accounts, OTP/registration closed (DisabledOtpProvider). Do NOT set
+# without an OTP provider (bindOtpProvider). The staging fixture mode that used to cover this was removed (Owner 2026-11-07), so this
+# blueprint cannot start a staging service until the SMS gateway is configured; the operating build is the VPS (ops/vinahost). Do NOT set
 # APP_ENV=development here to get around that.
 #
 # The same Node process serves the Admin web (apps/admin-web, built by `npm run build:admin-web` in the build command)
@@ -57,12 +57,6 @@ services:
       - key: DB_CONNECT_TIMEOUT_MS
         value: "5000"
 
-      # Staging fixture mode (issue #49): the ONLY way staging accepts logins before an SMS provider exists. Verified
-      # accounts are not accepted while it is on. Fixtures are created by `npm run staging:seed-fixtures` from an operator
-      # machine (never from this service) for the phone numbers of AUTH_STAGING_ALLOWED_PHONES, and they never hold
-      # an administration role.
-      - key: AUTH_STAGING_FIXTURES_ENABLED
-        value: "true"
       # Same-origin Admin web + API (needs ADMIN_AUTH_ENABLED below).
       - key: ADMIN_WEB_STAGING_ENABLED
         value: "true"
@@ -93,7 +87,4 @@ services:
       - key: ADMIN_ACTIVATION_ORIGIN
         sync: false
       - key: ADMIN_RATE_LIMIT_HMAC_KEY
-        sync: false
-      # JSON array of normalized +84 phone numbers (at most 20): the fixture allowlist. Personal data: not in the file.
-      - key: AUTH_STAGING_ALLOWED_PHONES
         sync: false

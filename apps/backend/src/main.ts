@@ -52,7 +52,6 @@ async function bootstrap(): Promise<void> {
   const otpProvider = bindOtpProvider(config.appEnv, {
     // Issue #102: the real SMS adapter, only when SMS_GATEWAY_ENABLED=true was validated (off by default).
     smsGatewayEnabled: config.smsGateway !== undefined,
-    stagingFixtureMode: config.stagingFixtures !== undefined,
     ...(testSms?.registerProvider === undefined ? {} : { testInboxProvider: testSms.registerProvider }),
   });
 

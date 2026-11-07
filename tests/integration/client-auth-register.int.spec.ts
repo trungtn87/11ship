@@ -6,7 +6,6 @@ import {
   ageProof,
   ageVerification,
   api,
-  ApiResponse,
   AuthApp,
   countRows,
   dataOf,
@@ -25,15 +24,13 @@ import {
   sessionIdOfToken,
   setUserStatus,
   startAuthApp,
-  transactionWaiters,
-  registerUser,
 } from './support/auth-fixtures';
 import { LockHolder } from './support/idempotency-fixtures';
 import { containsCode, readOtp, startInboxAuthApp, InboxAuthApp } from './support/test-sms-fixtures';
 
 // M01.03 — POST /v1/client-auth/register on the REAL Nest pipeline and a REAL PostgreSQL (TEST database only): CUSTOMER
-// provisioning, strict input, device gate, consent, idempotency/replay, concurrency, rollback, namespace separation from the
-// legacy route, and the TEST_INBOX (M01.22) path. Table of cases: docs/tasks/M01-03-customer-register-local-handoff.md section 6.
+// provisioning, strict input, device gate, consent, idempotency/replay, concurrency, rollback, and the TEST_INBOX (M01.22) path.
+// Table of cases: docs/tasks/M01-03-customer-register-local-handoff.md section 6.
 
 const TERMS = 'test-terms-20261011-v1';
 const PRIVACY = 'test-privacy-20261011-v1';
@@ -254,8 +251,8 @@ describe('M01.03 — client register', () => {
       expect(data.profile).toEqual({ full_name: 'Tên Sau Hạn', version: 2 });
       expect(data.active_role).toBe('CUSTOMER');
       expect(await writeCounts(userId, proofId)).toEqual(before);
-      // The session the replay returned still works for the legacy me route (it is the very session created at commit).
-      expect((await app.call('GET', '/auth/me', { bearer: String(data.access_token) })).status).toBe(200);
+      // The session the replay returned still works for /client-auth/me (it is the very session created at commit).
+      expect((await app.call('GET', '/client-auth/me', { bearer: String(data.access_token) })).status).toBe(200);
     });
 
     it('proof invalidated after the commit: 409 AUTH_RESULT_NOT_REPLAYABLE, no token, no restored session, nothing written', async () => {
@@ -280,7 +277,7 @@ describe('M01.03 — client register', () => {
       expect(replay.text).not.toContain('expires_at');
       expect(await writeCounts(userId, proofId)).toEqual(before);
       expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE session_id = $1::uuid AND revoked_at IS NOT NULL', [sessionId])).toBe(1);
-      expect((await app.call('GET', '/auth/me', { bearer: String(firstData.access_token) })).status).toBe(401);
+      expect((await app.call('GET', '/client-auth/me', { bearer: String(firstData.access_token) })).status).toBe(401);
     });
 
     it('proof invalidated after the commit alone (session untouched) is still not replayable and the session is not touched', async () => {
@@ -359,12 +356,14 @@ describe('M01.03 — client register', () => {
       const { phone, proof } = await fresh();
       const ok = await call(body(phone, proof.proofToken, { password: spaced }));
       expect(ok.status).toBe(201);
-      const login = await app.call('POST', '/auth/login', {
-        body: { phone: phone.local, password: spaced, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
+      const login = await app.call('POST', '/client-auth/login', {
+        headers: { 'idempotency-key': randomUUID() },
+        body: { phone: phone.local, password: spaced, device: { device_id: 'device-test-0001', platform: 'WEB', app: 'FOOD' } },
       });
       expect(login.status).toBe(200);
-      const trimmed = await app.call('POST', '/auth/login', {
-        body: { phone: phone.local, password: spaced.trim(), device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
+      const trimmed = await app.call('POST', '/client-auth/login', {
+        headers: { 'idempotency-key': randomUUID() },
+        body: { phone: phone.local, password: spaced.trim(), device: { device_id: 'device-test-0001', platform: 'WEB', app: 'FOOD' } },
       });
       expect(trimmed.status).toBe(401);
 
@@ -502,7 +501,7 @@ describe('M01.03 — client register', () => {
     });
   });
 
-  describe('R06 — two proofs of one phone, legacy against new', () => {
+  describe('R06 — two proofs of one phone', () => {
     it('exactly one registration wins; the loser leaves no partial state and its proof is not consumed', async () => {
       const phone = randomPhone();
       const a = await obtainProof(app, phone);
@@ -520,24 +519,7 @@ describe('M01.03 — client register', () => {
       expect(await countRows(app.pool, 'SELECT 1 FROM app.user_consents WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)', [phone.normalized])).toBe(1);
     });
 
-    it('legacy register already created the phone -> the new route answers PHONE_ALREADY_REGISTERED and keeps its proof', async () => {
-      const phone = randomPhone();
-      const a = await obtainProof(app, phone);
-      await ageVerification(app.pool, a.verificationId, 3600);
-      const b = await obtainProof(app, phone);
-      await app.pool.query('UPDATE app.verification_proofs SET invalidated_at = NULL WHERE phone_normalized = $1', [phone.normalized]);
-      const legacy = await app.call('POST', '/auth/register', {
-        headers: { 'idempotency-key': randomUUID() },
-        body: { phone: phone.local, password: PASSWORD, verification_token: a.proofToken, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
-      });
-      expect(legacy.status).toBe(201);
-      const response = await call(body(phone, b.proofToken));
-      expect(errorCode(response)).toBe('PHONE_ALREADY_REGISTERED');
-      expect(await consumedCount(phone.normalized)).toBe(1);
-      expect(await userCount(phone.normalized)).toBe(1);
-    });
-
-    it('the two routes use separate idempotency namespaces for the same proof', async () => {
+    it('the idempotency record of a registration lives in the client verification-proof namespace', async () => {
       const phone = randomPhone();
       const proof = await obtainProof(app, phone);
       const key = randomUUID();
@@ -549,120 +531,7 @@ describe('M01.03 — client register', () => {
         [proofId],
       );
       expect(rows.rows).toEqual([{ scope_type: 'client_verification_proof', operation_id: 'client.auth.register.v1' }]);
-      const legacy = await app.call('POST', '/auth/register', {
-        headers: { 'idempotency-key': key },
-        body: { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
-      });
-      expect(errorCode(legacy)).toBe('VERIFICATION_PROOF_USED');
     });
-  });
-
-  describe('F2 — legacy /auth/register against /client-auth/register on one phone (deterministic overlap)', () => {
-    const RACE_KEY: readonly [number, number] = [20261011, 4];
-    const LEGACY_DEVICE = { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' };
-
-    async function installRaceStall(): Promise<void> {
-      await app.pool.query('DROP TRIGGER IF EXISTS test_stall_race_audit ON app.audit_logs');
-      await app.pool.query('DROP FUNCTION IF EXISTS app.test_stall_race_audit()');
-      await app.pool.query(
-        `CREATE FUNCTION app.test_stall_race_audit() RETURNS trigger LANGUAGE plpgsql AS $$
-         BEGIN
-           IF NEW.action IN ('auth.register.v1', 'client.auth.register.v1') THEN
-             PERFORM pg_advisory_xact_lock(${RACE_KEY[0]}, ${RACE_KEY[1]});
-           END IF;
-           RETURN NEW;
-         END $$`,
-      );
-      await app.pool.query('CREATE TRIGGER test_stall_race_audit BEFORE INSERT ON app.audit_logs FOR EACH ROW EXECUTE FUNCTION app.test_stall_race_audit()');
-    }
-
-    async function removeRaceStall(): Promise<void> {
-      await app.pool.query('DROP TRIGGER IF EXISTS test_stall_race_audit ON app.audit_logs');
-      await app.pool.query('DROP FUNCTION IF EXISTS app.test_stall_race_audit()');
-    }
-
-    function legacyCall(phone: Phone, proofToken: string) {
-      return app.call('POST', '/auth/register', {
-        headers: { 'idempotency-key': randomUUID() },
-        body: { phone: phone.local, password: PASSWORD, verification_token: proofToken, device: { ...LEGACY_DEVICE } },
-      });
-    }
-
-    for (const winner of ['legacy', 'client'] as const) {
-      it(`${winner} wins: exactly one user, only the winner consumes its proof, the loser leaves nothing, and every row belongs to the ${winner} endpoint`, async () => {
-        const phone = randomPhone();
-        const winnerProof = await obtainProof(app, phone);
-        await ageVerification(app.pool, winnerProof.verificationId, 3600); // lets the same number request a second OTP
-        const loserProof = await obtainProof(app, phone);
-        // Two VALID proofs of one number (a newer OTP would normally invalidate the older one).
-        await app.pool.query('UPDATE app.verification_proofs SET invalidated_at = NULL WHERE phone_normalized = $1', [phone.normalized]);
-        const winnerProofId = await proofIdOfToken(app.pool, winnerProof.proofToken);
-        const loserProofId = await proofIdOfToken(app.pool, loserProof.proofToken);
-
-        await installRaceStall();
-        const holder = await LockHolder.begin(app.pool);
-        await holder.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [RACE_KEY[0], RACE_KEY[1]]);
-        let winnerResponse: ApiResponse;
-        let loserResponse: ApiResponse;
-        try {
-          // 1. The winner starts and stops at its audit insert: its user row is inserted and UNCOMMITTED.
-          const winning = winner === 'legacy' ? legacyCall(phone, winnerProof.proofToken) : call(body(phone, winnerProof.proofToken));
-          await eventually(() => advisoryWaiterExists(app.pool, RACE_KEY), 'the winner is stalled at its audit insert with an uncommitted user');
-          expect(await userCount(phone.normalized)).toBe(0);
-          // 2. The OTHER endpoint starts now, with the other valid proof, and is blocked behind the uncommitted user row.
-          const losing = winner === 'legacy' ? call(body(phone, loserProof.proofToken)) : legacyCall(phone, loserProof.proofToken);
-          await eventually(async () => (await transactionWaiters(app.pool)) >= 1, 'the loser waits on the winner uncommitted user');
-          // 3. Release: the winner commits, the loser is released into the unique-phone conflict.
-          await holder.commit();
-          [winnerResponse, loserResponse] = await Promise.all([winning, losing]);
-        } finally {
-          await holder.rollback();
-          await removeRaceStall();
-        }
-
-        expect(winnerResponse.status).toBe(201);
-        expect([loserResponse.status, errorCode(loserResponse)]).toEqual([409, 'PHONE_ALREADY_REGISTERED']);
-        expect(loserResponse.text).not.toContain('access_token');
-
-        // Exactly one user; only the winner's proof is consumed.
-        expect(await userCount(phone.normalized)).toBe(1);
-        const userId = String(dataOf(winnerResponse).user_id);
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [userId])).toBe(1);
-        const consumed = await app.pool.query<{ proof_id: string }>('SELECT proof_id FROM app.verification_proofs WHERE phone_normalized = $1 AND consumed_at IS NOT NULL', [phone.normalized]);
-        expect(consumed.rows.map((r) => r.proof_id)).toEqual([winnerProofId]);
-
-        // The loser left no record of any kind: idempotency, audit (by request id), outbox (by the user), no second session.
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.idempotency_records WHERE scope_id = $1', [loserProofId])).toBe(0);
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid', [loserResponse.requestId])).toBe(0);
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.idempotency_records WHERE scope_id = $1', [winnerProofId])).toBe(1);
-
-        const roles = (await app.pool.query<{ role: string }>('SELECT role FROM app.user_roles WHERE user_id = $1::uuid', [userId])).rows.map((r) => r.role);
-        const profiles = await countRows(app.pool, 'SELECT 1 FROM app.customer_profiles WHERE user_id = $1::uuid', [userId]);
-        const consents = await countRows(app.pool, 'SELECT 1 FROM app.user_consents WHERE user_id = $1::uuid', [userId]);
-        const activeRole = (await app.pool.query<{ active_role: string | null }>('SELECT active_role FROM app.sessions WHERE user_id = $1::uuid', [userId])).rows[0]?.active_role;
-        const legacyAudit = await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE actor_id = $1 AND action = 'auth.register.v1'", [userId]);
-        const clientAudit = await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE actor_id = $1 AND action = 'client.auth.register.v1'", [userId]);
-        const legacyOutbox = await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'auth.user_registered.v1'", [userId]);
-        const clientOutbox = await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'client.auth.user_registered.v1'", [userId]);
-        const scopes = (await app.pool.query<{ scope_type: string }>('SELECT scope_type FROM app.idempotency_records WHERE scope_id = $1', [winnerProofId])).rows.map((r) => r.scope_type);
-
-        if (winner === 'client') {
-          expect(roles).toEqual(['CUSTOMER']);
-          expect([profiles, consents]).toEqual([1, 1]);
-          expect(activeRole).toBe('CUSTOMER');
-          expect([clientAudit, legacyAudit, clientOutbox, legacyOutbox]).toEqual([1, 0, 1, 0]);
-          expect(scopes).toEqual(['client_verification_proof']);
-        } else {
-          expect(roles).toEqual([]);
-          expect([profiles, consents]).toEqual([0, 0]);
-          expect(activeRole).toBeNull();
-          expect([clientAudit, legacyAudit, clientOutbox, legacyOutbox]).toEqual([0, 1, 0, 1]);
-          expect(scopes).toEqual(['verification_proof']);
-        }
-        // The loser's proof is still usable by nobody else here, but it is intact (not consumed, not invalidated).
-        expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE proof_id = $1::uuid AND consumed_at IS NULL AND invalidated_at IS NULL', [loserProofId])).toBe(1);
-      });
-    }
   });
 
   describe('R07 — rollback at every persistence step', () => {
@@ -781,7 +650,7 @@ describe('M01.03 — client register', () => {
     });
 
     it('fails closed (503, nothing written) when the server has no consent pair configured', async () => {
-      const unconfigured = await startAuthApp();
+      const unconfigured = await startAuthApp({}, { configOverride: { clientAuth: undefined } });
       try {
         const proof = await obtainProof(unconfigured, randomPhone());
         const response = await call(body(proof.phone, proof.proofToken), randomUUID(), unconfigured);
@@ -791,44 +660,6 @@ describe('M01.03 — client register', () => {
       } finally {
         await unconfigured.close();
       }
-    });
-  });
-
-  describe('R12 — legacy API unchanged', () => {
-    it('legacy register still returns a roleless session and the legacy wire shape; login/me work for a new-route user too', async () => {
-      const legacy = await registerUser(app);
-      const data = dataOf(legacy.response);
-      // The legacy wire shape, byte for byte in its key set: nothing of the new identity block leaks into it.
-      expect(Object.keys(data).sort()).toEqual(['access_token', 'active_role', 'available_roles', 'onboarding_required', 'phone_normalized', 'user_id']);
-      expect(data.active_role).toBeNull();
-      expect(data.available_roles).toEqual([]);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [legacy.userId])).toBe(0);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND active_role IS NULL', [legacy.userId])).toBe(1);
-      expect(await countRows(app.pool, 'SELECT 1 FROM app.user_consents WHERE user_id = $1::uuid', [legacy.userId])).toBe(0);
-      const me = await app.call('GET', '/auth/me', { bearer: legacy.accessToken });
-      expect(me.status).toBe(200);
-
-      const phone = randomPhone();
-      const proof = await obtainProof(app, phone);
-      const created = await call(body(phone, proof.proofToken));
-      const meNew = await app.call('GET', '/auth/me', { bearer: String(dataOf(created).access_token) });
-      expect(meNew.status).toBe(200);
-      // The legacy /auth/me is unchanged: it does not know the CUSTOMER context (that belongs to the later client me/context slice).
-      expect(dataOf(meNew).available_roles).toEqual([]);
-      const login = await app.call('POST', '/auth/login', {
-        body: { phone: phone.local, password: PASSWORD, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
-      });
-      expect(login.status).toBe(200);
-    });
-
-    it('the legacy route does not accept the new body and the new route does not accept the legacy body', async () => {
-      const phone = randomPhone();
-      const proof = await obtainProof(app, phone);
-      const legacyBody = { phone: phone.local, password: PASSWORD, verification_token: proof.proofToken, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } };
-      expect(await app.call('POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body: legacyBody })).toMatchObject({ status: 400 });
-      const mixed = await app.call('POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body: body(phone, proof.proofToken) });
-      expect(mixed.status).toBe(400);
-      await nothingCreated(phone.normalized);
     });
   });
 

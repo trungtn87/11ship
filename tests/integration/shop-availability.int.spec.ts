@@ -10,7 +10,7 @@ import { RawShopSnapshot, ShopAvailabilityReader, toShopSnapshot } from '../../a
 import { buildAvailabilitySnapshotSql } from '../../apps/backend/src/shop/shop-availability-sql';
 import { poolClientSource } from '../../apps/backend/src/transaction/pg-client-source';
 import { AppError } from '../../apps/backend/src/common/app-errors';
-import { AuthApp, dataOf, startAuthApp } from './support/auth-fixtures';
+import { AuthApp, dataOf, meOf, startAuthApp } from './support/auth-fixtures';
 import {
   createShopOwner,
   getShop,
@@ -264,9 +264,9 @@ describe('M02-A — availability on PostgreSQL', () => {
 
     it('business hours do not change which roles Auth offers', async () => {
       const shop = await createShopOwner(app);
-      const roles = async () => dataOf(await app.call('GET', '/auth/me', { bearer: shop.token })).available_roles;
+      const roles = async () => dataOf(await meOf(app, shop.token)).available_roles;
       const before = await roles();
-      expect(before).toEqual(['SHOP']);
+      expect(before).toEqual(['CUSTOMER', 'SHOP_OWNER']);
       expect((await putHours(app, shop.token, hoursBody([interval(1, 0, 600)]))).status).toBe(200);
       expect(await roles()).toEqual(before);
       expect((await putHours(app, shop.token, hoursBody([], 3))).status).toBe(200);

@@ -17,7 +17,7 @@ import {
   sessionCookies,
   startAdminApp,
 } from './support/admin-fixtures';
-import { api, ApiResponse, dataOf, errorCode, grantRole, PASSWORD, Phone, randomPhone } from './support/auth-fixtures';
+import { api, ApiResponse, dataOf, CONSENT, errorCode, grantRole, PASSWORD, Phone, randomPhone } from './support/auth-fixtures';
 import { logContainsClearOtp, rowsContainClearOtp, TECHNICAL_COLUMNS, TECHNICAL_ID_COLUMNS, TECHNICAL_JSON_KEYS, tableContainsClearOtp } from './support/otp-scan';
 import { loadIntegrationConfig, setOtpPolicy } from './support/test-helpers';
 
@@ -26,6 +26,9 @@ import { loadIntegrationConfig, setOtpPolicy } from './support/test-helpers';
 // credential the pairing tool printed; the OTP is read from the claim response, exactly where a real phone gets it.
 
 const NEW_PASSWORD = 'Brand-New-Passw0rd-7';
+// OD-1: accounts are created through /client-auth, which needs the consent pair configured in this application.
+const CLIENT_AUTH_ON = { clientAuth: { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version } };
+
 const OPEN: SmsGatewayConfig = {
   recipientMode: 'OPEN',
   allowlist: new Set(),
@@ -116,8 +119,8 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
   }
 
   beforeAll(async () => {
-    app = await startAdminApp({ smsGateway: OPEN });
-    closed = await startAdminApp();
+    app = await startAdminApp({ smsGateway: OPEN, configOverride: CLIENT_AUTH_ON });
+    closed = await startAdminApp({ configOverride: CLIENT_AUTH_ON });
     await wipeQueue();
     await app.pool.query('DELETE FROM app.sms_gateway_devices');
     device = await pair();
@@ -375,9 +378,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
     it('creates no account without the proof, and the proof from the queue registers exactly once', async () => {
       const phone = randomPhone();
       app.track(phone.normalized);
-      const noProof = await api(app.running.baseUrl, 'POST', '/auth/register', {
+      const noProof = await api(app.running.baseUrl, 'POST', '/client-auth/register', {
         headers: { 'idempotency-key': randomUUID() },
-        body: { phone: phone.local, password: PASSWORD, verification_token: 'A'.repeat(43), device: { device_id: 'dev-register-0001', platform: 'WEB', app: 'FOOD' } },
+        body: { phone: phone.local, password: PASSWORD, verification_token: 'A'.repeat(43), device: { device_id: 'dev-register-0001', platform: 'WEB', app: 'FOOD' }, full_name: 'Người dùng thử', consent: { ...CONSENT } },
       });
       expect(noProof.status).toBe(400);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(0);
@@ -386,9 +389,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const job = (await claim()) as NonNullable<Awaited<ReturnType<typeof claim>>>;
       await ack(job, 'SENT');
       const token = String(dataOf(await verifyRegister(id, otpOf(job.text))).verification_token);
-      const body = { phone: phone.local, password: PASSWORD, verification_token: token, device: { device_id: 'dev-register-0001', platform: 'WEB', app: 'FOOD' } };
-      expect((await api(app.running.baseUrl, 'POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body })).status).toBe(201);
-      const reused = await api(app.running.baseUrl, 'POST', '/auth/register', { headers: { 'idempotency-key': randomUUID() }, body });
+      const body = { phone: phone.local, password: PASSWORD, verification_token: token, device: { device_id: 'dev-register-0001', platform: 'WEB', app: 'FOOD' }, full_name: 'Người dùng thử', consent: { ...CONSENT } };
+      expect((await api(app.running.baseUrl, 'POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body })).status).toBe(201);
+      const reused = await api(app.running.baseUrl, 'POST', '/client-auth/register', { headers: { 'idempotency-key': randomUUID() }, body });
       expect(reused.status).toBeGreaterThanOrEqual(400);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(1);
     });
@@ -644,6 +647,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       }
       const strict = await startAdminApp({
         smsGateway: { ...OPEN, recipientMode: 'ALLOWLIST', allowlist: new Set([allowed.normalized]), limitGlobalPerDay: 2 },
+        configOverride: CLIENT_AUTH_ON,
       });
       try {
         await wipeQueue(strict.pool);
@@ -724,9 +728,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       const proof = String(dataOf(verified).verification_token);
 
       // The reset proof is useless for registration.
-      const asRegister = await api(app.running.baseUrl, 'POST', '/auth/register', {
+      const asRegister = await api(app.running.baseUrl, 'POST', '/client-auth/register', {
         headers: { 'idempotency-key': randomUUID() },
-        body: { phone: user.phone.local, password: NEW_PASSWORD, verification_token: proof, device: { device_id: 'dev-register-0002', platform: 'WEB', app: 'FOOD' } },
+        body: { phone: user.phone.local, password: NEW_PASSWORD, verification_token: proof, device: { device_id: 'dev-register-0002', platform: 'WEB', app: 'FOOD' }, full_name: 'Người dùng thử', consent: { ...CONSENT } },
       });
       expect(asRegister.status).toBeGreaterThanOrEqual(400);
 

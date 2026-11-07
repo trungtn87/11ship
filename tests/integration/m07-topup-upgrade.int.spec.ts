@@ -325,7 +325,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
        VALUES ($1::uuid, 'VCB', 'Vietcombank', '0123456789', 'SHIPPER', 'VERIFIED', $2::uuid, now(), now(), now())`,
       [driverId, userId],
     );
-    expect((await client.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } })).status).toBe(200);
+    expect((await client.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } })).status).toBe(200);
     const wallet = await pool().query<{ wallet_id: string }>('SELECT wallet_id FROM app.driver_wallets WHERE driver_id = $1::uuid', [driverId]);
     let walletId = wallet.rows[0]?.wallet_id;
     if (walletId === undefined) {

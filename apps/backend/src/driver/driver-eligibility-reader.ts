@@ -15,7 +15,7 @@ const ONBOARDING_STATE_OF: Readonly<Record<DriverStatus, DriverOnboardingState>>
  * anything about drivers: Auth never issues SQL against M03 tables. It reads, locks nothing and writes nothing.
  *
  * Consistency: every writer of a driver's existence or status first locks the owner's user row (A2D creation
- * does), and Auth's role selection and /auth/me hold that same lock (FOR UPDATE and FOR SHARE) while they call
+ * does), and client-auth's context selection and /client-auth/me hold that same lock (FOR UPDATE and FOR SHARE) while they call
  * this port, so the answer cannot change under them. A later slice that changes a driver's status (approval,
  * suspension, closure) must take the user lock first too, or this guarantee is gone.
  */

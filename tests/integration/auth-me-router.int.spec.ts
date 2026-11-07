@@ -6,6 +6,10 @@ import {
   dataOf,
   errorCode,
   grantRole,
+  loginUser,
+  SHIP_DEVICE,
+  meOf,
+  selectContext,
   registerUser,
   Registered,
   rowLockWaitersRunning,
@@ -14,7 +18,7 @@ import {
 } from './support/auth-fixtures';
 import { LockHolder } from './support/idempotency-fixtures';
 
-// Post-merge repair, section 3 — /auth/me reads the CURRENT session under shared locks, and the router
+// Post-merge repair, section 3 (moved to /client-auth/me by OD-1) — /client-auth/me reads the CURRENT session under shared locks, and the router
 // projection reports the EFFECTIVE active role.
 //
 // Barriers: SessionAuthGuard uses a plain SELECT, which never waits for a row lock, so a held uncommitted change
@@ -24,7 +28,7 @@ import { LockHolder } from './support/idempotency-fixtures';
 const USER_SHARE = '%FROM app.users WHERE user_id = $1::uuid FOR SHARE%';
 const SESSION_SHARE = '%FROM app.sessions WHERE session_id = $1::uuid FOR SHARE%';
 
-describe('M00/M01 repair §3 — /auth/me under shared locks and the effective active role', () => {
+describe('M00/M01 repair §3 — /client-auth/me under shared locks and the effective active role', () => {
   let app: AuthApp;
 
   beforeAll(async () => {
@@ -35,9 +39,11 @@ describe('M00/M01 repair §3 — /auth/me under shared locks and the effective a
     await app.close();
   });
 
-  const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+  const me = (token: string): Promise<ApiResponse> => meOf(app, token);
   const select = (token: string, role: string): Promise<ApiResponse> =>
-    app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    selectContext(app, token, role === 'SHOP' ? 'SHOP_OWNER' : role);
+  /** A SHIP web session of the user (DRIVER is only selectable there; SHOP_OWNER only on the FOOD session). */
+  const shipSession = async (user: Registered): Promise<string> => String(dataOf(await loginUser(app, user, { ...SHIP_DEVICE })).access_token);
   const waiterOn = (pattern: string) => async (): Promise<boolean> =>
     (await rowLockWaitersRunning(app.pool, pattern)) >= 1;
 
@@ -106,7 +112,7 @@ describe('M00/M01 repair §3 — /auth/me under shared locks and the effective a
       expect(response.status).toBe(200);
       expect(projection(response)).toEqual({
         active_role: 'DRIVER',
-        available_roles: ['DRIVER'],
+        available_roles: ['CUSTOMER', 'DRIVER'],
         role_selection_required: false,
         onboarding_required: false,
       });
@@ -157,11 +163,12 @@ describe('M00/M01 repair §3 — /auth/me under shared locks and the effective a
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'SHOP');
       await grantRole(app.pool, user.userId, 'DRIVER');
-      expect((await select(user.accessToken, 'DRIVER')).status).toBe(200);
+      const ship = await shipSession(user);
+      expect((await select(ship, 'DRIVER')).status).toBe(200);
       await closeDriver(user.userId);
-      expect(projection(await me(user.accessToken))).toEqual({
+      expect(projection(await me(ship))).toEqual({
         active_role: null,
-        available_roles: ['SHOP'],
+        available_roles: ['CUSTOMER', 'SHOP_OWNER'],
         role_selection_required: true,
         onboarding_required: false,
       });
@@ -175,38 +182,40 @@ describe('M00/M01 repair §3 — /auth/me under shared locks and the effective a
       await disableShop(user.userId);
       expect(projection(await me(user.accessToken))).toEqual({
         active_role: null,
-        available_roles: ['DRIVER'],
+        available_roles: ['CUSTOMER', 'DRIVER'],
         role_selection_required: true,
         onboarding_required: false,
       });
     });
 
-    it('no usable role left and a completed profile: null, [], no selection and no onboarding loop', async () => {
+    it('no usable shop/driver role left and a completed profile: no active role, only CUSTOMER remains (always granted by client-auth), no onboarding loop', async () => {
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'SHOP');
       expect((await select(user.accessToken, 'SHOP')).status).toBe(200);
       await disableShop(user.userId);
       expect(projection(await me(user.accessToken))).toEqual({
         active_role: null,
-        available_roles: [],
-        role_selection_required: false,
+        available_roles: ['CUSTOMER'],
+        role_selection_required: true,
         onboarding_required: false,
       });
     });
 
-    it('a still-valid active role stays selected, and a roleless session is unchanged', async () => {
+    it('a still-valid active role stays selected, and the registration session keeps its default CUSTOMER context', async () => {
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'DRIVER');
+      // The FOOD registration session wears CUSTOMER from the start; granting DRIVER changes what is available, not the context.
       expect(projection(await me(user.accessToken))).toEqual({
-        active_role: null,
-        available_roles: ['DRIVER'],
-        role_selection_required: true,
+        active_role: 'CUSTOMER',
+        available_roles: ['CUSTOMER', 'DRIVER'],
+        role_selection_required: false,
         onboarding_required: false,
       });
-      expect((await select(user.accessToken, 'DRIVER')).status).toBe(200);
-      expect(projection(await me(user.accessToken))).toEqual({
+      const ship = await shipSession(user);
+      expect((await select(ship, 'DRIVER')).status).toBe(200);
+      expect(projection(await me(ship))).toEqual({
         active_role: 'DRIVER',
-        available_roles: ['DRIVER'],
+        available_roles: ['CUSTOMER', 'DRIVER'],
         role_selection_required: false,
         onboarding_required: false,
       });
@@ -216,11 +225,12 @@ describe('M00/M01 repair §3 — /auth/me under shared locks and the effective a
       const user = await registerUser(app);
       await grantRole(app.pool, user.userId, 'SHOP');
       await grantRole(app.pool, user.userId, 'DRIVER');
-      expect((await select(user.accessToken, 'DRIVER')).status).toBe(200);
+      const ship = await shipSession(user);
+      expect((await select(ship, 'DRIVER')).status).toBe(200);
       await closeDriver(user.userId);
-      const sessionId = await sessionIdOfToken(app.pool, user.accessToken);
+      const sessionId = await sessionIdOfToken(app.pool, ship);
       const before = await app.pool.query('SELECT active_role, updated_at FROM app.sessions WHERE session_id = $1::uuid', [sessionId]);
-      await me(user.accessToken);
+      await me(ship);
       const after = await app.pool.query('SELECT active_role, updated_at FROM app.sessions WHERE session_id = $1::uuid', [sessionId]);
       expect(after.rows).toEqual(before.rows);
       expect(after.rows[0]?.active_role).toBe('DRIVER');

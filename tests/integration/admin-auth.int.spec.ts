@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { randomUUID } from 'node:crypto';
 import { ADMIN_PREAUTH_COOKIE, ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import {
   AdminApp,
@@ -218,17 +219,17 @@ describe('M01-D-LOGIN - administration login, cookies, CSRF and sessions', () =>
 
   it('an administration session is not an application bearer session, and the reverse', async () => {
     const login = await enrollAndLogin(app, system);
-    const asBearer = await fetch(`${app.running.baseUrl}/v1/auth/me`, {
+    const asBearer = await fetch(`${app.running.baseUrl}/v1/client-auth/me`, {
       headers: { authorization: `Bearer ${login.cookie}` },
     });
     expect(asBearer.status).toBe(401);
-    const appLogin = await fetch(`${app.running.baseUrl}/v1/auth/login`, {
+    const appLogin = await fetch(`${app.running.baseUrl}/v1/client-auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
       body: JSON.stringify({
         phone: system.phone.local,
         password: system.password,
-        device: { device_id: 'phone-0001', platform: 'ANDROID', app: 'CUSTOMER' },
+        device: { device_id: 'phone-0001', platform: 'WEB', app: 'FOOD' },
       }),
     });
     expect(appLogin.status).toBe(401);

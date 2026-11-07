@@ -1,7 +1,7 @@
 // M00-VPS-01 package A — the self-hosted staging path end to end, on a DISPOSABLE PostgreSQL 17 with TLS (CI only).
 //
-// It runs the REAL operator commands (db:migrate:remote, admin-auth:init-limit-config, admin-auth:bootstrap-system,
-// staging:seed-fixtures) as child processes against a throwaway PostgreSQL 17 container that the CI job "Self-hosted
+// It runs the REAL operator commands (db:migrate:remote, admin-auth:init-limit-config, admin-auth:bootstrap-system
+// and the other operator commands) as child processes against a throwaway PostgreSQL 17 container that the CI job "Self-hosted
 // PostgreSQL 17 over TLS" prepared exactly as ops/runbooks/selfhosted-postgres-staging.md says: a private CA, a server
 // certificate that names only `localhost`, pg_hba with hostssl + SCRAM only, roles and schema from
 // ops/selfhosted/01-roles-database.sql. Nothing here touches Supabase, and nothing may touch the real VPS database:
@@ -12,8 +12,8 @@
 //
 // What it proves (see the package A handoff): the default migration is read-only; every refusal happens before any
 // mutation; strict TLS (wrong CA, wrong host name, expired certificate, plaintext, process-wide TLS switch-off) fails;
-// --apply applies exactly the pending migrations once; the runtime grants equal the matrix; limiter init, SYSTEM bootstrap
-// and fixture seeding keep their one-time / unchanged / no-membership properties; no command prints a secret.
+// --apply applies exactly the pending migrations once; the runtime grants equal the matrix; limiter init and SYSTEM bootstrap
+// keep their one-time / unchanged properties; no command prints a secret.
 // Run with: npm run selfhosted:test (after npm run build).
 
 import { describe, test, before, after } from 'node:test';
@@ -61,10 +61,8 @@ const LIMITER_KEY = randomBytes(32).toString('base64');
 const OTHER_LIMITER_KEY = randomBytes(32).toString('base64');
 const SYSTEM_PHONE = '+84900000211';
 const OTHER_PHONE = '+84900000213';
-const FIXTURE_PHONE = '+84900000212';
 const SYSTEM_PASSWORD = `Sys-${randomBytes(9).toString('hex')}`;
-const FIXTURE_PASSWORD = `Fix-${randomBytes(9).toString('hex')}`;
-const SECRETS = [MIGRATOR_PW, APP_PW, ADMIN_PW, LIMITER_KEY, OTHER_LIMITER_KEY, SYSTEM_PASSWORD, FIXTURE_PASSWORD, SYSTEM_PHONE, FIXTURE_PHONE, OTHER_PHONE];
+const SECRETS = [MIGRATOR_PW, APP_PW, ADMIN_PW, LIMITER_KEY, OTHER_LIMITER_KEY, SYSTEM_PASSWORD, SYSTEM_PHONE, OTHER_PHONE];
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'ship11-selfhosted-'));
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -509,7 +507,7 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
   });
 });
 
-// ---- 4. limiter init, SYSTEM bootstrap, fixture seed -------------------------------------------------------------------
+// ---- 4. limiter init, SYSTEM bootstrap -------------------------------------------------------------------
 
 const limiterEnv = (extra = {}) => operatorEnv({ ADMIN_RATE_LIMIT_HMAC_KEY: LIMITER_KEY, ADMIN_RATE_LIMIT_KEY_ID: 'ci-key-1', ...extra });
 const bootstrapInput = (phone, password) => `${JSON.stringify({ phone, password })}\n`;
@@ -588,63 +586,6 @@ describe('admin-auth operator commands on the self-hosted target', () => {
     await withClient(asMigrator, async (client) => {
       const roles = (await client.query('SELECT admin_role FROM app.admin_memberships')).rows.map((row) => row.admin_role);
       assert.deepEqual(roles, ['SYSTEM']);
-    });
-  });
-
-  test('seed-fixtures: creates fixtures without any membership; repeating leaves them unchanged; a phone that is an administration account is another scope', async () => {
-    const seedEnv = (extra = {}) =>
-      operatorEnv({ AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: JSON.stringify([FIXTURE_PHONE, SYSTEM_PHONE]), ...extra });
-    const batch = (entries) => JSON.stringify(entries);
-    const before = await snapshot();
-
-    for (const [name, extra] of [
-      ['unknown selector', { DB_REMOTE_TARGET: 'LOCAL' }],
-      ['IP address host', { MIGRATION_DATABASE_URL: dbUrl('ship11_migrator', MIGRATOR_PW, '127.0.0.1') }],
-      ['wrong typed target', { MIGRATION_CONFIRM_TARGET: 'localhost:5432/other' }],
-      ['fixture mode off', { AUTH_STAGING_FIXTURES_ENABLED: undefined }],
-    ]) {
-      const result = run('staging-seed-fixtures.js', { env: seedEnv(extra), input: batch([{ phone: FIXTURE_PHONE, password: FIXTURE_PASSWORD }]) });
-      assert.equal(result.status, 1, name);
-      assertNoSecrets(result, name);
-    }
-    assert.deepEqual(await snapshot(), before, 'refused runs wrote nothing');
-
-    const created = run('staging-seed-fixtures.js', { env: seedEnv(), input: batch([{ phone: FIXTURE_PHONE, password: FIXTURE_PASSWORD }]) });
-    assert.equal(created.status, 0, created.text);
-    assert.match(created.stdout, /created 1, skipped 0/);
-    const again = run('staging-seed-fixtures.js', { env: seedEnv(), input: batch([{ phone: FIXTURE_PHONE, password: FIXTURE_PASSWORD }]) });
-    assert.equal(again.status, 0, again.text);
-    assert.match(again.stdout, /created 0, skipped 1/);
-
-    const afterSeed = await snapshot();
-    assert.equal(afterSeed.users, before.users + 1);
-    assert.equal(afterSeed.memberships, before.memberships, 'a fixture never gets an administration membership');
-    await withClient(asMigrator, async (client) => {
-      const origins = (await client.query("SELECT account_origin, count(*)::int AS n FROM app.users GROUP BY account_origin ORDER BY account_origin")).rows;
-      assert.deepEqual(origins.map((row) => [row.account_origin, row.n]).sort(), [['ADMIN_PROVISIONED', 1], ['STAGING_FIXTURE', 1]].sort());
-    });
-
-    // The SYSTEM administrator's phone is allowlisted here on purpose. An administration account and an application account are different
-    // scopes (Owner decision 2026-10-14): the fixture is created BESIDE the SYSTEM account, which stays exactly as it was and gets no membership.
-    const adminBefore = await withClient(asMigrator, async (client) =>
-      (await client.query("SELECT user_id, password_hash, version::text AS version FROM app.users WHERE account_scope = 'ADMIN_WEB'")).rows,
-    );
-    const beside = run('staging-seed-fixtures.js', {
-      env: seedEnv(),
-      input: batch([
-        { phone: FIXTURE_PHONE, password: FIXTURE_PASSWORD },
-        { phone: SYSTEM_PHONE, password: FIXTURE_PASSWORD },
-      ]),
-    });
-    assert.equal(beside.status, 0, beside.text);
-    assert.match(beside.stdout, /created 1, skipped 1/);
-    for (const [label, result] of [['created', created], ['again', again], ['beside', beside]]) assertNoSecrets(result, `seed ${label}`);
-    const afterBeside = await snapshot();
-    assert.equal(afterBeside.users, afterSeed.users + 1);
-    assert.equal(afterBeside.memberships, afterSeed.memberships, 'the fixture beside SYSTEM gets no membership');
-    await withClient(asMigrator, async (client) => {
-      const adminAfter = (await client.query("SELECT user_id, password_hash, version::text AS version FROM app.users WHERE account_scope = 'ADMIN_WEB'")).rows;
-      assert.deepEqual(adminAfter, adminBefore, 'the administration account is untouched');
     });
   });
 

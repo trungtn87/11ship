@@ -112,7 +112,7 @@ export async function newShipper(app: AuthApp, drivers: string[], funds = 50_000
      VALUES ($1::uuid, 'VCB', 'Vietcombank', '0123456789', 'SHIPPER', 'VERIFIED', $2::uuid, now(), now(), now())`,
     [driverId, userId],
   );
-  const selected = await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } });
+  const selected = await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } });
   expect(selected.status).toBe(200);
   const walletId = await fund(app, driverId, funds);
   drivers.push(driverId);

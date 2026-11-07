@@ -74,8 +74,6 @@ export class VerificationService {
   ) {}
 
   async requestOtp(phoneNormalized: string, purpose: string, clientIp: string): Promise<OtpRequestResult> {
-    // Staging fixture mode (M00-D2): closed at the service boundary, before the database, a digest or the provider.
-    this.policy.assertRegistrationOpen();
     // SYSTEM turned the registration OTP off: no code is issued (nothing is sent, no SMS is spent). The application registers
     // without a proof; the SMS gateway itself stays on for the other purposes. The recovery of a locked account has its own request.
     if (this.systemSettings !== undefined && !(await this.systemSettings.registrationOtpRequired())) {
@@ -286,8 +284,6 @@ export class VerificationService {
     requestId: string,
     purpose: string = REGISTER_PURPOSE,
   ): Promise<OtpVerifyResult> {
-    // Same boundary as requestOtp: nothing is read or counted while the fixture mode is on.
-    this.policy.assertRegistrationOpen();
     const outcome = await this.transactions.withTransaction((context) =>
       this.#verifyInTransaction(context, verificationId, otp, purpose),
     );

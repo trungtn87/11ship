@@ -131,9 +131,6 @@ export class ClientRegistrationService {
     requestId: string,
     evidence?: NativeRequestEvidence,
   ): Promise<ClientRegisterOutcome> {
-    // Staging fixture mode closes every registration (same gate as the legacy route), before the key is read, any database
-    // access, any hash or any executor call.
-    this.originPolicy.assertRegistrationOpen();
     // The device gate: nothing is created, consumed or hashed for a platform that cannot be accepted.
     assertDeviceAllowed(this.settings, input.device);
     // The executor validates the key again; doing it first only avoids a database round trip and an Argon2 hash.
@@ -220,9 +217,7 @@ export class ClientRegistrationService {
     requestId: string,
     evidence?: NativeRequestEvidence,
   ): Promise<ClientRegisterOutcome> {
-    // Staging fixture mode closes every registration, and this branch exists only while the server runs the validated
-    // no-proof test policy: a process without it answers closed before the key is read, any hash or any database access.
-    this.originPolicy.assertRegistrationOpen();
+    // This branch exists only while the server runs the validated no-proof test mode.
     if (this.settings.phoneVerificationMode !== 'DISABLED_TEST' || !this.originPolicy.unverifiedTestMode) {
       throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
     }
@@ -243,7 +238,6 @@ export class ClientRegistrationService {
     requestId: string,
     evidence?: NativeRequestEvidence,
   ): Promise<ClientRegisterOutcome> {
-    this.originPolicy.assertRegistrationOpen();
     if (this.settings.phoneVerificationMode === 'DISABLED_TEST' || this.systemSettings === undefined) {
       throw new AppError('AUTH_REGISTRATION_UNAVAILABLE');
     }

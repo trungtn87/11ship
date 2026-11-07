@@ -1,4 +1,6 @@
 # 11Ship — Bước 4.3
+
+> **OD-1 (2026-11-06): `POST /v1/auth/register`, `POST /v1/auth/login`, `POST /v1/auth/role/select` and `GET /v1/auth/me` described below were removed. The current routes are `/v1/client-auth/{register,login,me,context}`; only `/v1/auth/phone-verifications*` remain under `/v1/auth`. The text below is kept as history.**
 ## Gói triển khai Claude — M01-A1-AUTH-CORE v1.0
 
 **Trạng thái:** DESIGN — register replay addendum ADR-003 v0.3 được Owner duyệt 07/10/2026; Auth implementation vẫn chờ toàn bộ M00-C1  

@@ -15,7 +15,6 @@ import { requireNormalizedPhone, requireVietnamMobile } from './phone';
 
 const DEVICE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const DEVICE_TOKEN = /^[A-Z0-9_]{1,32}$/;
-const ROLE_MAX_LENGTH = 64;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // A lone surrogate cannot be encoded as UTF-8 (it would silently become U+FFFD and let two different
@@ -120,26 +119,6 @@ export function parseVerificationId(value: unknown): string {
   return value;
 }
 
-export interface RegisterInput {
-  readonly phoneNormalized: string;
-  readonly password: string;
-  /** Raw proof token as sent; its shape is checked by the service (malformed -> VERIFICATION_PROOF_INVALID). */
-  readonly verificationToken: string;
-  readonly device: DeviceInfo;
-}
-
-export function parseRegisterBody(body: unknown): RegisterInput {
-  const parsed = exactObject(body, ['phone', 'password', 'verification_token', 'device']);
-  if (typeof parsed.verification_token !== 'string' || parsed.verification_token.length > 256) {
-    return reject();
-  }
-  return {
-    phoneNormalized: requireNormalizedPhone(parsed.phone),
-    password: parsePassword(parsed.password),
-    verificationToken: parsed.verification_token,
-    device: parseDevice(parsed.device),
-  };
-}
 
 export interface LoginInput {
   readonly phoneNormalized: string;
@@ -159,17 +138,4 @@ export function parseLoginBody(body: unknown): LoginInput {
     password: parsed.password,
     device: parseDevice(parsed.device),
   };
-}
-
-export interface RoleSelectInput {
-  /** Any bounded string; whether it is selectable is decided by the service (ROLE_NOT_AVAILABLE). */
-  readonly role: string;
-}
-
-export function parseRoleSelectBody(body: unknown): RoleSelectInput {
-  const parsed = exactObject(body, ['role']);
-  if (typeof parsed.role !== 'string' || parsed.role.length < 1 || parsed.role.length > ROLE_MAX_LENGTH) {
-    return reject();
-  }
-  return { role: parsed.role };
 }

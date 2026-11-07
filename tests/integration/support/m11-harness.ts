@@ -278,7 +278,7 @@ export class M11World {
       const loggedIn = await this.app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: this.shop.user.phone.local, password: PASSWORD, device: { ...WEB_FOOD } } });
       expect([loggedIn.status, loggedIn.text.slice(0, 200)]).toEqual([200, loggedIn.text.slice(0, 200)]);
       const token = String(dataOf(loggedIn).access_token);
-      expect((await this.app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } })).status).toBe(200);
+      expect((await this.app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } })).status).toBe(200);
       this.#shopFood = token;
     }
     return this.#shopFood;
@@ -340,7 +340,7 @@ export class M11World {
        VALUES ($1::uuid, 'VCB', 'Vietcombank', '0123456789', 'SHIPPER', 'VERIFIED', $2::uuid, now(), now(), now())`,
       [driverId, userId],
     );
-    const selected = await this.app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'DRIVER' } });
+    const selected = await this.app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'DRIVER' } });
     expect(selected.status).toBe(200);
     const walletId = await this.fund(driverId, funds);
     this.drivers.push(driverId);

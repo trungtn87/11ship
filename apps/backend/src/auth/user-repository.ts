@@ -24,8 +24,7 @@ export function isLockReason(value: unknown): value is LockReason {
 
 /**
  * Where an account came from. It carries NO privilege (see account-origin.ts, which owns the type and the policy):
- * the application (customer/shop/driver) Auth accepts PHONE_VERIFIED accounts, STAGING_FIXTURE accounts only in
- * staging fixture mode and TEST_UNVERIFIED accounts only in the no-proof test mode; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
+ * the application (customer/shop/driver) Auth accepts PHONE_VERIFIED accounts, STAGING_FIXTURE (a legacy origin, never accepted) and TEST_UNVERIFIED accounts only in the no-proof test mode; ADMIN_PROVISIONED accounts exist for the administration web and are refused by every
  * application login and session check. Re-exported so the modules that already import it from here keep working.
  */
 export type { AccountOrigin } from './account-origin';
@@ -223,29 +222,6 @@ export class UserRepository {
          created_at, updated_at
        )
        SELECT $1::uuid, $2, $3, NULL, 'ADMIN_PROVISIONED', 'ACTIVE', 1, clock.t, clock.t
-         FROM (${CLOCK_CTE}) AS clock
-       ON CONFLICT (account_scope, phone_normalized) DO NOTHING`,
-      [input.userId, input.phoneNormalized, input.passwordHash],
-    );
-    return result.rowCount === 1;
-  }
-
-  /**
-   * Creates one ACTIVE STAGING_FIXTURE account: roleless, phone_verified_at NULL (the phone was never proven),
-   * timestamps from the database clock. Returns false when the phone number already belongs to a user (the UNIQUE
-   * constraint decided); an existing account is NEVER touched: no password reset, no status change, no role.
-   * Used only by the operator seed command (M00-D2); no HTTP path reaches it.
-   */
-  async insertStagingFixture(
-    context: TransactionContext,
-    input: { userId: string; phoneNormalized: string; passwordHash: string },
-  ): Promise<boolean> {
-    const result = await context.query(
-      `INSERT INTO app.users (
-         user_id, phone_normalized, password_hash, phone_verified_at, account_origin, status, version,
-         created_at, updated_at
-       )
-       SELECT $1::uuid, $2, $3, NULL, 'STAGING_FIXTURE', 'ACTIVE', 1, clock.t, clock.t
          FROM (${CLOCK_CTE}) AS clock
        ON CONFLICT (account_scope, phone_normalized) DO NOTHING`,
       [input.userId, input.phoneNormalized, input.passwordHash],

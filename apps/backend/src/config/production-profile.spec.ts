@@ -89,7 +89,6 @@ describe('production profile (APP_ENV=production, loopback bind)', () => {
     expect(config.clientPhoneVerificationMode).toBeUndefined(); // absent = REQUIRED (no DISABLED_TEST)
     expect(config.clientAndroid?.signers.FOOD.signerSha256).toBe(SIGNER);
     expect(config.clientAndroid?.attestationRoots.length).toBeGreaterThan(0);
-    expect(config.stagingFixtures).toBeUndefined();
     expect(config.testInbox).toBeUndefined();
     expect(config.database.tls).toBeDefined();
   });

@@ -76,16 +76,16 @@ describe('the validator rejects a widened Blueprint', () => {
     expectProblem(mutate('npm@11.9.0 run build && npx', 'npm@11.9.0 run lint && npx'), /must run npm run build$/);
   });
 
-  test('issue #49 flags: fixture mode and the same-origin Admin web are required, activation and fake OTP modes are refused', () => {
-    expectProblem(mutate('key: AUTH_STAGING_FIXTURES_ENABLED\n        value: "true"', 'key: AUTH_STAGING_FIXTURES_ENABLED\n        value: "false"'), /AUTH_STAGING_FIXTURES_ENABLED must be set/);
+  test('issue #49 flags: the same-origin Admin web is required; the removed fixture mode, activation and fake OTP modes are refused', () => {
+    expectProblem(mutate('      - key: DB_POOL_MAX\n', '      - key: AUTH_STAGING_FIXTURES_ENABLED\n        value: "true"\n      - key: DB_POOL_MAX\n'), /AUTH_STAGING_FIXTURES_ENABLED must not be set/);
     expectProblem(mutate('key: ADMIN_WEB_STAGING_ENABLED\n        value: "true"', 'key: ADMIN_WEB_STAGING_ENABLED\n        value: "false"'), /ADMIN_WEB_STAGING_ENABLED must be set/);
     expectProblem(mutate('key: ADMIN_AUTH_ENABLED\n        value: "true"', 'key: ADMIN_AUTH_ENABLED\n        value: "false"'), /ADMIN_AUTH_ENABLED must be set/);
     expectProblem(mutate('      - key: DB_POOL_MAX\n', '      - key: ADMIN_ACTIVATION_ENABLED\n        value: "true"\n      - key: DB_POOL_MAX\n'), /ADMIN_ACTIVATION_ENABLED must not be set/);
     expectProblem(mutate('      - key: DB_POOL_MAX\n', '      - key: ADMIN_ACTIVATION_OTP_MODE\n        value: FAKE\n      - key: DB_POOL_MAX\n'), /ADMIN_ACTIVATION_OTP_MODE must not be set/);
   });
 
-  test('origins, the limiter key and the fixture phone allowlist are dashboard-only (sync: false, never a value)', () => {
-    for (const key of ['ADMIN_AUTH_ALLOWED_ORIGINS', 'ADMIN_ACTIVATION_ORIGIN', 'ADMIN_RATE_LIMIT_HMAC_KEY', 'AUTH_STAGING_ALLOWED_PHONES']) {
+  test('origins and the limiter key are dashboard-only (sync: false, never a value)', () => {
+    for (const key of ['ADMIN_AUTH_ALLOWED_ORIGINS', 'ADMIN_ACTIVATION_ORIGIN', 'ADMIN_RATE_LIMIT_HMAC_KEY']) {
       expectProblem(mutate(`key: ${key}\n        sync: false`, `key: ${key}\n        value: "x"`), new RegExp(`${key}`));
     }
     expectProblem(mutate('key: ADMIN_RATE_LIMIT_HMAC_KEY\n        sync: false', 'key: ADMIN_RATE_LIMIT_HMAC_KEY\n        value: "x"'), /looks like a secret/);

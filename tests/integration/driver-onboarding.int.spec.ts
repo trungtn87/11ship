@@ -7,10 +7,13 @@ import {
   createDriverFor,
   createServiceArea,
   dataOf,
+  SHIP_DEVICE,
   driverBody,
   errorCode,
   grantStrayRole,
   loginUser,
+  meOf,
+  selectContext,
   registerUser,
   Registered,
   shopProfileBody,
@@ -38,9 +41,12 @@ describe('M01-A2D — Driver onboarding', () => {
       ...(key === null ? {} : { headers: { 'idempotency-key': key } }),
     });
 
-  const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+  const me = (token: string): Promise<ApiResponse> => meOf(app, token);
   const selectRole = (token: string, role: string): Promise<ApiResponse> =>
-    app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    selectContext(app, token, role === 'SHOP' ? 'SHOP_OWNER' : role);
+  /** A fresh SHIP web session of the user: DRIVER is only worn there, and driver onboarding is a SHIP-app hint (OD-1). */
+  const shipOf = async (user: Registered): Promise<string> =>
+    String(dataOf(await loginUser(app, user, { ...SHIP_DEVICE, device_id: `ship-${randomUUID().slice(0, 12)}` })).access_token);
   const count = (sql: string, values: unknown[]): Promise<number> => countRows(app.pool, sql, values);
 
   async function driverRowsOf(userId: string): Promise<Array<Record<string, unknown>>> {
@@ -71,7 +77,7 @@ describe('M01-A2D — Driver onboarding', () => {
 
   async function nothingWritten(user: Registered): Promise<void> {
     expect(await driverRowsOf(user.userId)).toEqual([]);
-    expect(await rolesOf(user.userId)).toEqual([]);
+    expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
     expect(await onboardedEvents(user.userId)).toEqual([]);
     expect(
       await count("SELECT 1 FROM app.idempotency_records WHERE scope_type = 'user' AND scope_id = $1 AND operation_id = 'onboarding.driver.create.v1'", [
@@ -109,7 +115,7 @@ describe('M01-A2D — Driver onboarding', () => {
         accepting_deliveries: false,
       });
       expect(Number(rows[0]?.version)).toBe(1);
-      expect(await rolesOf(user.userId)).toEqual(['DRIVER']);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER', 'DRIVER']);
 
       const audit = await app.pool.query<{ action: string; resource_type: string; resource_id: string }>(
         'SELECT action, resource_type, resource_id FROM app.audit_logs WHERE request_id = $1::uuid',
@@ -134,27 +140,28 @@ describe('M01-A2D — Driver onboarding', () => {
 
     it('does not select the role: /auth/me lists DRIVER, reports ACTIVE, and onboarding is not required again', async () => {
       const user = await registerUser(app);
-      expect(dataOf(await me(user.accessToken))).toMatchObject({
+      const ship = await shipOf(user);
+      expect(dataOf(await me(ship))).toMatchObject({
         onboarding: { shop: 'NOT_STARTED', driver: 'NOT_STARTED' },
-        onboarding_required: true,
+        onboarding_required: true, // SHIP app: driver onboarding is still to do
       });
-      expect((await create(user.accessToken, driverBody())).status).toBe(201);
+      expect((await create(ship, driverBody())).status).toBe(201);
 
-      const data = dataOf(await me(user.accessToken));
+      const data = dataOf(await me(ship));
       expect(data).toMatchObject({
-        available_roles: ['DRIVER'],
-        active_role: null,
+        available_roles: ['CUSTOMER', 'DRIVER'],
+        active_role: 'CUSTOMER', // creating the Driver did not switch the session's context
         onboarding: { shop: 'NOT_STARTED', driver: 'ACTIVE' },
         onboarding_required: false,
-        role_selection_required: true,
+        role_selection_required: false,
       });
 
-      const selected = await selectRole(user.accessToken, 'DRIVER');
+      const selected = await selectRole(ship, 'DRIVER');
       expect(selected.status).toBe(200);
-      expect(dataOf(selected)).toMatchObject({ active_role: 'DRIVER', available_roles: ['DRIVER'] });
-      // Login reports the same.
-      const login = dataOf(await loginUser(app, user, { device_id: 'device-driver-login', platform: 'ANDROID', app: 'SHIP11' }));
-      expect([login.available_roles, login.onboarding_required, login.role_selection_required]).toEqual([['DRIVER'], false, true]);
+      expect(dataOf(selected)).toMatchObject({ active_role: 'DRIVER', available_roles: ['CUSTOMER', 'DRIVER'] });
+      // A fresh SHIP login reports the same and wears DRIVER by default.
+      const login = dataOf(await loginUser(app, user, { device_id: 'device-driver-login', platform: 'WEB', app: 'SHIP' }));
+      expect([login.available_roles, login.onboarding_required, login.active_role]).toEqual([['CUSTOMER', 'DRIVER'], false, 'DRIVER']);
     });
   });
 
@@ -257,7 +264,7 @@ describe('M01-A2D — Driver onboarding', () => {
       const rows = await driverRowsOf(user.userId);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ driver_id: dataOf(first).driver_id, full_name: 'Nguyễn Văn Tài' });
-      expect(await rolesOf(user.userId)).toEqual(['DRIVER']);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER', 'DRIVER']);
       expect(await onboardedEvents(user.userId)).toHaveLength(1);
     });
 
@@ -317,16 +324,16 @@ describe('M01-A2D — Driver onboarding', () => {
       expect(completed.status).toBe(200);
       expect((await create(user.accessToken, driverBody())).status).toBe(201);
 
-      expect(await rolesOf(user.userId)).toEqual(['DRIVER', 'SHOP']);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER', 'DRIVER', 'SHOP']);
       const data = dataOf(await me(user.accessToken));
       expect(data).toMatchObject({
-        available_roles: ['DRIVER', 'SHOP'],
+        available_roles: ['CUSTOMER', 'SHOP_OWNER', 'DRIVER'],
         onboarding: { shop: 'COMPLETED', driver: 'ACTIVE' },
         onboarding_required: false,
-        role_selection_required: true,
+        role_selection_required: false,
       });
-      expect((await selectRole(user.accessToken, 'SHOP')).status).toBe(200);
-      expect((await selectRole(user.accessToken, 'DRIVER')).status).toBe(200);
+      expect((await selectRole(user.accessToken, 'SHOP')).status).toBe(200); // FOOD session
+      expect((await selectRole(await shipOf(user), 'DRIVER')).status).toBe(200); // SHIP session
     });
 
     it('Driver creation then Shop completion: the same result', async () => {
@@ -340,7 +347,7 @@ describe('M01-A2D — Driver onboarding', () => {
       });
       expect(saved.status).toBe(201);
       expect(dataOf(await me(user.accessToken))).toMatchObject({
-        available_roles: ['DRIVER'],
+        available_roles: ['CUSTOMER', 'DRIVER'],
         onboarding: { shop: 'INCOMPLETE', driver: 'ACTIVE' },
         onboarding_required: false,
       });
@@ -350,13 +357,13 @@ describe('M01-A2D — Driver onboarding', () => {
         headers: { 'idempotency-key': randomUUID() },
       });
       expect(completed.status).toBe(200);
-      expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['DRIVER', 'SHOP']);
+      expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['CUSTOMER', 'SHOP_OWNER', 'DRIVER']);
     });
 
     it('a Driver profile does not make SHOP available: without a completed shop it stays refused', async () => {
       const user = await registerUser(app);
       expect((await create(user.accessToken, driverBody())).status).toBe(201);
-      expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['DRIVER']);
+      expect(dataOf(await me(user.accessToken)).available_roles).toEqual(['CUSTOMER', 'DRIVER']);
       const shop = await selectRole(user.accessToken, 'SHOP');
       expect([shop.status, errorCode(shop)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
     });
@@ -364,9 +371,9 @@ describe('M01-A2D — Driver onboarding', () => {
 
   describe('DRIVER selection and eligibility (C01..C08, Driver parts)', () => {
     async function projection(user: Registered, label: string): Promise<unknown[]> {
-      const fromMe = dataOf(await me(user.accessToken));
+      const fromMe = dataOf(await me(await shipOf(user)));
       const fromLogin = dataOf(
-        await loginUser(app, user, { device_id: `device-${label}`, platform: 'ANDROID', app: 'SHIP11' }),
+        await loginUser(app, user, { device_id: `device-${label}`, platform: 'WEB', app: 'SHIP' }),
       );
       return [fromMe, fromLogin].map((d) => [d.available_roles, d.onboarding_required, d.role_selection_required]);
     }
@@ -375,19 +382,20 @@ describe('M01-A2D — Driver onboarding', () => {
       const user = await registerUser(app);
       await grantStrayRole(app.pool, user.userId, 'DRIVER');
       expect(await projection(user, 'stray')).toEqual([
-        [[], true, false],
-        [[], true, false],
+        [['CUSTOMER'], true, false],
+        [['CUSTOMER'], true, false],
       ]);
-      const selected = await selectRole(user.accessToken, 'DRIVER');
+      const selected = await selectRole(await shipOf(user), 'DRIVER');
       expect([selected.status, errorCode(selected)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
     });
 
     it('a Driver profile without the DRIVER role row is not offered', async () => {
       const user = await registerUser(app);
       await createDriverFor(app.pool, user.userId);
-      const selected = await selectRole(user.accessToken, 'DRIVER');
+      const ship = await shipOf(user);
+      const selected = await selectRole(ship, 'DRIVER');
       expect([selected.status, errorCode(selected)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
-      expect(dataOf(await me(user.accessToken)).available_roles).toEqual([]);
+      expect(dataOf(await me(ship)).available_roles).toEqual(['CUSTOMER']);
     });
 
     for (const status of ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING']) {
@@ -396,10 +404,10 @@ describe('M01-A2D — Driver onboarding', () => {
         await grantStrayRole(app.pool, user.userId, 'DRIVER');
         await createDriverFor(app.pool, user.userId, { status });
         expect(await projection(user, `st-${status.toLowerCase()}`)).toEqual([
-          [['DRIVER'], false, true],
-          [['DRIVER'], false, true],
+          [['CUSTOMER', 'DRIVER'], false, false],
+          [['CUSTOMER', 'DRIVER'], false, false],
         ]);
-        const selected = await selectRole(user.accessToken, 'DRIVER');
+        const selected = await selectRole(await shipOf(user), 'DRIVER');
         expect([selected.status, dataOf(selected).active_role]).toEqual([200, 'DRIVER']);
       });
     }
@@ -409,12 +417,13 @@ describe('M01-A2D — Driver onboarding', () => {
       await grantStrayRole(app.pool, user.userId, 'DRIVER');
       await createDriverFor(app.pool, user.userId, { status: 'CLOSED' });
       expect(await projection(user, 'closed')).toEqual([
-        [[], false, false],
-        [[], false, false],
+        [['CUSTOMER'], false, false],
+        [['CUSTOMER'], false, false],
       ]);
-      const selected = await selectRole(user.accessToken, 'DRIVER');
+      const ship = await shipOf(user);
+      const selected = await selectRole(ship, 'DRIVER');
       expect([selected.status, errorCode(selected)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
-      expect(dataOf(await me(user.accessToken)).onboarding).toMatchObject({ driver: 'CLOSED' });
+      expect(dataOf(await me(ship)).onboarding).toMatchObject({ driver: 'CLOSED' });
     });
 
     it('a user who already has a Driver profile cannot create another, whatever its status', async () => {
@@ -423,19 +432,20 @@ describe('M01-A2D — Driver onboarding', () => {
         await createDriverFor(app.pool, user.userId, { status });
         const response = await create(user.accessToken, driverBody());
         expect([status, response.status, errorCode(response)]).toEqual([status, 409, 'DRIVER_PROFILE_EXISTS']);
-        expect(await rolesOf(user.userId)).toEqual([]);
+        expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
       }
     });
 
     it('an ACTIVE session whose Driver profile closes is refused the next selection', async () => {
       const user = await registerUser(app);
       expect((await create(user.accessToken, driverBody())).status).toBe(201);
-      expect((await selectRole(user.accessToken, 'DRIVER')).status).toBe(200);
+      const ship = await shipOf(user);
+      expect((await selectRole(ship, 'DRIVER')).status).toBe(200);
       await app.pool.query(
         "UPDATE app.drivers SET status = 'CLOSED', updated_at = clock_timestamp() WHERE user_id = $1::uuid",
         [user.userId],
       );
-      const again = await selectRole(user.accessToken, 'DRIVER');
+      const again = await selectRole(ship, 'DRIVER');
       expect([again.status, errorCode(again)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
     });
   });

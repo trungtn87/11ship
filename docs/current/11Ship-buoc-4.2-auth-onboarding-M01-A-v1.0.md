@@ -1,4 +1,6 @@
 # 11Ship — Bước 4.2
+
+> **OD-1 (2026-11-06): `POST /v1/auth/register`, `POST /v1/auth/login`, `POST /v1/auth/role/select` and `GET /v1/auth/me` described below were removed. The current routes are `/v1/client-auth/{register,login,me,context}`; only `/v1/auth/phone-verifications*` remain under `/v1/auth`. The text below is kept as history.**
 ## Đặc tả đăng ký, đăng nhập và onboarding — M01-A v1.0
 
 > **Bổ sung được Owner duyệt 10/10/2026 — Reset mật khẩu M01:** xem [M01-B-RESET: USER/ADMIN dùng chung OTP SMS, SYSTEM khôi phục qua server có email xác minh phụ tùy chọn](../tasks/M01-B-RESET-password-recovery-design.md). Tính năng **đổi mật khẩu riêng** không nằm trong phạm vi mới. Đây là **thiết kế chờ triển khai**, không phải bằng chứng code/test. Phần đặc tả mới này ưu tiên so với mô tả kế hoạch "đổi/quên mật khẩu" cũ.

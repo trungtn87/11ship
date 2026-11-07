@@ -1,6 +1,6 @@
 'use strict';
 
-// Target contract shared by the remote operator commands (db:migrate:remote, staging:seed-fixtures) — M00-VPS-01, package A.
+// Target contract shared by the remote operator commands (db:migrate:remote) — M00-VPS-01, package A.
 //
 // There are two supported remote targets, chosen by the operator with DB_REMOTE_TARGET:
 //   SUPABASE     (default when the variable is not set): the Supabase SESSION pooler path of M00-D1. Unchanged; its rules

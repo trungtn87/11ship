@@ -9,7 +9,7 @@ export const DRIVER_STATUSES = ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'CL
 export type DriverStatus = (typeof DRIVER_STATUSES)[number];
 
 /**
- * How far a user got with Driver onboarding, as /auth/me reports it. PENDING_APPROVAL is the state of a
+ * How far a user got with Driver onboarding, as /client-auth/me reports it. PENDING_APPROVAL is the state of a
  * profile whose status is PENDING: onboarding is finished, an operator has not approved the driver yet.
  */
 export const DRIVER_ONBOARDING_STATES = [

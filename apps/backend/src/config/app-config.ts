@@ -9,7 +9,6 @@ import { AdminUserAccountMutationsConfig, parseAdminUserAccountMutations } from 
 import { AdminWebHostingConfig, parseAdminWebHosting } from './admin-web-hosting-config';
 import { Keyring, parseKeyringConfig } from '../crypto/keyring';
 import { DatabaseTls, resolveDatabaseTls } from '../database/tls-config';
-import { parseStagingFixtures, StagingFixturesConfig } from './staging-fixtures-config';
 import { parseSmsGateway, SMS_GATEWAY_ENABLED_ENV, SmsGatewayConfig } from './sms-gateway-config';
 import { loadTestInboxConfig, TestInboxConfig } from '../test-sms/test-sms-config';
 import { ClientDeviceConfig, parseClientDevice } from './client-device-config';
@@ -141,11 +140,6 @@ export interface AppConfig {
    * requires ADMIN_AUTH_ENABLED=true) and every variable is valid; absent otherwise (nothing is wired or exposed).
    */
   adminActivation?: AdminActivationConfig;
-  /**
-   * Staging fixture mode (M00-D2). Present ONLY when AUTH_STAGING_FIXTURES_ENABLED=true, which is valid only for
-   * APP_ENV=staging and then requires a valid AUTH_STAGING_ALLOWED_PHONES. Absent everywhere else.
-   */
-  stagingFixtures?: StagingFixturesConfig;
   /**
    * Same-origin hosting of the administration web (issue #49). Present ONLY when ADMIN_WEB_STAGING_ENABLED=true, which is
    * valid only for APP_ENV=staging with the administration web authentication enabled. Absent everywhere else.
@@ -614,14 +608,10 @@ export function loadConfig(env: EnvSource): ConfigResult {
     adminActivationResult.invalid.forEach(flag);
   }
 
-  // Staging fixture mode (M00-D2): fail closed in every environment. Names only, never a value.
-  const stagingFixtures = parseStagingFixtures({
-    appEnv,
-    enabledRaw: env.AUTH_STAGING_FIXTURES_ENABLED,
-    phonesRaw: env.AUTH_STAGING_ALLOWED_PHONES,
-  });
-  if (!stagingFixtures.ok) {
-    stagingFixtures.invalid.forEach(flag);
+  // The staging fixture mode was removed (Owner 2026-11-07). A leftover switch is refused instead of being ignored in silence, so
+  // an operator never believes fixtures are on. Names only, never a value.
+  if (['true', '1', 'yes', 'on'].includes((env.AUTH_STAGING_FIXTURES_ENABLED ?? '').trim().toLowerCase())) {
+    flag('AUTH_STAGING_FIXTURES_ENABLED');
   }
 
   // Same-origin hosting of the administration web (issue #49): fail closed in every environment. Names only.
@@ -689,12 +679,12 @@ export function loadConfig(env: EnvSource): ConfigResult {
 
   // Account recovery mode (M01-RESET): closed by default, DISABLED_TEST only for development/test on loopback.
   // SMS gateway (issue #102): off by default; needs the keyring (the queued message is encrypted with it) and is incompatible
-  // with the staging fixture mode (which closes OTP altogether). Names only.
+  // Names only.
   const smsGatewayResult = parseSmsGateway({ env });
   let smsGateway: SmsGatewayConfig | undefined;
   if (smsGatewayResult.ok) {
     smsGateway = smsGatewayResult.config;
-    if (smsGateway !== undefined && (crypto === undefined || auth === undefined || (stagingFixtures.ok && stagingFixtures.config !== undefined))) {
+    if (smsGateway !== undefined && (crypto === undefined || auth === undefined)) {
       flag(SMS_GATEWAY_ENABLED_ENV);
     }
   } else {
@@ -793,9 +783,6 @@ export function loadConfig(env: EnvSource): ConfigResult {
       auth,
       ...(adminAuth === undefined ? {} : { adminAuth }),
       ...(adminActivation === undefined ? {} : { adminActivation }),
-      ...(stagingFixtures.ok && stagingFixtures.config !== undefined
-        ? { stagingFixtures: stagingFixtures.config }
-        : {}),
       ...(adminWebHosting.ok && adminWebHosting.config !== undefined
         ? { adminWebHosting: adminWebHosting.config }
         : {}),

@@ -89,7 +89,7 @@ export function configureApp(app: INestApplication): void {
   for (const route of ['driver/complaints', 'driver/reviews']) {
     app.use(`/${GLOBAL_PREFIX}/${route}`, clientAuthTransportMiddleware);
   }
-  // Legacy /auth/role/select also uses SessionAuthGuard for native sessions; preserve its signed request bytes.
+  // /auth now only carries phone verification (nothing is signed there); the raw-body capture predates OD-1 and is harmless.
   app.use(`/${GLOBAL_PREFIX}/auth`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/${CLIENT_AUTH_ROUTE_PREFIX}`, captureRawBody);
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);

@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { eventually } from './support/async-helpers';
 import {
-  api,
   ApiResponse,
   AuthApp,
   countRows,
@@ -18,7 +17,7 @@ import {
   PASSWORD,
   Phone,
   randomPhone,
-  registerUser,
+  registerLegacyUser,
   rowLockWaiters,
   sessionIdOfToken,
   setUserStatus,
@@ -227,7 +226,7 @@ describe('M01.04 — client login, me, context, logout', () => {
     });
 
     it('login never grants or repairs a role: a legacy account without CUSTOMER gets a roleless session', async () => {
-      const legacy = await registerUser(app);
+      const legacy = await registerLegacyUser(app);
       const user: Customer = { phone: legacy.phone, password: legacy.password, userId: legacy.userId };
       const { data, sessionId } = await loginOk(user, { ...WEB_FOOD });
       expect(data.available_roles).toEqual([]);
@@ -360,21 +359,6 @@ describe('M01.04 — client login, me, context, logout', () => {
         }
       });
     }
-
-    it('a legacy session is not a session of this API: other app label -> 401; the legacy route issues no native ANDROID session -> 403', async () => {
-      const legacy = await registerUser(app);
-      const labelled = await api(app.running.baseUrl, 'POST', '/auth/login', {
-        body: { phone: legacy.phone.local, password: legacy.password, device: { device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' } },
-      });
-      const otherApp = String(dataOf(labelled).access_token);
-      const labelledMe = await me(otherApp);
-      expect([labelledMe.status, errorCode(labelledMe)]).toEqual([401, 'SESSION_INVALID']);
-      // M01-ANDROID: the legacy login must not become a way around the device binding, so it refuses the native Food / Ship ANDROID labels.
-      const androidFood = await api(app.running.baseUrl, 'POST', '/auth/login', {
-        body: { phone: legacy.phone.local, password: legacy.password, device: { device_id: 'device-test-0002', platform: 'ANDROID', app: 'FOOD' } },
-      });
-      expect([androidFood.status, errorCode(androidFood)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
-    });
   });
 
   describe('L — recheck under the user lock', () => {

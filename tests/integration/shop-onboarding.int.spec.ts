@@ -7,11 +7,14 @@ import {
   createServiceArea,
   dataOf,
   DEVICE,
+  SHIP_DEVICE,
   errorCode,
   grantRole,
   grantStrayRole,
   loginUser,
   randomPhone,
+  meOf,
+  selectContext,
   registerUser,
   Registered,
   setUserStatus,
@@ -62,9 +65,9 @@ describe('M01-A2S — Shop onboarding', () => {
       ...(headers === undefined ? {} : { headers }),
     });
 
-  const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+  const me = (token: string): Promise<ApiResponse> => meOf(app, token);
   const selectRole = (token: string, role: string): Promise<ApiResponse> =>
-    app.call('POST', '/auth/role/select', { bearer: token, body: { role } });
+    selectContext(app, token, role === 'SHOP' ? 'SHOP_OWNER' : role);
 
   const GPS = { pickup_lat: 21.0285, pickup_lng: 105.8542 };
 
@@ -127,7 +130,7 @@ describe('M01-A2S — Shop onboarding', () => {
       expect(
         await countRows(app.pool, "SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid AND member_role = 'OWNER'", [user.userId]),
       ).toBe(1);
-      expect(await rolesOf(user.userId)).toEqual([]);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
       expect(await onboardedEvents(user.userId)).toEqual([]);
       expect(await auditActions(response.requestId)).toEqual(['onboarding.shop.profile.save.v1']);
     });
@@ -426,7 +429,7 @@ describe('M01-A2S — Shop onboarding', () => {
 
       const rows = await shopRowsOf(user.userId);
       expect(rows[0]).toMatchObject({ status: 'INCOMPLETE', accepting_orders: false });
-      expect(await rolesOf(user.userId)).toEqual([]);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
       expect(await onboardedEvents(user.userId)).toEqual([]);
     });
 
@@ -434,7 +437,7 @@ describe('M01-A2S — Shop onboarding', () => {
       const { user, version } = await completeDraft();
       const stale = await complete(user.accessToken, { expected_version: version + 1 });
       expect([stale.status, errorCode(stale)]).toEqual([409, 'VERSION_CONFLICT']);
-      expect(await rolesOf(user.userId)).toEqual([]);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
     });
   });
 
@@ -454,7 +457,7 @@ describe('M01-A2S — Shop onboarding', () => {
       const rows = await shopRowsOf(user.userId);
       expect(rows[0]).toMatchObject({ status: 'ACTIVE', accepting_orders: false });
       expect(Number(rows[0]?.version)).toBe(version + 1);
-      expect(await rolesOf(user.userId)).toEqual(['SHOP']);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER', 'SHOP']);
       expect(await auditActions(response.requestId)).toEqual(['onboarding.shop.complete.v1']);
 
       const events = await onboardedEvents(user.userId);
@@ -468,7 +471,7 @@ describe('M01-A2S — Shop onboarding', () => {
         'SELECT active_role FROM app.sessions WHERE session_id = $1::uuid',
         [await sessionIdOfToken(app.pool, user.accessToken)],
       );
-      expect(session.rows[0]?.active_role).toBeNull();
+      expect(session.rows[0]?.active_role).toBe('CUSTOMER');
     });
 
     it('an ACTIVE shop is no longer mutable through onboarding, and cannot be completed twice with a new key', async () => {
@@ -585,7 +588,7 @@ describe('M01-A2S — Shop onboarding', () => {
       const response = await complete(user.accessToken, { expected_version: version });
       expect([response.status, errorCode(response)]).toEqual([400, 'INVALID_SERVICE_AREA']);
       expect((await shopRowsOf(user.userId))[0]).toMatchObject({ status: 'INCOMPLETE' });
-      expect(await rolesOf(user.userId)).toEqual([]);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
     });
   });
 
@@ -645,42 +648,45 @@ describe('M01-A2S — Shop onboarding', () => {
       const done = await complete(user.accessToken, { expected_version: 1 });
       expect(done.status).toBeGreaterThanOrEqual(401);
       expect(done.status).toBeLessThanOrEqual(403);
-      expect(await rolesOf(user.userId)).toEqual([]);
+      expect(await rolesOf(user.userId)).toEqual(['CUSTOMER']);
     });
   });
 
-  describe('/auth/me onboarding projection and SHOP selection', () => {
+  describe('/client-auth/me onboarding projection and SHOP_OWNER selection', () => {
+    // OD-1: the account is a client-auth account, so CUSTOMER is always held (and, on the FOOD app, worn from registration).
+    // `onboarding_required` is the FOOD routing hint "no CUSTOMER role/profile yet": it is false for every account below, because
+    // shop onboarding is reported by `onboarding.shop`, not by that flag.
     it('reports NOT_STARTED, INCOMPLETE and COMPLETED; DRIVER is the constant NOT_STARTED', async () => {
       const user = await registerUser(app);
       let data = dataOf(await me(user.accessToken));
       expect(data.onboarding).toEqual({ shop: 'NOT_STARTED', driver: 'NOT_STARTED' });
-      expect(data.onboarding_required).toBe(true);
+      expect(data.onboarding_required).toBe(false);
 
       const areaId = await createServiceArea(app.pool);
       await saveProfile(user.accessToken, shopProfileBody({ ...GPS, service_area_id: areaId }));
       data = dataOf(await me(user.accessToken));
       expect(data.onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
-      expect(data.available_roles).toEqual([]);
+      expect(data.available_roles).toEqual(['CUSTOMER']);
 
       await complete(user.accessToken, { expected_version: 1 });
       data = dataOf(await me(user.accessToken));
       expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
-      expect(data.available_roles).toEqual(['SHOP']);
-      expect(data.active_role).toBeNull(); // completion did not select the role
-      expect(data.role_selection_required).toBe(true);
+      expect(data.available_roles).toEqual(['CUSTOMER', 'SHOP_OWNER']);
+      expect(data.active_role).toBe('CUSTOMER'); // completion did not select the SHOP_OWNER context
+      expect(data.role_selection_required).toBe(false);
     });
 
-    it('SHOP is selectable only for a completed shop: onboarding, then role/select works with the existing session', async () => {
+    it('SHOP_OWNER is selectable only for a completed shop: onboarding, then context select works with the existing session', async () => {
       const { user, version } = await completeDraft();
       const before = await selectRole(user.accessToken, 'SHOP');
       expect([before.status, errorCode(before)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
       expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
       const selected = await selectRole(user.accessToken, 'SHOP');
       expect(selected.status).toBe(200);
-      expect(dataOf(selected).active_role).toBe('SHOP');
+      expect(dataOf(selected).active_role).toBe('SHOP_OWNER');
     });
 
-    it('a stray SHOP role (no shop, or an INCOMPLETE one) is neither listed nor selectable, at /me, login and role/select', async () => {
+    it('a stray SHOP role (no shop, or an INCOMPLETE one) is neither listed nor selectable, at /me, login and context select', async () => {
       const user = await registerUser(app);
       await grantStrayRole(app.pool, user.userId, 'SHOP');
       for (const state of ['no shop', 'incomplete shop']) {
@@ -688,11 +694,11 @@ describe('M01-A2S — Shop onboarding', () => {
           await saveProfile(user.accessToken, shopProfileBody());
         }
         const data = dataOf(await me(user.accessToken));
-        expect([state, data.available_roles, data.onboarding_required]).toEqual([state, [], true]);
+        expect([state, data.available_roles]).toEqual([state, ['CUSTOMER']]);
         const select = await selectRole(user.accessToken, 'SHOP');
         expect([state, select.status, errorCode(select)]).toEqual([state, 403, 'ROLE_NOT_AVAILABLE']);
         const login = await loginUser(app, user, { ...DEVICE, device_id: `device-stray-${state.length}` });
-        expect([state, dataOf(login).available_roles]).toEqual([state, []]);
+        expect([state, dataOf(login).available_roles]).toEqual([state, ['CUSTOMER']]);
       }
       expect(await countRows(app.pool, "SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND active_role = 'SHOP'", [user.userId])).toBe(0);
     });
@@ -707,7 +713,7 @@ describe('M01-A2S — Shop onboarding', () => {
       );
       const data = dataOf(await me(user.accessToken));
       expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
-      expect(data.available_roles).toEqual([]);
+      expect(data.available_roles).toEqual(['CUSTOMER']);
       const select = await selectRole(user.accessToken, 'SHOP');
       expect([select.status, errorCode(select)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
     });
@@ -732,57 +738,57 @@ describe('M01-A2S — Shop onboarding', () => {
         ];
       }
 
-      it('NOT_STARTED and INCOMPLETE without a usable role: onboarding is required (also with a stray SHOP role)', async () => {
+      it('NOT_STARTED and INCOMPLETE without a usable shop: only CUSTOMER is offered (also with a stray SHOP role)', async () => {
         const user = await registerUser(app);
         expect(await projections(user, 'ns')).toEqual([
-          ['me', [], true, false],
-          ['login', [], true, false],
+          ['me', ['CUSTOMER'], false, false],
+          ['login', ['CUSTOMER'], false, false],
         ]);
         await grantStrayRole(app.pool, user.userId, 'SHOP');
         expect(await projections(user, 'ns-stray')).toEqual([
-          ['me', [], true, false],
-          ['login', [], true, false],
+          ['me', ['CUSTOMER'], false, false],
+          ['login', ['CUSTOMER'], false, false],
         ]);
         expect((await saveProfile(user.accessToken, shopProfileBody())).status).toBe(201);
         expect(dataOf(await me(user.accessToken)).onboarding).toEqual({ shop: 'INCOMPLETE', driver: 'NOT_STARTED' });
         expect(await projections(user, 'inc')).toEqual([
-          ['me', [], true, false],
-          ['login', [], true, false],
+          ['me', ['CUSTOMER'], false, false],
+          ['login', ['CUSTOMER'], false, false],
         ]);
       });
 
-      it('ACTIVE: SHOP is available, onboarding is not required, a role must be selected', async () => {
+      it('ACTIVE: SHOP_OWNER is available next to CUSTOMER (which stays the default context), onboarding is not required', async () => {
         const { user, version } = await completeDraft();
         expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
         expect(await projections(user, 'active')).toEqual([
-          ['me', ['SHOP'], false, true],
-          ['login', ['SHOP'], false, true],
+          ['me', ['CUSTOMER', 'SHOP_OWNER'], false, false],
+          ['login', ['CUSTOMER', 'SHOP_OWNER'], false, false],
         ]);
       });
 
-      it('DISABLED shop-only user: COMPLETED, nothing to select, and NOT sent back to an onboarding that would refuse', async () => {
+      it('DISABLED shop: COMPLETED, only CUSTOMER left, and NOT sent back to an onboarding that would refuse', async () => {
         const { user, version } = await completeDraft();
         expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
         await disableShopOf(user.userId);
 
         const data = dataOf(await me(user.accessToken));
         expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
-        expect(data.active_role).toBeNull();
+        expect(data.active_role).toBe('CUSTOMER');
         expect(await projections(user, 'disabled')).toEqual([
-          ['me', [], false, false],
-          ['login', [], false, false],
+          ['me', ['CUSTOMER'], false, false],
+          ['login', ['CUSTOMER'], false, false],
         ]);
 
         const select = await selectRole(user.accessToken, 'SHOP');
         expect([select.status, errorCode(select)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
-        // This is why onboarding_required must be false: both onboarding commands refuse this user.
+        // Both onboarding commands refuse this user.
         const save = await saveProfile(user.accessToken, shopProfileBody({ expected_version: version + 2 }));
         expect([save.status, errorCode(save)]).toEqual([409, 'SHOP_ONBOARDING_EXISTS']);
         const again = await complete(user.accessToken, { expected_version: version + 2 });
         expect([again.status, errorCode(again)]).toEqual([409, 'SHOP_ONBOARDING_EXISTS']);
       });
 
-      it('DRIVER + DISABLED shop: only DRIVER is offered and selectable; DRIVER behaviour is unchanged', async () => {
+      it('DRIVER + DISABLED shop: only CUSTOMER and DRIVER are offered; DRIVER is worn on a SHIP session', async () => {
         const { user, version } = await completeDraft();
         expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
         // Since M01-A2D a selectable DRIVER is a role row plus a Driver profile (here a PENDING one, as onboarding leaves it).
@@ -790,54 +796,49 @@ describe('M01-A2S — Shop onboarding', () => {
         await disableShopOf(user.userId);
 
         expect(await projections(user, 'driver-disabled')).toEqual([
-          ['me', ['DRIVER'], false, true],
-          ['login', ['DRIVER'], false, true],
+          ['me', ['CUSTOMER', 'DRIVER'], false, false],
+          ['login', ['CUSTOMER', 'DRIVER'], false, false],
         ]);
         const shop = await selectRole(user.accessToken, 'SHOP');
         expect([shop.status, errorCode(shop)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
-        const driver = await selectRole(user.accessToken, 'DRIVER');
-        expect(driver.status).toBe(200);
-        expect(dataOf(driver)).toMatchObject({
-          available_roles: ['DRIVER'],
-          active_role: 'DRIVER',
-          onboarding_required: false,
-          role_selection_required: false,
-        });
-        const after = dataOf(await me(user.accessToken));
+        const ship = String(dataOf(await loginUser(app, user, { ...SHIP_DEVICE })).access_token);
+        const after = dataOf(await me(ship));
         expect([after.active_role, after.onboarding_required, after.role_selection_required]).toEqual(['DRIVER', false, false]);
         expect(after.onboarding).toEqual({ shop: 'COMPLETED', driver: 'PENDING_APPROVAL' });
       });
 
-      it('a stray DRIVER role without a Driver profile is not offered (A2D): onboarding is required again', async () => {
+      it('a stray DRIVER role without a Driver profile is not offered (A2D): the SHIP app asks for driver onboarding', async () => {
         const user = await registerUser(app);
         await grantStrayRole(app.pool, user.userId, 'DRIVER');
         expect(await projections(user, 'driver-stray')).toEqual([
-          ['me', [], true, false],
-          ['login', [], true, false],
+          ['me', ['CUSTOMER'], false, false],
+          ['login', ['CUSTOMER'], false, false],
         ]);
+        const ship = dataOf(await loginUser(app, user, { ...SHIP_DEVICE }));
+        expect([ship.available_roles, ship.onboarding_required]).toEqual([['CUSTOMER'], true]);
         const driver = await selectRole(user.accessToken, 'DRIVER');
         expect([driver.status, errorCode(driver)]).toEqual([403, 'ROLE_NOT_AVAILABLE']);
       });
 
-      it('a DRIVER with no shop at all is as in A1: no onboarding required, role selection required', async () => {
+      it('a DRIVER with no shop at all: CUSTOMER and DRIVER offered, no onboarding required', async () => {
         const user = await registerUser(app);
         await grantRole(app.pool, user.userId, 'DRIVER');
         expect(await projections(user, 'driver-only')).toEqual([
-          ['me', ['DRIVER'], false, true],
-          ['login', ['DRIVER'], false, true],
+          ['me', ['CUSTOMER', 'DRIVER'], false, false],
+          ['login', ['CUSTOMER', 'DRIVER'], false, false],
         ]);
       });
     });
 
-    it('A1 regression after real onboarding: SHOP moves between devices and a DRIVER session is untouched', async () => {
+    it('A1 regression after real onboarding: SHOP_OWNER moves between FOOD devices and a DRIVER (SHIP) session is untouched', async () => {
       const { user, version } = await completeDraft();
       expect((await complete(user.accessToken, { expected_version: version })).status).toBe(200);
       // Since M01-A2D a selectable DRIVER is a role row plus a Driver profile.
       await grantRole(app.pool, user.userId, 'DRIVER');
-      const login = async (deviceId: string): Promise<string> =>
-        String(dataOf(await loginUser(app, user, { ...DEVICE, device_id: deviceId })).access_token);
+      const login = async (deviceId: string, device: Record<string, unknown> = DEVICE): Promise<string> =>
+        String(dataOf(await loginUser(app, user, { ...device, device_id: deviceId })).access_token);
       const deviceB = await login('device-onboarded-b');
-      const driverDevice = await login('device-onboarded-d');
+      const driverDevice = await login('device-onboarded-d', SHIP_DEVICE);
 
       expect((await selectRole(driverDevice, 'DRIVER')).status).toBe(200);
       expect((await selectRole(user.accessToken, 'SHOP')).status).toBe(200);
@@ -845,7 +846,7 @@ describe('M01-A2S — Shop onboarding', () => {
 
       const revoked = await me(user.accessToken);
       expect([revoked.status, errorCode(revoked)]).toEqual([401, 'SESSION_REVOKED']);
-      expect(dataOf(await me(deviceB)).active_role).toBe('SHOP');
+      expect(dataOf(await me(deviceB)).active_role).toBe('SHOP_OWNER');
       expect(dataOf(await me(driverDevice)).active_role).toBe('DRIVER');
       expect(
         await countRows(app.pool, "SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND active_role = 'SHOP' AND revoked_at IS NULL", [user.userId]),

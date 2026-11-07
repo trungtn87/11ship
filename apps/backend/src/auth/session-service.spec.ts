@@ -6,7 +6,6 @@ import { SessionRepository, SessionView } from './session-repository';
 import { bearerTokenFrom, SessionService } from './session-service';
 import { digestToken, generateToken } from './tokens';
 import { AccountOriginPolicy, createAccountOriginPolicy } from './account-origin';
-import { PhoneAllowlist } from '../config/staging-fixtures-config';
 
 const VIEW: SessionView = {
   sessionId: '123e4567-e89b-42d3-a456-426614174000',
@@ -127,12 +126,8 @@ describe('SessionService.authenticate', () => {
 });
 
 // M00-D2: the account origin policy at bearer authentication (M00-D2 design (PR #26) section 4).
-describe('SessionService.authenticate account origin policy (M00-D2)', () => {
+describe('SessionService.authenticate account origin policy (legacy STAGING_FIXTURE rows are never served)', () => {
   const FIXTURE_VIEW: SessionView = { ...VIEW, accountOrigin: 'STAGING_FIXTURE' };
-  const policyOf = (appEnv: 'staging' | 'production', mode: boolean, phones: string[]) =>
-    createAccountOriginPolicy({ appEnv, fixtureModeEnabled: mode, allowedPhones: new PhoneAllowlist(phones) });
-  const STAGING_ON = policyOf('staging', true, [VIEW.phoneNormalized]);
-
   function serviceFor(view: SessionView, policy?: AccountOriginPolicy) {
     const { manager } = fakeTransactions();
     const sessions = { findByDigest: async () => view } as unknown as SessionRepository;
@@ -153,16 +148,10 @@ describe('SessionService.authenticate account origin policy (M00-D2)', () => {
 
   const header = () => `Bearer ${generateToken().token}`;
 
-  it('a fixture session is accepted on staging, mode on, allowlisted; the principal gains no field beyond platform and app (device proof routing)', async () => {
-    const principal = await serviceFor(FIXTURE_VIEW, STAGING_ON).authenticate(header());
-    expect(Object.keys(principal).sort()).toEqual(['activeRole', 'app', 'authMethod', 'phoneNormalized', 'platform', 'sessionId', 'userId']);
-  });
-
   const denied: ReadonlyArray<readonly [string, AccountOriginPolicy | undefined]> = [
-    ['no fixture mode (default policy)', undefined],
-    ['staging with the mode switched off', policyOf('staging', false, [VIEW.phoneNormalized])],
-    ['production, even with the mode forced on', policyOf('production', true, [VIEW.phoneNormalized])],
-    ['the phone removed from the allowlist', policyOf('staging', true, ['+84900000000'])],
+    ['the default policy', undefined],
+    ['staging', createAccountOriginPolicy({ appEnv: 'staging' })],
+    ['production', createAccountOriginPolicy({ appEnv: 'production' })],
   ];
   for (const [label, policy] of denied) {
     it(`an OLD fixture bearer is SESSION_INVALID under ${label}`, async () => {
@@ -174,10 +163,5 @@ describe('SessionService.authenticate account origin policy (M00-D2)', () => {
     for (const change of [{ revoked: true }, { expired: true }, { userStatus: 'DISABLED' }]) {
       expect(await codeOf(() => serviceFor({ ...FIXTURE_VIEW, ...change }).authenticate(header()))).toBe('SESSION_INVALID');
     }
-  });
-
-  it('a verified session is refused while the fixture mode is on, and accepted otherwise', async () => {
-    expect(await codeOf(() => serviceFor(VIEW, STAGING_ON).authenticate(header()))).toBe('SESSION_INVALID');
-    expect(await codeOf(() => serviceFor(VIEW).authenticate(header()))).toBe('OK');
   });
 });

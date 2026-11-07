@@ -61,7 +61,7 @@ export const APP_ERROR_DEFINITIONS = {
   SESSION_INVALID: { status: 401, message: 'The session is not valid' },
   SESSION_REVOKED: { status: 401, message: 'The session was revoked' },
   SESSION_EXPIRED: { status: 401, message: 'The session has expired' },
-  // M00-D2: staging fixture mode closes OTP request/verify and register (no SMS exists there yet). Fixed message:
+  // Registration or phone verification cannot be served in this mode (for example the no-proof test branch is off). Fixed message:
   // it says nothing about phones, accounts or configuration.
   AUTH_REGISTRATION_UNAVAILABLE: {
     status: 503,

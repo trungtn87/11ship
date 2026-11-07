@@ -85,7 +85,7 @@ describe('M01-A2D — Driver onboarding fault matrix', () => {
       expect(failed.text).not.toContain('injected fault');
       expect(failed.text).not.toContain(`Fault ${fault.name}`);
       expect(await count('SELECT 1 FROM app.drivers WHERE user_id = $1::uuid', [user.userId])).toBe(0);
-      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
       expect(await count('SELECT 1 FROM app.audit_logs WHERE request_id = $1::uuid AND action = $2', [failed.requestId, OPERATION])).toBe(0);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'driver.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(0);
       expect(

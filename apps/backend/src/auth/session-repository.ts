@@ -32,7 +32,7 @@ export interface SessionView {
 
 /**
  * A session row read under a row lock (FOR UPDATE or FOR SHARE). It carries the CURRENT active role, read from the
- * locked row, so neither /auth/me nor a Shop command ever acts on the role the guard saw before the transaction
+ * locked row, so neither /client-auth/me nor a Shop command ever acts on the role the guard saw before the transaction
  * began.
  */
 export interface LockedSession {
@@ -177,7 +177,7 @@ export class SessionRepository {
 
   /**
    * A shared row lock on the session, for a reader that must see one coherent state together with the user row
-   * it already holds FOR SHARE (/auth/me). It waits for a writer holding the session FOR UPDATE (role selection,
+   * it already holds FOR SHARE (/client-auth/me). It waits for a writer holding the session FOR UPDATE (context selection,
    * revocation) and lets other FOR SHARE readers through. The caller reads the database clock AFTER this call.
    */
   async lockByIdForShare(context: TransactionContext, sessionId: string): Promise<SharedLockedSession | undefined> {

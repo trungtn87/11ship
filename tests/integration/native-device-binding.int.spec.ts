@@ -513,7 +513,7 @@ describe('native device binding (fixture attestation)', () => {
       const participant = new SessionAuthorizationParticipant(
         new UserRepository(),
         new SessionRepository(),
-        createAccountOriginPolicy({ appEnv: 'test', fixtureModeEnabled: false, allowedPhones: undefined, unverifiedTestModeEnabled: true }),
+        createAccountOriginPolicy({ appEnv: 'test', unverifiedTestModeEnabled: true }),
         new ClientDeviceRepository(),
       );
       const actor = { userId: food.userId, sessionId: await sessionIdOfToken(app.pool, food.token) };
@@ -551,38 +551,17 @@ describe('native device binding (fixture attestation)', () => {
     });
   });
 
-  describe('legacy and unsupported paths', () => {
-    it('the legacy /auth routes issue no native ANDROID session and a legacy token is no native session', async () => {
-      const phone = randomPhone();
-      app.track(phone.normalized);
-      const legacy = await app.call('POST', '/auth/login', { body: { phone: phone.local, password: PASSWORD, device: device('SHIP') } });
-      expect([legacy.status, errorCode(legacy)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
-      const register = await app.call('POST', '/auth/register', {
-        headers: { 'idempotency-key': randomUUID() },
-        body: { phone: phone.local, password: PASSWORD, verification_token: 'x', device: device('FOOD') },
-      });
-      expect([register.status, errorCode(register)]).toEqual([403, 'DEVICE_PROOF_REQUIRED']);
-    });
-
-    it('with the native gate on, legacy login issues no session whatever label the body carries (ANDROID/OTHER, IOS/FOOD, WEB/SHIP), so the proof cannot be sidestepped by relabelling', async () => {
-      const phone = randomPhone();
-      app.track(phone.normalized);
-      for (const [platform, appLabel] of [['ANDROID', 'OTHER'], ['IOS', 'FOOD'], ['WEB', 'SHIP'], ['ANDROID', 'ADMIN_WEB']] as const) {
-        const legacy = await app.call('POST', '/auth/login', {
-          body: { phone: phone.local, password: PASSWORD, device: { device_id: 'relabel-device-1', platform, app: appLabel } },
-        });
-        expect([platform, appLabel, legacy.status, errorCode(legacy)]).toEqual([platform, appLabel, 403, 'DEVICE_PROOF_REQUIRED']);
-      }
-    });
-
+  describe('pre-gate sessions and unsupported paths', () => {
     it('F1: a legacy session minted under another label BEFORE the gate is refused by every module guard once the gate is on (real modules, shared token)', async () => {
       // closedApp has the gate OFF and shares the database: it can still mint the ordinary legacy sessions that existed before the rollout.
       for (const label of [{ platform: 'IOS', app: 'FOOD' }, { platform: 'ANDROID', app: 'OTHER' }]) {
-        const user = await registerUser(closedApp, { device: { device_id: `legacy-${label.platform.toLowerCase()}-0001`, ...label } });
+        const user = await registerUser(closedApp, { device: { device_id: `legacy-${label.platform.toLowerCase()}-0001`, platform: 'WEB', app: 'FOOD' }, unverified: true });
+        // The legacy routes that minted such labels are gone (OD-1); a session of that kind is rebuilt as the rollout left it: the stored label.
+        await closedApp.pool.query('UPDATE app.sessions SET platform = $2, app = $3 WHERE user_id = $1::uuid', [user.userId, label.platform, label.app]);
         const token = user.accessToken;
         const draft = shopProfileBody({ name: `Legacy ${label.platform}` });
         const calls: Array<[string, 'GET' | 'PUT' | 'POST', string, unknown?]> = [
-          ['auth (AuthModule guard)', 'GET', '/auth/me'],
+          ['auth (AuthModule guard)', 'GET', '/client-auth/me'],
           ['onboarding shop read', 'GET', '/onboarding/shop/profile'],
           ['onboarding shop mutation', 'PUT', '/onboarding/shop/profile', draft],
           ['onboarding driver mutation', 'POST', '/onboarding/driver', driverBody()],

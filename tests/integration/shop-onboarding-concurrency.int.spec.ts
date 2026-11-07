@@ -10,6 +10,7 @@ import {
   dataOf,
   errorCode,
   installShopActivateStall,
+  meOf,
   registerUser,
   Registered,
   removeShopActivateStall,
@@ -141,7 +142,7 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
         }
       }
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'shop.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(1);
-      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
+      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(2);
     } finally {
       if (!released) {
         await holder.rollback();
@@ -170,7 +171,7 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
         [user.userId],
       );
       expect(shop.rows[0]?.status).toBe('INCOMPLETE');
-      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+      expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
       expect(await count("SELECT 1 FROM app.outbox_events WHERE event_type = 'shop.onboarded.v1' AND payload->>'user_id' = $1", [user.userId])).toBe(0);
     } finally {
       if (!released) {
@@ -250,7 +251,7 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
   });
 
   describe('/auth/me is one coherent snapshot against a concurrent completion (A2S review addendum)', () => {
-    const me = (token: string): Promise<ApiResponse> => app.call('GET', '/auth/me', { bearer: token });
+    const me = (token: string): Promise<ApiResponse> => meOf(app, token);
     // The statement /auth/me blocks on: the shared lock of the user row.
     const ME_SHARE_LOCK = '%FROM app.users WHERE user_id = $1::uuid FOR SHARE%';
     const meWaiters = (): Promise<number> => rowLockWaitersRunning(app.pool, ME_SHARE_LOCK);
@@ -259,9 +260,9 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
       const { user, version } = await draft();
       // Before anything: the user has an INCOMPLETE draft and no role.
       expect(dataOf(await me(user.accessToken))).toMatchObject({
-        available_roles: [],
+        available_roles: ['CUSTOMER'],
         onboarding: { shop: 'INCOMPLETE', driver: 'NOT_STARTED' },
-        onboarding_required: true,
+        onboarding_required: false,
       });
 
       await removeShopActivateStall(app.pool);
@@ -275,7 +276,7 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
         // user row FOR UPDATE, and nothing it did is visible to anyone else yet.
         await eventually(() => advisoryWaiterExists(app.pool, STALL_KEY), 'the completion stalled inside its write transaction');
         expect(await meWaiters()).toBe(0);
-        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
 
         let meSettled = false;
         const pending = me(user.accessToken).finally(() => {
@@ -287,7 +288,7 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
         expect(meSettled).toBe(false);
         // The completion is still stalled, so /me is waiting for a transaction that has not committed.
         expect(await advisoryWaiterExists(app.pool, STALL_KEY)).toBe(true);
-        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(0);
+        expect(await count('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [user.userId])).toBe(1);
 
         await gate.commit();
         gateOpen = false;
@@ -298,11 +299,11 @@ describe('M01-A2S — Shop onboarding concurrency', () => {
         // The coherent final projection. The impossible mix (shop COMPLETED while SHOP is not yet listed, or
         // the reverse) cannot appear: every read of /me ran after the completion committed.
         const data = dataOf(response);
-        expect(data.available_roles).toEqual(['SHOP']);
+        expect(data.available_roles).toEqual(['CUSTOMER', 'SHOP_OWNER']);
         expect(data.onboarding).toEqual({ shop: 'COMPLETED', driver: 'NOT_STARTED' });
         expect(data.onboarding_required).toBe(false);
-        expect(data.role_selection_required).toBe(true);
-        expect(data.active_role).toBeNull();
+        expect(data.role_selection_required).toBe(false);
+        expect(data.active_role).toBe('CUSTOMER');
         expect(await meWaiters()).toBe(0);
       } finally {
         if (gateOpen) {

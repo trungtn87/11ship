@@ -17,11 +17,10 @@ export const REQUIRED_SECRET_KEYS = [
   'AUTH_OTP_HMAC_SECRET',
   'CRYPTO_ACTIVE_KEY_ID',
   'CRYPTO_KEYRING',
-  // Issue #49 (same-origin Admin web, staging fixtures): origins and phone numbers are entered in the dashboard.
+  // Issue #49 (same-origin Admin web): origins are entered in the dashboard.
   'ADMIN_AUTH_ALLOWED_ORIGINS',
   'ADMIN_ACTIVATION_ORIGIN',
   'ADMIN_RATE_LIMIT_HMAC_KEY',
-  'AUTH_STAGING_ALLOWED_PHONES',
 ];
 
 // Any key that looks like a secret must be sync: false, whatever its name is spelled like.
@@ -102,10 +101,12 @@ export function validateRenderBlueprint(text, { nodeVersion } = {}) {
   expectValue('NODE_ENV', 'production');
   expectValue('HOST', '0.0.0.0');
   expectValue('DB_POOL_MAX', '2');
-  // Issue #49: fixture mode and the same-origin Admin web are how this service starts on staging. The activation of
-  // invited administrators has no OTP adapter on staging (the application refuses to start), so it may not be switched
-  // on here; and no fake/test OTP mode may be set on Render.
-  expectValue('AUTH_STAGING_FIXTURES_ENABLED', 'true');
+  // The staging fixture mode was removed (Owner 2026-11-07): none of its variables may be in the blueprint. The same-origin Admin web
+  // is required; the activation of invited administrators has no OTP adapter on Render, so it may not be switched on here; and no
+  // fake/test OTP mode may be set on Render.
+  for (const key of ['AUTH_STAGING_FIXTURES_ENABLED', 'AUTH_STAGING_ALLOWED_PHONES']) {
+    if (byKey.has(key)) bad(`${key} must not be set (the staging fixture mode was removed)`);
+  }
   expectValue('ADMIN_WEB_STAGING_ENABLED', 'true');
   expectValue('ADMIN_AUTH_ENABLED', 'true');
   for (const key of ['ADMIN_ACTIVATION_ENABLED', 'ADMIN_ACTIVATION_OTP_MODE']) {

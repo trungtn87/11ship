@@ -2,8 +2,6 @@ import { purgeBusinessFinanceOfPhone } from './business-finance-fixtures';
 import { purgeShopDisplayCodes } from './shop-display-fixtures';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { AccountOriginPolicy } from '../../../apps/backend/src/auth/account-origin';
-import { DisabledOtpProvider } from '../../../apps/backend/src/auth/disabled-otp-provider';
 import { FakeOtpProvider } from '../../../apps/backend/src/auth/fake-otp-provider';
 import { ClientDeviceTrust } from '../../../apps/backend/src/client-device/client-device-trust';
 import { unverifiedTestScopeId } from '../../../apps/backend/src/client-auth/client-registration-service';
@@ -20,7 +18,10 @@ import { testPool } from './transaction-fixtures';
 
 export const PASSWORD = 'Correct-Horse-Battery-9';
 export const OTHER_PASSWORD = 'Another-Passw0rd-Entirely';
-export const DEVICE = Object.freeze({ device_id: 'device-test-0001', platform: 'ANDROID', app: 'SHIP11' });
+// Client-auth devices (OD-1: the legacy /auth routes and their SHIP11 device labels are gone). WEB sessions need no native device proof.
+export const DEVICE = Object.freeze({ device_id: 'device-test-0001', platform: 'WEB', app: 'FOOD' });
+export const SHIP_DEVICE = Object.freeze({ device_id: 'device-test-0002', platform: 'WEB', app: 'SHIP' });
+export const CONSENT = Object.freeze({ terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' });
 
 export const TEST_OTP_KEY_BYTES = Buffer.alloc(32, 7);
 
@@ -124,7 +125,6 @@ export async function startAuthApp(
   extra: {
     activeKeyId?: string;
     relaxTimeouts?: boolean;
-    fixturePolicy?: AccountOriginPolicy;
     /** M01.03: configuration fields to override on top of the loaded one (clientAuth, host, appEnv). */
     configOverride?: Partial<AppConfig>;
     /** M01-ANDROID: the FIXTURE device trust (roots, signers, revocation, clock) injected by dependency injection. */
@@ -148,16 +148,14 @@ export async function startAuthApp(
     ...base,
     crypto: fixtureKeyring(extra.activeKeyId ?? 'k1'),
     auth: authTestConfig(authOverrides),
+    // OD-1: every account is created through /client-auth, so the consent pair is configured unless a test passes its own (or clientAuth: undefined).
+    clientAuth: { termsVersion: CONSENT.terms_version, privacyVersion: CONSENT.privacy_version },
     ...(extra.configOverride ?? {}),
   };
   const provider = new FakeOtpProvider();
-  // Issue #49: with a fixture policy the app is bound exactly as staging fixture mode binds it (DisabledOtpProvider + the policy).
   const running = await startApp(config, {
     ...(extra.overrides === undefined ? {} : { overrides: extra.overrides }),
-    auth:
-      extra.fixturePolicy === undefined
-        ? { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) }
-        : { otpProvider: new DisabledOtpProvider(), accountOriginPolicy: extra.fixturePolicy },
+    auth: { otpProvider: provider, ...(extra.deviceTrust === undefined ? {} : { deviceTrust: extra.deviceTrust }) },
   });
   const pool = testPool(loaded.database, { poolMax: 6 });
   const tracked = new Set<string>();
@@ -544,6 +542,8 @@ export function registerBody(
     password: overrides.password ?? PASSWORD,
     verification_token: proofToken,
     device: overrides.device ?? { ...DEVICE },
+    full_name: 'Người dùng thử',
+    consent: { ...CONSENT },
     ...(overrides.extra ?? {}),
   };
 }
@@ -558,20 +558,31 @@ export interface Registered {
   readonly accessToken: string;
 }
 
-/** The whole happy path: OTP, proof, register. Throws unless register answered 201. */
+/** The whole happy path: OTP, proof, POST /client-auth/register. Throws unless it answered 201. FOOD web device unless 'ship' (SHIP web device) or an explicit device. */
 export async function registerUser(
   app: AuthApp,
-  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown> } = {},
+  options: { phone?: Phone; password?: string; key?: string; device?: Record<string, unknown>; ship?: boolean; unverified?: boolean } = {},
 ): Promise<Registered> {
-  const proof = await obtainProof(app, options.phone ?? randomPhone());
+  // unverified: the DISABLED_TEST register mode takes no proof at all (the body must not carry a verification_token).
+  const phone = options.phone ?? randomPhone();
+  if (options.unverified === true) {
+    app.track(phone.normalized);
+  }
+  const proof = options.unverified === true ? { phone, proofToken: '' } : await obtainProof(app, phone);
   const key = options.key ?? randomUUID();
   const password = options.password ?? PASSWORD;
-  const response = await app.call('POST', '/auth/register', {
+  const response = await app.call('POST', '/client-auth/register', {
     headers: { 'idempotency-key': key },
-    body: registerBody(proof.phone, proof.proofToken, {
-      password,
-      ...(options.device === undefined ? {} : { device: options.device }),
-    }),
+    body: (() => {
+      const body = registerBody(proof.phone, proof.proofToken, {
+        password,
+        device: options.device ?? (options.ship === true ? { ...SHIP_DEVICE } : { ...DEVICE }),
+      });
+      if (options.unverified === true) {
+        delete body.verification_token;
+      }
+      return body;
+    })(),
   });
   if (response.status !== 201) {
     throw new Error(`register failed: ${response.status} ${response.text}`);
@@ -588,12 +599,38 @@ export async function registerUser(
   };
 }
 
+/**
+ * An account as the removed legacy register left it: ACTIVE, with a password and NO CUSTOMER role or profile (OD-1: the route is gone,
+ * so the state is rebuilt from a client-auth registration). Its registration session is revoked-free but roleless in effect.
+ */
+export async function registerLegacyUser(app: AuthApp, options: Parameters<typeof registerUser>[1] = {}): Promise<Registered> {
+  const user = await registerUser(app, options);
+  await app.pool.query("DELETE FROM app.user_roles WHERE user_id = $1::uuid AND role = 'CUSTOMER'", [user.userId]);
+  await app.pool.query('DELETE FROM app.customer_profiles WHERE user_id = $1::uuid', [user.userId]);
+  await app.pool.query('UPDATE app.sessions SET active_role = NULL WHERE user_id = $1::uuid', [user.userId]);
+  return user;
+}
+
+/** POST /client-auth/login with a fresh Idempotency-Key. Default device: the FOOD web device. */
 export async function loginUser(
   app: AuthApp,
   user: { phone: Phone; password: string },
   device: Record<string, unknown> = { ...DEVICE },
 ): Promise<ApiResponse> {
-  return app.call('POST', '/auth/login', { body: { phone: user.phone.local, password: user.password, device } });
+  return app.call('POST', '/client-auth/login', {
+    headers: { 'idempotency-key': randomUUID() },
+    body: { phone: user.phone.local, password: user.password, device },
+  });
+}
+
+/** GET /client-auth/me (the identity of the session behind the token). */
+export function meOf(app: AuthApp, token: string): Promise<ApiResponse> {
+  return app.call('GET', '/client-auth/me', { bearer: token });
+}
+
+/** POST /client-auth/context: wear a public context (CUSTOMER, SHOP_OWNER, DRIVER) on the session. */
+export function selectContext(app: AuthApp, token: string, context: string): Promise<ApiResponse> {
+  return app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context } });
 }
 
 /** A service area fixture with a unique code. Removed by purgeTestServiceAreas when the app closes. */
@@ -757,52 +794,11 @@ export async function proofIdOfToken(pool: Pool, proofToken: string): Promise<st
   return row.proof_id;
 }
 
-export interface RegisterRecord {
-  record_id: string;
-  response_status: number;
-  replay_guard: Record<string, unknown>;
-  replay_ciphertext: Buffer | null;
-}
-
-export async function registerRecordsOf(pool: Pool, proofId: string): Promise<RegisterRecord[]> {
-  const result = await pool.query<RegisterRecord>(
-    `SELECT record_id, response_status, replay_guard, replay_ciphertext
-       FROM app.idempotency_records
-      WHERE scope_type = 'verification_proof' AND scope_id = $1 AND operation_id = 'auth.register.v1'`,
-    [proofId],
-  );
-  return result.rows;
-}
-
-/**
- * Moves a register idempotency record back in time (all three instants together, CHECK-safe) until its
- * replay window, or its whole dedupe window, has just elapsed. No sleeping.
- */
-export async function ageRegisterRecord(pool: Pool, proofId: string, window: 'replay' | 'dedupe'): Promise<void> {
-  const column = window === 'replay' ? 'replay_expires_at' : 'dedupe_expires_at';
-  const result = await pool.query(
-    `UPDATE app.idempotency_records r
-        SET created_at = r.created_at - s.shift,
-            replay_expires_at = r.replay_expires_at - s.shift,
-            dedupe_expires_at = r.dedupe_expires_at - s.shift
-       FROM (
-         SELECT record_id, make_interval(secs => extract(epoch FROM (${column} - created_at)) + 10) AS shift
-           FROM app.idempotency_records
-          WHERE scope_type = 'verification_proof' AND scope_id = $1 AND operation_id = 'auth.register.v1'
-       ) s
-      WHERE r.record_id = s.record_id`,
-    [proofId],
-  );
-  if (result.rowCount !== 1) {
-    throw new Error('register record to age was not found');
-  }
-}
-
 /** Installs a stall: a row trigger on app.audit_logs that waits for an advisory lock a test holds. */
 export async function installRegisterAuditStall(
   pool: Pool,
   key: readonly [number, number],
-  action = 'auth.register.v1',
+  action: string,
 ): Promise<void> {
   await pool.query(
     `CREATE FUNCTION app.test_stall_register_audit() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -888,14 +884,6 @@ export async function advisoryWaiterExists(pool: Pool, key: readonly [number, nu
     [key[0], key[1]],
   );
   return (result.rowCount ?? 0) > 0;
-}
-
-/** Number of backends currently waiting for a transaction id (a row lock or a unique-index conflict). */
-export async function transactionWaiters(pool: Pool): Promise<number> {
-  const result = await pool.query<{ n: number }>(
-    "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted",
-  );
-  return result.rows[0]?.n ?? 0;
 }
 
 /** Fault injection: a trigger that raises a non-AppError server error for matching rows. */

@@ -405,7 +405,9 @@ describe('M10 — food orders', () => {
     expect(refused(await asShop('POST', `/shop/me/orders/${id}/confirm`, { expected_version: 1 }, undefined, otherShop))).toEqual({ status: 404, code: 'ORDER_NOT_FOUND' });
     // A customer is not a shop and a shop owner is not a customer of the shop routes.
     expect(refused(await asCustomer(alice, 'GET', '/shop/me/orders')).status).toBeGreaterThanOrEqual(403);
-    expect(refused(await call(shop.token, 'GET', '/customers/me/orders')).status).toBeGreaterThanOrEqual(401);
+    // OD-1 (N): every client-auth account holds CUSTOMER, so a shop owner reads the customer route too, but only its OWN (empty) list.
+    const ownerAsCustomer = await call(shop.token, 'GET', '/customers/me/orders');
+    expect([ownerAsCustomer.status, (ok(ownerAsCustomer).orders as Json[]).length]).toEqual([200, 0]);
     expect((await app.call('GET', '/customers/me/orders', {})).status).toBe(401);
     // The lists carry only the caller's own Orders.
     const mine = ok(await asCustomer(bob, 'GET', '/customers/me/orders?scope=processing')).orders as Json[];
@@ -1367,14 +1369,14 @@ describe('M10 — food orders', () => {
     // staff-style session the other tests use is restored at the end.
     const food = await app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: shop.user.phone.local, password: shop.user.password, device: { device_id: 'web-food-m10-link', platform: 'WEB', app: 'FOOD' } } });
     const foodToken = String(ok(food).access_token);
-    ok(await app.call('POST', '/auth/role/select', { bearer: foodToken, body: { role: 'SHOP' } }));
+    ok(await app.call('POST', '/client-auth/context', { bearer: foodToken, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } }));
     shop = { ...shop, token: foodToken };
     try {
       await everyNoticeOpensTheOrder(s, foodToken);
     } finally {
       const back = await loginUser(app, shop.user);
       const token = String(ok(back).access_token);
-      ok(await app.call('POST', '/auth/role/select', { bearer: token, body: { role: 'SHOP' } }));
+      ok(await app.call('POST', '/client-auth/context', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { context: 'SHOP_OWNER' } }));
       shop = { ...shop, token, sessionId: await sessionIdOfToken(app.pool, token) };
     }
   });
