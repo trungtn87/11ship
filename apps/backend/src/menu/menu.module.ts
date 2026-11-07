@@ -12,6 +12,7 @@ import { TransactionModule } from '../transaction/transaction.module';
 import { DiscoveryController, MenuOwnerController, MenuPublicController } from './menu.controller';
 import { DiscoveryService } from './discovery-service';
 import { MenuRepository } from './menu-repository';
+import { MenuImageJanitor, MenuImageJanitorRuntime } from './menu-image-janitor';
 import { MenuService } from './menu-service';
 
 /**
@@ -26,9 +27,9 @@ export class MenuModule {
       module: MenuModule,
       imports: [auth, FeedbackReadModule, ShopModule, ShopSetupCoreModule, MenuReadinessModule, OrdersCoreModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [MenuOwnerController, MenuPublicController, DiscoveryController],
-      providers: [ShopEntitlements,MenuService, MenuRepository, DiscoveryService],
+      providers: [ShopEntitlements, MenuService, MenuRepository, DiscoveryService, MenuImageJanitor, MenuImageJanitorRuntime],
       // The dish reads an Order needs (M10) go through the owner of the tables.
-      exports: [MenuRepository],
+      exports: [MenuRepository, MenuImageJanitor],
     };
   }
 }

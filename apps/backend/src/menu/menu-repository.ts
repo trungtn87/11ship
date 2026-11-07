@@ -143,6 +143,27 @@ export class MenuRepository {
     return toSafeInteger(result.rows[0]?.n);
   }
 
+  /**
+   * OD-2: removes pictures that were uploaded and never attached to a dish (no menu_items row points at them), 24 hours after the upload.
+   * A picture a dish uses is protected twice: the NOT EXISTS here and the menu_items_image_fk foreign key; a picture a dish save is
+   * attaching right now is locked FOR SHARE by that save, so SKIP LOCKED leaves it alone.
+   */
+  async purgeOrphanImages(context: TransactionContext, limit: number): Promise<{ count: number; bytes: number }> {
+    const result = await context.query<{ n: string; bytes: string | null }>(
+      `WITH doomed AS (
+         SELECT i.image_id FROM app.menu_images i
+          WHERE i.created_at < clock_timestamp() - interval '24 hours'
+            AND NOT EXISTS (SELECT 1 FROM app.menu_items m WHERE m.image_id = i.image_id)
+          ORDER BY i.created_at LIMIT $1::int FOR UPDATE OF i SKIP LOCKED
+       ), gone AS (
+         DELETE FROM app.menu_images g USING doomed d WHERE g.image_id = d.image_id RETURNING g.byte_size
+       )
+       SELECT count(*)::text AS n, sum(byte_size)::text AS bytes FROM gone`,
+      [limit],
+    );
+    return { count: toSafeInteger(result.rows[0]?.n), bytes: toSafeInteger(result.rows[0]?.bytes ?? '0') };
+  }
+
   async countImages(context: TransactionContext, shopId: string): Promise<number> {
     const result = await context.query<{ n: string }>(
       `SELECT count(*) AS n FROM app.menu_images WHERE shop_id = $1::uuid`,

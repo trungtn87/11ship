@@ -83,12 +83,16 @@ void main() {
     await t.menu.delete('i1', expectedVersion: 4, key: 'k5');
     expect(jsonDecode(t.api.to('POST', '/v1/shop/me/menu/items/i1/delete').single.body), <String, Object?>{'expected_version': 4});
 
-    final ({String ref, String url}) up = await t.menu.uploadImage(PickedImage(bytes: Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 1, 2, 3, 4]), contentType: 'image/jpeg'));
+    final PickedImage picked = PickedImage(bytes: Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 1, 2, 3, 4]), contentType: 'image/jpeg');
+    final ({String ref, String url}) up = await t.menu.uploadImage(picked);
     expect(up.ref, 'img-9');
     expect(up.url, 'https://api.example.test/v1/menu-images/img-9');
     final Map<String, Object?> sent = jsonDecode(t.api.to('POST', '/v1/shop/me/menu/images').single.body) as Map<String, Object?>;
     expect(sent['content_type'], 'image/jpeg');
     expect(base64Decode(sent['data_base64']! as String), <int>[0xff, 0xd8, 0xff, 1, 2, 3, 4]);
+    // OD-2: the upload carries the key of the picked picture; the same object retried keeps it, a new pick gets another.
+    expect(t.api.to('POST', '/v1/shop/me/menu/images').single.headers['idempotency-key'], picked.idempotencyKey);
+    expect(PickedImage(bytes: picked.bytes, contentType: picked.contentType).idempotencyKey, isNot(picked.idempotencyKey));
   });
 
   test('refusals keep their code and kind: conflict, dish gone, shop disabled; a lost answer is an unknown outcome', () async {

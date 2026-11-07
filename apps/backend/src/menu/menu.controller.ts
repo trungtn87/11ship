@@ -35,8 +35,13 @@ export class MenuOwnerController {
   }
 
   @Post('images')
-  async uploadImage(@Body() body: unknown, @Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: { status(code: number): unknown }) {
-    const outcome = await this.menu.uploadImage(actorOf(this.#principal(request)), parseImageUploadBody(body));
+  async uploadImage(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: Key,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: { status(code: number): unknown },
+  ) {
+    const outcome = await this.menu.uploadImage(actorOf(this.#principal(request)), parseImageUploadBody(body), key);
     response.status(outcome.status);
     return { data: outcome.payload };
   }

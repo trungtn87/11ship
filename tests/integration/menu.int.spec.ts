@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { MenuImageJanitor } from '../../apps/backend/src/menu/menu-image-janitor';
 import { AuthApp, createServiceArea, dataOf, errorCode, startAuthApp } from './support/auth-fixtures';
 import {
   createCategory,
@@ -270,6 +271,61 @@ describe('M02 — menu and public shop view', () => {
       const audits = await app.pool.query(`SELECT count(*)::int AS n FROM app.audit_logs WHERE resource_type = 'menu_item' AND resource_id = $1`, [id]);
       const events = await app.pool.query(`SELECT count(*)::int AS n FROM app.outbox_events WHERE resource_type = 'menu_item' AND resource_id = $1`, [id]);
       expect([audits.rows[0].n, events.rows[0].n]).toEqual([1, 1]);
+    });
+  });
+
+  describe('OD-2 — picture upload idempotency and the orphan janitor', () => {
+    const count = async (shopId: string): Promise<number> =>
+      Number((await app.pool.query<{ n: string }>('SELECT count(*)::text AS n FROM app.menu_images WHERE shop_id = $1::uuid', [shopId])).rows[0]?.n);
+    const body = (extra = 8) => ({ content_type: 'image/jpeg', data_base64: jpegBase64(extra) });
+
+    it('a retry with the same key and bytes returns the first picture and stores nothing more; other bytes under the key are refused; a new key stores a new picture; no key is 400', async () => {
+      const o = await owner();
+      const key = randomUUID();
+      const first = await uploadImage(app, o.token, body(), key);
+      expect(first.status).toBe(201);
+      const retry = await uploadImage(app, o.token, body(), key);
+      expect([retry.status, dataOf(retry)]).toEqual([201, dataOf(first)]);
+      expect(await count(o.shopId)).toBe(1);
+
+      const other = await uploadImage(app, o.token, body(16), key);
+      expect([other.status, errorCode(other)]).toEqual([409, 'IDEMPOTENCY_KEY_REUSED']);
+      expect(await count(o.shopId)).toBe(1);
+
+      const fresh = await uploadImage(app, o.token, body(), randomUUID());
+      expect(fresh.status).toBe(201);
+      expect(dataOf(fresh).image_id).not.toBe(dataOf(first).image_id);
+      expect(await count(o.shopId)).toBe(2);
+
+      const missing = await uploadImage(app, o.token, body(), null);
+      expect([missing.status, errorCode(missing)]).toEqual([400, 'IDEMPOTENCY_KEY_REQUIRED']);
+      expect(await count(o.shopId)).toBe(2);
+    });
+
+    it('two concurrent uploads with one key store one picture', async () => {
+      const o = await owner();
+      const key = randomUUID();
+      const [a, b] = await Promise.all([uploadImage(app, o.token, body(), key), uploadImage(app, o.token, body(), key)]);
+      expect([a.status, b.status]).toEqual([201, 201]);
+      expect(dataOf(a)).toEqual(dataOf(b));
+      expect(await count(o.shopId)).toBe(1);
+    });
+
+    it('the janitor removes an unattached picture older than 24 h and keeps a fresh one and every picture a dish uses', async () => {
+      const o = await owner();
+      const stale = String(dataOf(await uploadImage(app, o.token, body(20))).image_id);
+      const fresh = String(dataOf(await uploadImage(app, o.token, body(21))).image_id);
+      const used = String(dataOf(await uploadImage(app, o.token, body(22))).image_id);
+      expect((await createItem(app, o.token, dish(active, { image_id: used }))).status).toBe(201);
+      await app.pool.query("UPDATE app.menu_images SET created_at = now() - interval '25 hours' WHERE image_id = ANY($1::uuid[])", [[stale, used]]);
+      const alive = async (id: string): Promise<boolean> => (await app.pool.query('SELECT 1 FROM app.menu_images WHERE image_id = $1::uuid', [id])).rowCount === 1;
+
+      const janitor = app.running.app.get(MenuImageJanitor);
+      expect((await janitor.runOnce()).count).toBeGreaterThanOrEqual(1);
+      expect([await alive(stale), await alive(fresh), await alive(used)]).toEqual([false, true, true]);
+      expect((await janitor.runOnce()).count).toBe(0);
+      // The place is free again: the shop's count fell by the removed picture.
+      expect(await count(o.shopId)).toBe(2);
     });
   });
 

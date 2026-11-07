@@ -61,6 +61,7 @@ export const OPERATIONS = {
   reviewShipperByShop: 'review.shipper.shop.create.v1',
   reply: 'review.reply.save.v1',
   complaintCreate: 'complaint.create.v1',
+  complaintAttachment: 'complaint.attachment.upload.v1',
   complaintSupplement: 'complaint.supplement.v1',
   complaintReconsider: 'complaint.reconsider.v1',
   adminAction: 'admin.feedback.action.v1',

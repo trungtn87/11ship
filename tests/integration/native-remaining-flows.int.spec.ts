@@ -118,7 +118,7 @@ describe('native remaining flows (fixture attestation)', () => {
       });
       expect(profile.response.status).toBe(200);
 
-      const image = await native.signedCall('FOOD', 'POST', '/shop/me/menu/images', { bearer: token, body: { content_type: 'image/jpeg', data_base64: jpegBase64(300_000) }, });
+      const image = await native.signedCall('FOOD', 'POST', '/shop/me/menu/images', { bearer: token, body: { content_type: 'image/jpeg', data_base64: jpegBase64(300_000) }, idempotencyKey: randomUUID() });
       expect(image.response.status).toBe(201);
       const created = await native.signedCall('FOOD', 'POST', '/shop/me/menu/items', {
         bearer: token,

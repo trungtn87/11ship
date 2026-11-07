@@ -81,7 +81,7 @@ class HttpMenuApi implements MenuApi {
 
   @override
   Future<({String ref, String url})> uploadImage(PickedImage image) async {
-    final Map<String, Object?> data = _obj(await _call('POST', '/v1/shop/me/menu/images', body: <String, Object?>{'content_type': image.contentType, 'data_base64': base64Encode(image.bytes)}, ok: const <int>{201}));
+    final Map<String, Object?> data = _obj(await _call('POST', '/v1/shop/me/menu/images', body: <String, Object?>{'content_type': image.contentType, 'data_base64': base64Encode(image.bytes)}, key: image.idempotencyKey, ok: const <int>{201}));
     final String id = _str(data['image_id']);
     return (ref: id, url: imageUrlOf(base, id));
   }

@@ -44,7 +44,7 @@ const paths = (suffix: string): string[] => FAMILIES.map((family) => (suffix ===
 /**
  * Complaints for the three apps (M11.02): the same six routes under /customers/me/complaints, /shop/me/complaints and /driver/complaints. Identity is the
  * principal; the only identifiers in a path are the complaint and the picture, both resolved against what the caller may read. Every write takes an
- * Idempotency-Key (the picture upload is the one exception, like the menu pictures: a repeat only adds one unattached picture, bounded per account).
+ * Idempotency-Key, the picture upload included (OD-2: a retry returns the picture stored the first time).
  */
 @UseGuards(SessionAuthGuard)
 @Controller()
@@ -53,8 +53,9 @@ export class ComplaintController {
 
   @Post(paths('attachments'))
   @HttpCode(201)
-  async upload(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    return { data: await this.complaints.upload(principalOf(request), roleOf(request), parseAttachmentUpload(body)) };
+  async upload(@Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    const outcome = await this.complaints.upload(principalOf(request), roleOf(request), parseAttachmentUpload(body), key, requestIdOf(request));
+    return { data: outcome.payload };
   }
 
   @Get(paths('attachments/:attachment_id'))

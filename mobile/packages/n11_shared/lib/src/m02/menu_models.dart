@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../account/api_client.dart' show newIdempotencyKey;
+
 import 'schedule.dart';
 import 'shop_contact.dart';
 
@@ -81,10 +83,13 @@ class MenuSnapshot {
 /// A picture chosen on the phone and its upload result.
 @immutable
 class PickedImage {
-  const PickedImage({required this.bytes, required this.contentType});
+  /// OD-2: [idempotencyKey] names THIS picked picture. It is created with the object, so every retry of its upload (the same object) carries
+  /// the same key and the server stores it once; a picture picked or cropped again is a new object and a new key.
+  PickedImage({required this.bytes, required this.contentType, String? idempotencyKey}) : idempotencyKey = idempotencyKey ?? newIdempotencyKey();
 
   final Uint8List bytes;
   final String contentType;
+  final String idempotencyKey;
 }
 
 /// The fields of a dish as they are sent. [imageRef] is what an earlier upload returned (null = no picture).

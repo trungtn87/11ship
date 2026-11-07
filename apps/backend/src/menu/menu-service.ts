@@ -1,6 +1,6 @@
 import { ShopEntitlements } from '../shop-entitlements/shop-entitlements';
 import { businessHoursRefreshMs } from '../shop/business-hours-refresh';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { OrderSalesReader } from '../orders/order-sales-reader';
 import { AuditWriter } from '../audit/audit-writer';
@@ -23,6 +23,7 @@ import {
   MENU_EVENT_SCHEMA_VERSION,
   MENU_IMAGES_MAX_PER_SHOP,
   MENU_ITEM_CHANGED_EVENT_TYPE,
+  MENU_IMAGE_UPLOAD_OPERATION_ID,
   MENU_ITEM_CREATE_OPERATION_ID,
   MENU_ITEM_DELETE_OPERATION_ID,
   MENU_ITEM_HIDE_OPERATION_ID,
@@ -177,20 +178,39 @@ export class MenuService {
   // ---- picture upload ---------------------------------------------------------------------------------------------
 
   /**
-   * POST /v1/shop/me/menu/images. Not idempotent on purpose: a repeated upload only adds one more unreferenced picture (bounded by
-   * the per-shop cap) and the dish save that points at it has its own key. The picture belongs to the shop of the caller.
+   * POST /v1/shop/me/menu/images (OD-2). One Idempotency-Key per picture the owner chose: a retry returns the metadata of the picture
+   * stored the first time and adds nothing, so it does not take another place of the per-shop limit. The logical request is the SHA-256 of
+   * the bytes, their type and size. A picture that is uploaded and never attached to a dish is removed by MenuImageJanitor after 24 hours.
    */
-  async uploadImage(actor: SessionActor, input: ImageUploadInput): Promise<MenuOutcome> {
-    return this.transactions.withTransaction(async (context) => {
-      await this.sessionAuth.lockAuthorizedShopActor(context, actor);
-      const shop = await this.#lockWritableShop(context, actor.userId);
-      if ((await this.menu.countImages(context, shop.shopId)) >= MENU_IMAGES_MAX_PER_SHOP) {
-        throw new AppError('MENU_LIMIT_REACHED');
-      }
-      const imageId = randomUUID();
-      await this.menu.insertImage(context, imageId, shop.shopId, input.contentType, input.bytes);
-      return { status: 201, payload: { image_id: imageId, content_type: input.contentType, byte_size: input.bytes.length } };
-    });
+  async uploadImage(actor: SessionActor, input: ImageUploadInput, idempotencyKey: string | readonly string[] | undefined): Promise<MenuOutcome> {
+    return this.executor.execute(
+      {
+        scopeType: MENU_SCOPE_TYPE,
+        scopeId: actor.userId,
+        operationId: MENU_IMAGE_UPLOAD_OPERATION_ID,
+        idempotencyKey,
+        logicalRequest: {
+          content_type: input.contentType,
+          byte_size: input.bytes.length,
+          sha256: createHash('sha256').update(input.bytes).digest('hex'),
+        },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, actor) },
+      },
+      async (context) => {
+        await this.sessionAuth.lockAuthorizedShopActor(context, actor);
+        const shop = await this.#lockWritableShop(context, actor.userId);
+        if ((await this.menu.countImages(context, shop.shopId)) >= MENU_IMAGES_MAX_PER_SHOP) {
+          throw new AppError('MENU_LIMIT_REACHED');
+        }
+        const imageId = randomUUID();
+        await this.menu.insertImage(context, imageId, shop.shopId, input.contentType, input.bytes);
+        return {
+          status: 201,
+          replayGuard: guardOf(actor.userId, shop.shopId),
+          payload: { image_id: imageId, content_type: input.contentType, byte_size: input.bytes.length },
+        };
+      },
+    );
   }
 
   // ---- dish mutations ---------------------------------------------------------------------------------------------
