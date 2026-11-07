@@ -51,8 +51,8 @@ export class SessionService {
     if (view === undefined) {
       throw new AppError('SESSION_INVALID');
     }
-    // Account origin policy: an administration account has no application session, a fixture outside staging / fixture
-    // mode / the allowlist, or a verified account while the fixture mode is on, is simply not a valid session. Decided
+    // Account origin policy: an administration account has no application session, and neither does a legacy STAGING_FIXTURE row
+    // (that mode was removed), so each is simply not a valid session. Decided
     // first, so the answer cannot reveal which of those it was.
     if (!this.policy.allows({ accountOrigin: view.accountOrigin, phoneNormalized: view.phoneNormalized })) {
       throw new AppError('SESSION_INVALID');

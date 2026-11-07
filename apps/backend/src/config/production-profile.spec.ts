@@ -109,14 +109,18 @@ describe('production profile (APP_ENV=production, loopback bind)', () => {
     expect(invalidOf({ ...production, APP_ENV: 'staging' })).toEqual(expect.arrayContaining(['CLIENT_AUTH_ANDROID_ENABLED']));
   });
 
-  it('refuses every test, fixture and bypass switch in production', () => {
+  it('ignores the removed staging fixture variables: leftovers neither stop startup nor enable anything', () => {
+    const result = loadConfig({ ...production, AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: '["+84912345678"]' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses every test and bypass switch in production', () => {
     for (const extra of [
       { CLIENT_AUTH_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' },
       { ACCOUNT_RECOVERY_MODE: 'DISABLED_TEST' },
       { ADMIN_ACTIVATION_PHONE_VERIFICATION_MODE: 'DISABLED_TEST' },
       { ADMIN_ACTIVATION_OTP_MODE: 'FAKE' },
       { ADMIN_ACTIVATION_OTP_MODE: 'TEST_DISPLAY' },
-      { AUTH_STAGING_FIXTURES_ENABLED: 'true', AUTH_STAGING_ALLOWED_PHONES: '["+84912345678"]' },
     ]) {
       const names = invalidOf({ ...production, ...extra });
       expect(names.length).toBeGreaterThan(0);

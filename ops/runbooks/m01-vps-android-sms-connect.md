@@ -32,7 +32,7 @@ Interpretation: local 000 = process down/port mismatch, local 503 = backend up b
 - Freeze a reviewed, CI-passing source SHA after integrating #87's deployment package, #103 and this staging patch. Do **not** build/deploy arbitrary unreviewed branch heads or copy a local SQLite database.
 - Follow the self-hosted PostgreSQL 17 migration flow with a separate migration credential, verified backup and operator confirmation. Apply the new SMS queue migration **once** using the approved migration tool, never manually with the runtime DB login.
 - Back up `/etc/11ship/staging.env`, certificates and the current release pointer; preserve secrets. Keep `HOST=127.0.0.1`, `APP_ENV=staging`, `NODE_ENV=production`, systemd hardening and nginx TLS. Do not move Node to `0.0.0.0`.
-- Remove `AUTH_STAGING_FIXTURES_ENABLED` and `AUTH_STAGING_ALLOWED_PHONES` **together** for real SMS registration; fixture mode is incompatible with the real gateway. Evaluate existing seeded fixture accounts separately. Do not turn on `DISABLED_TEST`, `TEST_INBOX`, fake OTP or `reset-test` on this public server.
+- The fixture mode no longer exists; `AUTH_STAGING_FIXTURES_ENABLED` and `AUTH_STAGING_ALLOWED_PHONES` are ignored if still set (delete them from the env file for tidiness). Existing seeded fixture accounts are never served; evaluate them separately. Do not turn on `DISABLED_TEST`, `TEST_INBOX`, fake OTP or `reset-test` on this public server.
 - A complete, approved terms/privacy text and **separate staging identifiers** are prerequisites to opening registration. The existing `test-*` consent pair is prohibited in staging.
 
 ## 3. Staging-only settings (names and safe, non-secret examples)
@@ -61,7 +61,7 @@ The two `staging-*-v1` identifiers above are **placeholders, not evidence of Own
 
 Also configure the existing runtime DB TLS settings, encryption keyring and OTP HMAC secret; the SMS runbook `ops/runbooks/sms-gateway.md` describes SMS allowlist, cap, pairing and kill switch. Credentials, phone allowlist and encryption keys belong only on the VPS private environment, **not in GitHub or APK binaries**.
 
-The staging exception in this branch refuses startup on insecure/mismatched combinations: without loopback binding, real gateway, REQUIRED OTP, no fixtures, approved consent opt-in, or pinned Android trust. **Production Android remains disabled.**
+The staging exception in this branch refuses startup on insecure/mismatched combinations: without loopback binding, real gateway, REQUIRED OTP, approved consent opt-in, or pinned Android trust. **Production Android remains disabled.**
 
 ## 4. Bring up gateway and clients in order
 

@@ -347,7 +347,7 @@ Run from a controlled machine, never from Render, never at build or start.
 
 1. Dashboard → New → Blueprint → select the repo; review the plan (one Free web service).
 2. Enter secret values: `DATABASE_URL` (runtime role), `DB_SSL_CA`, `AUTH_OTP_HMAC_SECRET`, `CRYPTO_ACTIVE_KEY_ID`,
-   `CRYPTO_KEYRING`, `ADMIN_RATE_LIMIT_HMAC_KEY`, `AUTH_STAGING_ALLOWED_PHONES`, `ADMIN_AUTH_ALLOWED_ORIGINS` and
+   `CRYPTO_KEYRING`, `ADMIN_RATE_LIMIT_HMAC_KEY`, `ADMIN_AUTH_ALLOWED_ORIGINS` and
    `ADMIN_ACTIVATION_ORIGIN` (§8, §9). Never the migration credential.
 3. Manual deploy of the exact commit whose migrations were applied in §4.
 4. Success = `/v1/health/ready` returns 200 (database reachable over verified TLS). 503 means the database is not
@@ -386,7 +386,7 @@ real services). Each must be confirmed in D2/D4 or at first manual deploy:
 
 ## 8. Staging fixtures (REMOVED)
 
-Removed on 2026-11-07 (Owner decision, PR #313): the staging fixture mode, its seed command and the `AUTH_STAGING_*` variables no longer exist. Staging serves real accounts only, with OTP through the SMS gateway. Setting `AUTH_STAGING_FIXTURES_ENABLED=true` now stops startup naming that variable. Existing `STAGING_FIXTURE` rows (if any) stay in the database, are never served, and are NOT deleted by this change; the Owner decides when to remove them (check: `SELECT count(*) FROM app.users WHERE account_origin = 'STAGING_FIXTURE'`).
+Removed on 2026-11-07 (Owner decision, PR #313): the staging fixture mode, its seed command and the `AUTH_STAGING_*` variables no longer exist. Staging serves real accounts only, with OTP through the SMS gateway. A leftover `AUTH_STAGING_*` variable is ignored (it does not stop startup). Existing `STAGING_FIXTURE` rows (if any) stay in the database, are never served, and are NOT deleted by this change; the Owner decides when to remove them (check: `SELECT count(*) FROM app.users WHERE account_origin = 'STAGING_FIXTURE'`).
 
 ## 9. Admin web on the same origin (issue #49, from PR #42)
 

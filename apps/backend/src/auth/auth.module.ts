@@ -56,8 +56,7 @@ export interface AuthModuleOptions {
   readonly otpProvider: OtpProvider | SmsGatewayBinding;
   /**
    * Test harness only (M00-D2): an account origin policy to use instead of the one derived from the validated
-   * configuration. The factory createAccountOriginPolicy still refuses fixtures outside APP_ENV=staging, so this
-   * cannot open production. main.ts never sets it.
+   * configuration. main.ts never sets it.
    */
   readonly accountOriginPolicy?: AccountOriginPolicy;
   /**
@@ -101,7 +100,7 @@ export class AuthModule {
         isSmsGatewayBinding(options.otpProvider)
           ? { provide: OTP_PROVIDER, useExisting: SmsGatewayOtpProvider }
           : { provide: OTP_PROVIDER, useValue: options.otpProvider },
-        // The account origin policy comes from the validated configuration (APP_ENV, fixture mode, allowlist).
+        // The account origin policy comes from the validated configuration (APP_ENV, the no-proof test mode).
         options.accountOriginPolicy === undefined
           ? {
               provide: ACCOUNT_ORIGIN_POLICY,
