@@ -307,8 +307,8 @@ class HttpCustomerDeliverySource extends CustomerDeliverySource {
       _delivery(await _call(session, 'POST', _path(id, '/fee/counter-reject'), body: <String, Object?>{'expected_version': expectedVersion}, key: key));
 
   @override
-  Future<TrackingLinkResult> createTrackingLink(String id) async {
-    final Object? data = await _call(session, 'POST', _path(id, '/tracking-link'), ok: const <int>{201});
+  Future<TrackingLinkResult> createTrackingLink(String id, {required String key}) async {
+    final Object? data = await _call(session, 'POST', _path(id, '/tracking-link'), key: key, ok: const <int>{201});
     return TrackingLinkResult.fromJson(data);
   }
 

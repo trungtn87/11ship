@@ -566,7 +566,7 @@ class SampleCustomerDeliverySource extends CustomerDeliverySource {
   }
 
   @override
-  Future<TrackingLinkResult> createTrackingLink(String id) async {
+  Future<TrackingLinkResult> createTrackingLink(String id, {required String key}) async {
     _find(id);
     final TrackingLinkResult res = TrackingLinkResult(
       trackingId: 'trk-$id',

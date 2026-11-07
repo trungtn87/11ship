@@ -444,14 +444,39 @@ export class DeliveryCustomerService {
 
   // ---- tracking link management ----------------------------------------------------------------------------------------------
 
-  async createTrackingLink(principal: AuthPrincipal, deliveryId: string, baseUrl?: string): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
+  /**
+   * OD-2: one Idempotency-Key per user action. A retry returns the link issued the first time (the replay store is encrypted and
+   * expires with its TTL; the payload carries the token URL, like the first answer did) and revokes nothing; a NEW key is a deliberate
+   * new link and revokes the previous one as before.
+   */
+  async createTrackingLink(
+    principal: AuthPrincipal,
+    deliveryId: string,
+    key: string | readonly string[] | undefined,
+    baseUrl?: string,
+  ): Promise<IdempotentOutcome> {
+    return this.executor.execute(
+      {
+        scopeType: DELIVERY_SCOPE_TYPE,
+        scopeId: principal.userId,
+        operationId: OPERATIONS.customerTrackingLink,
+        idempotencyKey: key,
+        logicalRequest: { delivery_id: deliveryId },
+        replay: this.#replay(principal),
+      },
+      async (context) => {
       const delivery = await this.deliveries.findOfCustomer(context, deliveryId, principal.userId);
       if (delivery === undefined) {
         throw new AppError('DELIVERY_NOT_FOUND');
       }
 
-      const ended = ['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(delivery.state);
+      // Two requests with DIFFERENT keys for one delivery must not both leave a live link: serialize them on the delivery row
+      // before anything is read, revoked or inserted, and read the state as it is after the lock.
+      const locked = await this.deliveries.lockById(context, deliveryId);
+      if (locked === undefined) {
+        throw new AppError('DELIVERY_NOT_FOUND');
+      }
+      const ended = ['completed', 'failed', 'cancelled_by_merchant', 'cancelled_by_system', 'search_stopped'].includes(locked.state);
       if (ended) {
         throw new AppError('DELIVERY_STATE_CONFLICT');
       }
@@ -475,12 +500,17 @@ export class DeliveryCustomerService {
       const trackingUrl = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/track/${token}` : `/track/${token}`;
 
       return {
-        tracking_id: trackingId,
-        token,
-        tracking_url: trackingUrl,
-        share_location: false,
+        status: 201,
+        replayGuard: { user_id: principal.userId },
+        payload: {
+          tracking_id: trackingId,
+          token,
+          tracking_url: trackingUrl,
+          share_location: false,
+        },
       };
-    });
+      },
+    );
   }
 
   async getTrackingLinkStatus(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
