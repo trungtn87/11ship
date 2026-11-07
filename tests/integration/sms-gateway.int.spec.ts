@@ -1124,6 +1124,9 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
   });
 
   describe('OD-2 item 5: SMS jobs/claim idempotency and lost response protection', () => {
+    beforeAll(async () => {
+      await wipeQueue();
+    });
     it('(a) lost claim response retry returns the exact same job and attempt_id, and does not claim the next queued job', async () => {
       const phone1 = randomPhone();
       const phone2 = randomPhone();
@@ -1203,6 +1206,8 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
       expect(dataOf(pausedRes).job).toBeNull();
 
       await ack(job, 'SENT');
+      await ctl('revoke', '--device-id', otherDevice.deviceId);
+      await heartbeat(device.token, { sms_permission: true, paused: false });
     });
 
     it('(c) concurrent claims with the same claim_request_id create only one attempt and return the same job', async () => {
@@ -1258,7 +1263,7 @@ describe('issue #102 SMS gateway: queue, gateway API, REGISTER and RESET_PASSWOR
 
       // Expire the lease in the database and run sweep
       await app.pool.query(
-        `UPDATE app.sms_jobs SET lease_expires_at = now() - interval '1 second' WHERE attempt_id = $1::uuid`,
+        `UPDATE app.sms_jobs SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE attempt_id = $1::uuid`,
         [expiredReqId],
       );
       await app.running.app.get(SmsQueueService).sweep();

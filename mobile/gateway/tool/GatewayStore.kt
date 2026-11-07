@@ -179,29 +179,29 @@ object GatewayStore {
 
     // --- crash safety: what was being sent / what could not be reported yet (identifiers only, never the text) ---------------
 
-    fun markAttempt(ctx: Context, jobId: String, attemptId: String) {
+    fun markAttempt(ctx: Context? = null, jobId: String, attemptId: String) {
         prefs(ctx).edit().putString(K_ATT_JOB, jobId).putString(K_ATT_ID, attemptId).commit()
     }
 
-    fun clearAttempt(ctx: Context) {
+    fun clearAttempt(ctx: Context? = null) {
         prefs(ctx).edit().remove(K_ATT_JOB).remove(K_ATT_ID).commit()
     }
 
-    fun attempt(ctx: Context): Pair<String, String>? {
+    fun attempt(ctx: Context? = null): Pair<String, String>? {
         val p = prefs(ctx)
         val job = p.getString(K_ATT_JOB, null) ?: return null
         val attempt = p.getString(K_ATT_ID, null) ?: return null
         return Pair(job, attempt)
     }
 
-    fun savePending(ctx: Context, r: PendingReport) {
+    fun savePending(ctx: Context? = null, r: PendingReport) {
         prefs(ctx).edit()
             .putString(K_PEND_JOB, r.jobId).putString(K_PEND_ATT, r.attemptId)
             .putString(K_PEND_RES, r.result).putString(K_PEND_ERR, r.errorCode)
             .commit()
     }
 
-    fun pending(ctx: Context): PendingReport? {
+    fun pending(ctx: Context? = null): PendingReport? {
         val p = prefs(ctx)
         val job = p.getString(K_PEND_JOB, null) ?: return null
         val attempt = p.getString(K_PEND_ATT, null) ?: return null
@@ -209,7 +209,7 @@ object GatewayStore {
         return PendingReport(job, attempt, result, p.getString(K_PEND_ERR, null))
     }
 
-    fun clearPending(ctx: Context) {
+    fun clearPending(ctx: Context? = null) {
         prefs(ctx).edit().remove(K_PEND_JOB).remove(K_PEND_ATT).remove(K_PEND_RES).remove(K_PEND_ERR).commit()
     }
 

@@ -296,7 +296,8 @@ export class SmsGatewayRepository {
     }>(
       `SELECT j.job_id, j.attempt_id, j.purpose, j.status, j.claimed_by,
               j.payload_iv, j.payload_tag, j.payload_ciphertext, j.crypto_key_id,
-              ${epochMs('j.expires_at')} AS expires_ms, ${epochMs('j.lease_expires_at')} AS lease_ms
+              ${epochMs('j.expires_at')} AS expires_ms, ${epochMs('j.lease_expires_at')} AS lease_ms,
+              (j.lease_expires_at > clock_timestamp()) AS lease_active
          FROM app.sms_jobs j
         WHERE j.attempt_id = $1::uuid
         FOR UPDATE`,
