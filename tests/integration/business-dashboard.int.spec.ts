@@ -68,7 +68,7 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
   });
   it('uses existing administration sessions and denies missing or unrelated finance rights',async()=>{
     expect((await getAs(admin,undefined,'/business/requests')).status).toBe(401);
-    const viewer=await activatedAdmin(admin,system,[permission('SHOP')],'Business reader');
+    const viewer=await activatedAdmin(admin,system,[permission('SHOP'),permission('DRIVER')],'Business reader');
     expect((await getAs(admin,viewer.login,'/business/requests')).status).toBe(403);
     expect((await changeGrant(admin,system,'grant',viewer.userId,'wallet.read',0)).status).toBe(200);
     expect((await getAs(admin,viewer.login,'/business/requests')).status).toBe(200);

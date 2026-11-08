@@ -4,7 +4,9 @@ import { AppError } from '../common/app-errors';
 import { isExpiredAt } from '../admin-auth/admin-expiry';
 import { TransactionContext } from '../transaction/transaction-context';
 import { FinancePermissionKey, GRANTABLE_FINANCE_PERMISSIONS } from './finance-access-constants';
+import { AdminAccountReadRepository } from '../admin-accounts/admin-account-read-repository';
 import { FinanceAccessRepository } from './finance-access-repository';
+import { holdsWalletScope, isWalletPermission } from './wallet-scope';
 
 /**
  * What a finance command of the administration asks BEFORE it touches money: "may this actor do this, now?". It is a participant: it opens no
@@ -19,7 +21,15 @@ import { FinanceAccessRepository } from './finance-access-repository';
  */
 @Injectable()
 export class FinanceAccessParticipant {
-  constructor(private readonly grants: FinanceAccessRepository) {}
+  constructor(
+    private readonly grants: FinanceAccessRepository,
+    private readonly permissions: AdminAccountReadRepository,
+  ) {}
+
+  /** OD-27: a `wallet.*` right needs the DRIVER view scope too (CURRENT app-permission rows), asked before the grant row is locked. */
+  async #walletScope(context: TransactionContext, userId: string, permission: string): Promise<boolean> {
+    return !isWalletPermission(permission) || holdsWalletScope(await this.permissions.permissions(context, userId));
+  }
 
   async require(context: TransactionContext, actor: LockedActor, permission: FinancePermissionKey, nowMs: number): Promise<void> {
     if (isExpiredAt(actor.session.expiresAtMs, nowMs)) {
@@ -27,6 +37,9 @@ export class FinanceAccessParticipant {
     }
     if (actor.checked.membership.adminRole === 'SYSTEM') {
       return;
+    }
+    if (!(await this.#walletScope(context, actor.known.userId, permission))) {
+      throw new AppError('ADMIN_FORBIDDEN');
     }
     const row = await this.grants.lockForShare(context, actor.known.userId, permission);
     if (row === undefined || row.state !== 'GRANTED') {
@@ -37,6 +50,7 @@ export class FinanceAccessParticipant {
   async has(context:TransactionContext,actor:LockedActor,permission:FinancePermissionKey,nowMs:number):Promise<boolean> {
     if(isExpiredAt(actor.session.expiresAtMs,nowMs))throw new AppError('ADMIN_SESSION_INVALID');
     if(actor.checked.membership.adminRole==='SYSTEM')return true;
+    if(!(await this.#walletScope(context,actor.known.userId,permission)))return false;
     return (await this.grants.lockForShare(context,actor.known.userId,permission))?.state==='GRANTED';
   }
 
@@ -46,6 +60,7 @@ export class FinanceAccessParticipant {
       return { implicit: true, permissions: GRANTABLE_FINANCE_PERMISSIONS };
     }
     const rows = await this.grants.listForUser(context, actor.known.userId);
-    return { implicit: false, permissions: rows.filter((row) => row.state === 'GRANTED').map((row) => row.permissionKey) };
+    const scoped = holdsWalletScope(await this.permissions.permissions(context, actor.known.userId));
+    return { implicit: false, permissions: rows.filter((row) => row.state === 'GRANTED' && (scoped || !isWalletPermission(row.permissionKey))).map((row) => row.permissionKey) };
   }
 }

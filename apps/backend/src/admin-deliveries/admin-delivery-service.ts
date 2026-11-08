@@ -26,6 +26,7 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { FINANCE_PERMISSION_READ } from '../finance-access/finance-access-constants';
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
+import { holdsWalletScope } from '../finance-access/wallet-scope';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
 import { WalletReportReader } from '../wallet/wallet-report-reader';
 
@@ -363,7 +364,7 @@ export class AdminDeliveryService {
     if (role === 'SYSTEM') {
       return { role, actorId: known.userId, review: true, lock: true, walletRead: true };
     }
-    const walletRead = (await this.financeGrants.listForUser(context, known.userId)).some((row) => row.permissionKey === FINANCE_PERMISSION_READ && row.state === 'GRANTED');
+    const walletRead = holdsWalletScope(rows) && (await this.financeGrants.listForUser(context, known.userId)).some((row) => row.permissionKey === FINANCE_PERMISSION_READ && row.state === 'GRANTED');
     const driver = rows.find((candidate) => candidate.app === 'DRIVER');
     const shop = rows.find((candidate) => candidate.app === 'SHOP');
     const mayView = (driver?.canView ?? false) || (shop?.canView ?? false);

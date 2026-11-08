@@ -7,6 +7,7 @@ import { UserRepository } from '../auth/user-repository';
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { AppError } from '../common/app-errors';
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
+import { isWalletPermission, WALLET_SCOPE_APP } from '../finance-access/wallet-scope';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
 
@@ -68,9 +69,12 @@ export class AdminRights {
     return this.canReviewDeliveries;
   }
 
-  /** A function grant (dotted key). SYSTEM holds every one. */
+  /** A function grant (dotted key). SYSTEM holds every one. A `wallet.*` grant also needs the DRIVER view scope (OD-27). */
   has(key: string): boolean {
-    return this.isSystem || this.grants.has(key);
+    if (this.isSystem) {
+      return true;
+    }
+    return this.grants.has(key) && (!isWalletPermission(key) || this.canViewApp(WALLET_SCOPE_APP));
   }
 
   require(key: string): void {
@@ -81,7 +85,7 @@ export class AdminRights {
 
   /** The grants this administrator holds, for the caller's own read. */
   heldGrants(): readonly string[] {
-    return [...this.grants].sort();
+    return [...this.grants].filter((key) => this.has(key)).sort();
   }
 }
 

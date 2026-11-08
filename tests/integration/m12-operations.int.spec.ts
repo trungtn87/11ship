@@ -97,6 +97,15 @@ describe('M12-B — operations', () => {
     expect(((adminData(await getAs(admin, reviewer.login, `/deliveries/${waiting}`)) as Json).money as Json).status).toBe('OK');
     expect((await changeGrant(admin, system, 'revoke', reviewer.userId, 'wallet.read', 1)).status).toBe(200);
     expect(((adminData(await getAs(admin, reviewer.login, `/deliveries/${waiting}`)) as Json).money as Json).status).toBe('FORBIDDEN');
+    // OD-27: wallet.read alone is not enough without the DRIVER scope: a SHOP-only ADMIN sees the delivery but its money stays FORBIDDEN; DRIVER passes; SYSTEM passes.
+    const shopOnly = await activatedAdmin(admin, system, [permission('SHOP')], `Shop xem giao hàng ${tag}`);
+    expect((await changeGrant(admin, system, 'grant', shopOnly.userId, 'wallet.read', 0)).status).toBe(200);
+    const shopView = adminData(await getAs(admin, shopOnly.login, `/deliveries/${waiting}`)) as Json;
+    expect(shopView.money).toEqual({ status: 'FORBIDDEN' });
+    expect((adminData(await getAs(admin, systemLoginOf(system), `/deliveries/${waiting}`)) as Json).money.status).toBe('OK');
+    expect((await changeGrant(admin, system, 'grant', reviewer.userId, 'wallet.read', 2)).status).toBe(200);
+    expect(((adminData(await getAs(admin, reviewer.login, `/deliveries/${waiting}`)) as Json).money as Json).status).toBe('OK');
+    expect((await changeGrant(admin, system, 'revoke', reviewer.userId, 'wallet.read', 3)).status).toBe(200);
     // A session without the right app is refused on the list and the detail alike.
     const none = await activatedAdmin(admin, system, [permission('CUSTOMER')], `Không giao hàng ${tag}`);
     expect(adminErrorCode(await getAs(admin, none.login, '/deliveries'))).toBe('ADMIN_FORBIDDEN');
