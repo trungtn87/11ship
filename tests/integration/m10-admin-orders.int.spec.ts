@@ -17,7 +17,7 @@ import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 // rights (lock / review on DRIVER), a mandatory reason, the version check, the same-key replay, and the audit row. There is no route that sets a status.
 
 const tag = randomBytes(3).toString('hex').toUpperCase();
-const permission = (app: string, view: boolean, review: boolean, lock: boolean): Record<string, unknown> => ({ app, can_view: view, can_review_profile: review, can_lock: lock });
+const permission = (app: string, view: boolean, review: boolean, lock: boolean, cancelOrders = false): Record<string, unknown> => ({ app, can_view: view, can_review_profile: review, can_lock: lock, ...(cancelOrders ? { can_cancel_orders: true } : {}) });
 
 interface AdminLogin {
   readonly cookie: string;
@@ -39,6 +39,9 @@ describe('M10.05 — Admin orders', () => {
   let pho: Dish;
   let viewer: AdminLogin;
   let locker: AdminLogin;
+  /** OD-12: the DRIVER lock right WITHOUT the separate order-cancel right (what cancelling used to need), and the order-cancel right alone. */
+  let driverLocker: AdminLogin;
+  let cancelOnly: AdminLogin;
   let outsider: AdminLogin;
   let addedPolicy = false;
 
@@ -66,7 +69,9 @@ describe('M10.05 — Admin orders', () => {
       addedPolicy = true;
     }
     viewer = await login(await activatedAdmin([permission('SHOP', true, false, false)], `Xem đơn ${tag}`));
-    locker = await login(await activatedAdmin([permission('DRIVER', true, true, true)], `Khóa đơn ${tag}`));
+    locker = await login(await activatedAdmin([permission('DRIVER', true, true, true, true)], `Khóa đơn ${tag}`));
+    driverLocker = await login(await activatedAdmin([permission('DRIVER', true, true, true)], `Khóa shipper ${tag}`));
+    cancelOnly = await login(await activatedAdmin([permission('DRIVER', true, false, false, true)], `Chỉ hủy đơn ${tag}`));
     outsider = await login(await activatedAdmin([permission('CUSTOMER', true, false, false)], `Ngoài ${tag}`));
   });
 
@@ -143,7 +148,7 @@ describe('M10.05 — Admin orders', () => {
     expect(codeOf(await adminGet(viewer, `/orders/${randomUUID()}`))).toMatchObject({ status: 404, code: 'ORDER_NOT_FOUND' });
   });
 
-  it('cancelling needs the lock right and a reason; a stale version is refused; the same key replays; the audit row is written; nothing sets a status', async () => {
+  it('cancelling needs the order-cancel right and a reason; a stale version is refused; the same key replays; the audit row is written; nothing sets a status', async () => {
     const order = await confirmedOrder();
     const id = String(order.order_id);
     const path = `/orders/${id}/actions/cancel-order`;
@@ -162,6 +167,38 @@ describe('M10.05 — Admin orders', () => {
     expect(codeOf(await adminPost(locker, path, { expected_version: Number(order.version) + 1, reason: 'again' })).status).toBe(409);
     expect((await adminPost(locker, `/orders/${id}/actions/set-status`, { expected_version: 1, reason: 'x' })).status).toBeGreaterThanOrEqual(400);
     expect((await app.pool.query(`SELECT 1 FROM app.order_events WHERE order_id = $1::uuid AND type = 'order.cancelled_by_admin'`, [id])).rowCount).toBe(1);
+  });
+
+  it('OD-12: cancelling needs the separate order-cancel right on DRIVER (VIEW + can_cancel_orders) — can_lock alone is refused and not offered; the right alone is enough; closing as not completed keeps the review gate', async () => {
+    const order = await confirmedOrder();
+    const id = String(order.order_id);
+    const path = `/orders/${id}/actions/cancel-order`;
+    const offered = async (who: AdminLogin): Promise<string[]> => (adminJson(await adminGet(who, `/orders/${id}`)) as Json & { can?: string[] }).can ?? [];
+    expect(codeOf(await adminPost(driverLocker, path, { expected_version: order.version, reason: 'Quán đóng cửa' }))).toMatchObject({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(JSON.stringify(adminJson(await adminGet(driverLocker, `/orders/${id}`)))).not.toContain('cancel-order');
+    expect(JSON.stringify(adminJson(await adminGet(cancelOnly, `/orders/${id}`)))).toContain('cancel-order');
+    expect(await offered(viewer)).not.toContain('cancel-order');
+    expect((await app.pool.query('SELECT status FROM app.orders WHERE order_id = $1::uuid', [id])).rows[0]).toMatchObject({ status: 'PREPARING' });
+    // VIEW + the new right on DRIVER cancels, without review or lock; the audit row names it.
+    expect((await adminPost(cancelOnly, path, { expected_version: order.version, reason: 'Quán đóng cửa' })).status).toBe(200);
+    expect((await app.pool.query('SELECT status FROM app.orders WHERE order_id = $1::uuid', [id])).rows[0]).toMatchObject({ status: 'CANCELLED_BY_SHOP' });
+    // Close-not-completed is unchanged: it stays behind the DRIVER review right, which the new right does not give.
+    const next = await confirmedOrder();
+    const close = `/orders/${String(next.order_id)}/actions/close-not-completed`;
+    expect(codeOf(await adminPost(cancelOnly, close, { expected_version: next.version, reason: 'x' }))).toMatchObject({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect((await adminPost(driverLocker, close, { expected_version: next.version, reason: 'x' })).status).not.toBe(403);
+  });
+
+  it('OD-12: the right is stored on the DRIVER row only, defaults to off, and the database refuses it on another app or without VIEW', async () => {
+    const granted = await activatedAdmin([permission('DRIVER', true, false, false, true)], `Có quyền hủy ${tag}`);
+    const plain = await activatedAdmin([permission('SHOP', true, false, true), permission('DRIVER', true, true, true)], `Không quyền hủy ${tag}`);
+    const rightOf = async (userId: string): Promise<Record<string, boolean>> =>
+      Object.fromEntries((await admin.pool.query<{ app: string; can_cancel_orders: boolean }>('SELECT app, can_cancel_orders FROM app.admin_app_permissions WHERE user_id = $1::uuid', [userId])).rows.map((row) => [row.app, row.can_cancel_orders]));
+    expect(await rightOf(granted.userId)).toEqual({ DRIVER: true });
+    // can_lock (SHOP and DRIVER) gives nothing: the new right is never copied from it.
+    expect(await rightOf(plain.userId)).toEqual({ SHOP: false, DRIVER: false });
+    await expect(admin.pool.query("UPDATE app.admin_app_permissions SET can_cancel_orders = true WHERE user_id = $1::uuid AND app = 'SHOP'", [plain.userId])).rejects.toMatchObject({ code: '23514' });
+    await expect(admin.pool.query("UPDATE app.admin_app_permissions SET can_view = false WHERE user_id = $1::uuid AND app = 'DRIVER'", [granted.userId])).rejects.toMatchObject({ code: '23514' });
   });
 
   it('"Không hoàn tất" is only for a failed delivery that is settled, and needs the review right: a plain running order is refused', async () => {

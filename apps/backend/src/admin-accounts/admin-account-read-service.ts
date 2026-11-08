@@ -56,7 +56,7 @@ function ordered(rows: readonly PermissionRow[]): PermissionRow[] {
 }
 
 function permissionView(row: PermissionRow): JsonObject {
-  return { app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog === true, can_manage_shops: row.canManageShops === true };
+  return { app: row.app, can_view: row.canView, can_review_profile: row.canReviewProfile, can_lock: row.canLock, can_manage_catalog: row.canManageCatalog === true, can_manage_shops: row.canManageShops === true, can_cancel_orders: row.canCancelOrders === true };
 }
 
 /**
@@ -234,7 +234,7 @@ export class AdminAccountReadService {
       this.actor.assertSessionLive(locked, nowMs);
       const permissions =
         role === 'SYSTEM'
-          ? APP_ORDER.map((app): PermissionRow => ({ app, canView: true, canReviewProfile: true, canLock: true, canManageCatalog: app === 'SHOP', canManageShops: app === 'SHOP' }))
+          ? APP_ORDER.map((app): PermissionRow => ({ app, canView: true, canReviewProfile: true, canLock: true, canManageCatalog: app === 'SHOP', canManageShops: app === 'SHOP', canCancelOrders: app === 'DRIVER' }))
           : ordered(rows);
       const scope: ReadScope =
         role === 'SYSTEM'
@@ -259,7 +259,7 @@ export class AdminAccountReadService {
       filter,
       actor: auth.userId,
       membership_version: auth.membershipVersion,
-      scope: auth.permissions.map((row) => `${row.app}:${row.canView ? 'V' : '-'}${row.canReviewProfile ? 'R' : '-'}${row.canLock ? 'L' : '-'}${row.canManageCatalog === true ? 'C' : ''}${row.canManageShops === true ? 'S' : ''}`),
+      scope: auth.permissions.map((row) => `${row.app}:${row.canView ? 'V' : '-'}${row.canReviewProfile ? 'R' : '-'}${row.canLock ? 'L' : '-'}${row.canManageCatalog === true ? 'C' : ''}${row.canManageShops === true ? 'S' : ''}${row.canCancelOrders === true ? 'O' : ''}`),
     };
   }
 

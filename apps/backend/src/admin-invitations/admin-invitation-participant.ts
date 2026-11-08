@@ -54,6 +54,9 @@ function assertPermissions(permissions: readonly InvitationPermission[]): void {
     if (permission.canManageShops === true && (!permission.canView || permission.app !== 'SHOP')) {
       invalid('SHOP MANAGEMENT needs SHOP and VIEW');
     }
+    if (permission.canCancelOrders === true && (!permission.canView || permission.app !== 'DRIVER')) {
+      invalid('ORDER CANCEL needs DRIVER and VIEW');
+    }
   }
   if (!permissions.some((permission) => permission.canView)) {
     invalid('at least one VIEW permission is required');

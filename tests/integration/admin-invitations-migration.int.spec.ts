@@ -147,11 +147,16 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
     const shopsSql = readFileSync(path.join(dir, readdirSync(dir).find((name) => name.endsWith('admin-shop-manage-right.sql')) as string), 'utf8');
     const shopsUpSql = (shopsSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
     const shopsDownSql = shopsSql.split('-- Down Migration')[1] as string;
+    // The order-cancel right (OD-12) is newer than the shop-management right: it goes down first and comes back last.
+    const cancelSql = readFileSync(path.join(dir, readdirSync(dir).find((name) => name.endsWith('admin-order-cancel-right.sql')) as string), 'utf8');
+    const cancelUpSql = (cancelSql.split('-- Down Migration')[0] as string).replace('-- Up Migration', '');
+    const cancelDownSql = cancelSql.split('-- Down Migration')[1] as string;
     const before = await inventory();
     expect(before.length).toBeGreaterThan(0);
     await client.query('BEGIN');
     try {
       await client.query(M13_DOWN_SQL); // M13 is the newest of all: down first, up last
+      await client.query(cancelDownSql);
       await client.query(shopsDownSql);
       await client.query(catalogDownSql);
       await client.query(ACCOUNT_SCOPE_DOWN_SQL); // the newest migration changes app.users: down first, up last
@@ -164,7 +169,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       expect(await inventory()).toEqual([]);
       await client.query(upSql);
       // The catalog right (M02) comes back last, so at this point exactly its own objects are missing.
-      expect(await inventory()).toEqual(before.filter((item) => !item.includes('catalog') && !item.includes('shops')));
+      expect(await inventory()).toEqual(before.filter((item) => !item.includes('catalog') && !item.includes('shops') && !item.includes('cancel_orders')));
       await client.query(operationsUpSql);
       for (const statement of ACTIVATION_UP_SQL) {
         await client.query(statement);
@@ -173,6 +178,7 @@ describe('M01-D-ADMIN-1A - admin invitations migration', () => {
       await client.query(ACCOUNT_SCOPE_UP_SQL);
       await client.query(catalogUpSql);
       await client.query(shopsUpSql);
+      await client.query(cancelUpSql);
       await client.query(M13_UP_SQL);
     } finally {
       await client.query('ROLLBACK');

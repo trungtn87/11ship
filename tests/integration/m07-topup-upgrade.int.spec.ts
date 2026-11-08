@@ -1,4 +1,5 @@
 import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
+import { ORDER_CANCEL_RIGHT_DOWN_SQL, ORDER_CANCEL_RIGHT_UP_SQL } from './support/admin-order-cancel-right-migration-sql';
 import { SHOP_RIGHT_DOWN_SQL, SHOP_RIGHT_UP_SQL } from './support/admin-shop-right-migration-sql';
 import { OTP_POLICY_DOWN_SQL, OTP_POLICY_UP_SQL } from './support/otp-policy-migration-sql';
 import { PRE_TIMEOUT_MIGRATION_ARGS } from './support/timeout-migration-sql';
@@ -142,6 +143,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         temporaryOtpPolicy = false;
       }
       if (temporaryShopRight) {
+        await pool().query(ORDER_CANCEL_RIGHT_DOWN_SQL);
         await pool().query(SHOP_RIGHT_DOWN_SQL);
         temporaryShopRight = false;
       }
@@ -184,6 +186,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     await pool().query(PASSWORD_SESSION_UP_SQL);
     temporaryPasswordSchema = true;
     await pool().query(SHOP_RIGHT_UP_SQL);
+    await pool().query(ORDER_CANCEL_RIGHT_UP_SQL);
     temporaryShopRight = true;
     await pool().query(OTP_POLICY_UP_SQL);
     temporaryOtpPolicy = true;

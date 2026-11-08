@@ -34,6 +34,7 @@ export function permissionsView(permissions: readonly InvitationPermission[]): J
     can_lock: permission.canLock,
     can_manage_catalog: permission.canManageCatalog === true,
     can_manage_shops: permission.canManageShops === true,
+    can_cancel_orders: permission.canCancelOrders === true,
   }));
 }
 
@@ -41,7 +42,7 @@ export function permissionsView(permissions: readonly InvitationPermission[]): J
 export function permissionsAudit(permissions: readonly InvitationPermission[]): string[] {
   return permissions.map(
     (permission) =>
-      `${permission.app}:${permission.canView ? 'V' : '-'}${permission.canReviewProfile ? 'R' : '-'}${permission.canLock ? 'L' : '-'}${permission.canManageCatalog === true ? 'C' : ''}${permission.canManageShops === true ? 'S' : ''}`,
+      `${permission.app}:${permission.canView ? 'V' : '-'}${permission.canReviewProfile ? 'R' : '-'}${permission.canLock ? 'L' : '-'}${permission.canManageCatalog === true ? 'C' : ''}${permission.canManageShops === true ? 'S' : ''}${permission.canCancelOrders === true ? 'O' : ''}`,
   );
 }
 
