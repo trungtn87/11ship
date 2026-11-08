@@ -422,6 +422,18 @@ export class UserRepository {
     return result.rows[0]?.pending === true;
   }
 
+  /**
+   * OD-31: true when the account asked for its deletion and either waits for the running work (delete_requested_at) or was locked FOR THAT REASON
+   * (status DISABLED, lock_reason DELETE_REQUEST). Any other lock (VIOLATION, SECURITY, ...) is false. Read under the caller's user lock.
+   */
+  async hasDeletionWalletException(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query<{ allowed: boolean }>(
+      "SELECT (delete_requested_at IS NOT NULL OR (status = 'DISABLED' AND lock_reason = 'DELETE_REQUEST')) AS allowed FROM app.users WHERE user_id = $1::uuid",
+      [userId],
+    );
+    return result.rows[0]?.allowed === true;
+  }
+
   /** The version of a user row and whether its deletion is already requested, read under the caller's lock. */
   async deleteRequestState(context: TransactionContext, userId: string): Promise<{ version: number; requested: boolean } | undefined> {
     const result = await context.query<{ version: string; requested: boolean }>(

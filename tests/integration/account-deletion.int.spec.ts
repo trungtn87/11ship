@@ -374,7 +374,102 @@ describe('P5-6a public account deletion', () => {
     expect((await app.call('POST', `/shop/me/orders/${earlierId}/confirm`, { bearer: owner.token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: dataOf(view).version } })).status).toBe(200);
   });
 
-  it('the account of a pending SHIPPER is offered nothing, takes no delivery, opens no top-up or withdrawal; a new role is not started', async () => {
+  // ---- OD-31: the owner who asked for the deletion keeps the WITHDRAWAL to get the balance back ----------------------------------
+
+  const phoneOf = async (userId: string): Promise<{ local: string }> => {
+    const normalized = String((await app.pool.query<{ p: string }>('SELECT phone_normalized AS p FROM app.users WHERE user_id = $1::uuid', [userId])).rows[0]?.p);
+    return { local: `0${normalized.slice(3)}` };
+  };
+  const shipLogin = (phone: { local: string }): Promise<ApiResponse> =>
+    app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: phone.local, password: PASSWORD, device: { ...WEB_SHIP } } });
+  const withdraw = (token: string, amount: number): Promise<ApiResponse> =>
+    app.call('POST', '/driver/wallet/withdrawals', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: amount } });
+  const walletOf = async (driverId: string): Promise<{ balance: string; held: string } | undefined> =>
+    (await app.pool.query<{ balance: string; held: string }>('SELECT balance_vnd::text AS balance, held_vnd::text AS held FROM app.driver_wallets WHERE driver_id = $1::uuid', [driverId])).rows[0];
+
+  it('OD-31 (a): a PENDING Shipper (not CLOSING) withdraws the WHOLE balance; a partial amount and a second request are refused; a top-up stays refused', async () => {
+    const shipper = await newShipper(app, drivers, 50_000);
+    extraUsers.push(shipper.userId);
+    await markPending(shipper.userId);
+    expect(refused(await withdraw(shipper.token, 20_000))).toEqual({ status: 409, code: 'WITHDRAWAL_INSUFFICIENT_AVAILABLE' });
+    const created = await withdraw(shipper.token, 50_000);
+    expect(created.status).toBe(201);
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
+    // One open request only: the second is refused whatever its amount.
+    expect(refused(await withdraw(shipper.token, 50_000)).status).toBeGreaterThanOrEqual(400);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE driver_id = $1::uuid', [shipper.driverId])).toBe(1);
+    // ... and the top-up is still gated.
+    expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
+  });
+
+  it('OD-31 (b)(c): a Shipper LOCKED for DELETE_REQUEST signs in to 11Ship wallet-only, withdraws the whole balance, and can do nothing else (no top-up, no delivery)', async () => {
+    const shipper = await newShipper(app, drivers, 50_000);
+    extraUsers.push(shipper.userId);
+    const phone = await phoneOf(shipper.userId);
+    // The confirmation finds no running work and the wallet is data to keep: LOCKED, never deleted.
+    expect(resultOf(await confirm(phone))).toBe('LOCKED');
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
+
+    const signedIn = await shipLogin(phone);
+    expect(signedIn.status).toBe(200);
+    expect(dataOf(signedIn)).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', available_roles: [], active_role: null });
+    const token = String(dataOf(signedIn).access_token);
+    // Nothing but the wallet: no top-up, no delivery, no order function.
+    expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } })).code).toBe('ACCOUNT_DISABLED');
+    expect(refused(await app.call('GET', '/driver/deliveries/offers', { bearer: token })).code).toBe('ACCOUNT_DISABLED');
+    expect((await app.call('GET', '/driver/wallet', { bearer: token })).status).toBe(200);
+    // The whole balance, once.
+    expect(refused(await withdraw(token, 20_000))).toEqual({ status: 409, code: 'WITHDRAWAL_INSUFFICIENT_AVAILABLE' });
+    expect((await withdraw(token, 50_000)).status).toBe(201);
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
+    expect(refused(await withdraw(token, 50_000)).status).toBeGreaterThanOrEqual(400);
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+  });
+
+  it('OD-31 (d): a Shipper locked for VIOLATION or SECURITY gets NO exception: the withdrawal is still CLOSING-only', async () => {
+    for (const reason of ['VIOLATION', 'SECURITY']) {
+      const shipper = await newShipper(app, drivers, 50_000);
+      extraUsers.push(shipper.userId);
+      const phone = await phoneOf(shipper.userId);
+      await app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = $2, locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [shipper.userId, reason]);
+      await app.pool.query('UPDATE app.sessions SET revoked_at = now() WHERE user_id = $1::uuid AND revoked_at IS NULL', [shipper.userId]);
+      const signedIn = await shipLogin(phone);
+      expect(signedIn.status).toBe(200);
+      const token = String(dataOf(signedIn).access_token);
+      expect(refused(await withdraw(token, 50_000))).toEqual({ status: 409, code: 'WITHDRAWAL_ONLY_WHEN_CLOSING' });
+      expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
+    }
+  });
+
+  it('OD-31 (f): the balance and an open withdrawal are data to keep: nothing is deleted, an open request keeps the account PENDING, and it locks only when the request is gone', async () => {
+    const shipper = await newShipper(app, drivers, 50_000);
+    extraUsers.push(shipper.userId);
+    const phone = await phoneOf(shipper.userId);
+    // PENDING + an open withdrawal = money in progress.
+    await markPending(shipper.userId);
+    const created = await withdraw(shipper.token, 50_000);
+    expect(created.status).toBe(201);
+    await sweeper().sweep();
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
+    // The request is cancelled: nothing is in progress any more, but the balance is still data to keep -> LOCKED, never purged.
+    const cancelled = await app.call('POST', `/driver/wallet/withdrawals/${String(dataOf(created).withdrawal_id)}/cancel`, {
+      bearer: shipper.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: { expected_version: Number(dataOf(created).version) },
+    });
+    expect(cancelled.status).toBe(200);
+    await sweeper().sweep();
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid', [shipper.driverId])).toBe(1);
+    // And from the locked state the balance can still be asked back.
+    const token = String(dataOf(await shipLogin(phone)).access_token);
+    expect((await withdraw(token, 50_000)).status).toBe(201);
+  });
+
+  it('the account of a pending SHIPPER is offered nothing, takes no delivery, opens no top-up; a new role is not started', async () => {
     const shipper: Shipper = await newShipper(app, drivers);
     extraUsers.push(shipper.userId);
     const waiting = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: shop.userId });
@@ -384,7 +479,7 @@ describe('P5-6a public account deletion', () => {
     expect([offers.status, dataOf(offers).offers]).toEqual([200, []]);
     expect(refused(await app.call('POST', `/driver/deliveries/${waiting}/accept`, { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: {} }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
     expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    expect(refused(await app.call('POST', '/driver/wallet/withdrawals', { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 50_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
+    // (A WITHDRAWAL is not gated: OD-31, see the dedicated tests above.)
     // The delivery stays free for everybody else.
     expect(await countRows(app.pool, `SELECT 1 FROM app.deliveries WHERE delivery_id = $1::uuid AND state = 'waiting_driver'`, [waiting])).toBe(1);
 

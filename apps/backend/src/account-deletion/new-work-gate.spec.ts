@@ -13,7 +13,7 @@ const ENTRY_POINTS: ReadonlyArray<readonly [file: string, calls: number, what: s
   ['delivery/delivery-shop-service.ts', 1, 'shop recalls a delivery (the direct create is closed, OD-5)'],
   ['delivery/delivery-shipper-service.ts', 3, 'Shipper takes a delivery; fee actions on an untaken delivery; offers are empty'],
   ['wallet-topup/topup-request-service.ts', 1, 'new top-up request'],
-  ['driver-wallet/driver-withdrawal-service.ts', 1, 'new withdrawal request'],
+  ['driver-wallet/driver-withdrawal-service.ts', 0, 'withdrawal is NOT gated (OD-31: the owner who asked for deletion keeps it to get the balance back)'],
   ['onboarding/driver-onboarding-service.ts', 1, 'new Shipper profile'],
   ['onboarding/shop-onboarding-service.ts', 1, 'new shop'],
   ['business-dashboard/finance-service.ts', 1, 'new shop payment request'],

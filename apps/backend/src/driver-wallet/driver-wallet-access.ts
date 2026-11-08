@@ -44,9 +44,12 @@ export class DriverWalletAccess {
     return { actor, driver };
   }
 
-  /** A NEW wallet request (withdrawal) is refused while the owner's account deletion is pending (P5-6a). */
-  async assertNewWorkAllowed(context: TransactionContext, actor: ClientActor): Promise<void> {
-    await this.authority.assertNewWorkAllowed(context, actor);
+  /**
+   * OD-31: the owner who asked for the account deletion (pending, or locked for that reason) keeps the WITHDRAWAL request to get the balance back, as an
+   * alternative to the CLOSING status. Any other lock gets no exception. Top-ups are not covered (they stay refused).
+   */
+  async deletionAllowsWithdrawal(context: TransactionContext, actor: ClientActor): Promise<boolean> {
+    return this.users.hasDeletionWalletException(context, actor.userId);
   }
 
   async #assertShipDriver(context: TransactionContext, actor: ClientActor): Promise<void> {
