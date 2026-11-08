@@ -23,10 +23,10 @@ import { isCanonicalUuid } from '../shared/identifiers';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 
-type Right = 'view' | 'review' | 'lock';
+type Right = 'view' | 'review' | 'cancel';
 
 const RIGHT: Readonly<Record<AdminOrderAction, Right>> = {
-  'cancel-order': 'lock',
+  'cancel-order': 'cancel',
   'close-not-completed': 'review',
 };
 
@@ -34,7 +34,8 @@ interface Authorized {
   readonly role: AdminRole;
   readonly actorId: string;
   readonly review: boolean;
-  readonly lock: boolean;
+  /** admin.order.cancel: the DRIVER app's can_cancel_orders (with VIEW), or SYSTEM. No longer can_lock (OD-12). */
+  readonly cancel: boolean;
 }
 
 /** `admin.order.action.v1.cancel_order`: dotted lower-case segments (the audit and the idempotency scope accept no hyphen). */
@@ -48,7 +49,7 @@ export interface AdminActionInput {
 /**
  * Order management for the administration web (M10.05): the list, the detail with the edits, the calls (deliveries) and the reasons, and the two exception
  * actions. SYSTEM, or an ADMIN whose CURRENT permission rows give VIEW on the SHOP or DRIVER app (read), the review right on DRIVER (closing as not completed) or
- * the lock right on DRIVER (cancelling a running order: it takes the Shipper off the delivery). The backend decides on every read and write under the actor's
+ * the separate order-cancel right on DRIVER, `can_cancel_orders` (cancelling a running order: it takes the Shipper off the delivery; OD-12). The backend decides on every read and write under the actor's
  * locks. There is NO route that sets a status: each action has its own condition on the stored state, a mandatory reason and an audit row, and it never
  * touches money outside the delivery rules (the commission is given back by the delivery cancellation of M07, the ledger is never written here).
  * Lock order is the system's: the Shipper row first, then the delivery, then the Order.
@@ -195,7 +196,7 @@ export class AdminOrderService {
       const all = await this.deliveries.listOfOrder(context, order.orderId);
       const latest = all[all.length - 1];
       const picked = latest !== undefined && (latest.state === 'delivering' || latest.state === 'picked_up');
-      if (auth.lock && !picked) {
+      if (auth.cancel && !picked) {
         can.push('cancel-order');
       }
       if (auth.review && latest?.state === 'failed') {
@@ -205,7 +206,7 @@ export class AdminOrderService {
     return this.views.forAdmin(context, order, can);
   }
 
-  /** The same rule as the delivery administration: SYSTEM, or an ADMIN with VIEW on the SHOP or DRIVER app; review / lock need the right on DRIVER. */
+  /** The same rule as the delivery administration: SYSTEM, or an ADMIN with VIEW on the SHOP or DRIVER app; review needs the right on DRIVER, cancel the separate right on DRIVER. */
   async #authorize(context: TransactionContext, known: SessionLookup, right: Right): Promise<Authorized> {
     const locked = await this.actor.lock(context, known, { user: 'read', factor: 'read' });
     const role = locked.checked.membership.adminRole;
@@ -213,17 +214,17 @@ export class AdminOrderService {
     const nowMs = await freshClockMs(context);
     this.actor.assertSessionLive(locked, nowMs);
     if (role === 'SYSTEM') {
-      return { role, actorId: known.userId, review: true, lock: true };
+      return { role, actorId: known.userId, review: true, cancel: true };
     }
     const driver = rows.find((candidate) => candidate.app === 'DRIVER');
     const shop = rows.find((candidate) => candidate.app === 'SHOP');
     const mayView = (driver?.canView ?? false) || (shop?.canView ?? false);
     const review = (driver?.canView ?? false) && (driver?.canReviewProfile ?? false);
-    const lock = (driver?.canView ?? false) && (driver?.canLock ?? false);
-    if (!mayView || (right === 'review' && !review) || (right === 'lock' && !lock)) {
+    const cancel = (driver?.canView ?? false) && (driver?.canCancelOrders ?? false);
+    if (!mayView || (right === 'review' && !review) || (right === 'cancel' && !cancel)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
-    return { role, actorId: known.userId, review, lock };
+    return { role, actorId: known.userId, review, cancel };
   }
 
   async #authorizeReplay(context: TransactionContext, guard: JsonObject, known: SessionLookup, name: AdminOrderAction): Promise<true> {

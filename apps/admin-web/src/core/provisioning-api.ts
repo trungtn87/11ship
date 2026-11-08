@@ -24,6 +24,7 @@ export interface Permission {
   /** Dish-group management (SHOP only). Absent = false. */
   readonly canManageCatalog?: boolean;
   readonly canManageShops?: boolean;
+  readonly canCancelOrders?: boolean;
 }
 
 export interface InvitationSummary {
@@ -132,6 +133,7 @@ function permissionsWire(permissions: readonly Permission[]): Record<string, unk
     // Only when granted: the wire form of a request without the right is unchanged.
     ...(permission.canManageCatalog === true ? { can_manage_catalog: true } : {}),
     ...(permission.canManageShops === true ? { can_manage_shops: true } : {}),
+    ...(permission.canCancelOrders === true ? { can_cancel_orders: true } : {}),
   }));
 }
 
@@ -172,10 +174,11 @@ function permissionOf(value: unknown): Permission | undefined {
   if (item === undefined) {
     return undefined;
   }
-  const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock, can_manage_catalog: canManageCatalog, can_manage_shops: canManageShops } = item;
+  const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock, can_manage_catalog: canManageCatalog, can_manage_shops: canManageShops, can_cancel_orders: canCancelOrders } = item;
   if (
     (canManageCatalog !== undefined && typeof canManageCatalog !== 'boolean') ||
     (canManageShops !== undefined && typeof canManageShops !== 'boolean') ||
+    (canCancelOrders !== undefined && typeof canCancelOrders !== 'boolean') ||
     typeof app !== 'string' ||
     !(INVITATION_APPS as readonly string[]).includes(app) ||
     typeof canView !== 'boolean' ||
@@ -184,7 +187,7 @@ function permissionOf(value: unknown): Permission | undefined {
   ) {
     return undefined;
   }
-  return { app: app as InvitationApp, canView, canReviewProfile, canLock, ...(canManageCatalog === true ? { canManageCatalog } : {}), ...(canManageShops === true ? { canManageShops } : {}) };
+  return { app: app as InvitationApp, canView, canReviewProfile, canLock, ...(canManageCatalog === true ? { canManageCatalog } : {}), ...(canManageShops === true ? { canManageShops } : {}), ...(canCancelOrders === true ? { canCancelOrders } : {}) };
 }
 
 function permissionsOf(value: unknown): Permission[] | undefined {

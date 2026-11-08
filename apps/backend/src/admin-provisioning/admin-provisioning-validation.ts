@@ -61,7 +61,7 @@ const APPS: readonly InvitationApp[] = ['CUSTOMER', 'SHOP', 'DRIVER'];
 const STATUSES: readonly InvitationStatus[] = ['PENDING', 'ACCEPTED', 'REVOKED', 'SUPERSEDED', 'EXPIRED', 'PHONE_CONFLICT'];
 const PERMISSION_KEYS = ['app', 'can_lock', 'can_review_profile', 'can_view'];
 /** Optional key (absent = false): the dish-group management right of the SHOP row. */
-const PERMISSION_OPTIONAL_KEYS = ['can_manage_catalog', 'can_manage_shops'];
+const PERMISSION_OPTIONAL_KEYS = ['can_manage_catalog', 'can_manage_shops', 'can_cancel_orders'];
 
 function invalid(): never {
   throw new AppError('ADMIN_INPUT_INVALID');
@@ -166,6 +166,7 @@ export function parsePermissions(value: unknown): readonly InvitationPermission[
     const { app, can_view: canView, can_review_profile: canReviewProfile, can_lock: canLock } = entry;
     const canManageCatalog = entry.can_manage_catalog === undefined ? false : entry.can_manage_catalog;
     const canManageShops = entry.can_manage_shops === undefined ? false : entry.can_manage_shops;
+    const canCancelOrders = entry.can_cancel_orders === undefined ? false : entry.can_cancel_orders;
     if (typeof app !== 'string' || !(APPS as readonly string[]).includes(app) || seen.has(app)) {
       invalid();
     }
@@ -184,8 +185,11 @@ export function parsePermissions(value: unknown): readonly InvitationPermission[
     if (typeof canManageShops !== 'boolean' || (canManageShops && (!canView || app !== 'SHOP'))) {
       invalid();
     }
+    if (typeof canCancelOrders !== 'boolean' || (canCancelOrders && (!canView || app !== 'DRIVER'))) {
+      invalid();
+    }
     seen.add(app);
-    permissions.push({ app: app as InvitationApp, canView, canReviewProfile, canLock, ...(canManageCatalog ? { canManageCatalog } : {}), ...(canManageShops ? { canManageShops } : {}) });
+    permissions.push({ app: app as InvitationApp, canView, canReviewProfile, canLock, ...(canManageCatalog ? { canManageCatalog } : {}), ...(canManageShops ? { canManageShops } : {}), ...(canCancelOrders ? { canCancelOrders } : {}) });
   }
   if (!permissions.some((permission) => permission.canView)) {
     invalid();
@@ -280,6 +284,7 @@ function permissionsJson(permissions: readonly InvitationPermission[]): JsonObje
     // Only when granted: the canonical form (and so every stored fingerprint) of a request without the right is unchanged.
     ...(permission.canManageCatalog === true ? { can_manage_catalog: true } : {}),
     ...(permission.canManageShops === true ? { can_manage_shops: true } : {}),
+    ...(permission.canCancelOrders === true ? { can_cancel_orders: true } : {}),
   }));
 }
 

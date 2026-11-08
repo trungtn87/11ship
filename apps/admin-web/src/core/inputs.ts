@@ -105,6 +105,8 @@ export interface PermissionDraft {
   readonly canManageCatalog?: boolean;
   /** Shop activity management (SHOP only; needs VIEW). Absent = off. */
   readonly canManageShops?: boolean;
+  /** Cancelling a running order (DRIVER only; needs VIEW). Absent = off. */
+  readonly canCancelOrders?: boolean;
 }
 
 export type PermissionsDraft = Readonly<Record<'CUSTOMER' | 'SHOP' | 'DRIVER', PermissionDraft>>;
@@ -122,10 +124,10 @@ export const EMPTY_PERMISSIONS: PermissionsDraft = {
 export function togglePermission(
   draft: PermissionsDraft,
   app: 'CUSTOMER' | 'SHOP' | 'DRIVER',
-  right: 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog' | 'canManageShops',
+  right: 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog' | 'canManageShops' | 'canCancelOrders',
   value: boolean,
 ): PermissionsDraft {
-  if ((app === 'CUSTOMER' && right === 'canReviewProfile') || (app !== 'SHOP' && (right === 'canManageCatalog' || right === 'canManageShops'))) {
+  if ((app === 'CUSTOMER' && right === 'canReviewProfile') || (app !== 'SHOP' && (right === 'canManageCatalog' || right === 'canManageShops')) || (app !== 'DRIVER' && right === 'canCancelOrders')) {
     return draft;
   }
   const current = draft[app];

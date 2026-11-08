@@ -44,6 +44,11 @@ export class AdminRights {
     return this.isSystem || ((this.apps.get('SHOP')?.canView ?? false) && (this.apps.get('SHOP')?.canManageShops ?? false));
   }
 
+  /** Cancel a running order (the DRIVER app's can_cancel_orders, admin.order.cancel): a separate right, no longer can_lock (OD-12). */
+  get canCancelOrders(): boolean {
+    return this.isSystem || ((this.apps.get('DRIVER')?.canView ?? false) && (this.apps.get('DRIVER')?.canCancelOrders ?? false));
+  }
+
   /** The delivery list and detail: VIEW on the SHOP or the DRIVER app, exactly as M07.07 decides it. */
   get canViewDeliveries(): boolean {
     return this.canViewApp('SHOP') || this.canViewApp('DRIVER');

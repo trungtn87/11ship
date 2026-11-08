@@ -53,7 +53,7 @@ function permissionOf(value: unknown): AppPermission | undefined {
   if (typeof row.can_view !== 'boolean' || typeof row.can_review_profile !== 'boolean' || typeof row.can_lock !== 'boolean') {
     return undefined;
   }
-  if ((row.can_manage_catalog !== undefined && typeof row.can_manage_catalog !== 'boolean') || (row.can_manage_shops !== undefined && typeof row.can_manage_shops !== 'boolean')) {
+  if ((row.can_manage_catalog !== undefined && typeof row.can_manage_catalog !== 'boolean') || (row.can_manage_shops !== undefined && typeof row.can_manage_shops !== 'boolean') || (row.can_cancel_orders !== undefined && typeof row.can_cancel_orders !== 'boolean')) {
     return undefined;
   }
   return {
@@ -63,6 +63,7 @@ function permissionOf(value: unknown): AppPermission | undefined {
     canLock: row.can_lock,
     ...(row.can_manage_catalog === true ? { canManageCatalog: true } : {}),
     ...(row.can_manage_shops === true ? { canManageShops: true } : {}),
+    ...(row.can_cancel_orders === true ? { canCancelOrders: true } : {}),
   };
 }
 
@@ -266,12 +267,13 @@ function lifecycleOf(value: unknown): UserLifecycle | undefined {
   return { lockReason, lockedAt, relatedData, activeWork, deleteEffect: raw.delete_effect, lockBlockedReason: lockBlocked, deleteBlockedReason: deleteBlocked };
 }
 
-const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog' | 'canManageShops'>, string])[] = [
+const RIGHT_LABEL: readonly (readonly [keyof Pick<AppPermission, 'canView' | 'canReviewProfile' | 'canLock' | 'canManageCatalog' | 'canManageShops' | 'canCancelOrders'>, string])[] = [
   ['canView', 'Xem'],
   ['canReviewProfile', 'Duyệt hồ sơ'],
   ['canLock', 'Khóa'],
   ['canManageCatalog', 'Nhóm món'],
   ['canManageShops', 'Quản lý hoạt động quán'],
+  ['canCancelOrders', 'Hủy đơn đang chạy'],
 ];
 
 /** "Khách hàng: Xem, Khóa" per app that has at least one right; "Chưa cấp quyền" when none. */

@@ -15,6 +15,8 @@ export interface AppPermissionRow {
   readonly canManageCatalog: boolean;
   /** Shop activity management: disable / enable a shop (SHOP only; needs VIEW). */
   readonly canManageShops: boolean;
+  /** Cancelling a running order (admin.order.cancel; DRIVER only; needs VIEW). */
+  readonly canCancelOrders: boolean;
 }
 
 /** The function rights SYSTEM gives one by one (wallet.read, wallet.topup.record, report.read, report.export, audit.read). */

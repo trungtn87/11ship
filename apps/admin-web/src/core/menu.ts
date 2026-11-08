@@ -68,6 +68,8 @@ export interface AppPermission {
   readonly canManageCatalog?: boolean;
   /** Shop activity management (SHOP only). Absent = false. */
   readonly canManageShops?: boolean;
+  /** Cancelling a running order (DRIVER only). Absent = false. */
+  readonly canCancelOrders?: boolean;
 }
 
 /**

@@ -84,6 +84,10 @@
     "1797552000000_ops-analytics-anomalies": {
       "sha256": "34a0ca58b6ddd3799c51c0b183d5818c4f83dda4d0136adf9e89a1a7c704674e",
       "review": "PR #278 / #241 / #242; compatibility review 2026-10-31: Up only creates four new tables in schema app (ops_online_snapshots, ops_anomaly_settings with one seeded default row, ops_anomaly_cases, ops_anomaly_case_events) and their indexes. No existing table, column, constraint, function, grant or data is read or changed, so the old backend keeps working unchanged; the new backend needs this migration for the Vận hành tab and the flag-only anomaly cases. Down drops the four new tables only. No remote migration or deployment authorized."
+    },
+    "1797638400000_admin-order-cancel-right": {
+      "sha256": "d1b423aff4023ea75fa265a67edb8d79152b4d5c38d04652296fc494bf486fc6",
+      "review": "OD-12; compatibility review 2026-11-07: Up adds one boolean column can_cancel_orders NOT NULL DEFAULT false to admin_app_permissions and admin_invitation_permissions plus CHECKs (requires can_view, only app = DRIVER), the same shape as can_manage_shops. Every existing row and invitation gets false, so no administrator is upgraded and nothing is copied from can_lock; no business data, grants or other tables change. The previous backend names its columns explicitly in every INSERT/SELECT of these tables, so it keeps working and ignores the column (it keeps gating order cancellation by can_lock on DRIVER until the new backend runs); all existing rows satisfy the CHECKs. Down drops the two constraints and the column of each table."
     }
   }
 }

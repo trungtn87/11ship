@@ -20,7 +20,7 @@ export interface AccessHost {
 }
 
 interface Draft {
-  readonly apps: Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean }>;
+  readonly apps: Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean; cancel: boolean }>;
   readonly rights: Map<RightKey, boolean>;
 }
 
@@ -31,10 +31,10 @@ function badge(label: string, tone: 'ok' | 'lock' | 'neutral' | 'wait'): HTMLEle
 }
 
 function draftOf(admin: AdministratorAccess): Draft {
-  const apps = new Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean }>();
+  const apps = new Map<AppName, { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean; cancel: boolean }>();
   for (const app of APPS) {
     const row = admin.permissions.find((entry) => entry.app === app);
-    apps.set(app, { view: row?.canView ?? false, review: row?.canReviewProfile ?? false, lock: row?.canLock ?? false, catalog: row?.canManageCatalog ?? false, shops: row?.canManageShops ?? false });
+    apps.set(app, { view: row?.canView ?? false, review: row?.canReviewProfile ?? false, lock: row?.canLock ?? false, catalog: row?.canManageCatalog ?? false, shops: row?.canManageShops ?? false, cancel: row?.canCancelOrders ?? false });
   }
   return { apps, rights: new Map(RIGHT_KEYS.map((key) => [key, admin.rights.find((right) => right.key === key)?.granted ?? false])) };
 }
@@ -42,7 +42,7 @@ function draftOf(admin: AdministratorAccess): Draft {
 function permissionRows(draft: Draft): AppPermissionRow[] {
   return APPS.flatMap((app) => {
     const value = draft.apps.get(app);
-    return value === undefined || !value.view ? [] : [{ app, canView: true, canReviewProfile: value.review, canLock: value.lock, canManageCatalog: value.catalog, canManageShops: value.shops }];
+    return value === undefined || !value.view ? [] : [{ app, canView: true, canReviewProfile: value.review, canLock: value.lock, canManageCatalog: value.catalog, canManageShops: value.shops, canCancelOrders: value.cancel }];
   });
 }
 
@@ -184,7 +184,7 @@ export class AccessView {
     const inputs: Array<() => void> = [];
     const syncDisabled = (): void => inputs.forEach((fn) => fn());
     const appBlock = (app: AppName): HTMLElement => {
-      const value = draft.apps.get(app) as { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean };
+      const value = draft.apps.get(app) as { view: boolean; review: boolean; lock: boolean; catalog: boolean; shops: boolean; cancel: boolean };
       const view = check(value.view, 'Xem', false, (on) => {
         value.view = on;
         if (!on) {
@@ -207,6 +207,9 @@ export class AccessView {
         dependent(app === 'DRIVER' ? 'Xử lý: xem liên hệ, xử lý hàng, duyệt hồ sơ' : 'Xử lý: duyệt hồ sơ', () => value.review, (on) => (value.review = on));
       }
       dependent(app === 'DRIVER' ? 'Khóa: khóa shipper, gỡ shipper khỏi đơn, chỉnh phí' : 'Khóa tài khoản', () => value.lock, (on) => (value.lock = on));
+      if (app === 'DRIVER') {
+        dependent('Hủy đơn đang chạy', () => value.cancel, (on) => (value.cancel = on));
+      }
       if (app === 'SHOP') {
         dependent('Quản lý nhóm món', () => value.catalog, (on) => (value.catalog = on));
         dependent('Quản lý hoạt động quán', () => value.shops, (on) => (value.shops = on));
