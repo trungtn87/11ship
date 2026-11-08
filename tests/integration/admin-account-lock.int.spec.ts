@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import {
@@ -324,6 +325,48 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(adminData(unlockReplay)).toEqual(adminData(unlocked));
     expect(await auditCount(target.id, UNLOCK_ACTION)).toBe(1);
     expect(adminData(await detail(target.id, systemLogin())).allowed_actions).toEqual(['LOCK', 'DELETE']);
+  });
+
+  it('P5-6a (OD-26, no cancel): an administrative lock and its unlock keep the owner\'s deletion request; the sweeper then keeps the stronger lock or finishes the request', async () => {
+    const auditRows = (userId: string, action: string): Promise<number> => count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE action = $1 AND resource_id = $2', [action, userId]);
+    const state = async (userId: string): Promise<{ status: string; reason: string | null; pending: boolean } | undefined> =>
+      (await app.pool.query<{ status: string; reason: string | null; pending: boolean }>('SELECT status, lock_reason AS reason, (delete_requested_at IS NOT NULL) AS pending FROM app.users WHERE user_id = $1::uuid', [userId])).rows[0];
+    const sweep = (): Promise<unknown> => app.running.app.get(AccountDeletionSweeper).sweep();
+    const requestDeletion = (userId: string): Promise<unknown> => app.pool.query('UPDATE app.users SET delete_requested_at = clock_timestamp(), version = version + 1 WHERE user_id = $1::uuid', [userId]);
+
+    // 1. PENDING -> administrative lock: the request is KEPT (one extra audit entry), then the sweeper keeps the VIOLATION lock, never purges.
+    const locked = await seedUser({ roles: ['CUSTOMER'], name: `Khách Xóa Khóa ${tag}` });
+    await requestDeletion(locked.id);
+    const lockResponse = await change('lock', locked.id, systemLogin(), body(2));
+    expect(lockResponse.status).toBe(200);
+    expect(await state(locked.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: true });
+    expect(await auditRows(locked.id, 'account.lock.on_delete_request.v1')).toBe(1);
+    expect(await auditRows(locked.id, 'admin.user.lock.v1')).toBe(1);
+    await sweep();
+    expect(await state(locked.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: false });
+    expect(await liveSessions(locked.id)).toBe(0);
+    expect(await auditRows(locked.id, 'account.delete.finalized.v1')).toBe(1);
+
+    // 2. PENDING -> lock -> unlock: the account does NOT come back as an ordinary ACTIVE one; it is "deletion pending" again (one audit entry
+    //    for each step) and the sweeper carries the request out (this customer has nothing to keep: it is deleted for good).
+    const toggled = await seedUser({ roles: ['CUSTOMER'] });
+    await requestDeletion(toggled.id);
+    expect((await change('lock', toggled.id, systemLogin(), body(2))).status).toBe(200);
+    expect(await state(toggled.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: true });
+    expect((await change('unlock', toggled.id, systemLogin(), body(3))).status).toBe(200);
+    expect(await state(toggled.id)).toEqual({ status: 'ACTIVE', reason: null, pending: true });
+    expect(await auditRows(toggled.id, 'account.lock.on_delete_request.v1')).toBe(1);
+    expect(await auditRows(toggled.id, 'account.unlock.on_delete_request.v1')).toBe(1);
+    await sweep();
+    expect(await state(toggled.id)).toBeUndefined();
+
+    // 3. The owner's OWN lock (DELETE_REQUEST) is the end of the request: the administrator's unlock is the existing "recovery" (the account is ACTIVE
+    //    again, no request pending, no extra audit entry). Current behaviour, documented for the Lead to confirm - not widened here.
+    const recovered = await seedUser({ roles: ['CUSTOMER'] });
+    await app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = 'DELETE_REQUEST', locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [recovered.id]);
+    expect((await change('unlock', recovered.id, systemLogin(), body(2))).status).toBe(200);
+    expect(await state(recovered.id)).toEqual({ status: 'ACTIVE', reason: null, pending: false });
+    expect(await auditRows(recovered.id, 'account.unlock.on_delete_request.v1')).toBe(0);
   });
 
   it('a request is validated before it runs: transport, CSRF, key, strict body; nothing changes on a refusal', async () => {

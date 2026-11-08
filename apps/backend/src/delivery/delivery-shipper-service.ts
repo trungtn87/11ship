@@ -76,6 +76,15 @@ export class DeliveryShipperService {
       const caller = await this.actors.shipperReader(context, principal);
       const nowMs = await freshClockMs(context);
       const rows: DeliveryRow[] = [];
+      // P5-6a: a Shipper whose account deletion is pending is offered nothing new.
+      try {
+        await this.actors.assertNewWorkAllowed(context, caller.actor.userId);
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'ACCOUNT_DELETE_PENDING') {
+          return { driverId: caller.driver.driverId, nowMs, rows };
+        }
+        throw error;
+      }
       for (const row of await this.deliveries.listOpenOffers(context, OFFER_LIMIT)) {
         const agreement = await this.agreements.readByDelivery(context, row.deliveryId);
         // A fee already settled with ANOTHER Shipper is not offered to this one.
@@ -194,6 +203,8 @@ export class DeliveryShipperService {
           }
           throw new AppError('DELIVERY_ALREADY_TAKEN');
         }
+        // P5-6a: nothing NEW is taken while the owner's account deletion is pending (a delivery already held is answered above).
+        await this.actors.assertNewWorkAllowed(context, caller.actor.userId);
         const nowMs = await freshClockMs(context);
         if (delivery.state !== 'waiting_driver') {
           throw new AppError(delivery.state === 'search_stopped' ? 'DELIVERY_SEARCH_EXPIRED' : 'DELIVERY_STATE_CONFLICT');
@@ -393,6 +404,7 @@ export class DeliveryShipperService {
       { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: operation, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId, ...extra }, replay: this.#replay(principal, false) },
       async (context) => {
         const caller = await this.actors.shipperWriter(context, principal, { acceptNew: true });
+        await this.actors.assertNewWorkAllowed(context, caller.actor.userId);
         const delivery = await this.deliveries.lockById(context, deliveryId);
         if (delivery === undefined) {
           throw new AppError('DELIVERY_NOT_FOUND');

@@ -6,6 +6,7 @@ import { AdminAccountReadRepository, PermissionRow } from '../admin-accounts/adm
 import { AdminSystemActor } from '../admin-provisioning/admin-system-actor';
 import { PROVISIONING_SCOPE_TYPE } from '../admin-provisioning/admin-provisioning-constants';
 import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
+import { AccountDeletionFinalizer } from '../account-lifecycle/account-deletion-finalizer';
 import { AdminUserAccountParticipant, OrdinaryAccount } from '../auth/admin-user-account-participant';
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError, TechnicalError } from '../common/app-errors';
@@ -54,6 +55,7 @@ export class AdminAccountLockService {
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     private readonly activity: AccountActivityRegistry,
+    private readonly finalizer: AccountDeletionFinalizer,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
     this.#gateOpen = appConfig.adminUserAccountMutations?.enabled === true;
@@ -124,6 +126,21 @@ export class AdminAccountLockService {
             ...(kind === 'lock' ? { revoked_sessions: revokedSessions, lock_reason: body.lockReason } : { previous_lock_reason: auth.target.lockReason ?? null }),
           },
         });
+        if (auth.target.deleteRequested) {
+          // The owner's deletion request survives this change (OD-26: no cancel): a lock keeps it pending, an unlock puts the account back to
+          // "deletion pending" (new work refused, the request finished by the sweeper). Recorded so the administration can see it.
+          await this.audit.append(context, {
+            requestId: meta.requestId,
+            actorType: auth.role,
+            actorId: auth.actorId,
+            action: kind === 'lock' ? 'account.lock.on_delete_request.v1' : 'account.unlock.on_delete_request.v1',
+            resourceType: RESOURCE_USER,
+            resourceId: userId,
+            resourceVersion: changed.version,
+            outcome: 'SUCCESS',
+            metadata: { target_user_id: userId, version: changed.version, delete_request_kept: true },
+          });
+        }
         await this.outbox.append(context, {
           eventType: EVENT_TYPES[kind],
           eventSchemaVersion: 1,
@@ -162,14 +179,9 @@ export class AdminAccountLockService {
     body: LockBody,
     meta: { requestId: string },
   ): Promise<{ status: number; replayGuard: JsonObject; payload: JsonObject }> {
-    // Locks first, then the read: the data seen is the data that is still there when the account is purged or locked.
-    await this.activity.lockWorkSources(context, userId);
-    const related = await this.activity.relatedData(context, userId);
-    if (related.length === 0) {
-      const purged = await this.accounts.purge(context, auth.target);
-      if (!purged) {
-        throw new TechnicalError('internal', 'Locked account could not be deleted');
-      }
+    // The delete / lock decision is the account lifecycle's own (shared with the owner's confirmation and the pending-request sweeper).
+    const outcome = await this.finalizer.finalize(context, auth.target);
+    if (outcome.kind === 'DELETED') {
       await this.audit.append(context, {
         requestId: meta.requestId,
         actorType: auth.role,
@@ -195,14 +207,13 @@ export class AdminAccountLockService {
         payload: { command_id: randomUUID(), user_id: userId, result: 'DELETED', related_data: [] },
       };
     }
-    if (auth.target.status === 'DISABLED') {
+    if (outcome.kind === 'ALREADY_DISABLED') {
       throw new AppError('USER_ACCOUNT_ALREADY_IN_STATE');
     }
-    await this.#assertNoActiveWork(context, userId);
-    const disabled = await this.accounts.disable(context, auth.target, body.expectedVersion, 'DELETE_REQUEST');
-    if (disabled === undefined) {
-      throw new TechnicalError('internal', 'Locked account could not be updated');
+    if (outcome.kind === 'ACTIVE_WORK') {
+      throw new AppError('USER_ACCOUNT_HAS_ACTIVE_WORK');
     }
+    const related = [...outcome.relatedData];
     await this.audit.append(context, {
       requestId: meta.requestId,
       actorType: auth.role,
@@ -210,7 +221,7 @@ export class AdminAccountLockService {
       action: AUDIT_ACTIONS.delete,
       resourceType: RESOURCE_USER,
       resourceId: userId,
-      resourceVersion: disabled.version,
+      resourceVersion: outcome.version,
       outcome: 'SUCCESS',
       metadata: {
         target_user_id: userId,
@@ -218,9 +229,9 @@ export class AdminAccountLockService {
         from_status: 'ACTIVE',
         to_status: 'DISABLED',
         lock_reason: 'DELETE_REQUEST',
-        version: disabled.version,
+        version: outcome.version,
         reason: body.reason,
-        revoked_sessions: disabled.revokedSessions,
+        revoked_sessions: outcome.revokedSessions,
         related_data: related,
       },
     });
@@ -229,8 +240,8 @@ export class AdminAccountLockService {
       eventSchemaVersion: 1,
       resourceType: RESOURCE_USER,
       resourceId: userId,
-      resourceVersion: disabled.version,
-      payload: { user_id: userId, account_status: 'DISABLED', version: disabled.version },
+      resourceVersion: outcome.version,
+      payload: { user_id: userId, account_status: 'DISABLED', version: outcome.version },
     });
     return {
       status: 200,
@@ -241,8 +252,8 @@ export class AdminAccountLockService {
         result: 'LOCKED',
         account_status: 'DISABLED',
         lock_reason: 'DELETE_REQUEST',
-        version: disabled.version,
-        changed_at: new Date(disabled.changedAtMs).toISOString(),
+        version: outcome.version,
+        changed_at: new Date(outcome.changedAtMs).toISOString(),
         related_data: related,
       },
     };

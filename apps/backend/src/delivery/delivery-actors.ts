@@ -32,6 +32,11 @@ export class DeliveryActors {
     private readonly drivers: DriverRepository,
   ) {}
 
+  /** New work (a delivery, taking a delivery) is refused while the owner's account deletion is pending (P5-6a). */
+  async assertNewWorkAllowed(context: TransactionContext, userId: string): Promise<void> {
+    await this.sessionAuth.assertNewWorkAllowed(context, userId);
+  }
+
   /** A Shop command: user FOR UPDATE, session FOR UPDATE, SHOP context, then the owned shop FOR UPDATE. The shop must be usable (ACTIVE) to call a Shipper. */
   async shopWriter(context: TransactionContext, principal: AuthPrincipal): Promise<ShopCaller> {
     const actor = { userId: principal.userId, sessionId: principal.sessionId };

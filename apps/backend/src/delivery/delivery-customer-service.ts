@@ -1,4 +1,5 @@
 import { randomBytes, createHash, randomUUID } from 'node:crypto';
+import { SessionAuthorizationParticipant } from '../auth/session-authorization-participant';
 import { Injectable } from '@nestjs/common';
 import { AuthPrincipal } from '../auth/auth-principal';
 import { AppError, TechnicalError } from '../common/app-errors';
@@ -57,6 +58,7 @@ export class DeliveryCustomerService {
     private readonly feeAnswers: FeeAnswerExpiry,
     private readonly routes: M14RouteClient,
     private readonly locations: ShipperLocationRepository,
+    private readonly sessionAuth: SessionAuthorizationParticipant,
   ) {}
 
   #replay(principal: AuthPrincipal) {
@@ -127,6 +129,8 @@ export class DeliveryCustomerService {
         replay: this.#replay(principal),
       },
       async (context) => {
+        // P5-6a: no NEW delivery while the owner's account deletion is pending. The user row is read FOR SHARE, so a confirmation in flight is waited for.
+        await this.sessionAuth.assertNewWorkAllowed(context, principal.userId);
         const distanceM = route?.distanceM ?? null;
         let standardFeeVnd: number | null = null;
         let feeMode: 'STANDARD' | 'AGREED' = input.agreedFee !== null ? 'AGREED' : 'STANDARD';

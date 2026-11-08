@@ -3,6 +3,7 @@ import { DiscoveryRouteModule } from './discovery-route/discovery-route.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { ActivationOtpProvider } from './admin-activation/activation-otp-provider';
 import { ActivationSmsGatewayBinding } from './admin-activation/activation-otp-providers';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 import { AccountRecoveryModule } from './account-recovery/account-recovery.module';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuthModule, AuthModuleOptions } from './auth/auth.module';
@@ -85,7 +86,7 @@ export class AppModule {
         HealthModule,
         ...(auth === undefined
           ? []
-          : [auth, OnboardingModule.register(auth), ShopSetupModule.register(auth), DiscoveryRouteModule, ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), DriverWalletModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), OrderChatModule.register(auth), FeedbackModule.register(auth), NotificationsModule.register(auth), OpsModule.register(auth), AccountRecoveryModule.register(auth)]),
+          : [auth, OnboardingModule.register(auth), ShopSetupModule.register(auth), DiscoveryRouteModule, ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), DriverWalletModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), OrderChatModule.register(auth), FeedbackModule.register(auth), NotificationsModule.register(auth), OpsModule.register(auth), AccountRecoveryModule.register(auth), AccountDeletionModule.register(auth)]),
         // Administration web authentication: only when ADMIN_AUTH_ENABLED=true (config.adminAuth is then present),
         // on top of the one Auth module object above. Disabled (the default): nothing is wired or exposed.
         ...(auth === undefined || options.config.adminAuth === undefined ? [] : [AdminAuthModule.register(auth, activation)]),

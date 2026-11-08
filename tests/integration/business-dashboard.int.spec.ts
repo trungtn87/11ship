@@ -43,6 +43,18 @@ describe('Business Dashboard — real money requests, chat, rights and reports',
   const create=async()=>{
     const r=await client(shop,'POST','/shop-payments',{amount_vnd:29000,note:'Đã chuyển khoản, nhờ kiểm tra'});expect(r.status).toBe(201);return String(adminData(r).request_id);
   };
+  it('P5-6a (OD-26): a shop owner whose account deletion is pending opens no NEW payment request (409 ACCOUNT_DELETE_PENDING, nothing written)',async()=>{
+    const third=await clientShop();
+    const owned=()=>admin.pool.query<{n:string}>('SELECT count(*)::text AS n FROM app.business_finance_requests WHERE owner_user_id=$1::uuid',[third.userId]).then(r=>Number(r.rows[0]?.n));
+    await admin.pool.query('UPDATE app.users SET delete_requested_at=clock_timestamp(), version=version+1 WHERE user_id=$1::uuid',[third.userId]);
+    try{
+      const refused=await client(third,'POST','/shop-payments',{amount_vnd:29000,note:'Đã chuyển khoản, nhờ kiểm tra'});
+      expect([refused.status,adminErrorCode(refused)]).toEqual([409,'ACCOUNT_DELETE_PENDING']);
+      expect(await owned()).toBe(0);
+    }finally{
+      await admin.pool.query('UPDATE app.users SET delete_requested_at=NULL, version=version+1 WHERE user_id=$1::uuid',[third.userId]);
+    }
+  });
   const confirmation=(version=1)=>({expected_version:version,actual_amount_vnd:29000,bank_id:'VCB',system_owned_account_id:accountId,canonical_transaction_id:bankTransaction,received_at:new Date().toISOString()});
   it('keeps the new entitlement trigger inventory explicit alongside the older migration inventory',async()=>{
     const triggers=await admin.pool.query<{tgname:string}>(`SELECT tgname FROM pg_trigger WHERE tgrelid='app.shop_entitlement_grants'::regclass AND NOT tgisinternal ORDER BY tgname`);

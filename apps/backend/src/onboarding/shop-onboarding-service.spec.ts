@@ -99,6 +99,8 @@ function rig(options: {
         throw gate.error;
       }
     },
+    // P5-6a: the pending-deletion gate (its own tests: tests/integration/account-deletion.int.spec.ts); it adds no step to the lock order asserted here.
+    assertNewWorkAllowed: async () => undefined,
   } as unknown as SessionAuthorizationParticipant;
   const roleGrants = {
     grant: async (_c: unknown, _u: string, role: string) => void events.push(`role.grant:${role}`),

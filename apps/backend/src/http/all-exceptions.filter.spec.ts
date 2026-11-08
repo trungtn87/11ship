@@ -177,6 +177,8 @@ describe('AllExceptionsFilter', () => {
 
     it('registers exactly the foundation codes (six idempotency + unknown transaction outcome), the Auth Core codes, the Shop onboarding codes, the Driver onboarding codes, the Shipper management codes (M03), the shipping fee policy codes (M06-A), the Shop management codes, the administration login codes the ADMIN invitation codes, the administration activation codes, the administration account read code, the USER lock/unlock codes, the staging-fixture registration code and the client registration codes', () => {
       expect([...codes].sort()).toEqual([
+        'ACCOUNT_DELETE_PENDING',
+        'ACCOUNT_DELETE_RATE_LIMITED',
         'ACCOUNT_DISABLED',
         'ACCOUNT_RECOVERY_AVAILABLE',
         'ADDRESS_CHANGE_ALREADY_PENDING',

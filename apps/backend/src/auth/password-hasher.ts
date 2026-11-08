@@ -1,3 +1,4 @@
+import { OnModuleInit } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 
@@ -30,8 +31,20 @@ const OPTIONS = {
   parallelism: ARGON2_PARALLELISM,
 } as const;
 
-export class Argon2idPasswordHasher implements PasswordHasher {
-  #dummy: Promise<string> | undefined;
+export class Argon2idPasswordHasher implements PasswordHasher, OnModuleInit {
+  // The throwaway hash is created EAGERLY, when the hasher is built, from random input nobody knows (it is not a credential of any account). Application
+  // startup waits for it (onModuleInit), so no request is ever the one that pays for creating it: every branch that answers "no such credentials" does exactly
+  // ONE verification and zero hashing, the first request after a start included.
+  readonly #dummy: Promise<string> = argon2.hash(randomBytes(32).toString('base64url'), OPTIONS);
+
+  constructor() {
+    // Never an unhandled rejection from a promise nobody awaited yet; the failure surfaces at onModuleInit (startup) and at the first use.
+    this.#dummy.catch(() => undefined);
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.#dummy;
+  }
 
   hash(password: string): Promise<string> {
     return argon2.hash(password, OPTIONS);
@@ -42,8 +55,6 @@ export class Argon2idPasswordHasher implements PasswordHasher {
   }
 
   async verifyAgainstDummy(password: string): Promise<void> {
-    // Created once, lazily, from random input that nobody knows; it is not a credential of any account.
-    this.#dummy ??= argon2.hash(randomBytes(32).toString('base64url'), OPTIONS);
     await argon2.verify(await this.#dummy, password);
   }
 }

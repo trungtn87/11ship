@@ -159,6 +159,8 @@ export class AdminAccountReadService {
         lifecycle: {
           lock_reason: row.lockReason,
           locked_at: row.lockedAtMs === null ? null : iso(row.lockedAtMs),
+          // P5-6a (OD-26): set while the owner's deletion waits for the running work to end; the administration only reads it (no approve / cancel).
+          delete_requested_at: row.deleteRequestedAtMs === undefined || row.deleteRequestedAtMs === null ? null : iso(row.deleteRequestedAtMs),
           related_data: relatedData,
           active_work: activeWork,
           delete_effect: relatedData.length === 0 ? 'DELETE_PERMANENTLY' : 'LOCK',

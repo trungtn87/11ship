@@ -75,6 +75,8 @@ export class DriverOnboardingService {
   async #create(context: TransactionContext, actor: SessionActor, input: DriverOnboardingInput, requestId: string) {
     const userId = actor.userId;
     await this.sessionAuth.lockAuthorizedActor(context, actor);
+    // P5-6a: a new role is not started while the owner's account deletion is pending.
+    await this.sessionAuth.assertNewWorkAllowed(context, userId);
 
     // One Driver per user, proven under the user lock: a user who already has a profile (in any status,
     // CLOSED included) gets the same answer whatever Idempotency-Key the request carries.

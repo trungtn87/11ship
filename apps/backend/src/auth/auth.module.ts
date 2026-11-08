@@ -3,6 +3,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { ClientPasswordService } from '../client-auth/client-password-service';
 import { DynamicModule, Module } from '@nestjs/common';
 import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
+import { AccountDeletionFinalizer } from '../account-lifecycle/account-deletion-finalizer';
 import { AccountRecordReader } from '../account-lifecycle/account-record-reader';
 import { AuditModule } from '../audit/audit.module';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
@@ -153,6 +154,8 @@ export class AuthModule {
         // The business-data and active-work checks the account lifecycle (delete / lock) asks; later modules register theirs.
         AccountRecordReader,
         AccountActivityRegistry,
+        // P5-6a: the delete-or-lock decision shared by the administration delete, the owner's confirmation and the pending-request sweeper.
+        AccountDeletionFinalizer,
         VerificationService,
         SessionService,
         RoleGrantParticipant,
@@ -197,6 +200,7 @@ export class AuthModule {
         SystemSettingsRepository,
         SystemSettingsReader,
         AccountActivityRegistry,
+        AccountDeletionFinalizer,
       ],
     };
   }

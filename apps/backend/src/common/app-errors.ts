@@ -297,6 +297,10 @@ export const APP_ERROR_DEFINITIONS = {
   USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
   // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
   USER_ACCOUNT_ACTIVITY_UNVERIFIED: { status: 503, message: 'The orders, deliveries and records of the account could not be verified; nothing was changed' },
+  // Public account deletion (P5-6a, OD-26). PENDING = the owner confirmed the deletion and the running work is being finished: nothing NEW may be
+  // created or taken. The quota error belongs to the separate limiter of the confirm route (never the login / OTP one).
+  ACCOUNT_DELETE_PENDING: { status: 409, message: 'The account is being deleted; new orders, deliveries and requests cannot be started' },
+  ACCOUNT_DELETE_RATE_LIMITED: { status: 429, message: 'Too many attempts; try again later' },
   USER_ACCOUNT_IMPACT_REVIEW_REQUIRED: { status: 409, message: 'This account change is not available until its business impact is reviewed' },
 
   // SYSTEM settings (Owner decision 2026-10-14). Fixed messages; nothing the client sent is echoed.

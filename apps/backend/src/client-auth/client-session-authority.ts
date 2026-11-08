@@ -86,6 +86,11 @@ export class ClientSessionAuthority {
     };
   }
 
+  /** New work of the locked actor is refused while the owner's account deletion is pending (see SessionAuthorizationParticipant.assertNewWorkAllowed). */
+  async assertNewWorkAllowed(context: TransactionContext, actor: Pick<ClientActor, 'userId'>): Promise<void> {
+    await this.sessionAuth.assertNewWorkAllowed(context, actor.userId);
+  }
+
   async #requireOrdinary(context: TransactionContext, userId: string): Promise<void> {
     const eligibility = await this.customers.readEligibility(context, userId);
     if (eligibility === undefined || !isOrdinaryClientAccount(eligibility)) {
