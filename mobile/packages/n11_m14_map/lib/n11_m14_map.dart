@@ -2,6 +2,8 @@
 /// never uploads anything; the recorder, the foreground service and the routing client live in `n11_m14` (11Ship only).
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -50,11 +52,16 @@ class _NativeMap extends StatefulWidget {
 }
 class _NativeMapState extends State<_NativeMap> {
   MethodChannel? _channel;
+  late String _sent = jsonEncode(_data);
   Map<String, dynamic> get _data => <String, dynamic>{'pins': widget.pins, 'route': widget.route, 'focus_pin': widget.focusPin,
     'select_points': widget.onPoint != null, 'center_request': widget.centerRequest, if (widget.radiusCircle != null) 'radius_circle': widget.radiusCircle};
   @override
   void didUpdateWidget(covariant _NativeMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The screen around the map rebuilds this widget with identical data (typing); redraw natively only when something changed (#299).
+    final String signature = jsonEncode(_data);
+    if (signature == _sent) return;
+    _sent = signature;
     _channel?.invokeMethod<void>('update', _data);
   }
   @override

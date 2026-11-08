@@ -25,6 +25,9 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.sin
 
+/** One loader thread for every map view: a view created again must not start another 8 MB parse beside the running one (#299). */
+private val mapLoader=Executors.newSingleThreadExecutor { r -> Thread(r,"m14-map-load").apply { isDaemon=true } }
+
 class M14MapFactory(private val messenger: BinaryMessenger): PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView = M14MapView(context,viewId,messenger,args as? Map<*,*>)
 }
@@ -49,7 +52,6 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private var resumed=false
     private var started=false
     private val main=Handler(Looper.getMainLooper())
-    private val worker=Executors.newSingleThreadExecutor()
     private val host: Activity? = generateSequence(context) { (it as? ContextWrapper)?.baseContext?.takeIf { b -> b!==it } }.filterIsInstance<Activity>().firstOrNull()
     init {
         MapLibre.getInstance(context)
@@ -72,7 +74,8 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
         view.addOnDidFailLoadingMapListener { fail("Không tải được bản đồ Cao Bằng. Thử lại hoặc cập nhật ứng dụng.") }
         host?.application?.registerActivityLifecycleCallbacks(this)
         start(); resume()
-        worker.execute {
+        mapLoader.execute {
+            if(disposed) return@execute
             try {
                 offline.verify(); val labels=offline.labels(); val style=offline.style()
                 main.post {
@@ -200,7 +203,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     private fun resume() { if(!resumed && !disposed) { view.onResume(); resumed=true } }
     private fun pause() { if(resumed) { view.onPause(); resumed=false } }
     private fun stop() { pause(); if(started) { view.onStop(); started=false } }
-    override fun dispose() { if(disposed)return; stop(); disposed=true; channel.setMethodCallHandler(null); worker.shutdownNow(); host?.application?.unregisterActivityLifecycleCallbacks(this); view.onDestroy() }
+    override fun dispose() { if(disposed)return; stop(); disposed=true; channel.setMethodCallHandler(null); host?.application?.unregisterActivityLifecycleCallbacks(this); view.onDestroy() }
     override fun onActivityStarted(a: Activity) { if(a===host) start() }
     override fun onActivityResumed(a: Activity) { if(a===host) resume() }
     override fun onActivityPaused(a: Activity) { if(a===host) pause() }

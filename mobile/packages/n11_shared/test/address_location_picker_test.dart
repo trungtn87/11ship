@@ -7,6 +7,43 @@ import 'package:n11_shared/testing.dart';
 
 void main() {
   addressPickerUxTests();
+  // #299: typing (and the keyboard resizing the viewport) must not rebuild, dispose or re-create the map; the old lazy ListView did.
+  testWidgets('typing for a long time and locating repeatedly never rebuilds or recreates the map', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 760);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    int builds = 0, created = 0, disposed = 0;
+    final FakeLocationProvider gps = FakeLocationProvider();
+    await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
+      initial: const AddressLocation(''), requirePoint: false, location: gps,
+      searchApi: _FixedSearch(const <PlaceSearchResult>[]),
+      mapBuilder: (_, lat, lng, onPick) { builds++; return _MapProbe(onCreate: () => created++, onDispose: () => disposed++); },
+    )));
+    expect((builds, created), (1, 1));
+    String text = '';
+    for (int i = 0; i < 120; i++) {
+      text += 'a';
+      await tester.enterText(find.byKey(const Key('location-address-text')), text);
+      await tester.pump(const Duration(milliseconds: 500));
+      if (i % 40 == 0) {
+        // The keyboard opens and closes: the body shrinks and grows again.
+        tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+        await tester.pump();
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pump();
+      }
+    }
+    expect((builds, created, disposed), (1, 1, 0));
+    for (int i = 0; i < 10; i++) {
+      await tester.tap(find.byKey(const Key('location-current')));
+      await tester.pumpAndSettle();
+    }
+    expect(gps.calls, 10);
+    // Each locate moves the pin, so the map is told once per new point, never because of the text.
+    expect(created, 1);
+    expect(disposed, 0);
+  });
+
   testWidgets('place search debounces and a late older response cannot replace the latest results', (WidgetTester tester) async {
     final _PendingSearch search = _PendingSearch();
     await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
@@ -393,4 +430,29 @@ void addressPickerUxTests() {
     expect(saved?.text, 'xóm Nà Lạn');
     expect(saved?.latitude, isNull);
   });
+}
+
+class _MapProbe extends StatefulWidget {
+  const _MapProbe({required this.onCreate, required this.onDispose});
+  final VoidCallback onCreate;
+  final VoidCallback onDispose;
+  @override
+  State<_MapProbe> createState() => _MapProbeState();
+}
+
+class _MapProbeState extends State<_MapProbe> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onCreate();
+  }
+
+  @override
+  void dispose() {
+    widget.onDispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
 }
