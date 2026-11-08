@@ -101,6 +101,20 @@ Future<void> loginAndSettle(WidgetTester tester, Rig r) async {
 }
 
 void main() {
+  testWidgets('ship account: no voucher-entry for guest or signedIn (OD-28)', (WidgetTester tester) async {
+    final Rig r = rig();
+    await boot(tester, r);
+    await openTab(tester, 'account');
+    expect(find.byKey(const Key('voucher-entry')), findsNothing);
+    expect(find.text('Voucher của tôi'), findsNothing);
+    await loginAndSettle(tester, r);
+    expect(r.session.status, SessionStatus.signedIn);
+    await openTab(tester, 'account');
+    expect(find.byKey(const Key('open-logout')), findsOneWidget);
+    expect(find.byKey(const Key('voucher-entry')), findsNothing);
+    expect(find.text('Voucher của tôi'), findsNothing);
+  });
+
   testWidgets('guest: no wallet entry anywhere', (WidgetTester tester) async {
     final Rig r = rig();
     await boot(tester, r);

@@ -78,6 +78,21 @@ Future<void> registrationDetails(WidgetTester tester) async {
 }
 
 void main() {
+  // OD-28: "Voucher của tôi" is not offered (VoucherScreen itself stays, unreachable from the menu).
+  testWidgets('food account: no voucher-entry for guest or signedIn', (WidgetTester tester) async {
+    final SessionController session = await pump(tester, healthy());
+    await openTab(tester, 'account');
+    expect(find.byKey(const Key('voucher-entry')), findsNothing);
+    expect(find.text('Voucher của tôi'), findsNothing);
+    await session.login(phone: '0901234567', password: 'Correct-Horse-9');
+    await tester.pump();
+    await tester.pump();
+    expect(session.status, SessionStatus.signedIn);
+    expect(find.byKey(const Key('open-logout')), findsOneWidget);
+    expect(find.byKey(const Key('voucher-entry')), findsNothing);
+    expect(find.text('Voucher của tôi'), findsNothing);
+  });
+
   testWidgets('nested tab navigation keeps one bottom bar and a tab tap returns to its root', (WidgetTester tester) async {
     await tester.pumpWidget(N11App(
       brand: foodBrand,
