@@ -17,7 +17,18 @@ Mọi lỗi xác thực (SĐT không tồn tại, sai mật khẩu, tài khoản
 
 ### Điểm chặn việc mới khi PENDING (`ACCOUNT_DELETE_PENDING`, 409)
 
-Khách đặt đơn, đặt lại đơn, tạo giao hàng; quán gọi lại giao hàng, tạo yêu cầu thanh toán (tạo giao hàng trực tiếp đã đóng bởi OD-5); shipper nhận chuyến, thương lượng phí chuyến chưa nhận, nạp mới, rút mới (danh sách chuyến trả rỗng); tạo hồ sơ shipper, tạo quán mới. Quán của chủ đang PENDING đọc như quán của chủ bị khóa (không nhận đơn mới; danh sách công khai ẩn). Việc đang chạy (xác nhận/chuẩn bị đơn, giao, hoàn tất, hủy, hoa hồng, khoản tiền đang xử lý) **không bị chặn**. Hợp đồng nằm ở `apps/backend/src/account-deletion/new-work-gate.spec.ts`: route mới tạo việc mới phải gọi `assertNewWorkAllowed` và được thêm vào danh sách đó.
+Khách đặt đơn, đặt lại đơn, tạo giao hàng; quán gọi lại giao hàng, tạo yêu cầu thanh toán (tạo giao hàng trực tiếp đã đóng bởi OD-5); shipper nhận chuyến, thương lượng phí chuyến chưa nhận, nạp mới (danh sách chuyến trả rỗng); **rút tiền KHÔNG bị chặn** (OD-31, xem dưới); tạo hồ sơ shipper, tạo quán mới. Quán của chủ đang PENDING đọc như quán của chủ bị khóa (không nhận đơn mới; danh sách công khai ẩn). Việc đang chạy (xác nhận/chuẩn bị đơn, giao, hoàn tất, hủy, hoa hồng, khoản tiền đang xử lý) **không bị chặn**. Hợp đồng nằm ở `apps/backend/src/account-deletion/new-work-gate.spec.ts`: route mới tạo việc mới phải gọi `assertNewWorkAllowed` và được thêm vào danh sách đó.
+
+### Rút số dư ví (OD-31)
+
+Chủ tài khoản đã yêu cầu xóa vẫn **yêu cầu rút** để lấy lại số dư, thay cho điều kiện hồ sơ Shipper `CLOSING`: khi tài khoản đang **PENDING** (ACTIVE + `delete_requested_at`) hoặc đã **khóa `DELETE_REQUEST`**. Khóa VIOLATION/SECURITY (kể cả khi có yêu cầu xóa đi kèm) **không** có ngoại lệ này. Mọi kiểm tra khác của `DriverWithdrawalService.create` giữ nguyên: rút TOÀN BỘ số dư, một yêu cầu mở, không còn `activeWork`/`pendingFinance`/nạp chờ/số tiền đang giữ. Nạp tiền mới vẫn bị chặn (PENDING: 409 `ACCOUNT_DELETE_PENDING`; khóa: `ACCOUNT_DISABLED`). Tài khoản khóa `DELETE_REQUEST` đăng nhập app Ship ở chế độ ví-giới-hạn (`WALLET_ONLY`, chính sách sẵn có cho Shipper bị khóa), không mở chức năng nào khác. Số dư và yêu cầu rút đang mở là dữ liệu phải giữ: tài khoản không bị xóa vật lý; yêu cầu rút đang mở là "tiền đang xử lý" nên giữ tài khoản ở PENDING cho đến khi xong. Điều này nới quy tắc M03-R-05 (chỉ CLOSING) cho ngoại lệ OD-31; baseline sẽ sửa bằng PR docs riêng khi Owner ra lệnh.
+
+### Khóa quản trị trên tài khoản có yêu cầu xóa (OD-26: không hủy)
+
+- Khóa quản trị (VIOLATION/SECURITY) lên tài khoản đang PENDING **giữ** `delete_requested_at` (constraint `users_delete_request_ck` cho phép ACTIVE hoặc khóa VIOLATION/SECURITY, không bao giờ cùng khóa `DELETE_REQUEST`); ghi thêm audit `account.lock.on_delete_request.v1`.
+- Khi hết việc đang chạy, sweeper giữ **khóa mạnh hơn** (không ghi đè sang `DELETE_REQUEST`), thu hồi lại session, **không xóa vật lý**, xóa yêu cầu và ghi audit `account.delete.finalized.v1` kết quả `LOCK_KEPT` (không có outbox: trạng thái tài khoản không đổi).
+- Mở khóa quản trị khi yêu cầu còn: tài khoản về ACTIVE nhưng vẫn PENDING (chặn việc mới, sweeper hoàn tất); audit `account.unlock.on_delete_request.v1`. Không có đường nào hủy yêu cầu ngầm.
+- Khóa `DELETE_REQUEST` do chính chủ là điểm kết thúc của yêu cầu; Admin mở khóa đó (khôi phục) là hành vi hiện có và chưa mở rộng: tài khoản về ACTIVE, không còn yêu cầu, không audit thêm. Cần Lead xác nhận đây có phải "khôi phục" hợp lệ theo OD-26.
 
 ### Hoàn tất
 
@@ -27,7 +38,7 @@ Fast path ngay lúc xác nhận; sau đó `AccountDeletionSweeper` (`setInterval
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `PUBLIC_WEB_ORIGIN` | không đặt | origin công khai https của backend. Nếu đặt, trình duyệt gọi `confirm` phải gửi đúng `Origin` này (app không gửi `Origin` vẫn qua). Không có hostname trong code; trang gọi API bằng đường dẫn tương đối. |
+| `PUBLIC_WEB_ORIGIN` | không đặt | origin công khai https của backend. **Tùy chọn**; khi KHÔNG đặt thì không kiểm `Origin` gì cả (route không có cookie/token để lạm dụng nên đây chỉ là lớp phòng vệ phía trình duyệt), **production nên khai báo**. Nếu đặt, trình duyệt gọi `confirm` phải gửi đúng `Origin` này (app không gửi `Origin` vẫn qua). Không có hostname trong code; trang gọi API bằng đường dẫn tương đối. |
 | `ACCOUNT_DELETE_IP_LIMIT` / `_WINDOW_SECONDS` | 20 / 600 | hạn mức theo địa chỉ client |
 | `ACCOUNT_DELETE_PHONE_LIMIT` / `_WINDOW_SECONDS` | 5 / 900 | hạn mức theo SĐT (lớp chính) |
 | `ACCOUNT_DELETE_SWEEP_INTERVAL_MS` | 60000 | chu kỳ sweeper |
@@ -38,7 +49,7 @@ Giới hạn theo IP chỉ chính xác khi cấu hình proxy tin cậy đúng (`
 
 1. Migration `1797724800000_account-delete-request` (thêm cột `users.delete_requested_at` + CHECK + chỉ mục một phần + bảng `account_delete_limits`; không đổi migration cũ/enum/ràng buộc `lock_reason`). Mục đánh giá nằm trong `ops/selfhosted/reviewed-migrations.json`.
 2. Cấp quyền cho role runtime: `GRANT SELECT, INSERT, UPDATE ON app.account_delete_limits TO ship11_app;` (đã thêm vào `ops/selfhosted/02-runtime-grants.sql` và kiểm ở `04-check-runtime-grants.sql`).
-3. (Tùy chọn) đặt `PUBLIC_WEB_ORIGIN`. nginx hiện tại đã `proxy_pass` mọi đường dẫn nên `/delete-account` tới được backend.
+3. (Nên làm ở production) đặt `PUBLIC_WEB_ORIGIN`. nginx hiện tại đã `proxy_pass` mọi đường dẫn nên `/delete-account` tới được backend.
 
 ## Cách Owner thử (local)
 

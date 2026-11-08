@@ -32,6 +32,15 @@ describe('entry points of NEW work refuse while the account deletion is pending'
     expect(lockMethods).not.toContain('isDeleteRequested');
   });
 
+  it('the withdrawal is the one exception (OD-31): it keeps working for the owner who asked for the deletion, but a VIOLATION / SECURITY lock never qualifies', () => {
+    expect(read('driver-wallet/driver-withdrawal-service.ts')).toContain('deletionAllowsWithdrawal(');
+    const repository = read('auth/user-repository.ts');
+    const sql = repository.slice(repository.indexOf('async hasDeletionWalletException'));
+    expect(sql).toContain("status = 'ACTIVE' AND delete_requested_at IS NOT NULL");
+    expect(sql).toContain("status = 'DISABLED' AND lock_reason = 'DELETE_REQUEST'");
+    expect(sql.slice(0, sql.indexOf('FROM app.users'))).not.toMatch(/VIOLATION|SECURITY/);
+  });
+
   it('a shop whose OWNER is pending reads like a locked owner in the public listing and in the availability snapshot', () => {
     for (const file of ['shop/shop-availability-sql.ts', 'shop/shop-discovery-reader.ts']) {
       expect(read(file)).toContain('delete_requested_at IS NOT NULL');

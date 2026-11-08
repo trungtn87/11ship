@@ -18,6 +18,9 @@ import { AccountDeletionInput } from './account-deletion-validation';
 /** What the owner's confirmation turned into. PENDING = the running work is being finished first. */
 export type AccountDeletionResult = 'DELETED' | 'LOCKED' | 'PENDING';
 
+/** How a request ended: the account is gone, locked at the owner's request, or the stronger administrative lock it already had was kept. */
+type FinalResult = 'DELETED' | 'LOCKED' | 'LOCK_KEPT';
+
 export const ACCOUNT_DELETE_SCOPE_TYPE = 'account_delete_phone';
 export const ACCOUNT_DELETE_OPERATION_ID = 'account.delete.confirm.v1';
 export const ACCOUNT_DELETE_REQUESTED_ACTION = 'account.delete.requested.v1';
@@ -184,14 +187,14 @@ export class AccountDeletionService {
   /** The audit entry and the outbox event of a deletion that reached its end (DELETED or LOCKED), written by the confirmation and by the sweeper alike. */
   async recordFinalized(
     context: TransactionContext,
-    entry: { requestId?: string; userId: string; version: number; result: 'DELETED' | 'LOCKED'; trigger: 'CONFIRM' | 'SWEEPER'; relatedData: readonly string[]; revokedSessions: number },
+    entry: { requestId?: string; userId: string; version: number; result: FinalResult; trigger: 'CONFIRM' | 'SWEEPER'; relatedData: readonly string[]; revokedSessions: number; lockReason?: string },
   ): Promise<void> {
     await this.#finalized(context, { ...entry, requestId: entry.requestId ?? randomUUID() });
   }
 
   async #finalized(
     context: TransactionContext,
-    entry: { requestId: string; userId: string; version: number; result: 'DELETED' | 'LOCKED'; trigger: 'CONFIRM' | 'SWEEPER'; relatedData: readonly string[]; revokedSessions: number },
+    entry: { requestId: string; userId: string; version: number; result: FinalResult; trigger: 'CONFIRM' | 'SWEEPER'; relatedData: readonly string[]; revokedSessions: number; lockReason?: string },
   ): Promise<void> {
     await this.audit.append(context, {
       requestId: entry.requestId,
@@ -210,8 +213,13 @@ export class AccountDeletionService {
         revoked_sessions: entry.revokedSessions,
         related_data: [...entry.relatedData],
         ...(entry.result === 'LOCKED' ? { lock_reason: 'DELETE_REQUEST' } : {}),
+        ...(entry.result === 'LOCK_KEPT' ? { lock_reason: entry.lockReason ?? null, deletion: 'REQUEST_SETTLED_BY_KEPT_LOCK' } : {}),
       },
     });
+    if (entry.result === 'LOCK_KEPT') {
+      // The status did not change (an administrator locked it earlier and that event was published then): nothing more to publish.
+      return;
+    }
     await this.outbox.append(context, {
       eventType: entry.result === 'DELETED' ? 'user.account.deleted.v1' : 'user.account.locked.v1',
       eventSchemaVersion: 1,

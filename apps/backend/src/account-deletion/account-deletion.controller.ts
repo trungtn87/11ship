@@ -20,8 +20,8 @@ interface HeaderResponse {
 /**
  * When PUBLIC_WEB_ORIGIN is configured, a browser request must come from exactly that origin (the Origin header of a cross-site page or of a
  * sandboxed one never matches). A request with no Origin header (the mobile app, a command line) is not a browser cross-site request and passes:
- * the password in the body is the only authority, never an ambient cookie. Without the setting nothing is compared (the page posts to a relative
- * path, so it works on whatever origin serves it).
+ * the password in the body is the only authority, never an ambient cookie. Without the setting the Origin header is NOT compared at all (the page posts to a
+ * relative path, so it works on whatever origin serves it): the setting is optional and only a browser-side defence in depth; production should declare it.
  */
 export function originAllowed(origin: string | string[] | undefined, configured: string | undefined): boolean {
   if (configured === undefined || origin === undefined) {

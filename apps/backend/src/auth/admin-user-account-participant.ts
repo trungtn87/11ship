@@ -14,6 +14,8 @@ export interface OrdinaryAccount {
   readonly roles: readonly string[];
   /** Why the account is locked (DISABLED rows only; older rows carry none). */
   readonly lockReason?: LockReason;
+  /** The owner asked for the deletion and it is not carried out yet (P5-6a): the administration lock keeps that request. */
+  readonly deleteRequested: boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export class AdminUserAccountParticipant {
       status: row.status,
       version: row.version,
       roles: await this.users.allRoles(context, userId),
+      deleteRequested: row.deleteRequested === true,
       ...(row.lockReason === undefined ? {} : { lockReason: row.lockReason }),
     };
   }
@@ -72,8 +75,18 @@ export class AdminUserAccountParticipant {
     account: OrdinaryAccount,
     expectedVersion: number,
     lockReason: LockReason,
+    options: { readonly clearDeleteRequest?: boolean } = {},
   ): Promise<{ version: number; changedAtMs: number; revokedSessions: number } | undefined> {
-    const changed = await this.users.setAccountStatus(context, { userId: account.userId, from: 'ACTIVE', to: 'DISABLED', expectedVersion, lockReason });
+    // A pending deletion request survives an administrative lock (OD-26: no cancel); only the owner's own DELETE_REQUEST lock, which IS the end of
+    // the request, clears it.
+    const changed = await this.users.setAccountStatus(context, {
+      userId: account.userId,
+      from: 'ACTIVE',
+      to: 'DISABLED',
+      expectedVersion,
+      lockReason,
+      ...(options.clearDeleteRequest === true ? { clearDeleteRequest: true } : {}),
+    });
     if (changed === undefined) {
       return undefined;
     }
@@ -87,6 +100,18 @@ export class AdminUserAccountParticipant {
    */
   async purge(context: TransactionContext, account: OrdinaryAccount): Promise<boolean> {
     return this.users.purgeAppUser(context, account.userId);
+  }
+
+  /**
+   * Ends a deletion request that an administrative lock (VIOLATION / SECURITY) keeps in force: the request is cleared, the stronger lock stays, and every
+   * unrevoked session is revoked again. The data stays (nothing is deleted). Undefined when the account is not in that state any more.
+   */
+  async settleRequestUnderLock(context: TransactionContext, account: OrdinaryAccount): Promise<{ version: number; revokedSessions: number } | undefined> {
+    const cleared = await this.users.clearDeleteRequest(context, account.userId);
+    if (cleared === undefined) {
+      return undefined;
+    }
+    return { version: cleared.version, revokedSessions: await this.sessions.revokeAllForUser(context, account.userId) };
   }
 
   /** DISABLED -> ACTIVE. No role, profile or session is touched: an old session stays revoked; the lock reason is cleared. */

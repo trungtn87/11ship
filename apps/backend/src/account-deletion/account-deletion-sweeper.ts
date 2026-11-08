@@ -74,7 +74,7 @@ export class AccountDeletionSweeper {
 
   async #one(context: TransactionContext, userId: string): Promise<'FINALIZED' | 'WAITING' | 'SKIPPED'> {
     const user = await this.users.lockByIdSkipLocked(context, userId);
-    if (user === undefined || user.status !== 'ACTIVE') {
+    if (user === undefined) {
       return 'SKIPPED';
     }
     const state = await this.users.deleteRequestState(context, userId);
@@ -84,6 +84,19 @@ export class AccountDeletionSweeper {
     const account = await this.accounts.lockOrdinary(context, userId, 'write');
     if (account === undefined) {
       return 'SKIPPED';
+    }
+    if (account.status === 'DISABLED') {
+      // An administrator locked the account while the request was pending: the request survives (OD-26, no cancel). Only VIOLATION / SECURITY can
+      // coexist with it (users_delete_request_ck); the stronger lock is kept, never replaced, and nothing is purged.
+      if (account.lockReason !== 'VIOLATION' && account.lockReason !== 'SECURITY') {
+        return 'SKIPPED';
+      }
+      const kept = await this.finalizer.settleUnderLock(context, account);
+      if (kept.kind === 'ACTIVE_WORK') {
+        return 'WAITING';
+      }
+      await this.deletion.recordFinalized(context, { userId, version: kept.version, result: 'LOCK_KEPT', trigger: 'SWEEPER', relatedData: kept.relatedData, revokedSessions: kept.revokedSessions, lockReason: kept.lockReason });
+      return 'FINALIZED';
     }
     const outcome = await this.finalizer.finalize(context, account);
     if (outcome.kind === 'DELETED') {

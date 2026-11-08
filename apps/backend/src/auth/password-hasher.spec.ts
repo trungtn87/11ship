@@ -1,4 +1,7 @@
-import { describe, expect, it } from '@jest/globals';
+// The real module object (not a namespace copy), so the Argon2 operations can be counted.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import argon2 = require('argon2');
+import { describe, expect, it, jest } from '@jest/globals';
 import { ARGON2_MEMORY_COST_KIB, ARGON2_PARALLELISM, ARGON2_TIME_COST, Argon2idPasswordHasher } from './password-hasher';
 
 // Uses the real argon2 package (ADR-002). A hash costs about 19 MiB and two passes, so a handful per spec file
@@ -31,6 +34,22 @@ describe('Argon2idPasswordHasher (ADR-002)', () => {
     const padded = await hasher.hash('  padded  ');
     expect(await hasher.verify(padded, '  padded  ')).toBe(true);
     expect(await hasher.verify(padded, 'padded')).toBe(false);
+  });
+
+  it('the first (cold) verifyAgainstDummy does ONE verification and ZERO hashing: the throwaway hash exists before any request', async () => {
+    const cold = new Argon2idPasswordHasher();
+    await cold.onModuleInit();
+    const hashSpy = jest.spyOn(argon2, 'hash');
+    const verifySpy = jest.spyOn(argon2, 'verify');
+    try {
+      await cold.verifyAgainstDummy('first request after start');
+      expect([hashSpy.mock.calls.length, verifySpy.mock.calls.length]).toEqual([0, 1]);
+      await cold.verifyAgainstDummy('second request');
+      expect([hashSpy.mock.calls.length, verifySpy.mock.calls.length]).toEqual([0, 2]);
+    } finally {
+      hashSpy.mockRestore();
+      verifySpy.mockRestore();
+    }
   });
 
   it('spends a full verification against a throwaway hash for a missing account and never throws', async () => {

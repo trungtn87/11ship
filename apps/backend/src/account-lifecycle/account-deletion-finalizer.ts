@@ -51,10 +51,39 @@ export class AccountDeletionFinalizer {
     if (activeWork.length > 0) {
       return { kind: 'ACTIVE_WORK', relatedData: related, activeWork };
     }
-    const disabled = await this.accounts.disable(context, account, account.version, 'DELETE_REQUEST');
+    const disabled = await this.accounts.disable(context, account, account.version, 'DELETE_REQUEST', { clearDeleteRequest: true });
     if (disabled === undefined) {
       throw new TechnicalError('internal', 'Locked account could not be updated');
     }
     return { kind: 'LOCKED', relatedData: related, version: disabled.version, changedAtMs: disabled.changedAtMs, revokedSessions: disabled.revokedSessions };
   }
+
+  /**
+   * A deletion request on an account an administrator locked for VIOLATION / SECURITY (the request survives that lock, OD-26): once nothing is in
+   * progress the request is settled by KEEPING the stronger lock (never replaced by DELETE_REQUEST, never purged: the lock is evidence and the data
+   * stays), the sessions are revoked again and the request is cleared. While work is in progress nothing changes.
+   * The caller holds the account row FOR UPDATE and has checked that the account is DISABLED with such a reason.
+   */
+  async settleUnderLock(context: TransactionContext, account: OrdinaryAccount): Promise<LockKeptOutcome | { readonly kind: 'ACTIVE_WORK'; readonly activeWork: readonly string[] }> {
+    await this.activity.lockWorkSources(context, account.userId);
+    const activeWork = await this.activity.activeWork(context, account.userId);
+    if (activeWork.length > 0) {
+      return { kind: 'ACTIVE_WORK', activeWork };
+    }
+    const related = await this.activity.relatedData(context, account.userId);
+    const settled = await this.accounts.settleRequestUnderLock(context, account);
+    if (settled === undefined) {
+      throw new TechnicalError('internal', 'Locked account could not be updated');
+    }
+    return { kind: 'LOCK_KEPT', relatedData: related, version: settled.version, revokedSessions: settled.revokedSessions, lockReason: account.lockReason ?? 'VIOLATION' };
+  }
+}
+
+/** The request of an administratively locked account was settled by keeping that lock. */
+export interface LockKeptOutcome {
+  readonly kind: 'LOCK_KEPT';
+  readonly relatedData: readonly string[];
+  readonly version: number;
+  readonly revokedSessions: number;
+  readonly lockReason: string;
 }

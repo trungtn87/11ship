@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+// The real module object (not a namespace copy), so the Argon2 operations can be counted.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import argon2 = require('argon2');
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/account-deletion-limiter';
 import { DEFAULT_ACCOUNT_DELETION_CONFIG } from '../../apps/backend/src/config/account-deletion-config';
@@ -80,8 +84,39 @@ describe('P5-6a public account deletion', () => {
     policyVersion = Number(activePolicy.rows[0]?.version_no ?? 1);
   }, 300_000);
 
+  /**
+   * The WITHDRAWALS the OD-31 tests committed (events, the hold, the withdrawal itself) are append-only history: removed here with the guards of exactly
+   * those tables lifted for one transaction, before the generic cleanup, so no other suite finds them (M04 asserts an empty hold table).
+   */
+  async function purgeWithdrawalsOf(driverIds: readonly string[]): Promise<void> {
+    if (driverIds.length === 0) return;
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const tables = ['wallet_withdrawal_events', 'wallet_withdrawals', 'wallet_ledger_entries', 'wallet_bank_transactions'];
+      for (const table of tables) await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+      await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
+      const owned = 'SELECT withdrawal_id FROM app.wallet_withdrawals WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[]))';
+      await client.query(`DELETE FROM app.wallet_withdrawal_events WHERE withdrawal_id IN (${owned})`, [driverIds]);
+      await client.query(`DELETE FROM app.wallet_bank_transactions WHERE withdrawal_id IN (${owned})`, [driverIds]);
+      await client.query(`DELETE FROM app.wallet_ledger_entries WHERE withdrawal_id IN (${owned})`, [driverIds]);
+      await client.query(`DELETE FROM app.wallet_holds WHERE withdrawal_id IN (${owned})`, [driverIds]);
+      await client.query('DELETE FROM app.wallet_withdrawals WHERE wallet_id IN (SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[]))', [driverIds]);
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await client.query('ALTER TABLE app.wallet_holds ENABLE TRIGGER wallet_holds_no_delete');
+      for (const table of tables) await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   afterAll(async () => {
     try {
+      await purgeWithdrawalsOf(drivers);
       await cleanupOrders(app, {
         shopIds: [shop.shopId, ...extraShops],
         customerIds: extraCustomers,
@@ -467,6 +502,134 @@ describe('P5-6a public account deletion', () => {
     // And from the locked state the balance can still be asked back.
     const token = String(dataOf(await shipLogin(phone)).access_token);
     expect((await withdraw(token, 50_000)).status).toBe(201);
+  });
+
+  // ---- Codex review: Argon2 work of every refusal, the phone alias bucket, the 503 atomicity, the administrative lock -----------
+
+  it('every refusal (unknown phone, wrong password, locked VIOLATION, administration account, fixture) does ZERO hashing and exactly ONE Argon2 verification', async () => {
+    const wrong = await customer();
+    const violation = await customer();
+    await app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = 'VIOLATION', locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [violation.userId]);
+    const fixture = await customer();
+    await app.pool.query(`UPDATE app.users SET account_origin = 'STAGING_FIXTURE', phone_verified_at = NULL WHERE user_id = $1::uuid`, [fixture.userId]);
+    // An administration account (scope ADMIN, never found by a client phone lookup).
+    const donor = await customer();
+    const administration = { phone: { local: `09${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}` }, userId: randomUUID() };
+    await app.pool.query(
+      `INSERT INTO app.users (user_id, phone_normalized, password_hash, account_origin, status, version, created_at, updated_at)
+       SELECT $1::uuid, $2, password_hash, 'ADMIN_PROVISIONED', 'ACTIVE', 1, now(), now() FROM app.users WHERE user_id = $3::uuid`,
+      [administration.userId, `+84${administration.phone.local.slice(1)}`, donor.userId],
+    );
+
+    const hashSpy = jest.spyOn(argon2, 'hash');
+    const verifySpy = jest.spyOn(argon2, 'verify');
+    try {
+      const counts: Array<[number, number]> = [];
+      for (const [phone, password] of [
+        [{ local: '0987654321' }, PASSWORD],
+        [wrong.phone, 'Wrong-Password-1'],
+        [violation.phone, PASSWORD],
+        [administration.phone, PASSWORD],
+        [fixture.phone, PASSWORD],
+      ] as const) {
+        hashSpy.mockClear();
+        verifySpy.mockClear();
+        expect(refused(await confirm(phone, password))).toEqual({ status: 401, code: 'INVALID_CREDENTIALS' });
+        counts.push([hashSpy.mock.calls.length, verifySpy.mock.calls.length]);
+      }
+      expect(counts).toEqual([[0, 1], [0, 1], [0, 1], [0, 1], [0, 1]]);
+    } finally {
+      hashSpy.mockRestore();
+      verifySpy.mockRestore();
+      await app.pool.query('DELETE FROM app.users WHERE user_id = $1::uuid', [administration.userId]);
+    }
+  });
+
+  it('the same phone written in every accepted way (0..., +84..., 84..., padded) is ONE phone bucket: the aliases cannot reset or multiply the budget', async () => {
+    const c = await customer();
+    const national = c.phone.local.slice(1);
+    const spellings = [c.phone.local, `+84${national}`, `84${national}`, ` ${c.phone.local} `, `+84${national}`];
+    for (const spelling of spellings) {
+      expect(refused(await confirm({ local: spelling }, 'Wrong-Password-1'))).toEqual({ status: 401, code: 'INVALID_CREDENTIALS' });
+    }
+    // Five attempts under five spellings spent ONE phone budget (plus the address budget): the sixth, under yet another spelling, is refused.
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.account_delete_limits')).toBe(2);
+    expect(refused(await confirm({ local: `84${national}` }, PASSWORD))).toEqual({ status: 429, code: 'ACCOUNT_DELETE_RATE_LIMITED' });
+    expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', pending: false });
+  });
+
+  it('503 when the account activity cannot be verified: nothing changes, no audit, no stored key, and the same key succeeds once the check answers again', async () => {
+    const c = await customer();
+    const before = await userRow(c.userId);
+    const registry = app.running.app.get(AccountActivityRegistry);
+    registry.register({
+      name: 'CODEX_UNVERIFIABLE',
+      relatedData: () => Promise.reject(new Error('the check cannot answer')),
+    });
+    const key = randomUUID();
+    try {
+      expect(refused(await confirm(c.phone, PASSWORD, key))).toEqual({ status: 503, code: 'USER_ACCOUNT_ACTIVITY_UNVERIFIED' });
+    } finally {
+      registry.unregister('CODEX_UNVERIFIABLE');
+    }
+    expect(await userRow(c.userId)).toEqual(before);
+    expect(await liveSessions(c.userId)).toBeGreaterThan(0);
+    expect(await audits('account.delete.requested.v1', c.userId)).toBe(0);
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
+    // The failed attempt left nothing behind for this key: the retry executes (a brand-new customer with nothing to keep is deleted).
+    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('DELETED');
+  });
+
+  /** An administrative lock on an account whose deletion is pending (what the Administration lock leaves behind), without the Administration application. */
+  const lockedByAdmin = (userId: string, reason: 'VIOLATION' | 'SECURITY'): Promise<unknown> =>
+    app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = $2, locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [userId, reason]);
+
+  it('a request pending under a VIOLATION lock waits while work is in progress, then is settled by KEEPING that lock: no purge, no DELETE_REQUEST, sessions revoked, one audit entry', async () => {
+    const c = await customer();
+    const order = await insertOrder(c.userId, shop.shopId, 'PENDING_CONFIRMATION');
+    await markPending(c.userId);
+    await lockedByAdmin(c.userId, 'VIOLATION');
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: true });
+
+    await sweeper().sweep();
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: true });
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
+
+    await finishOrder(order);
+    await sweeper().sweep();
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: false });
+    expect(await liveSessions(c.userId)).toBe(0);
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
+    expect((await app.pool.query<{ result: string; lock_reason: string }>(`SELECT metadata->>'result' AS result, metadata->>'lock_reason' AS lock_reason FROM app.audit_logs WHERE action = 'account.delete.finalized.v1' AND resource_id = $1`, [c.userId])).rows[0]).toEqual({ result: 'LOCK_KEPT', lock_reason: 'VIOLATION' });
+    // Run again: nothing more happens.
+    await sweeper().sweep();
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
+  });
+
+  it('a request pending under a SECURITY lock with NOTHING to keep is still not purged: the lock is evidence', async () => {
+    const c = await customer();
+    await markPending(c.userId);
+    await lockedByAdmin(c.userId, 'SECURITY');
+    await sweeper().sweep();
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'SECURITY', pending: false });
+  });
+
+  it('users_delete_request_ck: a request can coexist with an ACTIVE row or a VIOLATION / SECURITY lock, never with the DELETE_REQUEST lock (that lock IS the end of the request)', async () => {
+    const c = await customer();
+    await app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = 'DELETE_REQUEST', locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [c.userId]);
+    await expect(app.pool.query('UPDATE app.users SET delete_requested_at = now() WHERE user_id = $1::uuid', [c.userId])).rejects.toThrow(/users_delete_request_ck/);
+  });
+
+  it('a pending Shipper locked for VIOLATION gets no withdrawal exception (only a pending ACTIVE account or the DELETE_REQUEST lock does)', async () => {
+    const shipper = await newShipper(app, drivers, 50_000);
+    extraUsers.push(shipper.userId);
+    const phone = await phoneOf(shipper.userId);
+    await markPending(shipper.userId);
+    await lockedByAdmin(shipper.userId, 'VIOLATION');
+    await app.pool.query('UPDATE app.sessions SET revoked_at = now() WHERE user_id = $1::uuid AND revoked_at IS NULL', [shipper.userId]);
+    const token = String(dataOf(await shipLogin(phone)).access_token);
+    expect(refused(await withdraw(token, 50_000))).toEqual({ status: 409, code: 'WITHDRAWAL_ONLY_WHEN_CLOSING' });
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
   });
 
   it('the account of a pending SHIPPER is offered nothing, takes no delivery, opens no top-up; a new role is not started', async () => {

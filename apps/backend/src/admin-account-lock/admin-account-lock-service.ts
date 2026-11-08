@@ -126,6 +126,21 @@ export class AdminAccountLockService {
             ...(kind === 'lock' ? { revoked_sessions: revokedSessions, lock_reason: body.lockReason } : { previous_lock_reason: auth.target.lockReason ?? null }),
           },
         });
+        if (auth.target.deleteRequested) {
+          // The owner's deletion request survives this change (OD-26: no cancel): a lock keeps it pending, an unlock puts the account back to
+          // "deletion pending" (new work refused, the request finished by the sweeper). Recorded so the administration can see it.
+          await this.audit.append(context, {
+            requestId: meta.requestId,
+            actorType: auth.role,
+            actorId: auth.actorId,
+            action: kind === 'lock' ? 'account.lock.on_delete_request.v1' : 'account.unlock.on_delete_request.v1',
+            resourceType: RESOURCE_USER,
+            resourceId: userId,
+            resourceVersion: changed.version,
+            outcome: 'SUCCESS',
+            metadata: { target_user_id: userId, version: changed.version, delete_request_kept: true },
+          });
+        }
         await this.outbox.append(context, {
           eventType: EVENT_TYPES[kind],
           eventSchemaVersion: 1,

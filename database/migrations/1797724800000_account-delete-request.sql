@@ -4,13 +4,15 @@
 --
 --  * app.users.delete_requested_at: set while the owner has confirmed the deletion but orders / deliveries / money are still being
 --    processed (state DELETE_REQUEST_PENDING). The account stays ACTIVE and keeps its sessions so the running work can be finished; every
---    entry point that creates NEW work refuses it. It is cleared by any change of status (the finalizer disables or purges the account).
---    users_delete_request_ck: it can only exist on an ACTIVE row (the lock_reason / locked_at pair of DISABLED rows is untouched).
+--    entry point that creates NEW work refuses it. It ends only when the request is carried out (the finalizer purges the
+--    account or locks it DELETE_REQUEST). An administrative lock (VIOLATION / SECURITY) and its unlock do NOT cancel it (OD-26: no cancel).
+--    users_delete_request_ck: it exists on an ACTIVE row (pending) or on a row an administrator locked for VIOLATION / SECURITY; never together with
+--    DELETE_REQUEST (that lock is the end of the request). The lock_reason / locked_at pair of DISABLED rows is untouched.
 --  * app.account_delete_limits: the quota of POST /v1/account-deletion/confirm, separate from client_login_limits and the OTP quotas.
 --    HMAC keys only (no phone, no address); two buckets are counted per request (client address, phone).
 
 ALTER TABLE app.users ADD COLUMN delete_requested_at timestamptz;
-ALTER TABLE app.users ADD CONSTRAINT users_delete_request_ck CHECK (delete_requested_at IS NULL OR status = 'ACTIVE');
+ALTER TABLE app.users ADD CONSTRAINT users_delete_request_ck CHECK (delete_requested_at IS NULL OR status = 'ACTIVE' OR lock_reason IN ('VIOLATION', 'SECURITY'));
 CREATE INDEX users_delete_requested_idx ON app.users (delete_requested_at) WHERE delete_requested_at IS NOT NULL;
 
 CREATE TABLE app.account_delete_limits (

@@ -2,9 +2,11 @@
 // itself and only the NAMES of invalid variables are reported.
 //
 //   PUBLIC_WEB_ORIGIN                    unset | the public HTTPS origin of this backend (https://host[:port], no path / query / fragment /
-//                                        credentials; http:// only for a loopback host). Never hard-coded: when set, a browser POST to
-//                                        /v1/account-deletion/confirm must come from exactly this origin; when unset, the Origin header
-//                                        (if any) must match the Host the request was sent to.
+//                                        credentials; http:// only for a loopback host). Never hard-coded. OPTIONAL: when set, a
+//                                        browser POST to /v1/account-deletion/confirm must come from exactly this origin (a request with no
+//                                        Origin header, i.e. the app or a command line, still passes); when UNSET the Origin header is NOT
+//                                        compared at all. The route has no cookie or token to abuse, so this is a browser-side defence in
+//                                        depth only: PRODUCTION SHOULD DECLARE IT.
 //   ACCOUNT_DELETE_IP_LIMIT              default 20, 1..1000 attempts per window and client address
 //   ACCOUNT_DELETE_IP_WINDOW_SECONDS     default 600, 60..86400
 //   ACCOUNT_DELETE_PHONE_LIMIT           default 5, 1..100 attempts per window and phone number (the main layer)
