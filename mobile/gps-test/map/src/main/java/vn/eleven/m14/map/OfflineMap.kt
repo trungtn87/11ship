@@ -7,12 +7,18 @@ import java.security.MessageDigest
 
 /** GeoJSON is a native MapLibre source: no tile server, localhost server or cache warming. */
 class OfflineMap(private val context: Context) {
+    private companion object {
+        val lock=Any()
+        var verified=false
+        var labelsCache: List<MapLabel>?=null
+    }
     val metadata: JSONObject by lazy { JSONObject(context.assets.open("caobang/manifest.json").bufferedReader().use { it.readText() }) }
     fun contains(lat: Double, lon: Double): Boolean {
         val b=metadata.getJSONArray("bounds")
         return lon>=b.getDouble(0) && lat>=b.getDouble(1) && lon<=b.getDouble(2) && lat<=b.getDouble(3)
     }
-    fun verify() {
+    fun verify(): Unit = synchronized(lock) {
+        if(verified) return@synchronized
         val files=metadata.getJSONObject("sha256")
         for(name in files.keys()) {
             val digest=MessageDigest.getInstance("SHA-256")
@@ -20,13 +26,16 @@ class OfflineMap(private val context: Context) {
             val actual=digest.digest().joinToString("") { "%02x".format(it) }
             require(actual==files.getString(name)) { "Gói bản đồ lỗi: $name" }
         }
+        verified=true
     }
     fun style(): Style.Builder {
         val style=JSONObject(context.assets.open("caobang/style.json").bufferedReader().use { it.readText() })
         // Asset URLs remain local in airplane mode. Fonts and all named source data are bundled.
         return Style.Builder().fromJson(style.toString())
     }
-    fun labels(): List<MapLabel> {
+    /** The 8 MB package is parsed once per process; a map view created again (keyboard, navigation) reuses the result instead of re-reading it (#299). */
+    fun labels(): List<MapLabel> = synchronized(lock) { labelsCache ?: parseLabels().also { labelsCache=it } }
+    private fun parseLabels(): List<MapLabel> {
         val data=JSONObject(context.assets.open("caobang/map.geojson").bufferedReader().use { it.readText() }).getJSONArray("features")
         return buildList {
             for(i in 0 until data.length()) {

@@ -336,12 +336,43 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     );
   }
 
+  Widget? _mapWidget;
+  Object? _mapKey;
+
+  /// Rebuilt only when the pin changes, never because the address text changed (#299): the same instance is returned, so Flutter skips the subtree.
+  Widget _map(BuildContext context) {
+    final Object key = (_lat, _lng, _pointRevision);
+    if (_mapWidget != null && _mapKey == key) return _mapWidget!;
+    _mapKey = key;
+    return _mapWidget = widget.mapBuilder != null
+        ? widget.mapBuilder!(context, _lat, _lng, _pick)
+        : kM14MapEnabled
+        ? M14OfflineMap(
+            focusPin: true,
+            pins: <Map<String, dynamic>>[
+              if (_lat != null && _lng != null)
+                <String, dynamic>{'lat': _lat, 'lon': _lng, 'label': 'Địa chỉ đã chọn', 'color': 0xFFC0392B},
+            ],
+            onPoint: (double lat, double lng, bool inside) => _pick(lat, lng),
+            onError: (String error) {
+              if (mounted) setState(() => _error = error);
+            },
+          )
+        : const ColoredBox(
+            color: N11Colors.white,
+            child: Center(child: Text('Bản đồ chưa có trong bản cài đặt này.')),
+          );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Chọn địa chỉ')),
     body: SafeArea(
-      child: ListView(
+      // Not a lazy ListView: the map must stay mounted while the keyboard resizes the viewport (a disposed platform view re-parses the whole map package, #299).
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           TextField(
             key: const Key('location-address-text'),
@@ -435,36 +466,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             height: 320,
             child: Stack(
               children: <Widget>[
-                Positioned.fill(
-                  child: widget.mapBuilder != null
-                      ? widget.mapBuilder!(context, _lat, _lng, _pick)
-                      : kM14MapEnabled
-                      ? M14OfflineMap(
-                          focusPin: true,
-                          pins: <Map<String, dynamic>>[
-                            if (_lat != null && _lng != null)
-                              <String, dynamic>{
-                                'lat': _lat,
-                                'lon': _lng,
-                                'label': 'Địa chỉ đã chọn',
-                                'color': 0xFFC0392B,
-                              },
-                          ],
-                          onPoint: (double lat, double lng, bool inside) =>
-                              _pick(lat, lng),
-                          onError: (String error) {
-                            if (mounted) setState(() => _error = error);
-                          },
-                        )
-                      : const ColoredBox(
-                          color: N11Colors.white,
-                          child: Center(
-                            child: Text(
-                              'Bản đồ chưa có trong bản cài đặt này.',
-                            ),
-                          ),
-                        ),
-                ),
+                Positioned.fill(child: _map(context)),
                 Positioned(
                   top: 12,
                   right: 12,
@@ -495,6 +497,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             ),
           ),
         ],
+        ),
       ),
     ),
     bottomNavigationBar: SafeArea(
