@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { PoolClient } from 'pg';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
 import { FinanceAccessParticipant } from '../../apps/backend/src/finance-access/finance-access-participant';
+import { AdminAccountReadRepository } from '../../apps/backend/src/admin-accounts/admin-account-read-repository';
 import { FinanceAccessRepository } from '../../apps/backend/src/finance-access/finance-access-repository';
 import { AppError } from '../../apps/backend/src/common/app-errors';
 import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
@@ -276,7 +277,7 @@ describe('M04-B2.2a — finance access and receiving accounts', () => {
   });
 
   it('5. the participant a finance command asks: default deny, GRANTED passes, REVOKED and an expired session do not, SYSTEM always passes; and a revocation and a command being authorized cannot interleave', async () => {
-    const participant = new FinanceAccessParticipant(new FinanceAccessRepository());
+    const participant = new FinanceAccessParticipant(new FinanceAccessRepository(), new AdminAccountReadRepository());
     const actorOf = (userId: string, role: 'ADMIN' | 'SYSTEM', expiresAtMs = Date.now() + 3_600_000) => ({ known: { userId }, checked: { membership: { adminRole: role } }, session: { expiresAtMs } }) as unknown as Parameters<FinanceAccessParticipant['require']>[1];
     const inTransaction = async <T>(run: (client: PoolClient, context: TransactionContext) => Promise<T>): Promise<T> => {
       const client = await admin.pool.connect();

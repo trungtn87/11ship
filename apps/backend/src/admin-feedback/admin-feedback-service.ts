@@ -12,6 +12,7 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository';
 import { DeliveryViews } from '../delivery/delivery-views';
 import { FinanceAccessRepository } from '../finance-access/finance-access-repository';
+import { holdsWalletScope } from '../finance-access/wallet-scope';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
@@ -793,7 +794,7 @@ export class AdminFeedbackService {
     }
     // The money right is its own row (read FOR SHARE, kept to the end of the transaction): a revocation waits for a command that already passed.
     const grant = await this.grants.lockForShare(context, known.userId, FINANCE_ADJUSTMENT_RIGHT);
-    return { role, actorId: known.userId, handle, view, manage, finance: grant?.state === 'GRANTED' };
+    return { role, actorId: known.userId, handle, view, manage, finance: grant?.state === 'GRANTED' && holdsWalletScope(rows) };
   }
 
   async #authorizeReplay(context: TransactionContext, guard: JsonObject, known: SessionLookup, right: Right): Promise<true> {
