@@ -8,7 +8,8 @@ import 'package:n11_shared/n11_shared.dart';
 const bool kM04UiPreview = bool.fromEnvironment('M04_UI_PREVIEW');
 
 /// One wallet source per session, created on first use (the keys of unfinished writes live in it and must outlive a screen).
-final Expando<WalletSource> _sources = Expando<WalletSource>('ship-wallet-source');
+/// A new account (a new session epoch) gets a fresh source: nothing of the previous account (its pending keys, its limits) is carried over (#295).
+final Expando<({int epoch, WalletSource source})> _sources = Expando<({int epoch, WalletSource source})>('ship-wallet-source');
 
 /// The wallet data source of this build. Without a session (the widget tests of the frame) the not-wired source answers: no number exists.
 WalletSource buildWalletSource({bool preview = kM04UiPreview, SessionController? session}) {
@@ -18,8 +19,18 @@ WalletSource buildWalletSource({bool preview = kM04UiPreview, SessionController?
   if (session == null) {
     return const NotWiredWalletSource();
   }
-  return _sources[session] ??= HttpWalletSource(session: session);
+  final ({int epoch, WalletSource source})? known = _sources[session];
+  if (known != null && known.epoch == session.sessionEpoch) {
+    return known.source;
+  }
+  final WalletSource fresh = HttpWalletSource(session: session);
+  _sources[session] = (epoch: session.sessionEpoch, source: fresh);
+  return fresh;
 }
+
+/// The wallet screen of this session. It closes itself (and everything above it) the moment the session is no longer the signed-in one it was opened under.
+Route<void> walletHomeRoute(SessionController session, WalletSource source) =>
+    n11Route(guardForWalletSource(source, WalletHomeScreen(source: source)));
 
 /// The "Ví của tôi" row (used inside an N11List: Tài khoản, or [WalletEntry]).
 class WalletListItem extends StatelessWidget {
@@ -36,7 +47,7 @@ class WalletListItem extends StatelessWidget {
       icon: Icons.account_balance_wallet_outlined,
       title: 'Ví của tôi',
       sub: wallet.isSample ? kSampleLabel : (wallet is NotWiredWalletSource ? 'Chưa kết nối máy chủ' : 'Số dư, nạp và rút tiền'),
-      onTap: () => Navigator.of(context).push(n11Route(WalletHomeScreen(source: wallet))),
+      onTap: () => Navigator.of(context).push(session == null ? n11Route(WalletHomeScreen(source: wallet)) : walletHomeRoute(session!, wallet)),
     );
   }
 }
@@ -49,5 +60,14 @@ class WalletEntry extends StatelessWidget {
   final SessionController? session;
 
   @override
-  Widget build(BuildContext context) => N11List(children: <Widget>[WalletListItem(key: const Key('wallet-entry'), source: source, session: session)]);
+  Widget build(BuildContext context) => session != null && session!.status != SessionStatus.signedIn
+      ? const SizedBox.shrink()
+      : N11List(children: <Widget>[WalletListItem(key: const Key('wallet-entry'), source: source, session: session)]);
+}
+
+/// A route of the driver profile / activity (they hold the wallet source and push the withdrawal screen). The source is created here, once, and its
+/// epoch is the one the guard checks: the route closes the moment the session is no longer that signed-in one (#295).
+Route<void> driverWalletRoute(SessionController session, Widget Function(WalletSource wallet) build) {
+  final WalletSource wallet = buildWalletSource(session: session);
+  return n11Route(guardForWalletSource(wallet, build(wallet)));
 }

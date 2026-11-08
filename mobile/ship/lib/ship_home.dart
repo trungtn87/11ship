@@ -7,6 +7,7 @@ import 'package:n11_m14/n11_m14.dart';
 import 'ship_alerts.dart';
 import 'ship_m07.dart';
 import 'ship_online.dart';
+import 'ship_wallet.dart';
 
 const String kOnlineReason =
     'Chưa có dữ liệu trạng thái hoạt động. Chưa thể bật online.';
@@ -197,14 +198,14 @@ class _ShipHomeState extends State<ShipHome> {
                     )
                   : null,
             )
-          : widget.walletSource == null
+          : widget.walletSource == null || widget.session.status != SessionStatus.signedIn
           ? null
           : Column(
               children: <Widget>[
                 N11Button(
                   label: 'Ví tiền / Nạp tiền',
                   onPressed: () => Navigator.of(context).push(
-                    n11Route(WalletHomeScreen(source: widget.walletSource!)),
+                    walletHomeRoute(widget.session, widget.walletSource!),
                   ),
                 ),
                 if (widget.driver != null)
@@ -217,9 +218,9 @@ class _ShipHomeState extends State<ShipHome> {
                     'Thông tin và hoạt động shipper',
                     onPressed: () => Navigator.of(context).push(
                       n11Route(
-                        DriverProfileScreen(
-                          controller: widget.driver!,
-                          walletSource: widget.walletSource,
+                        guardForWalletSource(
+                          widget.walletSource,
+                          DriverProfileScreen(controller: widget.driver!, walletSource: widget.walletSource),
                         ),
                       ),
                     ),

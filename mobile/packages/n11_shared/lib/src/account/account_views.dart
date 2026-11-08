@@ -338,10 +338,8 @@ class AccountTab extends StatelessWidget {
           N11ListItem(icon: Icons.check, title: 'Trạng thái tài khoản', sub: 'Phiên đăng nhập đang hoạt động trên máy này', trailing: N11Chip('Hoạt động', kind: ChipKind.ok)),
         ]),
       if (signedInEntries.isNotEmpty && !locked) N11List(title: signedInTitle, children: signedInEntries),
-      if (brand.id == AppId.food && !locked)
-        N11List(title: 'Ưu đãi', children: <Widget>[
-          N11ListItem(key: const Key('voucher-entry'), icon: Icons.local_offer_outlined, title: 'Voucher của tôi', onTap: () => Navigator.of(context).push(n11Route(VoucherScreen(session: session)))),
-        ]),
+      // OD-28: the "Voucher của tôi" entry is hidden (VoucherScreen stays in the package) until the screen is complete; a menu must not
+      // lead to an unfinished screen.
       _tools(context, signedIn: true),
       N11Button(key: const Key('open-logout'), label: 'Đăng xuất', kind: ButtonKind.secondary, onPressed: () => confirmLogout(context, session)),
     ]);

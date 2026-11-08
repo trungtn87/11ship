@@ -38,11 +38,12 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
           navigator.popUntil((Route<dynamic> r) => r.isFirst);
           actions.goTab('orders');
         case TargetType.walletTxn:
-          await navigator.push(n11Route(WalletHomeScreen(source: buildWalletSource(session: session))));
+          // Only a live signed-in session reaches the wallet; a notification opened after logout does nothing (#295).
+          if (session.status == SessionStatus.signedIn) await navigator.push(walletHomeRoute(session, buildWalletSource(session: session)));
         case TargetType.profile:
           final DriverController? driver = flows.driver;
           if (driver != null) {
-            await navigator.push(n11Route(DriverProfileScreen(controller: driver, walletSource: buildWalletSource(session: session))));
+            await navigator.push(driverWalletRoute(session, (WalletSource wallet) => DriverProfileScreen(controller: driver, walletSource: wallet)));
           }
         case TargetType.complaint:
           final M11Source? feedback = flows.feedback;
@@ -138,7 +139,7 @@ class _OrdersBodyState extends State<OrdersBody> {
 Widget _income(BuildContext context, ShellActions actions, SessionController session) {
   return vstack(<Widget>[
     // M04: entry to the wallet screens, connected to the server through the session (a sample only in a preview build).
-    WalletEntry(session: session),
+    if (session.status == SessionStatus.signedIn) WalletEntry(session: session),
     const GatedButton(label: 'Chọn khoảng ngày', reason: 'Chọn ngày sẽ có khi dữ liệu thu nhập sẵn sàng.', kind: ButtonKind.secondary, icon: Icons.schedule),
     _unknownFigure(label: 'Tổng thu nhập', note: 'Chưa có dữ liệu. "—" nghĩa là chưa biết, không phải 0 đồng.'),
     const EmptyState(icon: Icons.bar_chart_outlined, title: 'Chưa có dữ liệu thu nhập', text: FrameReasons.empty),
@@ -194,11 +195,11 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           icon: Icons.badge_outlined,
           title: 'Hồ sơ shipper',
           sub: 'Thông tin cá nhân, nhận đơn, dừng hoạt động / rút tiền.',
-          onTap: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver, walletSource: buildWalletSource(session: session)))),
+          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverProfileScreen(controller: driver, walletSource: wallet))),
         ),
     ],
     entries: <Widget>[
-      WalletListItem(key: const Key('account-wallet-entry'), session: session),
+      if (session.status == SessionStatus.signedIn) WalletListItem(key: const Key('account-wallet-entry'), session: session),
       if (session.status == SessionStatus.signedIn) N11ListItem(icon: Icons.chat_outlined, title: 'Trao đổi nạp tiền', sub: 'Yêu cầu, chưa đọc và lịch sử xử lý', onTap: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: session)))),
       if (driver != null && session.status == SessionStatus.signedIn)
         N11ListItem(
@@ -206,7 +207,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           icon: Icons.account_balance_outlined,
           title: 'Dừng hoạt động / Rút tiền',
           sub: 'Hoàn tất đơn và rút toàn bộ số dư ví',
-          onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: driver, walletSource: buildWalletSource(session: session)))),
+          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverActivityScreen(controller: driver, walletSource: wallet))),
         ),
       if (driver == null)
         N11ListItem(

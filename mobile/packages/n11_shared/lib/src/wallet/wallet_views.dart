@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
+import '../account/session_guard.dart';
 import '../tokens.dart';
 import '../m07/m07_widgets.dart' show KeyValueRows;
 import '../widgets/components.dart';
@@ -109,7 +110,7 @@ class _WalletLoaderState<T> extends State<WalletLoader<T>> {
 }
 
 Widget _page(WalletSource source, String title, List<Widget> children) {
-  return N11FormScaffold(title: title, session: null, children: <Widget>[if (source.isSample) const WalletSampleBanner(), ...children]);
+  return guardForWalletSource(source, N11FormScaffold(title: title, session: null, children: <Widget>[if (source.isSample) const WalletSampleBanner(), ...children]));
 }
 
 class _KV extends StatelessWidget {
