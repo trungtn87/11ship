@@ -187,6 +187,7 @@ export const APP_ERROR_DEFINITIONS = {
   OPS_UPDATE_NOT_READY: { status: 409, message: 'The device must finish its current work before it can update' },
   OPS_DISCORD_NOT_CONFIGURED: { status: 409, message: 'The Discord channel is not configured' },
   DELIVERY_NOT_FOUND: { status: 404, message: 'The delivery was not found' },
+  DELIVERY_DIRECT_CREATE_DISABLED: { status: 410, message: 'A shop can no longer create a delivery request directly; deliveries come from an order' },
   DELIVERY_STATE_CONFLICT: { status: 409, message: 'The delivery is not in a state that allows this action' },
   DELIVERY_ALREADY_TAKEN: { status: 409, message: 'Another Shipper already took this delivery' },
   DELIVERY_SEARCH_EXPIRED: { status: 409, message: 'The search for a Shipper has ended' },

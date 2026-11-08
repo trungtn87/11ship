@@ -21,7 +21,7 @@ import { DeliveryHandback, FEE_NOT_AGREED_REASON } from './delivery-handback';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryRepository, DeliveryRow, NewDelivery } from './delivery-repository';
 import { creatorMayCancelAfterPickup, dropoffAreaOf, mayRecall, newDeliveryCode } from './delivery-rules';
-import { CreateDeliveryInput, CustodyInput, ReasonInput, ShopListQuery, VersionInput } from './delivery-validation';
+import { CustodyInput, ReasonInput, ShopListQuery, VersionInput } from './delivery-validation';
 import { DeliveryViews, feeDeciderOf } from './delivery-views';
 import { M14RouteClient, RouteLeg } from './m14-route-client';
 
@@ -107,59 +107,7 @@ export class DeliveryShopService {
 
   // ---- create / recall -------------------------------------------------------------------------------------------------------
 
-  /** A direct call for an order outside the app: no Order record is created. The pickup is the shop's own position. */
-  async create(principal: AuthPrincipal, input: CreateDeliveryInput, key: string | readonly string[] | undefined, requestId: string): Promise<IdempotentOutcome> {
-    const route = await this.routeFor(principal, input.lat, input.lng);
-    return this.executor.execute(
-      {
-        scopeType: DELIVERY_SCOPE_TYPE,
-        scopeId: principal.userId,
-        operationId: OPERATIONS.create,
-        idempotencyKey: key,
-        logicalRequest: {
-          recipient_name: input.recipientName,
-          recipient_phone: input.recipientPhone,
-          address: input.addressText,
-          lat: input.lat,
-          lng: input.lng,
-          goods: input.goodsDescription,
-          value_vnd: input.goodsValueVnd,
-          paid_vnd: input.paidVnd,
-          fee_payer: input.feePayer,
-          note: input.note,
-          agreed_reason: input.agreedFee?.reasonCode ?? null,
-          agreed_note: input.agreedFee?.reasonNote ?? null,
-          agreed_amount: input.agreedFee?.amountVnd ?? null,
-          fee_band: input.feeBand,
-        },
-        replay: this.#replay(principal),
-      },
-      async (context) => {
-        const caller = await this.actors.shopWriter(context, principal);
-        const created = await this.#createDelivery(context, caller, {
-          source: 'DIRECT',
-          orderId: null,
-          previousDeliveryId: null,
-          recipientName: input.recipientName,
-          recipientPhone: input.recipientPhone,
-          addressText: input.addressText,
-          lat: input.lat,
-          lng: input.lng,
-          goodsDescription: input.goodsDescription,
-          goodsValueVnd: input.goodsValueVnd,
-          paidVnd: input.paidVnd,
-          feePayer: input.feePayer === 'SHOP' ? 'SHOP' : 'CUSTOMER',
-          note: input.note,
-          agreedFee: input.agreedFee,
-          feeBand: input.feeBand,
-          route: route?.leg,
-          routeFrom: route?.from,
-          requestId,
-        });
-        return { status: 201, replayGuard: { user_id: caller.actor.userId }, payload: await this.views.forShop(context, created, await freshClockMs(context), true) };
-      },
-    );
-  }
+  // A shop no longer creates a delivery on its own (OD-5): the former direct create is gone; a delivery is born from an order (createForOrder).
 
   /** The three bands of the fee table in force, for a shop that calls a Shipper for an address without a map point. */
   async feeBands(principal: AuthPrincipal): Promise<JsonObject> {
@@ -189,6 +137,11 @@ export class DeliveryShopService {
     });
     if (old.delivery === undefined) {
       throw new AppError('DELIVERY_NOT_FOUND');
+    }
+    if (old.delivery.source === 'DIRECT') {
+      // OD-5: a shop-created (DIRECT) delivery cannot be called again either, as that would create a new DIRECT delivery. It stays readable and
+      // cancellable. Refused before the Idempotency-Key is looked at. An ORDER delivery recalls as before.
+      throw new AppError('DELIVERY_DIRECT_CREATE_DISABLED');
     }
     const route = await this.routeFor(principal, old.delivery.dropoffLat, old.delivery.dropoffLng);
     return this.executor.execute(

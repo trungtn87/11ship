@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { DeliverySweeper } from '../../apps/backend/src/delivery/delivery-sweeper';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
 import { ApiResponse, AuthApp, countRows, dataOf, errorCode, obtainProof, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
+import { createLegacyDirectDelivery } from './support/legacy-direct-delivery';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 
 // M07 on a REAL Nest pipeline and PostgreSQL: a shop calls a Shipper, the Shipper accepts, picks up and completes or fails; the rules around it
@@ -187,9 +188,11 @@ describe('M07 — delivery flow', () => {
   });
 
   async function newDelivery(over: Json = {}): Promise<Json> {
-    const created = await asShop('POST', '/shop/me/deliveries', createBody(over));
-    expect([created.status, created.text.slice(0, 200)]).toEqual([201, created.text.slice(0, 200)]);
-    return dataOf(created) as Json;
+    // POST /shop/me/deliveries is closed (OD-5): the DIRECT delivery is built by the fixture, then read through the shop's own route.
+    const id = await createLegacyDirectDelivery(app, shop, createBody(over));
+    const read = await asShop('GET', `/shop/me/deliveries/${id}`);
+    expect([read.status, read.text.slice(0, 200)]).toEqual([200, read.text.slice(0, 200)]);
+    return dataOf(read) as Json;
   }
 
   async function acceptNew(s: Shipper, over: Json = {}): Promise<Json> {
@@ -423,10 +426,8 @@ describe('M07 — delivery flow', () => {
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
   });
 
-  it('an address without a map point needs a fee band (or an agreed fee): without one the call is refused with a clear code, with one pickup needs no pin', async () => {
+  it('an address without a map point and with a fee band: pickup needs no pin', async () => {
     const s = await newShipper();
-    const refused = await asShop('POST', '/shop/me/deliveries', createBody({ dropoff_lat: undefined, dropoff_lng: undefined }));
-    expect([refused.status, codeOf(refused)]).toEqual([400, 'FEE_REQUIRED']);
     const bands = dataOf(await asShop('GET', '/shop/me/delivery-fee-bands')) as Json;
     expect(bands.bands).toHaveLength(3);
     const view = await acceptNew(s, { dropoff_lat: undefined, dropoff_lng: undefined, fee_band: 1 });
@@ -660,14 +661,14 @@ describe('M07 — delivery flow', () => {
     // the Shipper cannot complete a cancelled delivery, and nobody can cancel it twice
     expect((await asShipper(s, 'POST', `/driver/deliveries/${id}/complete`, { expected_version: picked.version })).status).toBeGreaterThanOrEqual(400);
     expect((await asShop('POST', `/shop/me/deliveries/${id}/cancel`, { reason: 'Lần hai', expected_version: picked.version + 1 })).status).toBeGreaterThanOrEqual(400);
-    // the goods are NOT assumed to be back at the shop: no new call until the shop says so
+    // OD-5: a DIRECT delivery cannot be called again at all (the goods-out guard of an ORDER delivery's recall is covered in m10-orders)
     const blocked = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
-    expect([blocked.status, codeOf(blocked)]).toEqual([409, 'RECALL_BLOCKED_GOODS_OUT']);
+    expect([blocked.status, codeOf(blocked)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
     const resolved = await asShop('POST', `/shop/me/deliveries/${id}/custody`, { resolution: 'GOODS_RETURNED' });
     expect([resolved.status, resolved.text.slice(0, 200)]).toEqual([200, resolved.text.slice(0, 200)]);
     expect(await stateOf(id)).toBe('cancelled_by_merchant');
     const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
-    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
+    expect([recalled.status, codeOf(recalled)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
   });
 
   it('the shop cancelling and the Shipper picking up at the same moment: exactly one wins and the money agrees with the winner', async () => {
@@ -688,12 +689,54 @@ describe('M07 — delivery flow', () => {
     }
   });
 
-  it('only one active delivery per call is created for the same request key (idempotent create)', async () => {
-    const key = randomUUID();
-    const first = await asShop('POST', '/shop/me/deliveries', createBody({ goods_description: `Gói ${tag}` }), key);
-    const again = await asShop('POST', '/shop/me/deliveries', createBody({ goods_description: `Gói ${tag}` }), key);
-    expect([first.status, again.status]).toEqual([201, 201]);
-    expect((dataOf(first) as Json).delivery_id).toBe((dataOf(again) as Json).delivery_id);
+  describe('OD-5 — a shop can no longer create a delivery on its own', () => {
+    // Everything this shop's delivery routes could write: its deliveries and what hangs off them (events, audit, outbox) and its idempotency records.
+    const writes = async (): Promise<Record<string, number>> => ({
+      deliveries: await countRows(app.pool, 'SELECT 1 FROM app.deliveries WHERE shop_id = $1::uuid', [shop.shopId]),
+      events: await countRows(app.pool, 'SELECT 1 FROM app.delivery_events e JOIN app.deliveries d USING (delivery_id) WHERE d.shop_id = $1::uuid', [shop.shopId]),
+      audit: await countRows(app.pool, "SELECT 1 FROM app.audit_logs WHERE actor_id = $1 AND action IN ('delivery.create.v1', 'delivery.recall.v1')", [shop.userId]),
+      outbox: await countRows(app.pool, "SELECT 1 FROM app.outbox_events WHERE event_type LIKE 'delivery.%' AND payload::text LIKE '%' || $1 || '%'", [shop.shopId]),
+      records: await countRows(app.pool, "SELECT 1 FROM app.idempotency_records WHERE scope_id = $1 AND operation_id IN ('delivery.create.v1', 'delivery.recall.v1')", [shop.userId]),
+    });
+
+    it('POST /shop/me/deliveries answers 410 DELIVERY_DIRECT_CREATE_DISABLED and writes nothing: no delivery, event, audit, outbox or idempotency record', async () => {
+      const before = await writes();
+      const key = randomUUID();
+      const first = await asShop('POST', '/shop/me/deliveries', createBody({ goods_description: `Gói ${tag}` }), key);
+      const again = await asShop('POST', '/shop/me/deliveries', createBody({ goods_description: `Gói ${tag}` }), key);
+      // Refused before the body and the key are looked at: even an invalid body and a missing key give the same answer.
+      const garbage = await app.call('POST', '/shop/me/deliveries', { bearer: shop.token, body: { nothing: 'valid' } });
+      expect([first.status, codeOf(first)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
+      expect([again.status, codeOf(again)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
+      expect([garbage.status, codeOf(garbage)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
+      expect(await writes()).toEqual(before);
+    });
+
+    it('the closed route is still behind the session: without a token it is 401, not 410', async () => {
+      const response = await app.call('POST', '/shop/me/deliveries', { body: createBody() });
+      expect(response.status).toBe(401);
+    });
+
+    it('a DIRECT delivery made before the closure is still read, listed and cancelled by its shop', async () => {
+      const delivery = await newDelivery();
+      const listed = dataOf(await asShop('GET', '/shop/me/deliveries?scope=active')) as Json;
+      expect(JSON.stringify(listed)).toContain(String(delivery.delivery_id));
+      const cancelled = await asShop('POST', `/shop/me/deliveries/${delivery.delivery_id}/cancel`, { reason: 'Khách đổi ý', expected_version: delivery.version });
+      expect(cancelled.status).toBe(200);
+      expect(await stateOf(String(delivery.delivery_id))).toBe('cancelled_by_merchant');
+    });
+
+    it('a DIRECT delivery cannot be called again: recall answers 410 before the key is looked at and creates nothing', async () => {
+      const delivery = await newDelivery();
+      const cancelled = await asShop('POST', `/shop/me/deliveries/${delivery.delivery_id}/cancel`, { reason: 'Khách đổi ý', expected_version: delivery.version });
+      expect(cancelled.status).toBe(200);
+      const before = await writes();
+      const key = randomUUID();
+      const recalled = await asShop('POST', `/shop/me/deliveries/${delivery.delivery_id}/recall`, {}, key);
+      expect([recalled.status, codeOf(recalled)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
+      expect(await writes()).toEqual(before);
+      expect(await countRows(app.pool, 'SELECT 1 FROM app.deliveries WHERE previous_delivery_id = $1::uuid', [delivery.delivery_id])).toBe(0);
+    });
   });
 
   it('the shop sees only its own deliveries, and a Shipper cannot read one it never held', async () => {
@@ -729,7 +772,7 @@ describe('M07 — delivery flow', () => {
   const sweeper = (): DeliverySweeper => app.running.app.get(DeliverySweeper);
   const row = async (id: string): Promise<Json> => (await app.pool.query('SELECT * FROM app.deliveries WHERE delivery_id = $1::uuid', [id])).rows[0] as Json;
 
-  it('after 30 minutes the search stops by itself: no Order is touched, nobody can accept, and the shop can call again (a new delivery linked to the old one)', async () => {
+  it('after 30 minutes the search stops by itself: no Order is touched, nobody can accept, and a DIRECT call is not called again (410)', async () => {
     const s = await newShipper();
     const delivery = await newDelivery();
     const id = String(delivery.delivery_id);
@@ -740,13 +783,11 @@ describe('M07 — delivery flow', () => {
     const late = await asShipper(s, 'POST', `/driver/deliveries/${id}/accept`, {});
     expect(codeOf(late)).toBe('DELIVERY_SEARCH_EXPIRED');
     expect(await wallet(s)).toEqual({ balance: 50_000, held: 0 });
+    // OD-5: a DIRECT delivery is not called again (the ORDER chain of calls is covered in m10-orders).
     const recalled = await asShop('POST', `/shop/me/deliveries/${id}/recall`, {});
-    expect([recalled.status, recalled.text.slice(0, 200)]).toEqual([201, recalled.text.slice(0, 200)]);
-    const next = dataOf(recalled) as Json;
-    expect(next).toMatchObject({ previous_delivery_id: id, state: 'waiting_driver' });
+    expect([recalled.status, codeOf(recalled)]).toEqual([410, 'DELIVERY_DIRECT_CREATE_DISABLED']);
     expect(await stateOf(id)).toBe('search_stopped');
-    // At most one ACTIVE delivery per call chain: the old one is not active, the new one is.
-    expect(await countRows(app.pool, `SELECT 1 FROM app.deliveries WHERE previous_delivery_id = $1::uuid`, [id])).toBe(1);
+    expect(await countRows(app.pool, `SELECT 1 FROM app.deliveries WHERE previous_delivery_id = $1::uuid`, [id])).toBe(0);
   });
 
   it('the shop is reminded once at minute 5 and once at minute 15, and a second pass sends nothing twice', async () => {
