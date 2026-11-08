@@ -218,9 +218,9 @@ class _ShipHomeState extends State<ShipHome> {
                     'Thông tin và hoạt động shipper',
                     onPressed: () => Navigator.of(context).push(
                       n11Route(
-                        DriverProfileScreen(
-                          controller: widget.driver!,
-                          walletSource: widget.walletSource,
+                        guardForWalletSource(
+                          widget.walletSource,
+                          DriverProfileScreen(controller: widget.driver!, walletSource: widget.walletSource),
                         ),
                       ),
                     ),

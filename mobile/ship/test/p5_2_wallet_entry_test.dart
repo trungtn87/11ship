@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 import 'package:ship/ship_tabs.dart';
+import 'package:ship/ship_wallet.dart';
 
 // #295: the wallet is reachable only while the session is the live, signed-in one. Guest, logout, ended / revoked session and starting / unverified show no
 // "Ví của tôi" anywhere (Tài khoản, Thu nhập, Trang chủ, notification target); a valid driver and a locked wallet-only driver keep it; a wallet left open
@@ -251,5 +252,69 @@ void main() {
     await router(context(), null, wallet, actions);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('wallet-card')), findsNothing, reason: 'after logout');
+  });
+
+  // HIGH-1 / HIGH-2: the profile / activity routes and the withdrawal screen they push are not walletHomeRoute; they take the WalletSource directly.
+  // The guard checks the epoch the source was CREATED under, fixed before the route exists, not the one seen at the first build.
+  Future<void> pushWithdraw(WidgetTester tester, Route<void> route) async {
+    unawaited(Navigator.of(tester.element(find.byKey(const Key('tab-home')))).push(route));
+    await tester.pump();
+    await tester.pump();
+  }
+
+  Route<void> withdrawRoute(SessionController session) => driverWalletRoute(session, (WalletSource wallet) => WithdrawScreen(source: wallet, closing: true));
+
+  testWidgets('withdrawal route (driver activity): logout closes it and nothing of A stays', (WidgetTester tester) async {
+    final Rig r = rig();
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget);
+    await r.session.logout();
+    await tester.pump();
+    expect(find.byType(WithdrawScreen), findsNothing, reason: 'not even for the frame of the logout');
+    await tester.pumpAndSettle();
+    expect(find.byType(WithdrawScreen), findsNothing);
+  });
+
+  testWidgets('withdrawal route: a 401 closes it', (WidgetTester tester) async {
+    final Rig r = rig();
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget);
+    r.api.routes['GET /v1/driver/wallet'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'UNAUTHENTICATED');
+    await HttpWalletSource(session: r.session).wallet();
+    await tester.pumpAndSettle();
+    expect(r.session.status, SessionStatus.guest);
+    expect(find.byType(WithdrawScreen), findsNothing);
+  });
+
+  testWidgets('withdrawal route: A -> B between creating the route and its first build is refused', (WidgetTester tester) async {
+    final Rig r = rig();
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    final Route<void> routeOfA = withdrawRoute(r.session); // the source of A is created here
+    await r.session.logout();
+    await tester.pumpAndSettle();
+    r.who = driverJson(id: idB);
+    await loginAndSettle(tester, r);
+    expect(r.session.identity?.userId, idB);
+    await pushWithdraw(tester, routeOfA);
+    expect(find.byType(WithdrawScreen), findsNothing, reason: 'B is signed in, but this route holds the source of A');
+    await tester.pumpAndSettle();
+    expect(find.byType(WithdrawScreen), findsNothing);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget, reason: 'a route created under B works');
+  });
+
+  testWidgets('a locked wallet-only driver (OD-31) still reaches the withdrawal screen', (WidgetTester tester) async {
+    final Rig r = rig();
+    r.who = driverJson(locked: true);
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    expect(r.session.status, SessionStatus.signedIn);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget);
   });
 }

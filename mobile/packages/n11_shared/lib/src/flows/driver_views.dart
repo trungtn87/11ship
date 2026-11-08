@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../account/account_views.dart';
 import '../account/models.dart';
 import '../account/session_controller.dart';
+import '../account/session_guard.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import '../widgets/form_feedback.dart';
@@ -203,7 +204,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               icon: Icons.two_wheeler_outlined,
               title: 'Nhận đơn và ngừng hoạt động',
               sub: profile.acceptingDeliveries ? driverReceivingLabel(profile) : 'Đang tắt nhận đơn',
-              onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: c, walletSource: widget.walletSource))),
+              onTap: () => Navigator.of(context).push(n11Route(guardForWalletSource(widget.walletSource, DriverActivityScreen(controller: c, walletSource: widget.walletSource)))),
             ),
         ],
       ),
@@ -429,7 +430,7 @@ class _DriverActivityScreenState extends State<DriverActivityScreen> {
               N11Button(key: const Key('closure-bank'), label: profile.bank == null ? 'Nhập ngân hàng nhận hoàn tiền' : 'Thông tin ngân hàng nhận hoàn tiền', kind: ButtonKind.secondary, onPressed: busy ? null : () => Navigator.of(context).push(n11Route(DriverBankScreen(controller: c)))),
               if (!(profile.bank?.verified ?? false)) const ReasonNote('Hoàn tất đơn và giao dịch đang chờ. Ngân hàng chính chủ cần được Admin xác minh trước khi yêu cầu hoàn tiền.'),
               if (widget.walletSource != null && (profile.bank?.verified ?? false))
-                N11Button(key: const Key('closure-withdraw'), label: 'Rút toàn bộ số dư ví', onPressed: busy ? null : () => Navigator.of(context).push(n11Route(WithdrawScreen(source: widget.walletSource!, closing: true)))),
+                N11Button(key: const Key('closure-withdraw'), label: 'Rút toàn bộ số dư ví', onPressed: busy ? null : () => Navigator.of(context).push(n11Route(guardForWalletSource(widget.walletSource, WithdrawScreen(source: widget.walletSource!, closing: true))))),
               N11Button(key: const Key('closure-refresh'), label: 'Cập nhật trạng thái', kind: ButtonKind.secondary, onPressed: busy ? null : c.load),
               N11Button(key: const Key('driver-closure-undo'), label: 'Hủy yêu cầu ngừng hoạt động', kind: ButtonKind.secondary, loading: busy, onPressed: busy || !(profile.closure?.canCancel ?? false) ? null : c.cancelClosure),
             ] else if (active || suspended) ...<Widget>[

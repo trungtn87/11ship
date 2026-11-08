@@ -251,9 +251,13 @@ String _filterName(TxnFilter filter) => switch (filter) {
 
 /// The wallet of the signed-in Shipper, from the server. Reads never write; writes only create or cancel REQUESTS.
 class HttpWalletSource extends WalletSource implements WalletWrites {
-  HttpWalletSource({required this.session});
+  HttpWalletSource({required this.session}) : epoch = session.sessionEpoch;
 
   final SessionController session;
+
+  /// The session epoch this source was created under, fixed at construction. A screen showing this source is valid only while the session is
+  /// still signed in at exactly this epoch (#295): a source of account A is never reused for B.
+  final int epoch;
 
   int _minTopup = kMinTopup;
   int _minWithdraw = kMinWithdraw;

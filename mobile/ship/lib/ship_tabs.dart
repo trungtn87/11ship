@@ -43,7 +43,7 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
         case TargetType.profile:
           final DriverController? driver = flows.driver;
           if (driver != null) {
-            await navigator.push(n11Route(DriverProfileScreen(controller: driver, walletSource: buildWalletSource(session: session))));
+            await navigator.push(driverWalletRoute(session, (WalletSource wallet) => DriverProfileScreen(controller: driver, walletSource: wallet)));
           }
         case TargetType.complaint:
           final M11Source? feedback = flows.feedback;
@@ -195,7 +195,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           icon: Icons.badge_outlined,
           title: 'Hồ sơ shipper',
           sub: 'Thông tin cá nhân, nhận đơn, dừng hoạt động / rút tiền.',
-          onTap: () => Navigator.of(context).push(n11Route(DriverProfileScreen(controller: driver, walletSource: buildWalletSource(session: session)))),
+          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverProfileScreen(controller: driver, walletSource: wallet))),
         ),
     ],
     entries: <Widget>[
@@ -207,7 +207,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           icon: Icons.account_balance_outlined,
           title: 'Dừng hoạt động / Rút tiền',
           sub: 'Hoàn tất đơn và rút toàn bộ số dư ví',
-          onTap: () => Navigator.of(context).push(n11Route(DriverActivityScreen(controller: driver, walletSource: buildWalletSource(session: session)))),
+          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverActivityScreen(controller: driver, walletSource: wallet))),
         ),
       if (driver == null)
         N11ListItem(

@@ -30,7 +30,7 @@ WalletSource buildWalletSource({bool preview = kM04UiPreview, SessionController?
 
 /// The wallet screen of this session. It closes itself (and everything above it) the moment the session is no longer the signed-in one it was opened under.
 Route<void> walletHomeRoute(SessionController session, WalletSource source) =>
-    n11Route(SessionGuard(session: session, child: WalletHomeScreen(source: source)));
+    n11Route(guardForWalletSource(source, WalletHomeScreen(source: source)));
 
 /// The "Ví của tôi" row (used inside an N11List: Tài khoản, or [WalletEntry]).
 class WalletListItem extends StatelessWidget {
@@ -63,4 +63,11 @@ class WalletEntry extends StatelessWidget {
   Widget build(BuildContext context) => session != null && session!.status != SessionStatus.signedIn
       ? const SizedBox.shrink()
       : N11List(children: <Widget>[WalletListItem(key: const Key('wallet-entry'), source: source, session: session)]);
+}
+
+/// A route of the driver profile / activity (they hold the wallet source and push the withdrawal screen). The source is created here, once, and its
+/// epoch is the one the guard checks: the route closes the moment the session is no longer that signed-in one (#295).
+Route<void> driverWalletRoute(SessionController session, Widget Function(WalletSource wallet) build) {
+  final WalletSource wallet = buildWalletSource(session: session);
+  return n11Route(guardForWalletSource(wallet, build(wallet)));
 }
