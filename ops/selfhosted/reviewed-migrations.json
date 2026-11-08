@@ -88,6 +88,10 @@
     "1797638400000_admin-order-cancel-right": {
       "sha256": "d1b423aff4023ea75fa265a67edb8d79152b4d5c38d04652296fc494bf486fc6",
       "review": "OD-12; compatibility review 2026-11-07: Up adds one boolean column can_cancel_orders NOT NULL DEFAULT false to admin_app_permissions and admin_invitation_permissions plus CHECKs (requires can_view, only app = DRIVER), the same shape as can_manage_shops. Every existing row and invitation gets false, so no administrator is upgraded and nothing is copied from can_lock; no business data, grants or other tables change. The previous backend names its columns explicitly in every INSERT/SELECT of these tables, so it keeps working and ignores the column (it keeps gating order cancellation by can_lock on DRIVER until the new backend runs); all existing rows satisfy the CHECKs. Down drops the two constraints and the column of each table."
+    },
+    "1797724800000_account-delete-request": {
+      "sha256": "cc99da536929994844b437bda29d0bfef876197022edc7ba83e5dd1716b94c9b",
+      "review": "OD-26 / P5-6a; compatibility review 2026-11-08: Up adds one nullable column delete_requested_at to app.users (NULL for every existing row), one CHECK that only allows it on an ACTIVE row (every existing row satisfies it because the column is NULL), one partial index on that column, and one new table app.account_delete_limits (HMAC bucket keys and counters; empty). No existing column, constraint, function, grant, enum or data is changed, and lock_reason / locked_at rules are untouched. The previous backend names its users columns explicitly and never reads or writes the new column or table, so it keeps working unchanged until the new backend runs; the new backend needs this migration for POST /v1/account-deletion/confirm and the sweeper. The runtime role needs SELECT, INSERT, UPDATE on account_delete_limits (ops/selfhosted/02-runtime-grants.sql). Down drops the table, the index, the constraint and the column (any pending request is dropped, the account simply stays ACTIVE)."
     }
   }
 }

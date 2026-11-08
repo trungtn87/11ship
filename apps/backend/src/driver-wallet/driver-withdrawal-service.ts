@@ -82,6 +82,8 @@ export class DriverWithdrawalService {
       { scopeType: SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATION.create, idempotencyKey: key, logicalRequest: { amount_vnd: amountVnd }, replay: this.#replay(principal) },
       async (context) => {
         const { actor, driver } = await this.access.writer(context, principal);
+        // P5-6a: no NEW withdrawal request while the owner's account deletion is pending.
+        await this.access.assertNewWorkAllowed(context, actor);
         // Owner lock 2026-10-28: a NEW withdrawal exists only while the Shipper is CLOSING (ACTIVE, SUSPENDED, PENDING and CLOSED never), decided under the
         // driver row lock whatever key or route the request used. It is always the WHOLE balance, so the usual minimum does not apply (5.000 VND is paid back).
         if (driver.status !== 'CLOSING') {

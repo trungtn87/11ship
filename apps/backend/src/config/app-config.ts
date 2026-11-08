@@ -1,4 +1,5 @@
 import { BusinessPushConfig, parseBusinessPushConfig } from './business-push-config';
+import { AccountDeletionConfig, parseAccountDeletion } from './account-deletion-config';
 import { M14RoutingConfig, parseM14Routing } from './m14-routing-config';
 import { OpsConfig, parseOpsConfig } from './ops-config';
 import { parsePushConfig, PushConfig } from './push-config';
@@ -181,6 +182,8 @@ export interface AppConfig {
   smsGateway?: SmsGatewayConfig;
   /** M14 routing service for road distance / travel time (M07). Present only when M14_ROUTING_ORIGIN is set and valid; absent = routes are unavailable. */
   m14Routing?: M14RoutingConfig;
+  /** Public account deletion (P5-6a): quotas, sweep interval and the public origin. Set by loadConfig (defaults applied); absent only in a hand-built config. */
+  accountDeletion?: AccountDeletionConfig;
   /** Android push provider (M08, FCM). Present only when PUSH_FCM_PROJECT_ID and PUSH_FCM_SERVICE_ACCOUNT_FILE are both set and valid; absent = push is not configured (the inbox still works). */
   push?: PushConfig;
   businessPush?: BusinessPushConfig;
@@ -685,6 +688,12 @@ export function loadConfig(env: EnvSource): ConfigResult {
     smsGatewayResult.invalid.forEach(flag);
   }
 
+  // Public account deletion (P5-6a): defaults for every value, so only an invalid value is reported. Names only.
+  const accountDeletionResult = parseAccountDeletion({ env });
+  if (!accountDeletionResult.ok) {
+    accountDeletionResult.invalid.forEach(flag);
+  }
+
   // M14 routing (M07): optional; absent means every route answer is "unavailable" and a fee that needs one stays unknown. Names only.
   const m14RoutingResult = parseM14Routing({ env, appEnv: appEnv ?? '' });
   let m14Routing: M14RoutingConfig | undefined;
@@ -787,6 +796,7 @@ export function loadConfig(env: EnvSource): ConfigResult {
       ...(accountRecoveryMode === 'DISABLED_TEST' || accountRecoveryMode === 'SMS_OTP' ? { accountRecoveryMode } : {}),
       ...(smsGateway === undefined ? {} : { smsGateway }),
       ...(m14Routing === undefined ? {} : { m14Routing }),
+      ...(accountDeletionResult.ok ? { accountDeletion: accountDeletionResult.config } : {}),
       ...(businessPushResult.ok && businessPushResult.config ? { businessPush: businessPushResult.config } : {}),
       ...(push === undefined ? {} : { push }),
       ...(ops === undefined ? {} : { ops }),

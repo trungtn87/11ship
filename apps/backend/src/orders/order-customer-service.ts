@@ -372,6 +372,8 @@ export class OrderCustomerService {
         if (existing !== undefined) {
           return { status: 200, replayGuard: { user_id: actor.userId }, payload: await this.views.forCustomer(context, existing, true) };
         }
+        // P5-6a: no NEW order while the owner's account deletion is pending (an earlier order of the same client_ref is answered above).
+        await this.authority.assertNewWorkAllowed(context, actor);
         // The shop first (FOR SHARE: it cannot be disabled or moved until this Order has committed), then the dishes in id order.
         const lockedShop = await this.shopRepo.lockShopShared(context, input.shopId);
         if (lockedShop === undefined) {
@@ -727,6 +729,7 @@ export class OrderCustomerService {
       { scopeType: ORDER_SCOPE_TYPE, scopeId: principal.userId, operationId: 'order.reorder.v1', idempotencyKey: key, logicalRequest: { order_id: orderId, replace_cart: input.replaceCart }, replay: this.#replay(principal) },
       async (context) => {
         const actor = await this.#customer(context, principal, 'update');
+        await this.authority.assertNewWorkAllowed(context, actor);
         const order = await this.orders.findOfCustomer(context, orderId, actor.userId);
         if (order === undefined) {
           throw new AppError('ORDER_NOT_FOUND');

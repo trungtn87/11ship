@@ -71,6 +71,8 @@ export interface UserDetailRow extends UserSummaryRow {
   /** Why the account is locked (DISABLED rows only) and since when; older locks carry no reason (read as not self-recoverable). */
   readonly lockReason: 'DELETE_REQUEST' | 'VIOLATION' | 'SECURITY' | null;
   readonly lockedAtMs: number | null;
+  /** The owner confirmed the deletion of the account and its running work is being finished (DELETE_REQUEST_PENDING, P5-6a); read-only for the administration. */
+  readonly deleteRequestedAtMs?: number | null;
 }
 
 export interface AdministratorRow {
@@ -236,6 +238,7 @@ export class AdminAccountReadRepository {
         all_roles: string[];
         lock_reason: string | null;
         locked_ms: string | null;
+        delete_requested_ms: string | null;
       }
     >(
       `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version,
@@ -247,6 +250,7 @@ export class AdminAccountReadRepository {
               sh.name AS shop_name, sh.status AS shop_status, dr.status AS driver_status,
               u.account_origin, (u.phone_verified_at IS NOT NULL) AS phone_verified, u.lock_reason,
               CASE WHEN u.locked_at IS NULL THEN NULL ELSE ${epochMs('u.locked_at')} END AS locked_ms,
+              CASE WHEN u.delete_requested_at IS NULL THEN NULL ELSE ${epochMs('u.delete_requested_at')} END AS delete_requested_ms,
               ARRAY(SELECT r.role FROM app.user_roles r WHERE r.user_id = u.user_id ORDER BY r.role) AS all_roles
        ${USER_BASE}
         AND ($2::boolean OR EXISTS (SELECT 1 FROM app.user_roles r WHERE r.user_id = u.user_id AND r.role = ANY($1::text[])))
@@ -265,6 +269,7 @@ export class AdminAccountReadRepository {
       lock: { accountOrigin: row.account_origin, phoneVerified: row.phone_verified, allRoles: row.all_roles },
       lockReason: row.lock_reason === 'DELETE_REQUEST' || row.lock_reason === 'VIOLATION' || row.lock_reason === 'SECURITY' ? row.lock_reason : null,
       lockedAtMs: row.locked_ms === null ? null : toSafeInteger(row.locked_ms),
+      deleteRequestedAtMs: row.delete_requested_ms === null ? null : toSafeInteger(row.delete_requested_ms),
       updatedAtMs: toSafeInteger(row.updated_ms),
       version: toSafeInteger(row.version),
       customer: scope.customer && row.has_customer ? { fullName: row.customer_name } : undefined,

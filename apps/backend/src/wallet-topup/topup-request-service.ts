@@ -93,6 +93,8 @@ export class TopupRequestService {
       },
       async (context) => {
         const { actor, driver } = await this.#writer(context, principal);
+        // P5-6a: no NEW top-up request while the owner's account deletion is pending (requests already made are finished normally).
+        await this.authority.assertNewWorkAllowed(context, actor);
         // Owner lock 2026-10-28 (#256): no NEW request once the closure is asked. Decided here, under the driver row lock, so a create racing the move to CLOSING
         // is serialized with it. Not in #writer: a replay of a request committed before CLOSING must still answer, and a PENDING one can still be cancelled.
         if (driver.status === 'CLOSING') {

@@ -55,7 +55,7 @@ SELECT s.shop_id, s.name, s.address_text, s.pickup_lat, s.pickup_lng, (s.logo IS
    AND (s.pickup_lat IS NOT NULL AND s.pickup_lng IS NOT NULL AND NOT (s.pickup_lat = 0 AND s.pickup_lng = 0))
    AND ${pinInAreaSql('s', 'a')}
    AND EXISTS (SELECT 1 FROM app.shop_business_hours hh WHERE hh.shop_id = s.shop_id)
-   AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE')
+   AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND (ou.status <> 'ACTIVE' OR ou.delete_requested_at IS NOT NULL))
  ORDER BY s.shop_id`;
 
 /**
@@ -99,7 +99,7 @@ export class ShopDiscoveryReader {
         WHERE s.status = 'ACTIVE' AND a.status = 'ACTIVE'
           AND (s.pickup_lat IS NOT NULL AND s.pickup_lng IS NOT NULL AND NOT (s.pickup_lat = 0 AND s.pickup_lng = 0))
           AND ${pinInAreaSql('s', 'a')}
-          AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE')
+          AND NOT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND (ou.status <> 'ACTIVE' OR ou.delete_requested_at IS NOT NULL))
           AND EXISTS (
             SELECT 1 FROM app.shop_business_hours h
              CROSS JOIN LATERAL (SELECT (h.weekday - 1) * 1440 + h.start_minute AS open_at, (h.weekday - 1 + h.end_day_offset) * 1440 + h.end_minute AS close_at) w

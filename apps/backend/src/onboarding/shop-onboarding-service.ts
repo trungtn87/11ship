@@ -111,6 +111,10 @@ export class ShopOnboardingService {
     const userId = actor.userId;
     await this.sessionAuth.lockAuthorizedActor(context, actor);
     const existing = await this.shops.lockOwnedShop(context, userId);
+    if (existing === undefined) {
+      // P5-6a: a new shop is not started while the owner's account deletion is pending (editing the existing draft is not new work).
+      await this.sessionAuth.assertNewWorkAllowed(context, userId);
+    }
 
     if (input.expectedVersion === null && existing !== undefined) {
       throw new AppError('SHOP_ONBOARDING_EXISTS');

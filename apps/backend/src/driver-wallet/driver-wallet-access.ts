@@ -44,6 +44,11 @@ export class DriverWalletAccess {
     return { actor, driver };
   }
 
+  /** A NEW wallet request (withdrawal) is refused while the owner's account deletion is pending (P5-6a). */
+  async assertNewWorkAllowed(context: TransactionContext, actor: ClientActor): Promise<void> {
+    await this.authority.assertNewWorkAllowed(context, actor);
+  }
+
   async #assertShipDriver(context: TransactionContext, actor: ClientActor): Promise<void> {
     if (actor.app !== 'SHIP' || actor.storedActiveRole !== 'DRIVER') {
       throw new AppError('ROLE_NOT_AVAILABLE');

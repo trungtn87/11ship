@@ -99,6 +99,7 @@ export class BusinessFinanceService {
   createShop(who:FinanceIdentity,amount:number,note:string,key:Key,requestId:string):Promise<JsonObject> {
     return this.command(who,'shop_payment.create',{amount_vnd:amount,note},key,requestId,async(c,a)=>{
       if(who.kind!=='client'||a.role!=='SHOP')throw new AppError('ROLE_NOT_AVAILABLE');
+      await this.authority.assertNewWorkAllowed(c,{userId:a.userId});
       const shop=await this.shops.findOwnedShop(c,a.userId);
       if(!shop)throw new AppError('SHOP_NOT_FOUND');
       const id=randomUUID();

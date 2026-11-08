@@ -400,13 +400,73 @@ export class UserRepository {
       `UPDATE app.users
           SET status = $3, version = version + 1, updated_at = date_trunc('milliseconds', clock_timestamp()),
               lock_reason = $5::varchar,
-              locked_at = CASE WHEN $5::varchar IS NULL THEN NULL ELSE date_trunc('milliseconds', clock_timestamp()) END
+              locked_at = CASE WHEN $5::varchar IS NULL THEN NULL ELSE date_trunc('milliseconds', clock_timestamp()) END,
+              delete_requested_at = NULL
         WHERE user_id = $1::uuid AND status = $2 AND version = $4::bigint
         RETURNING version::text AS version, (extract(epoch FROM updated_at) * 1000)::bigint::text AS changed_ms`,
       [input.userId, input.from, input.to, input.expectedVersion, input.lockReason ?? null],
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { version: Number(row.version), changedAtMs: Number(row.changed_ms) };
+  }
+
+  // ---- public account deletion (P5-6a, OD-26) ---------------------------------------------------------------------------------
+
+  /**
+   * True while the owner's deletion request is waiting for the running work to finish (state DELETE_REQUEST_PENDING). Read FOR SHARE: a caller that
+   * does not hold the user row yet waits for a confirmation in flight and then sees it; a caller that holds it FOR UPDATE is not affected. Nothing can
+   * confirm between this read and the end of the caller's transaction.
+   */
+  async isDeleteRequested(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query<{ pending: boolean }>('SELECT (delete_requested_at IS NOT NULL) AS pending FROM app.users WHERE user_id = $1::uuid FOR SHARE', [userId]);
+    return result.rows[0]?.pending === true;
+  }
+
+  /** The version of a user row and whether its deletion is already requested, read under the caller's lock. */
+  async deleteRequestState(context: TransactionContext, userId: string): Promise<{ version: number; requested: boolean } | undefined> {
+    const result = await context.query<{ version: string; requested: boolean }>(
+      'SELECT version::text AS version, (delete_requested_at IS NOT NULL) AS requested FROM app.users WHERE user_id = $1::uuid',
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { version: Number(row.version), requested: row.requested };
+  }
+
+  /**
+   * ACTIVE and not yet requested -> DELETE_REQUEST_PENDING at the expected version: version + 1, database time. The caller holds the row FOR
+   * UPDATE; undefined means the row no longer matches (nothing was written). Status, sessions, roles and password are not touched.
+   */
+  async markDeleteRequested(context: TransactionContext, input: { userId: string; expectedVersion: number }): Promise<{ version: number } | undefined> {
+    const result = await context.query<{ version: string }>(
+      `UPDATE app.users
+          SET delete_requested_at = date_trunc('milliseconds', clock_timestamp()), version = version + 1,
+              updated_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = $1::uuid AND status = 'ACTIVE' AND delete_requested_at IS NULL AND version = $2::bigint
+        RETURNING version::text AS version`,
+      [input.userId, input.expectedVersion],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { version: Number(row.version) };
+  }
+
+  /** Ids of the accounts waiting for their deletion to be finalized, oldest first. Unlocked: only a list of candidates, every one is re-read under its own lock. */
+  async listDeleteRequested(context: TransactionContext, limit: number): Promise<string[]> {
+    const result = await context.query<{ user_id: string }>(
+      'SELECT user_id FROM app.users WHERE delete_requested_at IS NOT NULL ORDER BY delete_requested_at, user_id LIMIT $1::int',
+      [limit],
+    );
+    return result.rows.map((row) => row.user_id);
+  }
+
+  /** The user row FOR UPDATE, but only when nobody else holds it: another instance (or a request) working on this account makes the caller skip it. */
+  async lockByIdSkipLocked(context: TransactionContext, userId: string): Promise<UserRow | undefined> {
+    const result = await context.query<RawUser>(
+      `SELECT user_id, phone_normalized, password_hash, status, account_origin, account_scope, lock_reason
+         FROM app.users WHERE user_id = $1::uuid FOR UPDATE SKIP LOCKED`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toUser(row);
   }
 
   /**

@@ -120,7 +120,7 @@ SELECT s.logo, s.shop_id, s.name, s.contact_phone_normalized, s.zalo, s.facebook
        -- Unlocking the account restores this answer only; the shop row itself is never touched by a lock or an unlock.
        EXISTS (
          SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id
-          WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE'
+          WHERE om.shop_id = s.shop_id AND om.member_role = 'OWNER' AND (ou.status <> 'ACTIVE' OR ou.delete_requested_at IS NOT NULL)
        ) AS owner_locked,
        ${inHoursSql('s.shop_id')} AS in_hours`;
 

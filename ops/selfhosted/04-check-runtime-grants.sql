@@ -11,6 +11,7 @@ WITH expected(table_name, privileges) AS (
     ('verification_proofs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('sessions', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('client_login_limits', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('account_delete_limits', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('service_areas', ARRAY['SELECT', 'UPDATE']::text[]),
     ('shops', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shop_members', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),

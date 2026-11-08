@@ -168,6 +168,18 @@ export class SessionAuthorizationParticipant {
     }
   }
 
+  /**
+   * The one gate of every entry point that starts or takes NEW work (an order, a delivery, taking a delivery, a wallet request, a new role) for the
+   * account (P5-6a, OD-26): while the owner's deletion is pending nothing new may begin, but the work already running is finished normally, so the
+   * ordinary lock methods above do NOT call it. Call it inside the command's transaction; it reads the user row FOR SHARE, so it is serialized with
+   * the confirmation (which holds the row FOR UPDATE) whatever locks the caller took before.
+   */
+  async assertNewWorkAllowed(context: TransactionContext, userId: string): Promise<void> {
+    if (await this.users.isDeleteRequested(context, userId)) {
+      throw new AppError('ACCOUNT_DELETE_PENDING');
+    }
+  }
+
   /** Returns true when the caller is served through the LIMITED access of a locked driver (only when it opted in). */
   async #decide(
     context: TransactionContext,

@@ -148,6 +148,7 @@ export class DeliveryShopService {
       { scopeType: DELIVERY_SCOPE_TYPE, scopeId: principal.userId, operationId: OPERATIONS.recall, idempotencyKey: key, logicalRequest: { delivery_id: deliveryId }, replay: this.#replay(principal) },
       async (context) => {
         const caller = await this.actors.shopWriter(context, principal);
+        await this.actors.assertNewWorkAllowed(context, caller.actor.userId);
         const previous = await this.deliveries.lockById(context, deliveryId);
         if (previous === undefined || previous.shopId !== caller.shop.shopId) {
           throw new AppError('DELIVERY_NOT_FOUND');
