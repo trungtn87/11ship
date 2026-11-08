@@ -55,7 +55,18 @@ class _NativeMapState extends State<_NativeMap> {
   @override
   void didUpdateWidget(covariant _NativeMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Parents rebuild on every keystroke with equal-but-new lists; only a real change reaches the native view.
+    final String signature = _signature(_data);
+    if (signature == _lastSignature) return;
+    _lastSignature = signature;
     _channel?.invokeMethod<void>('update', _data);
+  }
+  String? _lastSignature;
+  static String _signature(Map<String, dynamic> data) => data.toString();
+  @override
+  void initState() {
+    super.initState();
+    _lastSignature = _signature(_data);
   }
   @override
   void dispose() {

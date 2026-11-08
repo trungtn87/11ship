@@ -33,6 +33,28 @@ void main() {
     expect(find.text('Kết quả cũ'), findsNothing);
   });
 
+  testWidgets('#299 the map is mounted once while typing and while conditional rows appear/disappear', (WidgetTester tester) async {
+    final _PendingSearch search = _PendingSearch();
+    final _MountCounter counter = _MountCounter();
+    await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
+      initial: const AddressLocation(''), requirePoint: false, searchApi: search,
+      mapBuilder: (_, lat, lng, onPick) => _CountingMap(counter),
+    )));
+    expect(counter.inits, 1);
+    for (int i = 1; i <= 12; i++) {
+      await tester.enterText(find.byKey(const Key('location-address-text')), 'Cao Bằng ${'x' * i}');
+      await tester.pump(const Duration(milliseconds: 500));
+      if (search.answers.isNotEmpty && !search.answers.last.isCompleted) {
+        // Alternate result lists and failures: both insert/remove Column rows before the map.
+        if (i.isEven) { search.answers.last.complete(const <PlaceSearchResult>[PlaceSearchResult(id: 'a', name: 'A', address: 'A', latitude: 22.66, longitude: 106.25, inCaoBang: true)]); }
+        else { search.answers.last.completeError(StateError('offline')); }
+        await tester.pump();
+      }
+    }
+    expect(counter.inits, 1, reason: 'a rebuilt map recreates the native MapLibre view and re-reads the GeoJSON');
+    expect(counter.disposes, 0);
+  });
+
   testWidgets('editing text never silently keeps a stale pin', (WidgetTester tester) async {
     AddressLocation? saved;
     await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
@@ -270,6 +292,33 @@ class _PendingLocation implements LocationProvider {
   final result = Completer<LocationFix>();
   @override
   Future<LocationFix> currentFix() => result.future;
+}
+
+class _MountCounter {
+  int inits = 0;
+  int disposes = 0;
+}
+
+class _CountingMap extends StatefulWidget {
+  const _CountingMap(this.counter);
+  final _MountCounter counter;
+  @override
+  State<_CountingMap> createState() => _CountingMapState();
+}
+
+class _CountingMapState extends State<_CountingMap> {
+  @override
+  void initState() {
+    super.initState();
+    widget.counter.inits++;
+  }
+  @override
+  void dispose() {
+    widget.counter.disposes++;
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
 }
 
 class _PendingSearch implements PlaceSearchApi {

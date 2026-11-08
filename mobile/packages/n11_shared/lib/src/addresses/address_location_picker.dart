@@ -105,6 +105,7 @@ class AddressLocationPicker extends StatefulWidget {
 }
 
 class _AddressLocationPickerState extends State<AddressLocationPicker> {
+  final GlobalKey _mapKey = GlobalKey(debugLabel: 'address-picker-map');
   late final TextEditingController _text;
   double? _lat;
   double? _lng;
@@ -432,6 +433,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             ),
           const SizedBox(height: 12),
           SizedBox(
+            // #299: the Column's conditional rows (error, locating, suggestions...) shift this child's index while typing; without a stable key
+            // Flutter unmounts and recreates the native MapLibre view (and re-parses the GeoJSON) on every shift.
+            key: _mapKey,
             height: 320,
             child: Stack(
               children: <Widget>[
