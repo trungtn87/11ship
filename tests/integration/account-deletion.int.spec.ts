@@ -362,6 +362,10 @@ describe('P5-6a public account deletion', () => {
     expect(refused(await placeOrder(other, checkoutBody(owner.shopId, ownerDish)))).toEqual({ status: 409, code: 'ORDER_SHOP_NOT_OPEN' });
     // ... the shop cannot recall a delivery or open a payment request ...
     const recallable = await insertDeliveryRow(app.pool, { shopId: owner.shopId, userId: owner.userId });
+    // (A shop-created DIRECT delivery cannot be recalled at all since OD-5; the gate is reached by an order-linked one.)
+    await app.pool.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
+    await app.pool.query("UPDATE app.deliveries SET source = 'ORDER', order_id = $1::uuid WHERE delivery_id = $2::uuid", [earlierId, recallable]);
+    await app.pool.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
     expect(refused(await app.call('POST', `/shop/me/deliveries/${recallable}/recall`, { bearer: owner.token, headers: { 'idempotency-key': randomUUID() }, body: {} }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
     // (The shop payment request route is wired with the Administration routes, not in this application: its gate is pinned by new-work-gate.spec.ts.)
     // ... but the order it already has is confirmed and read as usual.
