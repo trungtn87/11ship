@@ -456,6 +456,44 @@ describe('M11.03 — administration, moderation and adjustments', () => {
     expect(codeOf(await act(money, second.id, 'adjust-commission', { expected_version: await versionOf(second.id), direction: 'REFUND_TO_SHIPPER', amount_vnd: 1000, reason: 'Hoàn', history_reviewed: false })).code).toBe('ADMIN_FORBIDDEN');
   });
 
+  it('OD-27: the money right (wallet.adjustment.post) needs the DRIVER scope: the grant alone changes nothing without it; DRIVER (with SHOP) passes; SYSTEM passes', async () => {
+    const finance = w.finance;
+    if (finance === undefined) {
+      throw new Error('the world has no M04 stand-in');
+    }
+    const grantMoney = (userId: string): Promise<unknown> =>
+      w.app.pool.query(
+        `INSERT INTO app.admin_finance_grants (user_id, permission_key, state, granted_by_user_id, granted_at, version, created_at, updated_at) VALUES ($1::uuid, 'wallet.adjustment.post', 'GRANTED', $2::uuid, now(), 1, now(), now())`,
+        [userId, system.userId],
+      );
+    const shopOnly = await w.adminWith('SHOP', { review: true });
+    const driverOnly = await w.adminWith('DRIVER', { review: true });
+    const both = await w.adminWith('BOTH', { review: true });
+    for (const who of [shopOnly, driverOnly, both]) {
+      await grantMoney(who.userId);
+    }
+    finance.answer = { kind: 'POSTED' };
+    // A file that names only the shop is the one a SHOP-only administrator can open: the grant is there, the DRIVER scope is not, so the money flag stays false.
+    const shopFile = await file({ category: 'MONEY_FEE', body: 'Thu khác phí OD-27' }, String((await w.newDelivery()).delivery_id)); // a delivery nobody has accepted: no Shipper on the file
+    expect((await detail(shopOnly, shopFile.id)).finance).toMatchObject({ allowed: false });
+    expect((await detail(both, shopFile.id)).finance).toMatchObject({ allowed: true });
+    expect((await detail(system, shopFile.id)).finance).toMatchObject({ allowed: true });
+    // A file naming the Shipper too (the only kind with a commission to adjust) is closed to anyone without the DRIVER scope, and the money action with it.
+    const attempt = async (who: AdminLogin): Promise<{ id: string; res: AdminResponse }> => {
+      const c = await file({ category: 'MONEY_FEE', body: 'Hoa hồng' }, await w.completed(shipper));
+      await act(system, c.id, 'receive', { expected_version: c.version });
+      return { id: c.id, res: await act(who, c.id, 'adjust-commission', { expected_version: await versionOf(c.id), direction: 'REFUND_TO_SHIPPER', amount_vnd: 1000, reason: 'Hoàn', history_reviewed: false }) };
+    };
+    const refused = await attempt(shopOnly);
+    expect(codeOf(refused.res).status).toBeGreaterThanOrEqual(403);
+    expect(await w.count('SELECT 1 FROM app.complaint_adjustments WHERE complaint_id = $1::uuid', [refused.id])).toBe(0);
+    const viaDriver = await attempt(driverOnly);
+    expect(codeOf(viaDriver.res).status).toBeGreaterThanOrEqual(403); // DRIVER alone does not reach a file that also names the shop (#261)
+    expect(await w.count('SELECT 1 FROM app.complaint_adjustments WHERE complaint_id = $1::uuid', [viaDriver.id])).toBe(0);
+    expect((await attempt(both)).res.status).toBe(200);
+    expect((await attempt(system)).res.status).toBe(200);
+  });
+
   // ---- M08 notifications --------------------------------------------------------------------------------------------------------------
 
   it('M08: the shop gets ONE reminder to rate a finished delivery; the Administration\'s steps notify the right people; opening re-checks the right', async () => {

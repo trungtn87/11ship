@@ -54,8 +54,18 @@ describe('M04-B2.2a boundary', () => {
   });
 
   it('a right is never derived from the app permissions or the Shipper review rights, and SYSTEM is never given a row', () => {
-    expect(code()).not.toMatch(/can_view|can_review_profile|can_lock|admin_app_permissions|AdminAccountReadRepository|canViewDriver|permissions\(/);
-    expect(codeOf('finance-access/finance-access-participant.ts')).toContain("adminRole === 'SYSTEM'");
+    // OD-27 narrows this rule, it does not break it: the DRIVER scope is an ADDITIONAL condition on a wallet.* grant (read only by the participant, through the
+    // wallet-scope helper) and never produces a right by itself. Everything else in this module still never looks at the app permissions.
+    const participant = 'finance-access/finance-access-participant.ts';
+    const others = files().filter((file) => file !== participant).map((file) => codeOf(file)).join('\n');
+    expect(others).not.toMatch(/can_review_profile|can_lock|admin_app_permissions|AdminAccountReadRepository|canViewDriver|permissions\(/);
+    const own = codeOf(participant);
+    expect(own).not.toMatch(/can_view|can_review_profile|can_lock|admin_app_permissions|canViewDriver|canReviewProfile|canLock/);
+    expect(own.match(/this\.permissions\.permissions\(/g)).toHaveLength(2); // #walletScope and held(), both only to FILTER wallet.* rights
+    expect(own).toContain('holdsWalletScope(');
+    expect(own).toContain("adminRole === 'SYSTEM'");
+    // A right is still only ever a GRANTED row: the scope check can only refuse, it never returns true on its own.
+    expect(own).toMatch(/lockForShare\(context,actor\.known\.userId,permission\)\)\?\.state==='GRANTED'/);
   });
 
   it('only the read, topup and the three withdrawal rights can be granted today; the reserved names grant nothing', () => {
