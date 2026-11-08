@@ -23,6 +23,7 @@ import { M11_DOWN_SQL, M11_MIGRATION_NAME, M11_UP_SQL } from './support/m11-migr
 import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_MIGRATION_NAME, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
+import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 
 // M07 over a database that ALREADY holds M04 money. The M07 migration is taken off (its own Down, which must keep TOPUP working), real TOPUP money is posted
 // the way the product posts it (Shipper request over HTTP, Admin confirmation over HTTP, M04's posting service), the M07 migration is applied on top, and
@@ -388,9 +389,8 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
 
   const deliveryBody = (): Json => ({ recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER' });
   async function acceptNew(s: Shipper): Promise<Json> {
-    const created = await asShop('POST', '/shop/me/deliveries', deliveryBody());
-    expect(created.status).toBe(201);
-    const accepted = await asShipper(s, 'POST', `/driver/deliveries/${String((dataOf(created) as Json).delivery_id)}/accept`, {});
+    const created = await createLegacyDirectDeliveryView(client, shop, deliveryBody());
+    const accepted = await asShipper(s, 'POST', `/driver/deliveries/${String(created.delivery_id)}/accept`, {});
     expect([accepted.status, accepted.text.slice(0, 300)]).toEqual([200, accepted.text.slice(0, 300)]);
     return dataOf(accepted) as Json;
   }

@@ -8,6 +8,7 @@ import { OrderChatRetention } from '../../apps/backend/src/order-chat/order-chat
 import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
 import { ApiResponse, AuthApp, countRows, dataOf, startAuthApp } from './support/auth-fixtures';
 import { ageDelivery, cleanupOrders, codeOf, Customer, Dish, Json, newCustomer, newDish, newShipper, openAllWeek, PRIVACY, Shipper, TERMS } from './support/m10-fixtures';
+import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 
 // Issue #191, "Trao đổi đơn hàng", on a REAL Nest pipeline and PostgreSQL: who may read and write (customer, shop, Shipper by assignment, strangers), the feed
@@ -311,7 +312,7 @@ describe('#191 — order chat', () => {
 
   it('a direct call has a room of its own (the delivery is the file, no order is made): the shop and the Shipper write, the customer has no door, and it closes with the delivery', async () => {
     const s = await shipper();
-    const made = ok(await call(shop.token, 'POST', '/shop/me/deliveries', { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER' }), 201);
+    const made = await createLegacyDirectDeliveryView(app, shop, { recipient_name: 'Khách nhận', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', dropoff_lat: 21.0, dropoff_lng: 105.82, goods_description: 'Hộp quà', goods_value_vnd: 200_000, paid_vnd: 0, fee_payer: 'CUSTOMER' });
     const did = String(made.delivery_id);
     const ordersBefore = await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE shop_id = $1::uuid', [shop.shopId]);
     // Before anybody holds it the Shipper has no door; the shop has one.

@@ -137,8 +137,9 @@ describe('C22-A0 — typed errors over real HTTP', () => {
     // + 2 Nhóm 15 codes (#255/#256: WITHDRAWAL_ONLY_WHEN_CLOSING, TOPUP_NOT_ALLOWED_WHEN_CLOSING)
     // + 1 order edit code (#238: ORDER_EDIT_LOCKED)
     // + 1 operations analytics code (#242: ANOMALY_CASE_NOT_FOUND)
+    // + 1 closed direct-create code (OD-5: DELIVERY_DIRECT_CREATE_DISABLED)
     // the total is pinned so that an accidental addition or removal is still caught.
-    expect(codes).toHaveLength(239);
+    expect(codes).toHaveLength(240);
     expect(codes).toEqual(expect.arrayContaining(['INVALID_SHOP_LOGO', 'SHOP_LOGO_TOO_LARGE', 'LOGIN_RATE_LIMITED', 'BUSINESS_CHAT_RATE_LIMITED', 'MENU_VISIBLE_LIMIT_REACHED', 'GATEWAY_CLAIM_CONFLICT']));
     expect(codes.filter((code) => code.startsWith('ADMIN_'))).toHaveLength(22);
     expect(codes.filter((code) => code.startsWith('IDEMPOTENCY_') || code === 'INVALID_IDEMPOTENCY_KEY')).toHaveLength(6);

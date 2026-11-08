@@ -4,6 +4,7 @@ import { sessionCookies } from './support/admin-fixtures';
 import { adminData, adminErrorCode, AdminResponse } from './support/admin-fixtures';
 import { dataOf, errorCode } from './support/auth-fixtures';
 import { completeSetup, createShopOwner } from './support/shop-management-fixtures';
+import { seedDelivery } from './support/m12-fixtures';
 import { AdminLogin, Json, M11World, PNG_BASE64, Shipper } from './support/m11-harness';
 
 // M11.03 on a REAL Nest pipeline and PostgreSQL, through the REAL administration pipeline (session cookie, CSRF, idempotency): who may read and who may
@@ -370,21 +371,11 @@ describe('M11.03 — administration, moderation and adjustments', () => {
 
   it('with a later delivery in the chain the whole history must have been reviewed first; the later delivery is never changed', async () => {
     const first = await w.failed(shipper);
-    const recalled = await w.asShop('POST', `/shop/me/deliveries/${first}/recall`, {});
-    // The goods must be back before a new call; settle custody the way the shop does, then call again.
-    if (recalled.status !== 201) {
-      expect((await w.asShop('POST', `/shop/me/deliveries/${first}/custody`, { resolution: 'RETURNED_TO_SHOP', expected_version: 1 })).status).toBeGreaterThanOrEqual(200);
-    }
     const c = await file({ category: 'DELIVERY_RESULT', body: 'Kết quả sai' }, first);
     await act(system, c.id, 'receive', { expected_version: c.version });
-    let successors = await q('SELECT delivery_id FROM app.deliveries WHERE previous_delivery_id = $1::uuid', [first]);
-    if (successors.length === 0) {
-      // Test-only: the chain of a later call (the shop's own recall route needs the goods settled first).
-      await w.app.pool.query(`UPDATE app.delivery_incidents SET status = 'CLOSED', custody = 'SHOP', closed_at = now(), closed_by = $2::uuid, version = version + 1 WHERE delivery_id = $1::uuid AND status = 'OPEN'`, [first, w.shop.userId]);
-      const again = await w.asShop('POST', `/shop/me/deliveries/${first}/recall`, {});
-      expect([again.status, again.text.slice(0, 200)]).toEqual([201, again.text.slice(0, 200)]);
-      successors = await q('SELECT delivery_id FROM app.deliveries WHERE previous_delivery_id = $1::uuid', [first]);
-    }
+    // OD-5: a shop no longer calls a DIRECT delivery again (recall is closed), so the later delivery of the chain is built by the fixture.
+    await seedDelivery(w.app.pool, { shopId: w.shop.shopId, userId: w.shop.userId, previousDeliveryId: first });
+    const successors = await q('SELECT delivery_id FROM app.deliveries WHERE previous_delivery_id = $1::uuid', [first]);
     expect(successors).toHaveLength(1);
     const next = String(successors[0]?.delivery_id);
     const nextBefore = (await q('SELECT state, version FROM app.deliveries WHERE delivery_id = $1::uuid', [next]))[0];
