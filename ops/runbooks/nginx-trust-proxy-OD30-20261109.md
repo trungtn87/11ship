@@ -75,27 +75,57 @@ ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]
 sudo nginx -T 2>/dev/null | grep -n -E "proxy_pass|X-Forwarded-For|X-Real-IP|Forwarded|proxy_add_x_forwarded_for"
 diff <(sudo nginx -T 2>/dev/null | sed -n '/server_name 103.9.78.67.sslip.io/,$p') /opt/11ship/current/ops/vinahost/nginx-11ship-staging.conf || true
 
-# b. backend có biến chưa (chỉ in tên + giá trị không bí mật này)
+# b. EnvironmentFile THẬT của service và giá trị trust hiện tại (không in bí mật)
 sudo systemctl show 11ship-staging -p Environment -p EnvironmentFiles
-sudo grep -n "^ADMIN_AUTH_TRUSTED_PROXY_IPS" <file-env-của-service>
+sudo grep -n "^ADMIN_AUTH_TRUSTED_PROXY_IPS" <EnvironmentFile-phát-hiện-ở-trên>
 
 # c. backend nghe ở đâu
 sudo ss -ltnp | grep -E ":3000\b"
 ```
 
-Kết luận cho từng mục: ĐÚNG MẪU / LỆCH (ghi dòng lệch). Nếu cả nginx và env đã đúng ⇒ không cần deploy; chỉ chạy mục 6 để có bằng chứng.
+Ghi vào hồ sơ vận hành: **đường dẫn đầy đủ của EnvironmentFile** (hoặc dòng `Environment=` nếu đặt trong unit/drop-in) và giá trị `ADMIN_AUTH_TRUSTED_PROXY_IPS` hiện tại. Mọi bước sao lưu/khôi phục env ở mục 5 và 7 dùng đúng tệp này, không dùng đường dẫn đoán.
+
+Phân loại **trạng thái đầu vào** (N = nginx ghi đè `X-Forwarded-For`/`X-Real-IP` bằng `$remote_addr` ở **mọi** `location` proxy; T = backend đang tin proxy, tức danh sách không rỗng):
+
+| Trạng thái | Nginx | Backend | Rủi ro hiện tại | Đường đi |
+| --- | --- | --- | --- | --- |
+| S0 | chưa N | chưa T | quota IP chung một bucket; không giả mạo được | 5.A (mặc định) |
+| **S1** | **chưa N** | **ĐÃ T** | **giả mạo IP né limiter đang xảy ra** | **5.B: bỏ trust TRƯỚC mọi thứ khác** |
+| S2 | đã N | chưa T | quota IP chung một bucket; không giả mạo được | 5.A từ bước nginx đã xong, bật trust sau khi chứng minh |
+| S3 | đã N | đã T | đúng đích | không deploy; chỉ chạy mục 6 để có bằng chứng |
+
+Nếu không xác định chắc được N hoặc T, **coi là S1** (đường an toàn hơn). Nguyên tắc bất biến cho mọi đường đi: **backend không bao giờ ở trạng thái T khi nginx chưa được chứng minh ghi đè.**
 
 ## 5. Deploy từng bước (CHỈ khi Owner cho phép; chưa thực hiện)
 
-Thứ tự quan trọng: **nginx ghi đè trước, backend tin proxy sau.** Ngược lại (backend tin trước khi nginx ghi đè) tạo khoảng hở giả mạo.
+Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` (hoặc đường dẫn `ready` tương ứng của build đang chạy) trả `ready` trước khi sang bước sau. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
 
-1. Sao lưu: `sudo cp -a /etc/nginx/sites-available/11ship-staging.conf /root/11ship-nginx.pre-od30.conf` và ghi lại env hiện tại (không in bí mật).
-2. nginx: đưa các dòng ở 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu khác biệt chỉ là phần này). Giữ nguyên SSL, `server_name`, `client_max_body_size`.
-3. `sudo nginx -t` — phải `syntax is ok` và `test is successful`. Nếu lỗi: khôi phục bản sao lưu, dừng, báo.
-4. `sudo systemctl reload nginx` (reload, không restart; không rớt kết nối đang chạy).
-5. Kiểm tra mục 6A (nginx ghi đè) — khi backend vẫn chưa tin proxy.
-6. Env backend: đặt `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` (nếu chưa có), rồi restart service theo quy trình cập nhật VPS chính thức. Đây là khoảng ngắn dịch vụ khởi động lại: làm ngoài giờ cao điểm.
-7. Kiểm tra mục 6B–6D. Ghi kết quả; chỉ khi có bằng chứng mới được ghi "đã deploy".
+**Sao lưu trước khi đổi bất cứ thứ gì** (cho rollback tái lập được):
+
+```bash
+sudo cp -a /etc/nginx/sites-available/11ship-staging.conf /root/11ship-nginx.pre-od30.conf
+sudo cp -a <EnvironmentFile-đã-ghi-ở-mục-4> <EnvironmentFile-đã-ghi-ở-mục-4>.pre-od30
+```
+
+Ghi lại: đường dẫn hai bản sao, thời điểm, và trạng thái đầu vào (S0–S3). Không in nội dung env (có bí mật).
+
+### 5.A — S0 / S2 (backend chưa tin proxy)
+
+1. nginx: đưa các dòng 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu lệch chỉ ở phần này). Giữ nguyên SSL, `server_name`, `client_max_body_size`.
+2. `sudo nginx -t` phải `syntax is ok` + `test is successful`; lỗi → khôi phục bản sao nginx (bản sao đạt invariant vì backend chưa tin), dừng, báo.
+3. `sudo systemctl reload nginx` (reload, không restart).
+4. **Chứng minh ghi đè (6A)** — phải PASS trước khi sang bước 5.
+5. Đặt `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` trong EnvironmentFile đã ghi, restart service, kiểm `ready`.
+6. Kiểm 6B–6D, ghi kết quả. Chỉ khi có bằng chứng mới được ghi "đã deploy".
+
+### 5.B — S1 (backend ĐÃ tin proxy, nginx CHƯA ghi đè): fail-safe
+
+1. **Gỡ trust trước:** đặt `ADMIN_AUTH_TRUSTED_PROXY_IPS=[]` (an toàn: backend không đọc header, ghi `[]` tường minh, không xóa dòng) trong EnvironmentFile đã ghi; restart service; kiểm `ready`. Từ đây hệ thống ở trạng thái S0: không giả mạo được.
+2. Chỉ sau khi `ready` xác nhận: sửa nginx như 5.A bước 1, `nginx -t`, reload.
+3. Chứng minh ghi đè bằng curl với `X-Forwarded-For` giả (6A + 6B ở chế độ trust đang tắt: header giả không được truyền nguyên vẹn tới backend).
+4. Chỉ khi 6A PASS: bật trust `["127.0.0.1"]`, restart, kiểm `ready`, rồi 6B–6D.
+5. Nếu bất kỳ bước nào ở 2–4 lỗi: **giữ trust ở `[]`** và dừng/báo; không quay lại trạng thái T với nginx chưa chứng minh.
+
 
 ## 6. Kiểm tra sau deploy
 
@@ -118,16 +148,21 @@ Kỳ vọng: **không** có `400` do header (nginx đã ghi đè thành một gi
 
 ## 7. Rollback
 
-- **nginx:** `sudo cp -a /root/11ship-nginx.pre-od30.conf /etc/nginx/sites-available/11ship-staging.conf && sudo nginx -t && sudo systemctl reload nginx`.
-- **Backend:** đưa `ADMIN_AUTH_TRUSTED_PROXY_IPS` về giá trị trước (hoặc `[]`) và restart service. Hệ quả của `[]`: backend không đọc header, mọi client dùng chung `127.0.0.1` — quota IP kém chính xác nhưng **không bị giả mạo**; đây là trạng thái an toàn khi rollback.
-- Không bao giờ rollback bằng cách bật `$proxy_add_x_forwarded_for` hoặc nới danh sách tin cậy.
-- Dữ liệu limiter (bảng quota) không cần dọn; cửa sổ quota tự hết hạn.
+Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **trước**; chỉ sau đó mới đụng nginx.
+
+1. **Backend trước:** đặt lại `ADMIN_AUTH_TRUSTED_PROXY_IPS=[]` (hoặc giá trị an toàn đã biết) trong **đúng EnvironmentFile đã ghi ở mục 4**; nếu cần khôi phục toàn tệp thì dùng `<EnvironmentFile>.pre-od30` đã sao lưu ở mục 5 **chỉ khi** nội dung sao lưu có trust rỗng hoặc nginx hiện tại đang ghi đè (kiểm `grep ^ADMIN_AUTH_TRUSTED_PROXY_IPS`); nếu bản sao lưu là trạng thái S1 (đã tin proxy) thì **không** khôi phục nguyên tệp, chỉ đặt `[]` thủ công. Restart service, kiểm `ready`. Hệ quả của `[]`: mọi client dùng chung `127.0.0.1`, quota IP kém chính xác nhưng **không bị giả mạo**: đây là trạng thái an toàn.
+2. **Chỉ sau khi backend healthy** mới xét nginx. Kiểm bản sao `/root/11ship-nginx.pre-od30.conf` theo invariant: **mọi `location` proxy phải có `proxy_set_header X-Forwarded-For $remote_addr;` và `X-Real-IP $remote_addr;`, không có `$proxy_add_x_forwarded_for` và không có truyền nguyên `$http_x_forwarded_for`** (`grep -n -E "proxy_add_x_forwarded_for|http_x_forwarded_for|X-Forwarded-For|X-Real-IP" <bản sao>`).
+   - Đạt invariant: `sudo cp -a /root/11ship-nginx.pre-od30.conf /etc/nginx/sites-available/11ship-staging.conf && sudo nginx -t && sudo systemctl reload nginx`.
+   - **Không đạt** (append/passthrough hoặc thiếu ghi đè): **KHÔNG khôi phục.** Giữ cấu hình ghi đè an toàn hiện tại; rollback chỉ ở phía backend (bước 1). Báo lại rằng bản nginx cũ không an toàn.
+3. Không bao giờ rollback bằng cách bật `$proxy_add_x_forwarded_for`, truyền nguyên header client, hay nới danh sách tin cậy. Mọi con đường rollback kết thúc ở trạng thái: (nginx ghi đè hoặc backend không tin) — không bao giờ (backend tin + nginx không ghi đè).
+4. Dữ liệu limiter (bảng quota) không cần dọn; cửa sổ quota tự hết hạn.
+
 
 ## 8. Checklist rủi ro
 
 | Rủi ro | Hậu quả | Giảm thiểu |
 | --- | --- | --- |
-| Bật `TRUSTED_PROXY_IPS` trước khi nginx ghi đè | Client giả IP để né limiter | Thứ tự bước 5.2–5.6; kiểm 6B |
+| Bật `TRUSTED_PROXY_IPS` trước khi nginx ghi đè | Client giả IP để né limiter | State machine mục 4–5 (S1 gỡ trust trước); kiểm 6A–6B |
 | `location` mới thiếu `proxy_set_header` | Header client đi thẳng hoặc thiếu → `400` hàng loạt trên route đó | Mọi `location` phải có bốn dòng 3.1; `nginx -T` + grep ở mục 4 |
 | Danh sách tin cậy sai dạng | Backend không khởi động (cấu hình không hợp lệ) | Chỉ IP literal chuẩn; thử cấu hình ở staging/local trước |
 | Thêm CDN/LB phía trước nginx | IP thật bị thay bằng IP lớp đó, tất cả dùng chung một bucket | Không có trong phạm vi; cần thiết kế riêng |
