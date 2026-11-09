@@ -53,7 +53,7 @@ describe('P5-6a public account deletion', () => {
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 }, legs: [{ shape: 'oqjfj@_dntiEoe`@nkX' }] }, route_version: 'valhalla-3.9.1/motorcycle-shortest/test' }));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;

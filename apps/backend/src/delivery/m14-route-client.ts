@@ -16,7 +16,18 @@ export interface RouteLeg {
   readonly distanceM: number;
   /** Travel time in whole seconds. */
   readonly seconds: number;
+  /** The road geometry as an encoded polyline (precision 6, [lat, lng] pairs), bounded by MAX_SHAPE_CHARS / MAX_SHAPE_POINTS. Never a straight line between two points. */
+  readonly geometry: string;
+  /** Engine + profile + map data version, as reported by the routing service's own configuration (see ops/m14/server.py). */
+  readonly routeVersion: string;
 }
+
+/** Version of a leg between two identical points: no routing service was consulted. */
+export const ZERO_LENGTH_ROUTE_VERSION = 'ZERO_LENGTH';
+/** Longest accepted shape string and its largest decoded point count; a bigger answer is "unavailable", never truncated. */
+export const MAX_SHAPE_CHARS = 60_000;
+export const MAX_SHAPE_POINTS = 5000;
+const ROUTE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/;
 
 export type RouteFailureReason = 'ROUTING_NOT_CONFIGURED' | 'POINT_INVALID' | 'ROUTE_TIMEOUT' | 'ROUTE_UNAVAILABLE';
 export type RouteResult = { readonly status: 'ROUTE'; readonly leg: RouteLeg } | { readonly status: 'UNAVAILABLE'; readonly reason: RouteFailureReason };
@@ -32,15 +43,84 @@ const CACHE_MAX = 256;
 
 const obj = (value: unknown): Record<string, unknown> | undefined => (typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined);
 
-/** Reads a Valhalla-style trip summary strictly: length in kilometres and time in seconds, both finite and non-negative. */
+/** Number of points in a strictly valid polyline6, or undefined when the string is malformed (bad character, truncated value, out-of-range coordinate) or too long/large. */
+export function polyline6PointCount(shape: string): number | undefined {
+  if (shape.length === 0 || shape.length > MAX_SHAPE_CHARS) return undefined;
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  let count = 0;
+  const next = (): number | undefined => {
+    let result = 0;
+    let factor = 1;
+    for (let chunks = 0; chunks < 7; chunks += 1) {
+      if (index >= shape.length) return undefined;
+      const code = shape.charCodeAt(index++) - 63;
+      if (code < 0 || code > 63) return undefined;
+      result += (code & 0x1f) * factor;
+      if (code < 0x20) return result % 2 === 1 ? -(result + 1) / 2 : result / 2;
+      factor *= 32;
+    }
+    return undefined;
+  };
+  while (index < shape.length) {
+    const dLat = next();
+    const dLng = next();
+    if (dLat === undefined || dLng === undefined) return undefined;
+    lat += dLat;
+    lng += dLng;
+    if (Math.abs(lat) > 90e6 || Math.abs(lng) > 180e6) return undefined;
+    count += 1;
+    if (count > MAX_SHAPE_POINTS) return undefined;
+  }
+  return count;
+}
+
+function encodeValue(value: number): string {
+  let rest = value < 0 ? -value * 2 - 1 : value * 2;
+  let out = '';
+  while (rest >= 0x20) {
+    out += String.fromCharCode(((rest % 32) | 0x20) + 63);
+    rest = Math.floor(rest / 32);
+  }
+  return out + String.fromCharCode(rest + 63);
+}
+
+/** Polyline6 of the given points (used only for the zero-length leg, where no engine is asked). */
+export function encodePolyline6(points: readonly LatLng[]): string {
+  let lat = 0;
+  let lng = 0;
+  let out = '';
+  for (const point of points) {
+    const nextLat = Math.round(point.lat * 1e6);
+    const nextLng = Math.round(point.lng * 1e6);
+    out += encodeValue(nextLat - lat) + encodeValue(nextLng - lng);
+    lat = nextLat;
+    lng = nextLng;
+  }
+  return out;
+}
+
+/**
+ * Reads an M14 answer strictly: trip summary (length in kilometres, time in seconds, finite and non-negative), exactly one leg with a bounded valid
+ * polyline6 shape of at least two points, and the service's route_version. Anything missing, oversized or malformed is undefined (no straight-line fallback).
+ */
 export function parseLeg(body: unknown): RouteLeg | undefined {
-  const summary = obj(obj(obj(body)?.trip)?.summary);
+  const root = obj(body);
+  const trip = obj(root?.trip);
+  const summary = obj(trip?.summary);
+  const routeVersion = root?.route_version;
+  const legs = trip?.legs;
+  const shape = Array.isArray(legs) && legs.length === 1 ? obj(legs[0])?.shape : undefined;
+  if (typeof routeVersion !== 'string' || !ROUTE_VERSION_PATTERN.test(routeVersion) || typeof shape !== 'string') return undefined;
+  const points = polyline6PointCount(shape);
+  if (points === undefined || points < 2) return undefined;
   const length = summary?.length;
   const time = summary?.time;
   if (typeof length !== 'number' || typeof time !== 'number' || !Number.isFinite(length) || !Number.isFinite(time) || length < 0 || time < 0 || length > 2000 || time > 172_800) {
     return undefined;
   }
-  return { distanceM: Math.round(length * 1000), seconds: Math.round(time) };
+  return { distanceM: Math.round(length * 1000), seconds: Math.round(time), geometry: shape, routeVersion };
 }
 
 @Injectable()
@@ -69,7 +149,7 @@ export class M14RouteClient implements RouteMatrixPort {
     if (config === undefined) return { status: 'UNAVAILABLE', reason: 'ROUTING_NOT_CONFIGURED' };
     if (!isValidPoint(from) || !isValidPoint(to)) return { status: 'UNAVAILABLE', reason: 'POINT_INVALID' };
     if (from.lat === to.lat && from.lng === to.lng) {
-      return { status: 'ROUTE', leg: { distanceM: 0, seconds: 0 } };
+      return { status: 'ROUTE', leg: { distanceM: 0, seconds: 0, geometry: encodePolyline6([from, to]), routeVersion: ZERO_LENGTH_ROUTE_VERSION } };
     }
     const key = `${from.lat.toFixed(5)},${from.lng.toFixed(5)}>${to.lat.toFixed(5)},${to.lng.toFixed(5)}`;
     const cached = this.#cache.get(key);
@@ -123,6 +203,7 @@ export class M14RouteClient implements RouteMatrixPort {
     // Bounded concurrency, all or nothing: one worker pool; the first missing leg stops new requests and the whole answer is "unavailable" (no guess, no partial matrix).
     let next = 0;
     let failed = false;
+    let routeVersion: string | undefined;
     const worker = async (): Promise<void> => {
       while (!failed && next < pairs.length) {
         const [from, to] = pairs[next++] as [number, number];
@@ -131,6 +212,12 @@ export class M14RouteClient implements RouteMatrixPort {
           failed = true;
           return;
         }
+        // Every leg of one matrix must come from the same engine/profile/data version; a mix (e.g. a flag flipped mid-matrix) is "unavailable".
+        if (routeVersion !== undefined && routeVersion !== leg.routeVersion) {
+          failed = true;
+          return;
+        }
+        routeVersion = leg.routeVersion;
         (seconds[from] as (number | null)[])[to] = leg.seconds;
       }
     };
@@ -138,6 +225,6 @@ export class M14RouteClient implements RouteMatrixPort {
     if (failed) {
       return { kind: 'unavailable' };
     }
-    return { kind: 'ok', seconds, routeVersion: 'm14-route-v1' };
+    return routeVersion === undefined ? { kind: 'unavailable' } : { kind: 'ok', seconds, routeVersion };
   }
 }

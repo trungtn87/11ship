@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BOUNDS = (106.0, 22.43, 106.52, 22.91)
 ENGINE = 'http://127.0.0.1:8002'
+ENGINE_NAME = 'valhalla-3.9.1'  # the image is pinned by digest in the Dockerfile
+DATA_VERSION_FILE = '/opt/m14/data.version'  # written by the Dockerfile from the PBF the graph was built from
 def env_int(name, default, low, high):
     """A bounded integer limit from the environment; anything else keeps the default (the gateway never starts on a nonsense limit)."""
     raw = os.environ.get(name)
@@ -29,6 +31,41 @@ LOCK = threading.Lock()
 REQUESTS = {}
 
 
+def env_flag(name, default):
+    """A boolean from the environment: 1/true/on or 0/false/off; anything else keeps the default."""
+    raw = (os.environ.get(name) or '').strip().lower()
+    if raw in ('1', 'true', 'on'):
+        return True
+    if raw in ('0', 'false', 'off'):
+        return False
+    return default
+
+
+def shortest_enabled():
+    """Owner 2026-11-09: the shortest motorcycle route is the DEFAULT. M14_SHORTEST=0/false/off exists only to roll back to the previous profile."""
+    return env_flag('M14_SHORTEST', True)
+
+
+def data_version():
+    """Identifies the map data the graph was built from: M14_DATA_VERSION, else the file the image build wrote. None when unknown (nothing invented)."""
+    explicit = (os.environ.get('M14_DATA_VERSION') or '').strip()
+    if explicit:
+        return explicit[:64]
+    try:
+        with open(DATA_VERSION_FILE, encoding='ascii') as f:
+            return f.read().strip()[:64] or None
+    except OSError:
+        return None
+
+
+def route_version():
+    """engine + profile + data version from this service's own configuration; None when the data version is unknown, so the backend refuses the route."""
+    data = data_version()
+    if data is None:
+        return None
+    return '%s/motorcycle-%s/%s' % (ENGINE_NAME, 'shortest' if shortest_enabled() else 'default', data)
+
+
 def validated_request(data):
     locations = data.get('locations')
     if not isinstance(locations, list) or len(locations) != 2:
@@ -43,7 +80,10 @@ def validated_request(data):
         if not (BOUNDS[0] <= lon <= BOUNDS[2] and BOUNDS[1] <= lat <= BOUNDS[3]):
             raise ValueError('Điểm nằm ngoài vùng dữ liệu Cao Bằng phục vụ test')
         clean.append(dict(lat=lat, lon=lon, radius=100, search_cutoff=500))
-    return dict(locations=clean, costing='motorcycle', costing_options={'motorcycle': {'use_highways': 0.3, 'use_tolls': 0.0, 'use_ferry': 0.0}}, directions_options={'units': 'kilometers', 'directions_type': 'none'})
+    motorcycle = {'use_highways': 0.3, 'use_tolls': 0.0, 'use_ferry': 0.0}
+    if shortest_enabled():
+        motorcycle['shortest'] = True
+    return dict(locations=clean, costing='motorcycle', costing_options={'motorcycle': motorcycle}, directions_options={'units': 'kilometers', 'directions_type': 'none'})
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -70,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with urllib.request.urlopen(ENGINE+'/status', timeout=3) as r:
                 status = r.status
-            self.reply(200 if status == 200 else 503, {'ready': status == 200, 'engine': 'Valhalla 3.9.1', 'costing': 'motorcycle', 'bounds': BOUNDS})
+            self.reply(200 if status == 200 else 503, {'ready': status == 200, 'engine': 'Valhalla 3.9.1', 'costing': 'motorcycle', 'bounds': BOUNDS, 'shortest': shortest_enabled(), 'routeVersion': route_version()})
         except Exception:
             self.reply(503, {'ready': False, 'message': 'Dịch vụ đang khởi động'})
 
@@ -104,6 +144,10 @@ class Handler(BaseHTTPRequestHandler):
                     body = json.load(r)
                 if 'trip' not in body:
                     raise ValueError('Không tìm được tuyến')
+                version = route_version()
+                if version is None:
+                    return self.reply(503, {'message': 'Chưa xác định được phiên bản dữ liệu tuyến'})
+                body['route_version'] = version  # the shape (trip.legs[0].shape, polyline6) is already part of the engine answer
                 return self.reply(200, body)
             except urllib.error.HTTPError as error:
                 if error.code < 500:
