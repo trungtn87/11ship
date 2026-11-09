@@ -276,7 +276,7 @@ Widget _callShip(SessionController session, AppFlows? flows) {
     return CustomerCallTab(
         source: source,
         mapBuilder: foodMapBuilder(),
-        pinPicker: foodPinPicker(),
+        pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));
   }
   return SingleChildScrollView(
@@ -329,7 +329,7 @@ Widget _orders(SessionController session, AppFlows? flows) {
         runtime: orders,
         deliveries: flows?.customerDeliveries,
         mapBuilder: foodMapBuilder(),
-        pinPicker: foodPinPicker(),
+        pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));
   }
   return vstack(<Widget>[

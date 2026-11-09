@@ -573,7 +573,7 @@ class M07MapPin {
 typedef M07MapBuilder = Widget Function(BuildContext context, List<M07MapPin> pins);
 
 /// How an app lets a person pin a point: calls [onPick] with the chosen position. Null builder = no map in this app.
-typedef M07PinPickerBuilder = Widget Function(BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng});
+typedef M07PinPickerBuilder = Widget Function(BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label});
 
 ({String label, ChipKind kind}) _freshnessChip(Freshness f) => switch (f) {
       Freshness.live => (label: 'Trực tiếp', kind: ChipKind.ok),

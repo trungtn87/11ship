@@ -601,7 +601,7 @@ void main() {
         customer: SampleCustomerOrders(store),
         shop: SampleShopOrders(store),
         cart: CartController(source: SampleCustomerOrders(store)),
-        pinPicker: (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng}) => Column(children: <Widget>[
+        pinPicker: (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) => Column(children: <Widget>[
           Text(lat == null ? 'pin:none' : 'pin:$lat,$lng', key: const Key('picker-state')),
           TextButton(key: const Key('picker-a'), onPressed: () => onPick(22.66, 106.25), child: const Text('A')),
           TextButton(key: const Key('picker-b'), onPressed: () => onPick(22.67, 106.26), child: const Text('B')),
