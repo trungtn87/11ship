@@ -1,10 +1,14 @@
 import { BadRequestException, Controller, Get, Header, HttpException, HttpStatus, Param, Req, Res } from '@nestjs/common';
+import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
 import { DeliveryCustomerService, PublicTrackResult } from './delivery-customer-service';
+import { PublicTrackingRateLimiter } from './public-tracking-rate-limiter';
 
-interface HttpRequest {
-  ip?: string;
-  socket?: { remoteAddress?: string };
-}
+/**
+ * The per-address limiter of these public routes counts OtpClientIp.identity: the socket's address, and X-Forwarded-For only from a
+ * proxy listed in ADMIN_AUTH_TRUSTED_PROXY_IPS. Express `req.ip` is not used: trust proxy is off, so behind nginx it was always the
+ * proxy's address and every visitor shared one bucket.
+ */
+type HttpRequest = OtpIpRequest;
 
 interface HttpResponse {
   setHeader(name: string, value: string): unknown;
@@ -23,29 +27,6 @@ function escapeHtml(str: unknown): string {
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
 
-// In-memory rate limiter: 60 requests per minute per IP, bounded cleanup
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(ip: string): void {
-  const now = Date.now();
-  if (rateLimits.size > 1000) {
-    for (const [key, val] of rateLimits.entries()) {
-      if (now > val.resetAt) {
-        rateLimits.delete(key);
-      }
-    }
-  }
-  const record = rateLimits.get(ip);
-  if (!record || now > record.resetAt) {
-    rateLimits.set(ip, { count: 1, resetAt: now + 60_000 });
-    return;
-  }
-  record.count += 1;
-  if (record.count > 60) {
-    throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
-  }
-}
-
 function applySecurityHeaders(res: HttpResponse): void {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -56,12 +37,23 @@ function applySecurityHeaders(res: HttpResponse): void {
 
 @Controller()
 export class DeliveryTrackingPublicController {
-  constructor(private readonly customer: DeliveryCustomerService) {}
+  /** 60 requests/minute per client address; bounded memory and per-request work (see PublicTrackingRateLimiter). */
+  private readonly limiter = new PublicTrackingRateLimiter();
+
+  constructor(
+    private readonly customer: DeliveryCustomerService,
+    private readonly clientIp: OtpClientIp,
+  ) {}
+
+  private checkRateLimit(identity: string): void {
+    if (!this.limiter.allow(identity)) {
+      throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
 
   @Get('public/tracking/:token')
   async getStatus(@Param('token') token: string, @Req() req: HttpRequest, @Res({ passthrough: true }) res: HttpResponse): Promise<{ data: PublicTrackResult }> {
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-    checkRateLimit(ip);
+    this.checkRateLimit(this.clientIp.identity(req));
     applySecurityHeaders(res);
 
     if (!TOKEN_PATTERN.test(token)) {
@@ -75,8 +67,7 @@ export class DeliveryTrackingPublicController {
   @Get('track/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async renderHtml(@Param('token') token: string, @Req() req: HttpRequest, @Res({ passthrough: true }) res: HttpResponse): Promise<string> {
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-    checkRateLimit(ip);
+    this.checkRateLimit(this.clientIp.identity(req));
     applySecurityHeaders(res);
 
     if (!TOKEN_PATTERN.test(token)) {
