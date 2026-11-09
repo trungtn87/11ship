@@ -1,10 +1,13 @@
 import { BadRequestException, Controller, Get, Header, HttpException, HttpStatus, Param, Req, Res } from '@nestjs/common';
+import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
 import { DeliveryCustomerService, PublicTrackResult } from './delivery-customer-service';
 
-interface HttpRequest {
-  ip?: string;
-  socket?: { remoteAddress?: string };
-}
+/**
+ * The per-address limiter of these public routes counts OtpClientIp.identity: the socket's address, and X-Forwarded-For only from a
+ * proxy listed in ADMIN_AUTH_TRUSTED_PROXY_IPS. Express `req.ip` is not used: trust proxy is off, so behind nginx it was always the
+ * proxy's address and every visitor shared one bucket.
+ */
+type HttpRequest = OtpIpRequest;
 
 interface HttpResponse {
   setHeader(name: string, value: string): unknown;
@@ -56,12 +59,14 @@ function applySecurityHeaders(res: HttpResponse): void {
 
 @Controller()
 export class DeliveryTrackingPublicController {
-  constructor(private readonly customer: DeliveryCustomerService) {}
+  constructor(
+    private readonly customer: DeliveryCustomerService,
+    private readonly clientIp: OtpClientIp,
+  ) {}
 
   @Get('public/tracking/:token')
   async getStatus(@Param('token') token: string, @Req() req: HttpRequest, @Res({ passthrough: true }) res: HttpResponse): Promise<{ data: PublicTrackResult }> {
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-    checkRateLimit(ip);
+    checkRateLimit(this.clientIp.identity(req));
     applySecurityHeaders(res);
 
     if (!TOKEN_PATTERN.test(token)) {
@@ -75,8 +80,7 @@ export class DeliveryTrackingPublicController {
   @Get('track/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async renderHtml(@Param('token') token: string, @Req() req: HttpRequest, @Res({ passthrough: true }) res: HttpResponse): Promise<string> {
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-    checkRateLimit(ip);
+    checkRateLimit(this.clientIp.identity(req));
     applySecurityHeaders(res);
 
     if (!TOKEN_PATTERN.test(token)) {
