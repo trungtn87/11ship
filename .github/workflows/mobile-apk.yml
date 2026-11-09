@@ -288,7 +288,7 @@ jobs:
         if: matrix.app == 'ship'
         run: |
           cd mobile/gps-test
-          ./gradlew --no-daemon :gps:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/uploader-test.log" || {
+          ./gradlew --no-daemon :gps:testDebugUnitTest :map:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/uploader-test.log" || {
             echo "::error title=uploader unit tests failed::$(grep -E 'FAILED|error:|e: ' "$RUNNER_TEMP/uploader-test.log" | head -12 | tr '\n' '|' | head -c 2500)"; exit 1; }
 
       # The map flag is set only when the Cao Bang package is really in the tree and every file it lists matches its recorded SHA-256, so an APK never
