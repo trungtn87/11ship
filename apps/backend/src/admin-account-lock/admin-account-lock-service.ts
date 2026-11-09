@@ -25,6 +25,9 @@ const OPERATION_IDS: Readonly<Record<LockKind, string>> = { lock: 'admin.user.lo
 const AUDIT_ACTIONS: Readonly<Record<LockKind, string>> = { lock: 'admin.user.lock.v1', unlock: 'admin.user.unlock.v1', delete: 'admin.user.delete.v1' };
 const EVENT_TYPES: Readonly<Record<LockKind, string>> = { lock: 'user.account.locked.v1', unlock: 'user.account.unlocked.v1', delete: 'user.account.deleted.v1' };
 const RESOURCE_USER = 'user';
+/** An administrator restored an account the owner's own deletion request had locked (Owner decision 2026-11-08). */
+const RESTORED_AUDIT_ACTION = 'account.delete_request.restored.v1';
+const RESTORED_EVENT_TYPE = 'user.account.delete_request_restored.v1';
 
 interface Authorized {
   readonly actorId: string;
@@ -139,6 +142,30 @@ export class AdminAccountLockService {
             resourceVersion: changed.version,
             outcome: 'SUCCESS',
             metadata: { target_user_id: userId, version: changed.version, delete_request_kept: true },
+          });
+        }
+        if (kind === 'unlock' && auth.target.lockReason === 'DELETE_REQUEST') {
+          // Owner decision 2026-11-08: unlocking an account the owner's own deletion request locked is a valid RESTORATION (OD-26: it is not a cancel,
+          // the request had already ended with that lock) and is audited on its own. Written in this same transaction, so the executor's replay of a
+          // retried key never writes it twice. No phone number, no password; the administrator's reason is the one the unlock already records.
+          await this.audit.append(context, {
+            requestId: meta.requestId,
+            actorType: auth.role,
+            actorId: auth.actorId,
+            action: RESTORED_AUDIT_ACTION,
+            resourceType: RESOURCE_USER,
+            resourceId: userId,
+            resourceVersion: changed.version,
+            outcome: 'SUCCESS',
+            metadata: { target_user_id: userId, version: changed.version, reason: body.reason, previous_lock_reason: 'DELETE_REQUEST' },
+          });
+          await this.outbox.append(context, {
+            eventType: RESTORED_EVENT_TYPE,
+            eventSchemaVersion: 1,
+            resourceType: RESOURCE_USER,
+            resourceId: userId,
+            resourceVersion: changed.version,
+            payload: { user_id: userId, version: changed.version },
           });
         }
         await this.outbox.append(context, {
