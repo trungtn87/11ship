@@ -40,6 +40,8 @@ export interface ClientIdentity {
    */
   readonly account_status?: 'LOCKED';
   readonly limited_access?: 'WALLET_ONLY';
+  /** OD-31: present (true) ONLY when that limited account is locked for its own deletion request; absent for every other identity. The lock reason itself is never exposed. */
+  readonly deletion_locked?: true;
 }
 
 export interface ClientIdentityInput {
@@ -90,6 +92,7 @@ export class ClientIdentityReader {
     if (input.limited === true) {
       // A locked driver: the identity says so and offers no context and no capability. The app shows the locked state with the wallet.
       const profile = await this.customers.findProfile(context, input.userId);
+      const deletionLocked = await this.users.isLockedForDeletion(context, input.userId);
       return {
         user_id: input.userId,
         phone_normalized: input.phoneNormalized,
@@ -103,6 +106,7 @@ export class ClientIdentityReader {
         role_selection_required: false,
         account_status: 'LOCKED',
         limited_access: 'WALLET_ONLY',
+        ...(deletionLocked ? { deletion_locked: true as const } : {}),
       };
     }
     const held = new Set(await this.users.rolesAmong(context, input.userId, [CUSTOMER_ROLE, 'SHOP', 'DRIVER']));

@@ -438,6 +438,12 @@ export class UserRepository {
     return result.rows[0]?.allowed === true;
   }
 
+  /** OD-31: true only for an account locked FOR ITS OWN DELETION REQUEST (status DISABLED, lock_reason DELETE_REQUEST). Any other lock is false. Read under the caller's user lock. */
+  async isLockedForDeletion(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query<{ locked: boolean }>("SELECT (status = 'DISABLED' AND lock_reason = 'DELETE_REQUEST') AS locked FROM app.users WHERE user_id = $1::uuid", [userId]);
+    return result.rows[0]?.locked === true;
+  }
+
   /** The version of a user row and whether its deletion is already requested, read under the caller's lock. */
   async deleteRequestState(context: TransactionContext, userId: string): Promise<{ version: number; requested: boolean } | undefined> {
     const result = await context.query<{ version: string; requested: boolean }>(

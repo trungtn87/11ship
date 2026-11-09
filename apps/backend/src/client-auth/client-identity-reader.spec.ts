@@ -10,8 +10,9 @@ function reader(options: {
   shop?: { onboarding: string; selectable: boolean };
   driver?: { onboarding: string; selectable: boolean };
   origin?: string;
+  deletionLocked?: boolean;
 }) {
-  const users = { rolesAmong: async () => options.roles, findById: async () => ({ accountOrigin: options.origin ?? 'PHONE_VERIFIED' }) };
+  const users = { rolesAmong: async () => options.roles, findById: async () => ({ accountOrigin: options.origin ?? 'PHONE_VERIFIED' }), isLockedForDeletion: async () => options.deletionLocked === true };
   const customers = { findProfile: async () => options.profile };
   const shops = { ownerShopEligibility: async () => options.shop ?? { onboarding: 'NOT_STARTED', selectable: false } };
   const drivers = { ownerDriverEligibility: async () => options.driver ?? { onboarding: 'NOT_STARTED', selectable: false } };
@@ -21,6 +22,19 @@ function reader(options: {
 const base = { userId: 'u-1', phoneNormalized: '+84912345678', app: 'FOOD', enabled: true, storedActiveRole: 'CUSTOMER' } as const;
 
 describe('ClientIdentityReader', () => {
+  it('OD-31: the limited wallet-only identity carries deletion_locked:true only for a deletion lock, never the lock reason; an ordinary identity has neither', async () => {
+    const limited = { ...base, enabled: false, limited: true } as const;
+    const forDeletion = await reader({ roles: ['CUSTOMER', 'DRIVER'], deletionLocked: true }).read(CONTEXT, limited);
+    expect(forDeletion).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', deletion_locked: true });
+    expect(forDeletion).not.toHaveProperty('lock_reason');
+    const other = await reader({ roles: ['CUSTOMER', 'DRIVER'], deletionLocked: false }).read(CONTEXT, limited);
+    expect(other).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY' });
+    expect(other).not.toHaveProperty('deletion_locked');
+    const ordinary = await reader({ roles: ['CUSTOMER'], deletionLocked: true }).read(CONTEXT, base);
+    expect(ordinary).not.toHaveProperty('deletion_locked');
+    expect(ordinary).not.toHaveProperty('account_status');
+  });
+
   it('builds the CUSTOMER identity of a new account', async () => {
     const identity = await reader({ roles: ['CUSTOMER'], profile: { fullName: 'An', version: 1 } }).read(CONTEXT, base);
     expect(identity).toMatchObject({

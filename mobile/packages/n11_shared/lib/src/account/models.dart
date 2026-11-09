@@ -27,6 +27,7 @@ class Identity {
     this.shopOnboarding = 'NOT_STARTED',
     this.driverOnboarding = 'NOT_STARTED',
     this.lockedWalletOnly = false,
+    this.deletionLocked = false,
     this.phoneVerification = 'VERIFIED',
   });
 
@@ -48,6 +49,10 @@ class Identity {
   /// The account is locked and only the wallet is left to it (a driver: balance, history, withdrawal). The server says so with
   /// account_status LOCKED and limited_access WALLET_ONLY; absent for every other identity.
   final bool lockedWalletOnly;
+
+  /// OD-31: the locked wallet-only account is locked because its owner asked for its deletion (the server's deletion_locked flag). Wording only:
+  /// it grants nothing. False when the flag is absent (any other lock, or an older server).
+  final bool deletionLocked;
 
   /// VERIFIED / UNVERIFIED / UNVERIFIED_TEST as the server reports it (phone_verification_status). UNVERIFIED = the account was made while
   /// the registration OTP was off: it stays so until a real proof exists. A reply without the field is read as VERIFIED (older server).
@@ -95,6 +100,7 @@ class Identity {
       roleSelectionRequired: roleSelection is bool && roleSelection,
       sessionExpiresAt: expires,
       lockedWalletOnly: data['account_status'] == 'LOCKED' && data['limited_access'] == 'WALLET_ONLY',
+      deletionLocked: data['account_status'] == 'LOCKED' && data['limited_access'] == 'WALLET_ONLY' && data['deletion_locked'] == true,
       phoneVerification: data['phone_verification_status'] is String ? data['phone_verification_status']! as String : 'VERIFIED',
     );
   }
