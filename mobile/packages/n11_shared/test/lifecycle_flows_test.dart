@@ -327,5 +327,14 @@ void main() {
       expect(locked?.lockedWalletOnly, isTrue);
       expect(Identity.tryParse(<String, Object?>{...base, 'account_status': 'LOCKED'})?.lockedWalletOnly, isFalse, reason: 'both fields are required');
     });
+
+    test('OD-31: deletion_locked is read only on the wallet-only identity; absent means false', () {
+      final Map<String, Object?> base = identityJson();
+      final Map<String, Object?> limited = <String, Object?>{...base, 'account_status': 'LOCKED', 'limited_access': 'WALLET_ONLY'};
+      expect(Identity.tryParse(limited)?.deletionLocked, isFalse);
+      expect(Identity.tryParse(<String, Object?>{...limited, 'deletion_locked': true})?.deletionLocked, isTrue);
+      expect(Identity.tryParse(<String, Object?>{...limited, 'deletion_locked': 'yes'})?.deletionLocked, isFalse);
+      expect(Identity.tryParse(<String, Object?>{...base, 'deletion_locked': true})?.deletionLocked, isFalse);
+    });
   });
 }
