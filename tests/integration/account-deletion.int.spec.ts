@@ -448,8 +448,11 @@ describe('P5-6a public account deletion', () => {
 
     const signedIn = await shipLogin(phone);
     expect(signedIn.status).toBe(200);
-    expect(dataOf(signedIn)).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', available_roles: [], active_role: null });
+    expect(dataOf(signedIn)).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', deletion_locked: true, available_roles: [], active_role: null });
+    expect(dataOf(signedIn)).not.toHaveProperty('lock_reason');
     const token = String(dataOf(signedIn).access_token);
+    // The same flag on /client-auth/me.
+    expect(dataOf(await app.call('GET', '/client-auth/me', { bearer: token }))).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', deletion_locked: true });
     // Nothing but the wallet: no top-up, no delivery, no order function.
     expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } })).code).toBe('ACCOUNT_DISABLED');
     expect(refused(await app.call('GET', '/driver/deliveries/offers', { bearer: token })).code).toBe('ACCOUNT_DISABLED');

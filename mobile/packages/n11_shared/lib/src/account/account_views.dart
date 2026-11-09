@@ -311,6 +311,7 @@ class AccountTab extends StatelessWidget {
     final String name = session.profile?.fullName ?? 'Chưa có tên';
     final List<String> roles = identity?.availableRoles ?? const <String>[];
     final bool locked = identity?.lockedWalletOnly ?? false;
+    final bool deletionLocked = locked && (identity?.deletionLocked ?? false);
     return vstack(<Widget>[
       N11AvatarCard(
         name: name,
@@ -327,11 +328,14 @@ class AccountTab extends StatelessWidget {
       // SYSTEM had the registration OTP off has an unverified one).
       if (locked)
         // A locked driver keeps the wallet and nothing else (Owner decision 2026-10-14): no new orders, no other function.
-        const N11Banner(
-          key: Key('locked-wallet-only'),
+        N11Banner(
+          key: const Key('locked-wallet-only'),
           kind: BannerKind.warn,
+          // OD-31: an account locked because its owner asked for deletion says so; every other lock keeps the general sentence.
           title: 'Tài khoản đã khóa',
-          text: 'Bạn không nhận đơn mới và không dùng các chức năng giao hàng. Bạn vẫn xem được số dư ví, lịch sử giao dịch và gửi yêu cầu rút tiền theo điều kiện hiện hành khi mục Ví mở.',
+          text: deletionLocked
+              ? 'Tài khoản đang trong quá trình xóa. Bạn chỉ có thể rút toàn bộ số dư ví; sau đó tài khoản sẽ được đóng.'
+              : 'Bạn không nhận đơn mới và không dùng các chức năng giao hàng. Bạn vẫn xem được số dư ví, lịch sử giao dịch và gửi yêu cầu rút tiền theo điều kiện hiện hành khi mục Ví mở.',
         )
       else if (showAccountStatus && brand.id != AppId.food)
         const N11List(title: 'Trạng thái', children: <Widget>[
