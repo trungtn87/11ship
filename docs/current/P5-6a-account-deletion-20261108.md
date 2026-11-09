@@ -19,16 +19,16 @@ Mọi lỗi xác thực (SĐT không tồn tại, sai mật khẩu, tài khoản
 
 Khách đặt đơn, đặt lại đơn, tạo giao hàng; quán gọi lại giao hàng, tạo yêu cầu thanh toán (tạo giao hàng trực tiếp đã đóng bởi OD-5); shipper nhận chuyến, thương lượng phí chuyến chưa nhận, nạp mới (danh sách chuyến trả rỗng); **rút tiền KHÔNG bị chặn** (OD-31, xem dưới); tạo hồ sơ shipper, tạo quán mới. Quán của chủ đang PENDING đọc như quán của chủ bị khóa (không nhận đơn mới; danh sách công khai ẩn). Việc đang chạy (xác nhận/chuẩn bị đơn, giao, hoàn tất, hủy, hoa hồng, khoản tiền đang xử lý) **không bị chặn**. Hợp đồng nằm ở `apps/backend/src/account-deletion/new-work-gate.spec.ts`: route mới tạo việc mới phải gọi `assertNewWorkAllowed` và được thêm vào danh sách đó.
 
-### Rút số dư ví (OD-31)
+### Rút số dư ví (OD-31, phương án B — Owner chọn 2026-11-08)
 
-Chủ tài khoản đã yêu cầu xóa vẫn **yêu cầu rút** để lấy lại số dư, thay cho điều kiện hồ sơ Shipper `CLOSING`: khi tài khoản đang **PENDING** (ACTIVE + `delete_requested_at`) hoặc đã **khóa `DELETE_REQUEST`**. Khóa VIOLATION/SECURITY (kể cả khi có yêu cầu xóa đi kèm) **không** có ngoại lệ này. Mọi kiểm tra khác của `DriverWithdrawalService.create` giữ nguyên: rút TOÀN BỘ số dư, một yêu cầu mở, không còn `activeWork`/`pendingFinance`/nạp chờ/số tiền đang giữ. Nạp tiền mới vẫn bị chặn (PENDING: 409 `ACCOUNT_DELETE_PENDING`; khóa: `ACCOUNT_DISABLED`). Tài khoản khóa `DELETE_REQUEST` đăng nhập app Ship ở chế độ ví-giới-hạn (`WALLET_ONLY`, chính sách sẵn có cho Shipper bị khóa), không mở chức năng nào khác. Số dư và yêu cầu rút đang mở là dữ liệu phải giữ: tài khoản không bị xóa vật lý; yêu cầu rút đang mở là "tiền đang xử lý" nên giữ tài khoản ở PENDING cho đến khi xong. Điều này nới quy tắc M03-R-05 (chỉ CLOSING) cho ngoại lệ OD-31; baseline sẽ sửa bằng PR docs riêng khi Owner ra lệnh.
+Chủ tài khoản đã yêu cầu xóa vẫn **yêu cầu rút** để lấy lại số dư, thay cho điều kiện hồ sơ Shipper `CLOSING`: khi tài khoản đang **PENDING** (ACTIVE + `delete_requested_at`) hoặc đã **khóa `DELETE_REQUEST`**. Khóa VIOLATION/SECURITY (kể cả khi có yêu cầu xóa đi kèm) **không** có ngoại lệ này. Mọi kiểm tra khác của `DriverWithdrawalService.create` giữ nguyên: rút TOÀN BỘ số dư, một yêu cầu mở, không còn `activeWork`/`pendingFinance`/nạp chờ/số tiền đang giữ. Nạp tiền mới vẫn bị chặn (PENDING: 409 `ACCOUNT_DELETE_PENDING`; khóa: `ACCOUNT_DISABLED`). Tài khoản khóa `DELETE_REQUEST` đăng nhập app Ship ở chế độ ví-giới-hạn (`WALLET_ONLY`, chính sách sẵn có cho Shipper bị khóa), không mở chức năng nào khác. Số dư và yêu cầu rút đang mở là dữ liệu phải giữ: tài khoản không bị xóa vật lý; yêu cầu rút đang mở là "tiền đang xử lý" nên giữ tài khoản ở PENDING cho đến khi xong. **Điều này nới quy tắc M03-R-05 (rút chỉ khi CLOSING) cho ngoại lệ OD-31. Baseline KHÔNG được sửa trong PR này hay các PR P5-6a; sẽ sửa bằng một PR docs riêng khi Owner ra lệnh.**
 
 ### Khóa quản trị trên tài khoản có yêu cầu xóa (OD-26: không hủy)
 
 - Khóa quản trị (VIOLATION/SECURITY) lên tài khoản đang PENDING **giữ** `delete_requested_at` (constraint `users_delete_request_ck` cho phép ACTIVE hoặc khóa VIOLATION/SECURITY, không bao giờ cùng khóa `DELETE_REQUEST`); ghi thêm audit `account.lock.on_delete_request.v1`.
 - Khi hết việc đang chạy, sweeper giữ **khóa mạnh hơn** (không ghi đè sang `DELETE_REQUEST`), thu hồi lại session, **không xóa vật lý**, xóa yêu cầu và ghi audit `account.delete.finalized.v1` kết quả `LOCK_KEPT` (không có outbox: trạng thái tài khoản không đổi).
 - Mở khóa quản trị khi yêu cầu còn: tài khoản về ACTIVE nhưng vẫn PENDING (chặn việc mới, sweeper hoàn tất); audit `account.unlock.on_delete_request.v1`. Không có đường nào hủy yêu cầu ngầm.
-- Khóa `DELETE_REQUEST` do chính chủ là điểm kết thúc của yêu cầu; Admin mở khóa đó (khôi phục) là hành vi hiện có và chưa mở rộng: tài khoản về ACTIVE, không còn yêu cầu, không audit thêm. Cần Lead xác nhận đây có phải "khôi phục" hợp lệ theo OD-26.
+- Khóa `DELETE_REQUEST` do chính chủ là điểm kết thúc của yêu cầu. **Quyết định Owner 2026-11-08:** Admin mở khóa đó là **khôi phục hợp lệ** theo cơ chế hiện có (OD-26: không coi là hủy yêu cầu, vì yêu cầu đã kết thúc cùng với khóa) và **luôn ghi audit** `account.delete_request.restored.v1` (người thực hiện = Admin, user id, lý do của lệnh mở khóa, thời điểm của dòng audit, khóa trước đó `DELETE_REQUEST`; không SĐT, không mật khẩu) cùng một sự kiện outbox `user.account.delete_request_restored.v1`, trong cùng transaction với lệnh mở khóa (retry cùng Idempotency-Key trả lại kết quả đã lưu nên không ghi trùng). Hành vi không đổi: tài khoản về ACTIVE, yêu cầu xóa đã kết thúc. Mở khóa vì lý do khác (VIOLATION/SECURITY) không ghi audit này; mở khóa tài khoản đang PENDING giữ `delete_requested_at` (xem trên).
 
 ### Hoàn tất
 
@@ -55,6 +55,8 @@ Giới hạn theo IP chỉ chính xác khi cấu hình proxy tin cậy đúng (`
 
 Mở `<origin backend>/delete-account`, đọc cảnh báo, nhập SĐT + mật khẩu của một tài khoản thử, tick xác nhận, bấm nút. Tài khoản chưa có dữ liệu → "đã xóa vĩnh viễn"; có đơn đã xong → "đã bị khóa… khôi phục bằng OTP"; có đơn đang chạy → "đã ghi nhận… không nhận/tạo được việc mới", đơn vẫn xác nhận/giao bình thường, hết việc thì tài khoản tự bị khóa/xóa trong ≤ 1 chu kỳ sweeper.
 
-## Chờ Owner
+## Số dư ví và đường chi tiền
 
-Số dư ví còn lại của tài khoản bị khóa là dữ liệu phải giữ (khóa, không xóa vật lý). **Cách người dùng lấy lại số dư sau khi khóa chưa được thiết kế** — chờ quyết định của Owner.
+Số dư ví còn lại của tài khoản bị khóa là dữ liệu phải giữ (khóa, không xóa vật lý). Người dùng lấy lại số dư bằng yêu cầu rút theo OD-31 (xem trên), không còn là điểm chờ Owner.
+
+Hiện trạng đường chi tiền (không đổi bởi OD-31): Admin ghi `mark-paid` cho một yêu cầu rút **không kiểm trạng thái của user** (chỉ kiểm yêu cầu và khoản giữ tiền của nó), nên yêu cầu rút của tài khoản khóa `DELETE_REQUEST` (hoặc đang PENDING) được xử lý và chi trả bằng đúng luồng Admin hiện có; đây là đường chi tiền hợp lệ. Việc ai duyệt và cách thông báo cho người dùng giữ nguyên luồng hiện có.
