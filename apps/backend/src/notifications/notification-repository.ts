@@ -339,6 +339,31 @@ export class NotificationRepository {
     return result.rowCount === 1;
   }
 
+  /**
+   * P6-9: a late event settles its outcome after the rows it produced are known: DELIVERED_LATE wins over STALE_EVENT, STALE_EVENT only replaces the
+   * plain 'OK' (so an event with one late card and one dropped reminder ends as DELIVERED_LATE).
+   */
+  async settleEventOutcome(context: TransactionContext, eventId: string, outcome: 'STALE_EVENT' | 'DELIVERED_LATE'): Promise<void> {
+    await context.query(
+      `UPDATE app.notification_consumed_events SET outcome = $2 WHERE event_id = $1::uuid AND outcome = ANY($3::text[])`,
+      [eventId, outcome, outcome === 'DELIVERED_LATE' ? ['OK', 'STALE_EVENT'] : ['OK']],
+    );
+  }
+
+  /**
+   * True when the recipient already has a notice of the SAME family (DELIVERY_, ORDER_, TOPUP_ ...) about the same object with a LATER version: the late
+   * one would announce a step backwards. The family keeps an Order version from being compared with a Delivery version on the same target id.
+   */
+  async hasNewerNotice(context: TransactionContext, userId: string, app: NotificationApp, kind: string, targetType: string, targetId: string, targetVersion: number): Promise<boolean> {
+    const result = await context.query(
+      `SELECT 1 FROM app.notifications
+        WHERE recipient_user_id = $1::uuid AND app = $2 AND target_type = $3 AND target_id = $4::uuid AND target_version > $5::bigint AND split_part(kind, '_', 1) = split_part($6::text, '_', 1)
+        LIMIT 1`,
+      [userId, app, targetType, targetId, targetVersion, kind],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** Inserts a notification, or returns the existing one for the same (recipient, app, dedupe key) with `created = false`. */
   async insertNotification(context: TransactionContext, n: NewNotification): Promise<{ notificationId: string; created: boolean }> {
     const inserted = await context.query<{ notification_id: string }>(

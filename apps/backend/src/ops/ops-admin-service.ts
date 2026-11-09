@@ -16,7 +16,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { SmsGatewayOpsReader } from '../sms-gateway/sms-gateway-ops-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { CHECK_API, CHECK_BACKUP, CHECK_CPU, CHECK_DATABASE, CHECK_EXTERNAL_PROBE, CHECK_HTTPS, CHECK_M14, CHECK_MEMORY, CHECK_NOTIFICATIONS, CHECK_OTP_SEND, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, CHECK_WORKER, COMPONENT_LABEL, GATEWAY_FACETS, gatewayCheckKey, IngestKeyScope, SOURCE_LABEL } from './ops-constants';
+import { CHECK_API, CHECK_BACKUP, CHECK_CPU, CHECK_DATABASE, CHECK_EXTERNAL_PROBE, CHECK_HTTPS, CHECK_M14, CHECK_MEMORY, CHECK_M08_STALE_EVENT, CHECK_NOTIFICATIONS, CHECK_OTP_SEND, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, CHECK_WORKER, COMPONENT_LABEL, GATEWAY_FACETS, gatewayCheckKey, IngestKeyScope, SOURCE_LABEL } from './ops-constants';
 import { EXTERNAL_PROBE_STALE_SECONDS } from './ops-collector';
 import { OpsDiscordDispatcher } from './ops-discord';
 import { Actor, OpsEngine } from './ops-engine';
@@ -217,7 +217,7 @@ export class OpsAdminService {
         component('database', 'Database', [CHECK_DATABASE]),
         component('sms_gateway', 'SMS Gateway', devices.length === 0 ? [CHECK_OTP_SEND] : gatewayKeys, devices.length === 0 ? 'Chưa ghép Gateway nào' : null),
         component('m14', 'GPS / bản đồ (M14)', [CHECK_M14], byKey.has(CHECK_M14) ? null : 'Chưa cấu hình kiểm tra M14'),
-        component('notifications', 'Thông báo (M08)', [CHECK_NOTIFICATIONS], push === 'NOT_CONFIGURED' ? 'Đẩy thông báo (push) chưa kích hoạt, hộp thư trong app vẫn chạy' : null),
+        component('notifications', 'Thông báo (M08)', [CHECK_NOTIFICATIONS, CHECK_M08_STALE_EVENT], push === 'NOT_CONFIGURED' ? 'Đẩy thông báo (push) chưa kích hoạt, hộp thư trong app vẫn chạy' : null),
         component('backup', 'Sao lưu', [CHECK_BACKUP]),
         component('restore_test', 'Thử khôi phục', [CHECK_RESTORE_TEST], byKey.has(CHECK_RESTORE_TEST) && byKey.get(CHECK_RESTORE_TEST)?.state !== 'UNKNOWN' ? null : 'Sao lưu thành công khác với đã thử khôi phục thành công'),
         component('resources', 'CPU / RAM / đĩa', [CHECK_CPU, CHECK_MEMORY, ...diskKeys]),

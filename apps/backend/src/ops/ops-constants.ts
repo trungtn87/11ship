@@ -102,6 +102,8 @@ export const CHECK_RESTORE_TEST = 'restore_test';
 export const CHECK_PUBLIC_API = 'public_api';
 export const CHECK_EXTERNAL_PROBE = 'external_probe';
 export const CHECK_NOTIFICATIONS = 'notifications';
+/** P6-9: M08 events older than 24 h that were dropped or delivered late (metric `m08_stale_event.*`). */
+export const CHECK_M08_STALE_EVENT = 'm08_stale_event';
 export const CHECK_M14 = 'm14';
 export const CHECK_OTP_SEND = 'otp_sending';
 

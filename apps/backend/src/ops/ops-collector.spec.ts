@@ -37,7 +37,7 @@ function build(o: { enabled?: boolean; url?: string | undefined; maintenance?: {
     load: async () => ({ row: {}, settings: defaultSettings(), discordEnabled: o.enabled ?? true, discordMinSeverity: 'WARNING', webhookConfigured: true }),
     webhookUrl: () => ('url' in o ? o.url : HOOK),
   };
-  const repo = { insertMetric: async () => undefined };
+  const repo = { insertMetric: async () => undefined, recentMetrics: async () => [] };
   const incidents = { activeMaintenance: async () => (o.maintenance ?? []).map((m) => ({ scopes: m.scopes, endsAtMs: m.endsAtMs })) };
   const discord: DiscordClient = {
     post: async (url, body): Promise<DiscordResult> => {
@@ -70,6 +70,7 @@ describe('collector: a database outage is never shown as healthy and is recorded
     const t = build();
     await t.collector.collectOnce();
     expect(t.observed).toContain('database');
+    expect(t.observed).toContain('m08_stale_event');
     t.state.down = true;
     const started = Date.now();
     await t.collector.collectOnce();

@@ -735,23 +735,82 @@ describe('M08 — notifications, reminders and sync', () => {
     expect(await rows(`SELECT 1 FROM app.notification_consumed_events WHERE event_id = $1::uuid`, [foreign.eventId])).toHaveLength(0);
   });
 
-  it('an old event (a backlog after an outage) is recorded as stale and told to nobody; an hours-old result keeps its history time but its push deadline runs from the fact', async () => {
+  // ---- M08-R-09 (P6-9): an event older than 24 h is classified by its DRAFT, never silently dropped by its type ----------------------------------------
+
+  const metricCount = async (key: string): Promise<number> => Number((await rows(`SELECT count(*)::int AS n FROM app.ops_metrics WHERE metric_key = $1`, [key]))[0]?.n);
+  const staleAudits = async (eventId: string): Promise<Json[]> => rows(`SELECT action, outcome, metadata FROM app.audit_logs WHERE action = 'notification.stale_event.v1' AND resource_id = $1`, [eventId]);
+  const outcomeOf = async (eventId: string): Promise<unknown> => (await rows(`SELECT outcome FROM app.notification_consumed_events WHERE event_id = $1::uuid`, [eventId]))[0]?.outcome;
+  const hoursAgo = (h: number): string => new Date(Date.now() - h * 3_600_000).toISOString();
+
+  it('a 25 h old account event is delivered late: inbox row at the time of the event, push SKIPPED/STALE_EVENT, audit, HIGH metric, and a redelivery adds nothing', async () => {
     const s = await newShipper(true);
-    expect((await registerToken(s, tokenOf('old'))).status).toBe(200);
+    expect((await registerToken(s, tokenOf('late'))).status).toBe(200);
     await flush();
     const events = app.running.app.get(NotificationEventService);
-    const old = { eventId: randomUUID(), eventType: 'driver.state_changed.v1', eventSchemaVersion: 1, resourceType: 'driver', resourceId: s.driverId, resourceVersion: 5, occurredAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), attemptCount: 1, payload: { driver_id: s.driverId, change: 'approved', status: 'ACTIVE', review_state: 'APPROVED', accepting_deliveries: false, version: 5 } };
-    await events.consume(old);
-    expect(await rows(`SELECT outcome FROM app.notification_consumed_events WHERE event_id = $1::uuid`, [old.eventId])).toEqual([{ outcome: 'STALE_EVENT' }]);
-    expect(((await inbox(s)).items as Json[]).filter((i) => i.kind.startsWith('PROFILE_'))).toHaveLength(0);
+    const late = { eventId: randomUUID(), eventType: 'driver.state_changed.v1', eventSchemaVersion: 1, resourceType: 'driver', resourceId: s.driverId, resourceVersion: 5, occurredAt: hoursAgo(25), attemptCount: 1, payload: { driver_id: s.driverId, change: 'approved', status: 'ACTIVE', review_state: 'APPROVED', accepting_deliveries: false, version: 5 } };
+    const before = { late: await metricCount('m08_stale_event.delivered_late'), high: await metricCount('m08_stale_event.delivered_late_high'), dropped: await metricCount('m08_stale_event.dropped') };
+    await events.consume(late);
+    await events.consume(late);
+    expect(await outcomeOf(late.eventId)).toBe('DELIVERED_LATE');
+    const card = ((await inbox(s)).items as Json[]).filter((i) => i.kind === 'PROFILE_APPROVED');
+    expect(card).toHaveLength(1);
+    expect(Date.now() - Date.parse(String(card[0]?.created_at))).toBeGreaterThan(24 * 3_600_000);
+    expect(await rows(`SELECT status, skip_reason FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [s.userId])).toEqual([{ status: 'SKIPPED', skip_reason: 'STALE_EVENT' }]);
+    const audits = await staleAudits(late.eventId);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ outcome: 'SUCCESS', metadata: { event_type: 'driver.state_changed.v1', draft_kind: 'PROFILE_APPROVED', draft_class: 'DURABLE', result: 'DELIVERED_LATE', high_priority: true } });
+    expect(audits[0]?.metadata.age_ms).toBeGreaterThan(24 * 3_600_000);
+    expect(await metricCount('m08_stale_event.delivered_late')).toBe(before.late + 1);
+    expect(await metricCount('m08_stale_event.delivered_late_high')).toBe(before.high + 1);
+    expect(await metricCount('m08_stale_event.dropped')).toBe(before.dropped);
+  });
 
-    // Account notifications may be pushed for 24 h: a 23 h old one still has a deadline ahead, a 25 h old one is skipped as stale (and not even inserted past 24 h).
-    const recent = { ...old, eventId: randomUUID(), resourceVersion: 6, occurredAt: new Date(Date.now() - 23 * 3_600_000).toISOString(), payload: { ...old.payload, change: 'rejected', version: 6 } };
-    await events.consume(recent);
+  it('a 25 h old end state of a delivery reaches the shop inbox; its time-bound siblings (search stopped, search reminder) are dropped as STALE_EVENT; a late step behind a newer one is not announced', async () => {
+    const d = await newDelivery();
+    const id = String(d.delivery_id);
+    const events = app.running.app.get(NotificationEventService);
+    const ev = (change: string, version: number, h: number) => ({ eventId: randomUUID(), eventType: 'delivery.changed.v1', eventSchemaVersion: 1, resourceType: 'delivery', resourceId: id, resourceVersion: version, occurredAt: hoursAgo(h), attemptCount: 1, payload: { delivery_id: id, code: String(d.code ?? 'DG-1'), shop_id: shop.shopId, change, state: change, version } });
+    const kindsOf = async (): Promise<string[]> => ((await inbox('shop')).items as Json[]).filter((i) => i.target?.id === id).map((i) => String(i.kind));
+
+    const done = ev('completed', 9, 25);
+    await events.consume(done);
+    expect(await outcomeOf(done.eventId)).toBe('DELIVERED_LATE');
+    expect(await kindsOf()).toEqual(expect.arrayContaining(['DELIVERY_COMPLETED']));
+    expect(await rows(`SELECT skip_reason FROM app.notification_pushes p JOIN app.notifications n USING (notification_id) WHERE n.source_event_id = $1::uuid`, [done.eventId])).toEqual(expect.arrayContaining([{ skip_reason: 'STALE_EVENT' }]));
+
+    const stopped = ev('search_stopped', 3, 25);
+    const reminder = ev('search_reminder_5', 3, 25);
+    const droppedBefore = await metricCount('m08_stale_event.dropped');
+    await events.consume(stopped);
+    await events.consume(reminder);
+    expect(await outcomeOf(stopped.eventId)).toBe('STALE_EVENT');
+    expect(await outcomeOf(reminder.eventId)).toBe('STALE_EVENT');
+    expect(await kindsOf()).not.toContain('SEARCH_STOPPED');
+    expect(await rows(`SELECT 1 FROM app.notification_reminders WHERE event_id = $1::uuid`, [reminder.eventId])).toHaveLength(0);
+    expect((await staleAudits(stopped.eventId))[0]).toMatchObject({ metadata: { draft_class: 'TIME_BOUND', result: 'DROPPED' } });
+    expect(await metricCount('m08_stale_event.dropped')).toBe(droppedBefore + 2);
+
+    // The delivery is already completed (version 9): a 25 h old "picked up" (version 5) would announce a step backwards.
+    const behind = ev('picked_up', 5, 25);
+    await events.consume(behind);
+    expect(await outcomeOf(behind.eventId)).toBe('STALE_EVENT');
+    expect(await kindsOf()).not.toContain('DELIVERY_PICKED_UP');
+    expect((await staleAudits(behind.eventId))[0]).toMatchObject({ metadata: { draft_class: 'DURABLE', result: 'DROPPED_SUPERSEDED' } });
+  });
+
+  it('an event within 24 h keeps the existing behaviour: normal outcome, live push, no stale audit and no stale metric', async () => {
+    const s = await newShipper(true);
+    expect((await registerToken(s, tokenOf('young'))).status).toBe(200);
+    await flush();
+    const events = app.running.app.get(NotificationEventService);
+    const young = { eventId: randomUUID(), eventType: 'driver.state_changed.v1', eventSchemaVersion: 1, resourceType: 'driver', resourceId: s.driverId, resourceVersion: 6, occurredAt: hoursAgo(23), attemptCount: 1, payload: { driver_id: s.driverId, change: 'rejected', status: 'ACTIVE', review_state: 'REJECTED', accepting_deliveries: false, version: 6 } };
+    const before = await metricCount('m08_stale_event.delivered_late');
+    await events.consume(young);
+    expect(await outcomeOf(young.eventId)).toBe('OK');
     const card = ((await inbox(s)).items as Json[]).find((i) => i.kind === 'PROFILE_REJECTED') as Json;
-    expect(card).toBeDefined();
     expect(Date.now() - Date.parse(String(card.created_at))).toBeGreaterThan(22 * 3_600_000);
-    const push = (await rows(`SELECT status, (expires_at > now()) AS live FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [s.userId])) as Json[];
-    expect(push).toEqual([{ status: 'PENDING', live: true }]);
+    expect(await rows(`SELECT status, (expires_at > now()) AS live FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [s.userId])).toEqual([{ status: 'PENDING', live: true }]);
+    expect(await staleAudits(young.eventId)).toHaveLength(0);
+    expect(await metricCount('m08_stale_event.delivered_late')).toBe(before);
   });
 });

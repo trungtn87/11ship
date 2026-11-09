@@ -1,5 +1,5 @@
 import { CheckReport } from './ops-engine';
-import { CHECK_BACKUP, CHECK_HTTPS, CHECK_OTP_SEND, CHECK_RESTORE_TEST, GatewayFacet, gatewayCheckKey } from './ops-constants';
+import { CHECK_BACKUP, CHECK_HTTPS, CHECK_M08_STALE_EVENT, CHECK_OTP_SEND, CHECK_RESTORE_TEST, GatewayFacet, gatewayCheckKey } from './ops-constants';
 import { OpsSettings } from './ops-settings';
 
 // Pure evaluators: facts in, a verdict out. No clock, no database, no network, so each rule of the approved design can be tested by feeding it numbers.
@@ -274,6 +274,28 @@ export function evaluateQueue(f: QueueFacts, settings: OpsSettings): CheckReport
     state,
     value: { pending: f.pending, oldest_due_seconds: f.oldestDueAgeMs === null ? null : Math.floor(f.oldestDueAgeMs / 1000), growing },
     evidenceCode: overdue ? 'QUEUE_OVERDUE' : growing ? 'QUEUE_GROWING' : 'QUEUE_OK',
+  };
+}
+
+/** P6-9 (S-3): any M08 event dropped as stale or delivered late in the window is a WARNING; a finance/account fact delivered late is CRITICAL. */
+export interface StaleEventFacts {
+  readonly dropped: number;
+  readonly deliveredLate: number;
+  readonly deliveredLateHigh: number;
+  readonly windowMinutes: number;
+}
+
+export function evaluateStaleEvents(f: StaleEventFacts): CheckReport {
+  const state = f.deliveredLateHigh > 0 ? 'CRITICAL' : f.dropped + f.deliveredLate > 0 ? 'WARNING' : 'OK';
+  return {
+    source: 'NOTIFICATIONS',
+    checkKey: CHECK_M08_STALE_EVENT,
+    state,
+    value: { dropped: f.dropped, delivered_late: f.deliveredLate, delivered_late_high: f.deliveredLateHigh, window_minutes: f.windowMinutes },
+    evidenceCode: state === 'CRITICAL' ? 'STALE_FINANCE_ACCOUNT_LATE' : state === 'WARNING' ? 'STALE_EVENT_SEEN' : 'NO_STALE_EVENT',
+    staleAfterSeconds: 600,
+    title: state === 'CRITICAL' ? 'Sự kiện tài chính/tài khoản bị giao muộn hơn 24 giờ' : 'Có sự kiện thông báo cũ hơn 24 giờ',
+    impact: 'Hàng đợi sự kiện từng bị tồn quá 24 giờ. Thông báo thời điểm đã bỏ; thông báo tài chính/tài khoản được đưa vào hộp thư muộn và không đẩy push',
   };
 }
 

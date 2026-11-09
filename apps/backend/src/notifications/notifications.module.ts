@@ -1,4 +1,6 @@
 import { OutboxModule } from '../outbox/outbox.module';
+import { AuditModule } from '../audit/audit.module';
+import { OpsCoreModule } from '../ops/ops-core.module';
 import { BusinessFinanceRepository } from '../business-dashboard/finance-repository';
 import { DynamicModule, Module } from '@nestjs/common';
 import { OrderChatCoreModule } from '../order-chat/order-chat-core.module';
@@ -33,7 +35,7 @@ export class NotificationsModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: NotificationsModule,
-      imports: [auth, OutboxModule, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, OrdersCoreModule, OrderChatCoreModule, FeedbackReadModule],
+      imports: [auth, AuditModule, OpsCoreModule, OutboxModule, TransactionModule, ShippingEligibilityModule, NotificationsReadModule, ShopModule, DriverModule, WalletModule, DeliveryReadModule, ShipperLocationModule, OrdersCoreModule, OrderChatCoreModule, FeedbackReadModule],
       controllers: [NotificationController],
       providers: [BusinessFinanceRepository,
         NotificationRecipients,
