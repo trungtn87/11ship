@@ -24,7 +24,7 @@ M07MapBuilder? shipMapBuilder() => kM14Map
 
 /// Lets the Shipper pin the drop-off on the M14 map; a tap outside the covered area is ignored.
 M07PinPickerBuilder? shipPinPicker() => kM14Map
-    ? (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng}) => M14OfflineMap(
+    ? (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) => M14OfflineMap(
           pins: <Map<String, dynamic>>[if (lat != null && lng != null) _pin(lat, lng, 'Điểm giao', 0xFFC0392B)],
           onPoint: (double la, double lo, bool inside) {
             if (inside) {

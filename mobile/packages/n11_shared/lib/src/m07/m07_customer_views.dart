@@ -117,6 +117,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
         widget.pinPicker!(
           context,
           lat: _pickupLat,
+          label: 'Ghim điểm lấy hàng',
           lng: _pickupLng,
           onPick: (double lat, double lng) {
             setState(() {
@@ -137,6 +138,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
         widget.pinPicker!(
           context,
           lat: _dropoffLat,
+          label: 'Ghim điểm giao hàng',
           lng: _dropoffLng,
           onPick: (double lat, double lng) {
             setState(() {
