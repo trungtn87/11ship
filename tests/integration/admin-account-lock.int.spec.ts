@@ -359,14 +359,56 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(await auditRows(toggled.id, 'account.unlock.on_delete_request.v1')).toBe(1);
     await sweep();
     expect(await state(toggled.id)).toBeUndefined();
+  });
 
-    // 3. The owner's OWN lock (DELETE_REQUEST) is the end of the request: the administrator's unlock is the existing "recovery" (the account is ACTIVE
-    //    again, no request pending, no extra audit entry). Current behaviour, documented for the Lead to confirm - not widened here.
+  it('Owner decision 2026-11-08: unlocking a DELETE_REQUEST lock is a valid RESTORATION and is audited once (no duplicate on a retried key); other reasons and a pending request are not', async () => {
+    const auditRows = (userId: string, action: string): Promise<number> => count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE action = $1 AND resource_id = $2', [action, userId]);
+    const eventRows = (userId: string, type: string): Promise<number> => count(app.pool, 'SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = $2', [userId, type]);
+    const state = async (userId: string): Promise<{ status: string; reason: string | null; pending: boolean } | undefined> =>
+      (await app.pool.query<{ status: string; reason: string | null; pending: boolean }>('SELECT status, lock_reason AS reason, (delete_requested_at IS NOT NULL) AS pending FROM app.users WHERE user_id = $1::uuid', [userId])).rows[0];
+    const RESTORED = 'account.delete_request.restored.v1';
+    const lockedFor = (userId: string, reason: 'DELETE_REQUEST' | 'VIOLATION'): Promise<unknown> =>
+      app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = $2, locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [userId, reason]);
+
+    // The owner's OWN lock (DELETE_REQUEST) is the end of the request. The administrator's unlock is the existing recovery: ACTIVE again, no request.
     const recovered = await seedUser({ roles: ['CUSTOMER'] });
-    await app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = 'DELETE_REQUEST', locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [recovered.id]);
-    expect((await change('unlock', recovered.id, systemLogin(), body(2))).status).toBe(200);
+    await lockedFor(recovered.id, 'DELETE_REQUEST');
+    const key = randomUUID();
+    const first = await change('unlock', recovered.id, systemLogin(), body(2, '  Chủ tài khoản nhờ khôi phục  '), { key });
+    expect(first.status).toBe(200);
     expect(await state(recovered.id)).toEqual({ status: 'ACTIVE', reason: null, pending: false });
-    expect(await auditRows(recovered.id, 'account.unlock.on_delete_request.v1')).toBe(0);
+    expect(await auditRows(recovered.id, RESTORED)).toBe(1);
+    expect(await eventRows(recovered.id, 'user.account.delete_request_restored.v1')).toBe(1);
+    expect(await auditRows(recovered.id, 'admin.user.unlock.v1')).toBe(1);
+    // What the entry carries: the actor, the account, the reason; no phone number and no secret.
+    const entry = (await app.pool.query<{ actor_type: string; metadata: Record<string, unknown> }>('SELECT actor_type, metadata FROM app.audit_logs WHERE action = $1 AND resource_id = $2', [RESTORED, recovered.id])).rows[0];
+    expect(entry?.metadata).toEqual({ target_user_id: recovered.id, version: 3, reason: 'Chủ tài khoản nhờ khôi phục', previous_lock_reason: 'DELETE_REQUEST' });
+    expect(JSON.stringify(entry)).not.toContain(recovered.phone.normalized);
+    // The same key again answers from the stored acknowledgement: nothing is written twice.
+    const replay = await change('unlock', recovered.id, systemLogin(), body(2, '  Chủ tài khoản nhờ khôi phục  '), { key });
+    expect(replay.status).toBe(200);
+    expect(await auditRows(recovered.id, RESTORED)).toBe(1);
+    expect(await eventRows(recovered.id, 'user.account.delete_request_restored.v1')).toBe(1);
+    // A retry with a new key finds the account already ACTIVE: refused, still one entry.
+    expect((await change('unlock', recovered.id, systemLogin(), body(3))).status).toBeGreaterThanOrEqual(400);
+    expect(await auditRows(recovered.id, RESTORED)).toBe(1);
+
+    // Any other lock reason: the ordinary unlock only, no restoration entry.
+    const violation = await seedUser({ roles: ['CUSTOMER'] });
+    await lockedFor(violation.id, 'VIOLATION');
+    expect((await change('unlock', violation.id, systemLogin(), body(2))).status).toBe(200);
+    expect(await state(violation.id)).toEqual({ status: 'ACTIVE', reason: null, pending: false });
+    expect(await auditRows(violation.id, RESTORED)).toBe(0);
+    expect(await auditRows(violation.id, 'admin.user.unlock.v1')).toBe(1);
+
+    // A pending request unlocked after an administrative lock keeps its request (PENDING) and is not a restoration.
+    const pending = await seedUser({ roles: ['CUSTOMER'] });
+    await app.pool.query('UPDATE app.users SET delete_requested_at = clock_timestamp(), version = version + 1 WHERE user_id = $1::uuid', [pending.id]);
+    expect((await change('lock', pending.id, systemLogin(), body(2))).status).toBe(200);
+    expect((await change('unlock', pending.id, systemLogin(), body(3))).status).toBe(200);
+    expect(await state(pending.id)).toEqual({ status: 'ACTIVE', reason: null, pending: true });
+    expect(await auditRows(pending.id, RESTORED)).toBe(0);
+    expect(await auditRows(pending.id, 'account.unlock.on_delete_request.v1')).toBe(1);
   });
 
   it('a request is validated before it runs: transport, CSRF, key, strict body; nothing changes on a refusal', async () => {
