@@ -67,3 +67,13 @@ describe('public tracking limiter identity (P5-7b)', () => {
     expect(await hit(c, request(PROXY))).toBe(400);
   });
 });
+
+describe('public tracking limiter memory bound (P5-7b)', () => {
+  it('many distinct sources beyond the cap keep every one of them served and the 60/min quota intact', async () => {
+    const c = controller();
+    for (let i = 0; i < 10_500; i += 1) {
+      expect(await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`))).toBe(200);
+    }
+    await exhaust(c, () => request('198.51.100.200'));
+  });
+});
