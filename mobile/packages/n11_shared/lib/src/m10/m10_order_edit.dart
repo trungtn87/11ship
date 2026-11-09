@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../account/session_controller.dart';
+import '../addresses/address_location_picker.dart';
 import '../addresses/address_models.dart';
 import '../m07/m07_source.dart';
 import '../m07/m07_widgets.dart';
@@ -59,6 +61,8 @@ class _OrderEditState extends State<OrderEditScreen> with M07Actions<OrderEditSc
   late DraftAddress _address = DraftAddress.typed(widget.order.recipient.addressText, lat: widget.order.recipient.lat, lng: widget.order.recipient.lng);
   CheckoutPreview? _preview;
   bool _previewing = false;
+  // Bumped by every change of the draft: a price check started for an older draft is dropped when it finally answers (A then B quickly: only B counts).
+  int _draftEpoch = 0;
   String? _message;
   bool _locked = false;
   List<EditDish>? _menu;
@@ -87,7 +91,9 @@ class _OrderEditState extends State<OrderEditScreen> with M07Actions<OrderEditSc
 
   /// Any change makes the earlier price check void: the server prices the new draft again before it can be saved.
   void _touched() => setState(() {
+        _draftEpoch++;
         _preview = null;
+        _previewing = false;
         _message = null;
       });
 
@@ -96,13 +102,14 @@ class _OrderEditState extends State<OrderEditScreen> with M07Actions<OrderEditSc
       setState(() => _message = 'Đơn cần ít nhất một món. Muốn bỏ hết món, hãy dùng "Hủy đơn".');
       return;
     }
+    final int epoch = _draftEpoch;
     setState(() {
       _previewing = true;
       _message = null;
     });
     try {
       final CheckoutPreview preview = await widget.runtime.customer.preview(_draft);
-      if (!mounted) return;
+      if (!mounted || epoch != _draftEpoch) return;
       setState(() {
         _preview = preview;
         _previewing = false;
@@ -114,7 +121,7 @@ class _OrderEditState extends State<OrderEditScreen> with M07Actions<OrderEditSc
         if (!preview.ok) _message = 'Có món không còn bán hoặc đã đổi giá. Hãy kiểm tra các món bên dưới.';
       });
     } on M07Failure catch (failure) {
-      if (!mounted) return;
+      if (!mounted || epoch != _draftEpoch) return;
       setState(() {
         _previewing = false;
         _message = m10FailureText(failure);
@@ -173,24 +180,42 @@ class _OrderEditState extends State<OrderEditScreen> with M07Actions<OrderEditSc
     _touched();
   }
 
+  /// The address book entry (text and pin together), or typed text + a confirmed pin through the checkout's own [AddressLocationPicker] (one map).
   Future<void> _pickAddress() async {
     final List<DeliveryAddress> book = widget.runtime.addresses?.addresses ?? const <DeliveryAddress>[];
-    final DeliveryAddress? chosen = await showModalBottomSheet<DeliveryAddress>(
+    final Object? choice = await showModalBottomSheet<Object>(
       context: context,
       builder: (BuildContext sheet) => SafeArea(
         child: ListView(
           key: const Key('order-edit-addresses'),
           shrinkWrap: true,
           children: <Widget>[
+            ListTile(key: const Key('order-edit-address-typed'), leading: const Icon(Icons.edit_location_alt_outlined), title: const Text('Nhập địa chỉ và ghim trên bản đồ'), onTap: () => Navigator.of(sheet).pop('typed')),
             for (final DeliveryAddress a in book) ListTile(key: Key('order-edit-address-${a.id}'), title: Text(a.displayName ?? a.addressText), subtitle: Text(a.addressText), onTap: () => Navigator.of(sheet).pop(a)),
-            if (book.isEmpty) const ListTile(title: Text('Sổ địa chỉ chưa có địa chỉ nào. Thêm địa chỉ trong Tài khoản trước.')),
           ],
         ),
       ),
     );
-    if (chosen == null) return;
-    // A new place is a new pin: it comes from the address book (text and pin together), never the old pin under new words.
-    _address = DraftAddress.book(chosen.id, text: chosen.addressText, lat: chosen.latitude, lng: chosen.longitude);
+    if (choice == null || !mounted || _locked) return;
+    if (choice is DeliveryAddress) {
+      _address = DraftAddress.book(choice.id, text: choice.addressText, lat: choice.latitude, lng: choice.longitude);
+      _touched();
+      return;
+    }
+    final SessionController? session = widget.runtime.session;
+    final int? epoch = session?.sessionEpoch;
+    final M07PinPickerBuilder? builder = widget.runtime.pinPicker;
+    final AddressLocation? picked = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+      builder: (_) => AddressLocationPicker(
+        initial: AddressLocation(_address.text, latitude: _address.lat, longitude: _address.lng),
+        session: session,
+        location: widget.runtime.location,
+        mapBuilder: builder == null ? null : (BuildContext context, double? lat, double? lng, void Function(double, double) onPick) => builder(context, lat: lat, lng: lng, onPick: onPick),
+      ),
+    ));
+    // Back without confirming keeps the order's address; another session never writes into this draft.
+    if (picked == null || !mounted || _locked || session?.sessionEpoch != epoch || (session != null && session.status != SessionStatus.signedIn)) return;
+    _address = DraftAddress.typed(picked.text, lat: picked.latitude, lng: picked.longitude);
     _touched();
   }
 
