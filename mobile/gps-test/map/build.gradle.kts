@@ -9,5 +9,6 @@ android {
 }
 dependencies {
     api("org.maplibre.gl:android-sdk:11.8.0")
+    testImplementation("junit:junit:4.13.2")
 
 }
