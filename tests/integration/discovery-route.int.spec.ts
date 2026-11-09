@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -29,7 +30,7 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
           response.end(JSON.stringify({ error_code: 442 }));
           return;
         }
-        response.end(JSON.stringify({ trip: { summary: { length: ROAD_KM, time: 1200 }, legs: [{ shape: 'oqjfj@_dntiEoe`@nkX' }] }, route_version: 'valhalla-3.9.1/motorcycle-shortest/test' }));
+        response.end(JSON.stringify(m14RouteAnswer(ROAD_KM, 1200)));
       });
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));

@@ -155,6 +155,19 @@ describe('M14 matrix limits (issue #257)', () => {
     await expect(client.durations(points(3))).resolves.toEqual({ kind: 'unavailable' });
   });
 
+  it('points at the same place (zero-length legs) still form a matrix and keep the engine version (regression: two deliveries from one shop)', async () => {
+    const same = { lat: 22.67, lng: 106.25 };
+    const client = new M14RouteClient(config, async () => reply(1));
+    const mixed = await client.durations([same, { ...same }, { lat: 22.68, lng: 106.26 }]);
+    expect(mixed.kind).toBe('ok');
+    if (mixed.kind === 'ok') {
+      expect(mixed.routeVersion).toBe(VERSION);
+      expect(mixed.seconds[0]?.[1]).toBe(0);
+    }
+    const allSame = await new M14RouteClient(config, async () => { throw new Error('must not be asked'); }).durations([same, { ...same }]);
+    expect(allSame).toMatchObject({ kind: 'ok', routeVersion: ZERO_LENGTH_ROUTE_VERSION });
+  });
+
   it('one missing leg makes the whole matrix unavailable, stops asking for more, and invents nothing', async () => {
     let calls = 0;
     const client = new M14RouteClient(config, async () => {

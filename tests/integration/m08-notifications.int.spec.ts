@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import { ShippingEligibilityService } from '../../apps/backend/src/shipping-policy/shipping-eligibility-service';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -61,7 +62,7 @@ describe('M08 — notifications, reminders and sync', () => {
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(2.5, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     fcm = http.createServer((request, response) => {

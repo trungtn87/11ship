@@ -213,11 +213,14 @@ export class M14RouteClient implements RouteMatrixPort {
           return;
         }
         // Every leg of one matrix must come from the same engine/profile/data version; a mix (e.g. a flag flipped mid-matrix) is "unavailable".
-        if (routeVersion !== undefined && routeVersion !== leg.routeVersion) {
-          failed = true;
-          return;
+        // A zero-length leg (two points at the same place) asked no engine, so it carries no engine version and joins any matrix.
+        if (leg.routeVersion !== ZERO_LENGTH_ROUTE_VERSION) {
+          if (routeVersion !== undefined && routeVersion !== leg.routeVersion) {
+            failed = true;
+            return;
+          }
+          routeVersion = leg.routeVersion;
         }
-        routeVersion = leg.routeVersion;
         (seconds[from] as (number | null)[])[to] = leg.seconds;
       }
     };
@@ -225,6 +228,6 @@ export class M14RouteClient implements RouteMatrixPort {
     if (failed) {
       return { kind: 'unavailable' };
     }
-    return routeVersion === undefined ? { kind: 'unavailable' } : { kind: 'ok', seconds, routeVersion };
+    return { kind: 'ok', seconds, routeVersion: routeVersion ?? ZERO_LENGTH_ROUTE_VERSION };
   }
 }

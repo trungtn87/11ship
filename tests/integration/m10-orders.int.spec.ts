@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import { OrderRecorder } from '../../apps/backend/src/orders/order-recorder';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -46,7 +47,7 @@ describe('M10 — food orders', () => {
       holdNextRoute = null;
       if (hold !== null) await hold();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: routeKm, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(routeKm, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
