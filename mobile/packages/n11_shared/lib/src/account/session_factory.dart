@@ -32,7 +32,7 @@ import 'session_controller.dart';
 /// The real wiring of one app: HTTPS to the configured server (normal TLS verification only), the Keystore bridge, and the session.
 /// A build without a valid HTTPS server address cannot sign in; hardware attestation is never required.
 /// [transport] and [bridge] are replaced by tests only.
-SessionController createSessionController(ClientApp app, AppConfig config, {ApiTransport? transport, DeviceBridge? bridge}) {
+SessionController createSessionController(ClientApp app, AppConfig config, {ApiTransport? transport, DeviceBridge? bridge, DateTime Function()? now}) {
   final Uri? base = config.apiUri;
   final bool ready = base != null;
   final DeviceBridge deviceBridge = bridge ?? MethodChannelDeviceBridge(environment: config.deviceEnvironment);
@@ -41,6 +41,7 @@ SessionController createSessionController(ClientApp app, AppConfig config, {ApiT
     api: NativeAuthApi(app: app, transport: http, bridge: deviceBridge, environment: config.deviceEnvironment),
     bridge: deviceBridge,
     ready: ready,
+    now: now,
   );
 }
 

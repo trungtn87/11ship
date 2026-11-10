@@ -51,7 +51,16 @@ class PendingAuth {
 }
 
 class SessionController extends ChangeNotifier {
-  SessionController({required this.api, required this.bridge, required this.ready});
+  SessionController({required this.api, required this.bridge, required this.ready, DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  /// The shortest time between two background identity reads ([refreshIdentityIfStale]).
+  static const Duration identityRefreshMinInterval = Duration(seconds: 30);
+
+  final DateTime Function() _now;
+  /// Bumps whenever the identity is replaced or cleared by any path, so a background read that started before drops its answer (P5-6c).
+  int _identitySeq = 0;
+  bool _identityRefreshing = false;
+  DateTime? _lastIdentityRefresh;
 
   final NativeAuthApi api;
   final DeviceBridge bridge;
@@ -174,7 +183,7 @@ class SessionController extends ChangeNotifier {
           _notify();
           return;
         }
-        _identity = identity;
+        _setIdentity(identity);
         _profile = identity.profile;
         _status = SessionStatus.signedIn;
         _lastFailure = null;
@@ -226,6 +235,7 @@ class SessionController extends ChangeNotifier {
 
   void _toGuest() {
     _identity = null;
+    _identitySeq++;
     _profile = null;
     _pending = null;
     _status = SessionStatus.guest;
@@ -386,7 +396,7 @@ class SessionController extends ChangeNotifier {
     }
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
-    _identity = identity;
+    _setIdentity(identity);
     _profile = identity.profile;
     _pending = null;
     _status = SessionStatus.signedIn;
@@ -450,10 +460,71 @@ class SessionController extends ChangeNotifier {
     if (identity == null) {
       throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
     }
-    _identity = identity;
+    _setIdentity(identity);
     _profile = identity.profile;
     _notify();
   }
+
+  void _setIdentity(Identity identity) {
+    _identity = identity;
+    _identitySeq++;
+  }
+
+  /// The server may change what it says about this account without the app doing anything (an Admin unlocks it, a lock is placed). So the
+  /// app reads `me` again when it comes back to the foreground and when the Account tab is opened. This is a silent, throttled read:
+  ///  - at most one every [identityRefreshMinInterval], and never two at once (a flood of resumes / tab taps costs one request);
+  ///  - only for a signed-in session; a guest or a session being started is left alone;
+  ///  - the answer is dropped when the session epoch moved (logout, other account) or the identity was replaced meanwhile (context
+  ///    change, onboarding step), so an old answer never overwrites a newer one;
+  ///  - a network or server failure keeps the identity as it is (nothing is shown, nothing is cleared); a 401 still ends the session
+  ///    like any other protected call.
+  /// Listeners are told only when something the screens show actually changed, so a refresh that learns nothing rebuilds nothing.
+  Future<void> refreshIdentityIfStale() async {
+    final Identity? before = _identity;
+    if (_status != SessionStatus.signedIn || before == null || _identityRefreshing || _disposed) {
+      return;
+    }
+    final DateTime now = _now();
+    final DateTime? last = _lastIdentityRefresh;
+    if (last != null && now.difference(last) < identityRefreshMinInterval) {
+      return;
+    }
+    _lastIdentityRefresh = now;
+    _identityRefreshing = true;
+    final int epoch = _epoch;
+    final int seq = _identitySeq;
+    try {
+      final ApiResponse response = await protectedCall('GET', '/v1/client-auth/me');
+      if (epoch != _epoch || seq != _identitySeq || _disposed || response.status != 200) {
+        return;
+      }
+      final Identity? identity = Identity.tryParse(response.data);
+      if (identity == null || identity.userId != before.userId) {
+        return;
+      }
+      _setIdentity(identity);
+      _profile = identity.profile;
+      if (_identityShowsDifferently(before, identity)) {
+        _notify();
+      }
+    } on Object {
+      // Offline, refused or malformed: the identity we have stays.
+    } finally {
+      _identityRefreshing = false;
+    }
+  }
+
+  static bool _identityShowsDifferently(Identity a, Identity b) =>
+      a.lockedWalletOnly != b.lockedWalletOnly ||
+      a.deletionLocked != b.deletionLocked ||
+      a.activeRole != b.activeRole ||
+      !listEquals(a.availableRoles, b.availableRoles) ||
+      a.customerAccess != b.customerAccess ||
+      a.onboardingRequired != b.onboardingRequired ||
+      a.roleSelectionRequired != b.roleSelectionRequired ||
+      a.shopOnboarding != b.shopOnboarding ||
+      a.driverOnboarding != b.driverOnboarding ||
+      a.phoneVerification != b.phoneVerification;
 
   /// POST /v1/client-auth/context: only on the person's own action; the server decides (ROLE_NOT_AVAILABLE) and answers the CURRENT
   /// identity. Never a grant.
@@ -490,7 +561,7 @@ class SessionController extends ChangeNotifier {
     if (identity == null) {
       throw refusal ?? const AuthFailure(AuthFailureKind.badResponse);
     }
-    _identity = identity;
+    _setIdentity(identity);
     _profile = identity.profile;
     _notify();
   }
