@@ -55,6 +55,10 @@ Future<void> _openShop(
   }
 }
 
+/// Label of the shop-card distance (Home, Search, shop page). P6-4 / #294: the road runs shop -> the customer's CURRENT position; it is not the
+/// delivery-fee distance, so the text never calls it that.
+const String kShopRouteLabel = 'Quãng đường từ quán đến vị trí hiện tại';
+
 /// The one line a card (Home and Search alike) shows for the distance. Issue #190: a number appears ONLY as a road distance; a missing position or
 /// an unknown road says so. A straight-line estimate is never shown as a substitute.
 String distanceLine(
@@ -66,13 +70,13 @@ String distanceLine(
   if (locating) return 'Đang định vị…';
   switch (distance.kind) {
     case RouteDistanceKind.route:
-      return '≈ ${RouteDistance.text(distance.meters!)} · đường đi';
+      return '$kShopRouteLabel: ≈ ${RouteDistance.text(distance.meters!)}';
     case RouteDistanceKind.loading:
-      return 'Đang tính quãng đường…';
+      return '$kShopRouteLabel: đang tính…';
     case RouteDistanceKind.noPosition:
-      return 'Chưa xác định quãng đường';
+      return '$kShopRouteLabel: chưa xác định';
     case RouteDistanceKind.unavailable:
-      return 'Chưa xác định quãng đường';
+      return '$kShopRouteLabel: chưa xác định';
   }
 }
 
