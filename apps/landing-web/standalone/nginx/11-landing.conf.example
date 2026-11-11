@@ -1,0 +1,25 @@
+# Server block riêng cho website giới thiệu 11 (tĩnh). KHÔNG sửa site của backend 11Ship.
+# Cài đặt (chỉ khi Owner cho phép): đổi DOMAIN, chép dist/ lên /var/www/11-landing, đặt file này vào
+# /etc/nginx/sites-available/11-landing.conf, ln -s sang sites-enabled, nginx -t, systemctl reload nginx,
+# rồi cấp chứng chỉ: certbot --nginx -d DOMAIN -d www.DOMAIN
+server {
+    listen 80;
+    listen [::]:80;
+    server_name DOMAIN www.DOMAIN;
+    root /var/www/11-landing;
+    index index.html;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options SAMEORIGIN always;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    location ~* \.(webp|jpg|png|woff2|css)$ {
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+    gzip on;
+    gzip_types text/css text/plain;
+}

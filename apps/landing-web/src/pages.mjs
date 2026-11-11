@@ -1,7 +1,21 @@
 // Page templates of the 11 landing site (/, /food, /ship + support and legal pages).
 // Copy states only what the apps do today. Undecided facts (contact channel, legal text, store URL) are never invented.
 
-const ENV = typeof process !== 'undefined' ? process.env : {};
+import { existsSync, readFileSync } from 'node:fs';
+
+// Settings come from site.config.json (next to src/), overridden by LANDING_* environment variables.
+const CONFIG_PATH = new URL('../site.config.json', import.meta.url);
+const FILE = existsSync(CONFIG_PATH) ? JSON.parse(readFileSync(CONFIG_PATH, 'utf8').replace(/^﻿/, '')) : {};
+const ENV = {
+  LANDING_SITE_URL: FILE.siteUrl, LANDING_PUBLISH: FILE.publish ? '1' : '', LANDING_PLAY_FOOD_URL: FILE.playFoodUrl,
+  LANDING_PLAY_SHIP_URL: FILE.playShipUrl, LANDING_DELETE_ACCOUNT_URL: FILE.deleteAccountUrl,
+  ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith('LANDING_') && v !== undefined && v !== '')),
+};
+/** Support e-mail shown on /ho-tro. Empty until the Owner approves a public address. */
+const CONTACT_EMAIL = FILE.contactEmail ?? '';
+/** Legal texts (HTML) shown on the privacy / terms pages. Empty = "being finalised" page. Only Owner-approved text goes here. */
+const PRIVACY_HTML = FILE.privacyHtml ?? '';
+const TERMS_HTML = FILE.termsHtml ?? '';
 /** Public origin, e.g. https://example.vn. Unset until the Owner decides the domain: no canonical/og:url is emitted. */
 const SITE = (ENV.LANDING_SITE_URL ?? '').replace(/\/$/, '');
 /** Publication switch: the site stays noindex until the Owner approves it (LANDING_PUBLISH=1 and a domain). */
@@ -138,19 +152,19 @@ ${CAO_BANG}
     title: 'Hỗ trợ — 11Food và 11Ship', desc: 'Câu hỏi thường gặp và hỗ trợ người dùng 11Food, 11Ship.',
     body: `<section class="doc"><div class="wrap narrow"><h1>Hỗ trợ</h1><p class="lead">Giải đáp nhanh cho người dùng 11Food và 11Ship.</p>
 <h2 id="faq">Câu hỏi thường gặp</h2>${faq([['11Food và 11Ship khác nhau thế nào?', '11Food dành cho khách hàng đặt đồ ăn. 11Ship dành cho cửa hàng và shipper.'], ['Dịch vụ phục vụ ở đâu?', 'Tại Cao Bằng.'], ['Mã xác minh gửi đến đâu?', 'Mã được gửi bằng tin nhắn SMS tới số điện thoại bạn nhập khi đăng ký.'], ['Tôi muốn xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.']])}
-<h2 id="lien-he">Liên hệ</h2><p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p></div></section>`,
+<h2 id="lien-he">Liên hệ</h2>${CONTACT_EMAIL === '' ? '<p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p>' : `<p>Email hỗ trợ: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></p>`}</div></section>`,
   }),
 
   '/chinh-sach-quyen-rieng-tu': layout({
     path: '/chinh-sach-quyen-rieng-tu', current: '',
     title: 'Chính sách quyền riêng tư — 11Food và 11Ship', desc: 'Chính sách quyền riêng tư của 11Food và 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Chính sách quyền riêng tư</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p><p>Nội dung chính sách quyền riêng tư đang được hoàn thiện và sẽ được đăng tại trang này.</p></div></section>`,
+    body: `<section class="doc"><div class="wrap narrow"><h1>Chính sách quyền riêng tư</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p>${PRIVACY_HTML === '' ? '<p>Nội dung chính sách quyền riêng tư đang được hoàn thiện và sẽ được đăng tại trang này.</p>' : PRIVACY_HTML}</div></section>`,
   }),
 
   '/dieu-khoan': layout({
     path: '/dieu-khoan', current: '',
     title: 'Điều khoản sử dụng — 11Food và 11Ship', desc: 'Điều khoản sử dụng của 11Food và 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Điều khoản sử dụng</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p><p>Nội dung điều khoản sử dụng đang được hoàn thiện và sẽ được đăng tại trang này.</p></div></section>`,
+    body: `<section class="doc"><div class="wrap narrow"><h1>Điều khoản sử dụng</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p>${TERMS_HTML === '' ? '<p>Nội dung điều khoản sử dụng đang được hoàn thiện và sẽ được đăng tại trang này.</p>' : TERMS_HTML}</div></section>`,
   }),
 
   '/xoa-tai-khoan': layout({
