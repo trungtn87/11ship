@@ -1,6 +1,5 @@
 // Page templates of the 11 landing site (/, /food, /ship + support and legal pages).
 // Copy states only what the apps do today. Undecided facts (contact channel, legal text, store URL) are never invented.
-import { bowl, landscape, route } from './art.mjs';
 
 const ENV = typeof process !== 'undefined' ? process.env : {};
 /** Public origin, e.g. https://example.vn. Unset until the Owner decides the domain: no canonical/og:url is emitted. */
@@ -12,6 +11,7 @@ const PLAY = { food: ENV.LANDING_PLAY_FOOD_URL ?? '', ship: ENV.LANDING_PLAY_SHI
 /** Public account-deletion page of the backend (POST /v1/account-deletion/confirm). Unset until verified as deployed. */
 const DELETE_URL = ENV.LANDING_DELETE_ACCOUNT_URL ?? '';
 
+const img = (f, alt, w, h, extra = '') => `<img src="/img/${f}" alt="${alt}" width="${w}" height="${h}" decoding="async" ${extra}>`;
 const NAV = [['/', 'Trang chủ'], ['/food', '11Food'], ['/ship', '11Ship'], ['/ho-tro', 'Hỗ trợ']];
 
 const icon = (n) => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
@@ -38,13 +38,13 @@ const playBtn = (key, cls = 'btn--dark') => {
 };
 
 function layout({ path, title, desc, current, body, dark = false }) {
-  const canonical = SITE === '' ? '' : `<link rel="canonical" href="${SITE}${path}"><meta property="og:url" content="${SITE}${path}"><meta property="og:image" content="${SITE}/brand/logo-11-ui.png">`;
+  const canonical = SITE === '' ? '' : `<link rel="canonical" href="${SITE}${path}"><meta property="og:url" content="${SITE}${path}"><meta property="og:image" content="${SITE}/img/og-11.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`;
   const robots = PUBLISH ? '' : '<meta name="robots" content="noindex,nofollow">';
   const nav = NAV.map(([h, l]) => `<a href="${h}"${h === current ? ' aria-current="page"' : ''}>${l}</a>`).join('');
   return `<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><meta name="description" content="${desc}">${robots}${canonical}
-<meta property="og:type" content="website"><meta property="og:locale" content="vi_VN"><meta property="og:site_name" content="11"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">
+<meta property="og:type" content="website"><meta property="og:locale" content="vi_VN"><meta property="og:site_name" content="11"><meta name="twitter:card" content="summary_large_image"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">
 <meta name="theme-color" content="#d8ad18"><link rel="icon" type="image/png" href="/brand/logo-11-ui.png">
 <link rel="preload" href="/fonts/PlusJakartaSans-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/site.css"></head>
@@ -66,7 +66,7 @@ const faq = (items) => items.map(([q, a]) => `<details class="qa"><summary>${q}<
 const feat = (ic, t, d) => `<li><span class="ficon">${icon(ic)}</span><div><b>${t}</b><span>${d}</span></div></li>`;
 const step = (t, d) => `<li><b>${t}</b><span>${d}</span></li>`;
 
-const CAO_BANG = `<section class="band"><div class="band-art">${landscape('Phong cảnh Cao Bằng: núi đá vôi, thác nước và dòng sông')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
+const CAO_BANG = `<section class="band"><div class="band-art">${img('banner-cao-bang.webp', 'Thác Bản Giốc, Cao Bằng', 2400, 800, 'loading="lazy"')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
 
 const FAQ_COMMON = [
   ['Ứng dụng dùng ở đâu?', 'Tại Cao Bằng.'],
@@ -79,13 +79,13 @@ export const pages = {
     path: '/', current: '/',
     title: '11 — Cần là có | 11Food và 11Ship tại Cao Bằng',
     desc: '11 — Cần là có. Hệ sinh thái đặt món và giao hàng tại Cao Bằng: 11Food cho khách đặt đồ ăn, 11Ship cho cửa hàng và shipper.',
-    body: `<section class="hero hero--home"><div class="hero-art">${landscape('Phong cảnh Cao Bằng')}</div><div class="wrap hero-text">
+    body: `<section class="hero hero--home"><div class="hero-art">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div><div class="wrap hero-text">
 <h1 class="h1-brand"><img src="/brand/logo-11-ui.png" alt="11" width="190" height="127"><span>– Cần là có</span></h1>
 <p class="lead">Hệ sinh thái đặt món và giao hàng tại Cao Bằng, đồng hành cùng bạn trong cuộc sống hằng ngày.</p>
 <div class="cta"><a class="btn btn--primary" href="/food">${icon('fork')}Khám phá 11Food</a><a class="btn btn--ghost" href="/ship">${icon('bike')}Khám phá 11Ship</a></div></div></section>
 <section class="pull"><div class="wrap"><div class="duo">
-<article class="appcard appcard--food"><div class="appcard-body"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="170" height="68"><p class="tag">Thèm là có</p><p>Khám phá quán ăn, xem thực đơn và đặt đồ ăn tại Cao Bằng.</p><a class="btn btn--primary" href="/food">Tìm hiểu 11Food${icon('arrow')}</a></div>${bowl('Bát phở cách điệu')}</article>
-<article class="appcard appcard--ship"><div class="appcard-body"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="170" height="85"><p class="tag">Gọi là có</p><p>Dành cho cửa hàng và shipper: gọi và nhận đơn giao hàng tại Cao Bằng.</p><a class="btn btn--primary" href="/ship">Tìm hiểu 11Ship${icon('arrow')}</a></div>${route('Tuyến giao hàng từ cửa hàng đến điểm giao')}</article>
+<article class="appcard appcard--food"><div class="appcard-body"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="170" height="68"><p class="tag">Thèm là có</p><p>Khám phá quán ăn, xem thực đơn và đặt đồ ăn tại Cao Bằng.</p><a class="btn btn--primary" href="/food">Tìm hiểu 11Food${icon('arrow')}</a></div>${img('card-food.webp', 'Phở vịt, bánh cuốn và hạt dẻ Cao Bằng', 1200, 900, 'loading="lazy"')}</article>
+<article class="appcard appcard--ship"><div class="appcard-body"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="170" height="85"><p class="tag">Gọi là có</p><p>Dành cho cửa hàng và shipper: gọi và nhận đơn giao hàng tại Cao Bằng.</p><a class="btn btn--primary" href="/ship">Tìm hiểu 11Ship${icon('arrow')}</a></div>${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'loading="lazy"')}</article>
 </div></div></section>
 <section><div class="wrap"><h2 class="center rule">Vì sao chọn 11?</h2><ul class="feats">
 ${feat('fork', 'Đặt món dễ dàng', 'Tìm quán, chọn món và đặt ngay trên điện thoại.')}
@@ -100,7 +100,7 @@ ${CAO_BANG}`,
     path: '/food', current: '/food',
     title: '11Food — Thèm là có | Đặt đồ ăn tại Cao Bằng',
     desc: '11Food — Thèm là có. Khám phá quán ăn, chọn món yêu thích và đặt đồ ăn tại Cao Bằng.',
-    body: `<section class="hero hero--food"><div class="hero-art hero-art--food">${landscape('Phong cảnh Cao Bằng')}${bowl('Bát phở cách điệu')}</div><div class="wrap hero-text">
+    body: `<section class="hero hero--food"><div class="hero-art hero-art--food">${img('hero-food.webp', 'Đặc sản Cao Bằng: phở vịt, bánh cuốn, chả và hạt dẻ', 2000, 1100, 'fetchpriority="high"')}</div><div class="wrap hero-text">
 <span class="chip">${icon('pin')}Cao Bằng</span>
 <p class="brandline"><img src="/brand/logo-11food-ui.png" alt="11Food" width="200" height="80"><span>| Thèm là có</span></p>
 <h1>Đói bụng? Mở 11Food.</h1><p class="lead">Khám phá quán ăn, chọn món yêu thích và đặt đồ ăn tại Cao Bằng.</p>${playBtn('food')}</div></section>
@@ -118,11 +118,10 @@ ${CAO_BANG}
     path: '/ship', current: '/ship',
     title: '11Ship — Gọi là có | Giao hàng cho cửa hàng và shipper tại Cao Bằng',
     desc: '11Ship — Gọi là có. Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.',
-    body: `<section class="hero hero--ship"><div class="wrap hero-split"><div class="hero-text">
-<span class="chip chip--dark">${icon('pin')}Cao Bằng</span>
-<p class="brandline"><img class="onlight" src="/brand/logo-11ship-ui.png" alt="11Ship" width="200" height="100"><span>| Gọi là có</span></p>
-<h1>Có hàng cần giao? Mở 11Ship.</h1><p class="lead">Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.</p>${playBtn('ship', 'btn--primary')}</div>
-<div class="hero-route">${route('Tuyến giao hàng từ cửa hàng đến điểm giao')}</div></div></section>
+    body: `<section class="hero hero--ship"><div class="hero-art hero-art--ship">${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'fetchpriority="high"')}</div><div class="wrap hero-text"><div>
+<span class="chip">${icon('pin')}Cao Bằng</span>
+<p class="brandline"><img src="/brand/logo-11ship-ui.png" alt="11Ship" width="200" height="100"><span>| Gọi là có</span></p>
+<h1>Có hàng cần giao? Mở 11Ship.</h1><p class="lead">Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.</p>${playBtn('ship')}</div></div></section>
 <section><div class="wrap"><h2>Dành cho ai?</h2><div class="duo">
 <article class="who"><span class="ficon">${icon('store')}</span><div><h3>Cửa hàng</h3><p>Gọi shipper và theo dõi từng đơn giao hàng.</p></div></article>
 <article class="who"><span class="ficon">${icon('bike')}</span><div><h3>Shipper</h3><p>Nhận đơn, giao hàng và theo dõi các chuyến của mình.</p></div></article></div>

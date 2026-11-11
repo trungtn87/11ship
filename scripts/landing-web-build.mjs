@@ -21,6 +21,7 @@ for (const f of ['logo-11-ui.png', 'logo-11food-ui.png', 'logo-11ship-ui.png']) 
   cpSync(join(shared, 'brand', f), join(dist, 'brand', f));
 }
 cpSync(join(root, 'apps', 'landing-web', 'src', 'site.css'), join(dist, 'site.css'));
+cpSync(join(root, 'apps', 'landing-web', 'src', 'img'), join(dist, 'img'), { recursive: true });
 for (const [path, html] of Object.entries(pages)) {
   const dir = path === '/' ? dist : join(dist, path.replace(/^\//, ''));
   mkdirSync(dir, { recursive: true });
