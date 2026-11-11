@@ -80,7 +80,6 @@ const faq = (items) => items.map(([q, a]) => `<details class="qa"><summary>${q}<
 const feat = (ic, t, d) => `<li><span class="ficon">${icon(ic)}</span><div><b>${t}</b><span>${d}</span></div></li>`;
 const step = (t, d) => `<li><b>${t}</b><span>${d}</span></li>`;
 
-const CAO_BANG = `<section class="band"><div class="band-art">${img('banner-cao-bang.webp', 'Núi và mây ở Cao Bằng', 1439, 480, 'loading="lazy"')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
 
 const FAQ_COMMON = [
   ['Ứng dụng dùng ở đâu?', 'Tại Cao Bằng.'],
@@ -107,7 +106,7 @@ ${feat('bike', 'Giao hàng tiện lợi', 'Kết nối cửa hàng và shipper g
 ${feat('pin', 'Phục vụ tại Cao Bằng', 'Tập trung cho nhu cầu của địa phương.')}
 ${feat('check', 'Đơn giản, rõ ràng', 'Dễ dùng, theo dõi trạng thái đơn trong ứng dụng.')}</ul></div></section>
 <section class="alt" id="tai-ung-dung"><div class="wrap"><h2 class="center">Tải ứng dụng</h2><div class="duo duo--play"><div class="card"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="130" height="52">${playBtn('food')}</div><div class="card"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="130" height="65">${playBtn('ship')}</div></div></div></section>
-${CAO_BANG}`,
+`,
   }),
 
   '/food': layout({
@@ -124,7 +123,6 @@ ${feat('search', 'Chọn món dễ dàng', 'Xem thực đơn, chọn món yêu t
 ${feat('bag', 'Đặt món nhanh gọn', 'Xác nhận đơn và đặt món ngay trên điện thoại.')}
 ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứng dụng.')}</ul></div></section>
 <section><div class="wrap"><h2>Đặt món đơn giản</h2><ol class="steps">${step('Chọn quán', 'Xem danh sách quán và thực đơn.')}${step('Chọn món', 'Tìm món bạn thèm, thêm vào đơn.')}${step('Đặt món', 'Xác nhận địa chỉ nhận và đặt.')}${step('Theo dõi đơn', 'Xem trạng thái đơn hàng.')}</ol></div></section>
-${CAO_BANG}
 <section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Food dùng cho ai?', 'Khách hàng muốn đặt đồ ăn. Cửa hàng và shipper dùng <a href="/ship">11Ship</a>.'], ...FAQ_COMMON])}</div></section>`,
   }),
 
@@ -143,7 +141,6 @@ ${CAO_BANG}
 <section class="alt"><div class="wrap"><h2>Cách hoạt động</h2><div class="duo">
 <div><h3>Cửa hàng</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo tài khoản và hồ sơ cửa hàng.')}${step('Gọi shipper', 'Nhập điểm lấy và điểm giao.')}${step('Theo dõi', 'Xem trạng thái giao nhận.')}</ol></div>
 <div><h3>Shipper</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo hồ sơ shipper để được duyệt.')}${step('Nhận đơn', 'Chọn đơn trong khu vực hoạt động.')}${step('Giao hàng', 'Cập nhật trạng thái chuyến giao.')}</ol></div></div></div></section>
-${CAO_BANG}
 <section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Ship dùng cho ai?', 'Cửa hàng và shipper. Muốn đặt đồ ăn, hãy dùng <a href="/food">11Food</a>.'], ['Tài khoản được duyệt như thế nào?', 'Hồ sơ quán hoặc hồ sơ shipper cần được duyệt trước khi bạn có thể bán hàng hoặc nhận đơn.'], ...FAQ_COMMON])}</div></section>`,
   }),
 

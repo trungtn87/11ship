@@ -74,12 +74,6 @@ section{padding:var(--gap-8) 0}section.alt{background:var(--c-bg)}section.pull{p
 .steps b{display:block}.steps span{color:var(--c-ink-2)}
 .card{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-card);padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-4);align-items:flex-start}.card .logo{height:48px;width:auto}
 
-/* Cao Bằng band */
-.band{position:relative;padding:0;min-height:260px;display:flex;align-items:center;overflow:hidden}
-.band-art{position:absolute;inset:0}.band-art img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
-.band .wrap{position:relative;width:100%;padding-top:var(--gap-8);padding-bottom:var(--gap-8)}
-.band-card{display:flex;gap:var(--gap-3);align-items:center;background:rgba(42,42,46,.86);color:#fff;border-radius:var(--r-card);padding:var(--gap-4) var(--gap-6);max-width:380px}
-.band-card .i{width:40px;height:40px;color:var(--c-yellow)}.band-card h2{font-size:24px;margin:0}.band-card p{margin:0;font-size:14px;color:#e8e8ea}
 
 /* faq / docs */
 .qa{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-control);padding:0 var(--gap-4);margin-bottom:var(--gap-2)}
@@ -105,7 +99,7 @@ footer a{text-decoration:none;display:inline-flex;min-height:var(--tap-min);alig
  .pull{margin-top:0;padding-top:var(--gap-8)}.pull .appcard{min-height:340px}
  .feats{grid-template-columns:repeat(4,1fr)}.feats--card{padding:var(--gap-6) var(--gap-8)}
  .steps{grid-template-columns:repeat(4,1fr)}.steps--one{grid-template-columns:1fr}
- .fgrid{grid-template-columns:1.4fr 1fr 1fr 1fr}.band{min-height:320px}
+ .fgrid{grid-template-columns:1.4fr 1fr 1fr 1fr}
  .appcard-body{max-width:55%}
 }
 @media(max-width:899px){.appcard{min-height:420px}.appcard-body{max-width:100%}.appcard>img{top:auto;bottom:0;width:100%;height:55%;-webkit-mask-image:linear-gradient(0deg,#000 55%,transparent);mask-image:linear-gradient(0deg,#000 55%,transparent)}.appcard--ship>img{-webkit-mask-image:linear-gradient(0deg,#000 55%,transparent);mask-image:linear-gradient(0deg,#000 55%,transparent)}}
