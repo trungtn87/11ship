@@ -76,7 +76,7 @@ section{padding:var(--gap-8) 0}section.alt{background:var(--c-bg)}section.pull{p
 
 /* Cao Bằng band */
 .band{position:relative;padding:0;min-height:260px;display:flex;align-items:center;overflow:hidden}
-.band-art{position:absolute;inset:0}.band-art img{width:100%;height:100%;object-fit:cover;object-position:center 55%;display:block}
+.band-art{position:absolute;inset:0}.band-art img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
 .band .wrap{position:relative;width:100%;padding-top:var(--gap-8);padding-bottom:var(--gap-8)}
 .band-card{display:flex;gap:var(--gap-3);align-items:center;background:rgba(42,42,46,.86);color:#fff;border-radius:var(--r-card);padding:var(--gap-4) var(--gap-6);max-width:380px}
 .band-card .i{width:40px;height:40px;color:var(--c-yellow)}.band-card h2{font-size:24px;margin:0}.band-card p{margin:0;font-size:14px;color:#e8e8ea}
