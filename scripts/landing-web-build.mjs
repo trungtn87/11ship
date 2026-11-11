@@ -5,7 +5,7 @@
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pages, PUBLISH } from '../apps/landing-web/src/pages.mjs';
+import { pages, PUBLISH, SITE } from '../apps/landing-web/src/pages.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outIdx = process.argv.indexOf('--out');
@@ -27,5 +27,9 @@ for (const [path, html] of Object.entries(pages)) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'index.html'), html);
 }
-writeFileSync(join(dist, 'robots.txt'), PUBLISH ? 'User-agent: *\nAllow: /\n' : 'User-agent: *\nDisallow: /\n');
+writeFileSync(join(dist, 'robots.txt'), PUBLISH ? `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n` : 'User-agent: *\nDisallow: /\n');
+if (PUBLISH) {
+  const urls = Object.keys(pages).map((r) => `  <url><loc>${SITE}${r}</loc></url>`).join('\n');
+  writeFileSync(join(dist, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+}
 console.log(`landing-web built into ${dist} (${Object.keys(pages).length} pages)`);

@@ -43,12 +43,26 @@ describe('landing-web', () => {
     }
   });
 
-  it('stays noindex with no invented canonical until publication is switched on', () => {
+  it('stays noindex until publication is switched on, with canonical on the 11local.vn domain', () => {
     for (const r of ROUTES) {
       assert.match(html(r), /name="robots" content="noindex,nofollow"/);
-      assert.doesNotMatch(html(r), /rel="canonical"/);
+      assert.ok(html(r).includes(`rel="canonical" href="https://11local.vn${r}"`), `${r} canonical`);
     }
     assert.match(readFileSync(join(out, 'robots.txt'), 'utf8'), /Disallow: \//);
+    assert.ok(!existsSync(join(out, 'sitemap.xml')));
+  });
+
+  it('writes sitemap.xml and an Allow robots.txt only when publication is on', () => {
+    const pub = mkdtempSync(join(tmpdir(), 'landing-pub-'));
+    try {
+      execFileSync(process.execPath, [join(root, 'scripts', 'landing-web-build.mjs'), '--out', pub], { stdio: 'pipe', env: { ...process.env, LANDING_PUBLISH: '1' } });
+      const sitemap = readFileSync(join(pub, 'sitemap.xml'), 'utf8');
+      for (const r of ROUTES) assert.ok(sitemap.includes(`<loc>https://11local.vn${r}</loc>`), r);
+      assert.match(readFileSync(join(pub, 'robots.txt'), 'utf8'), /Allow: \/\nSitemap: https:\/\/11local\.vn\/sitemap\.xml/);
+      assert.doesNotMatch(readFileSync(join(pub, 'food', 'index.html'), 'utf8'), /noindex/);
+    } finally {
+      rmSync(pub, { recursive: true, force: true });
+    }
   });
 
   it('shows no internal notes, placeholders or fake store links', () => {

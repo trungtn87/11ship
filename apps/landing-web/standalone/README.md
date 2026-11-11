@@ -11,7 +11,7 @@ Các trang: `/`, `/food`, `/ship`, `/ho-tro`, `/chinh-sach-quyen-rieng-tu`, `/di
 
 | Khóa | Ý nghĩa |
 |---|---|
-| `siteUrl` | Địa chỉ website, ví dụ `https://ten-mien.vn` (dùng cho canonical và ảnh chia sẻ) |
+| `siteUrl` | Địa chỉ website, hiện là `https://11local.vn` (dùng cho canonical và ảnh chia sẻ) |
 | `publish` | `true` khi cho Google lập chỉ mục; `false` = `noindex` (mặc định, bản thử) |
 | `playFoodUrl`, `playShipUrl` | Link Google Play. Để trống = nút "Sắp có trên Google Play" |
 | `deleteAccountUrl` | Link trang xóa tài khoản của backend, chỉ điền khi đã deploy |
@@ -27,5 +27,5 @@ Sửa xong chạy `node build.mjs` (hoặc `chay-thu.cmd`). Site chỉ cho lập
 
 ## Đưa lên VPS (chỉ khi Owner cho phép)
 1. `node build.mjs`, chép **thư mục `dist/`** lên VPS, ví dụ `/var/www/11-landing`.
-2. Dùng `nginx/11-landing.conf.example` làm server block riêng (đổi `DOMAIN`), cấp HTTPS bằng certbot.
+2. Dùng `nginx/11-landing.conf.example` làm server block riêng (đã đặt sẵn `11local.vn`), cấp HTTPS bằng certbot.
 3. Trỏ DNS của tên miền về VPS. Không đụng cấu hình nginx/backend của 11Ship.

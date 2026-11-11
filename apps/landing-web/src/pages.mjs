@@ -17,7 +17,7 @@ const CONTACT_EMAIL = FILE.contactEmail ?? '';
 const PRIVACY_HTML = FILE.privacyHtml ?? '';
 const TERMS_HTML = FILE.termsHtml ?? '';
 /** Public origin, e.g. https://example.vn. Unset until the Owner decides the domain: no canonical/og:url is emitted. */
-const SITE = (ENV.LANDING_SITE_URL ?? '').replace(/\/$/, '');
+export const SITE = (ENV.LANDING_SITE_URL ?? '').replace(/\/$/, '');
 /** Publication switch: the site stays noindex until the Owner approves it (LANDING_PUBLISH=1 and a domain). */
 export const PUBLISH = ENV.LANDING_PUBLISH === '1' && SITE !== '';
 /** Google Play listing URLs. Unset = "coming soon" button, never a fake link. */
