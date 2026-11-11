@@ -1,93 +1,163 @@
-// Page templates of the 11 landing site. Copy states only what the apps do today; anything undecided is marked "chờ Owner".
-const SITE = 'https://CHUA-CHOT-TEN-MIEN'; // domain not decided by the Owner: canonical stays a placeholder until then
-const NAV = [['/food', '11Food'], ['/ship', '11Ship'], ['/#tai-ung-dung', 'Tải ứng dụng']];
+// Page templates of the 11 landing site (/, /food, /ship + support and legal pages).
+// Copy states only what the apps do today. Undecided facts (contact channel, legal text, store URL) are never invented.
+import { bowl, landscape, route } from './art.mjs';
 
-const play = (name) =>
-  `<div class="play"><span class="btn btn--dark" aria-disabled="true">Sắp có trên Google Play</span><small>${name}: chưa có liên kết phát hành.</small></div>`;
-const ph = (t) => `<div class="ph" role="img" aria-label="${t}">${t}<br>(ảnh chờ Owner duyệt)</div>`;
+const ENV = typeof process !== 'undefined' ? process.env : {};
+/** Public origin, e.g. https://example.vn. Unset until the Owner decides the domain: no canonical/og:url is emitted. */
+const SITE = (ENV.LANDING_SITE_URL ?? '').replace(/\/$/, '');
+/** Publication switch: the site stays noindex until the Owner approves it (LANDING_PUBLISH=1 and a domain). */
+export const PUBLISH = ENV.LANDING_PUBLISH === '1' && SITE !== '';
+/** Google Play listing URLs. Unset = "coming soon" button, never a fake link. */
+const PLAY = { food: ENV.LANDING_PLAY_FOOD_URL ?? '', ship: ENV.LANDING_PLAY_SHIP_URL ?? '' };
+/** Public account-deletion page of the backend (POST /v1/account-deletion/confirm). Unset until verified as deployed. */
+const DELETE_URL = ENV.LANDING_DELETE_ACCOUNT_URL ?? '';
 
-function layout({ path, title, desc, current, body }) {
+const NAV = [['/', 'Trang chủ'], ['/food', '11Food'], ['/ship', '11Ship'], ['/ho-tro', 'Hỗ trợ']];
+
+const icon = (n) => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-store" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11zM5 14v6h14v-6M10 20v-4h4v4"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+<symbol id="i-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/></symbol>
+<symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+<symbol id="i-bike" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-3-8H9M15 9h3l1 5"/></symbol>
+<symbol id="i-fork" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M17 21V3c-2.5 1-4 4-4 8h4"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1M4 13h3v5H5a1 1 0 0 1-1-1zM20 13h-3v5h2a1 1 0 0 0 1-1z"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+</defs></svg>`;
+
+/** Google Play button: a real link only when the listing URL is known; otherwise a non-interactive "coming soon" badge. */
+const playBtn = (key, cls = 'btn--dark') => {
+  const url = PLAY[key];
+  return url
+    ? `<a class="btn ${cls}" href="${url}" rel="noopener">${icon('play')}Tải trên Google Play</a>`
+    : `<span class="btn ${cls} btn--soon" role="note">${icon('play')}Sắp có trên Google Play</span>`;
+};
+
+function layout({ path, title, desc, current, body, dark = false }) {
+  const canonical = SITE === '' ? '' : `<link rel="canonical" href="${SITE}${path}"><meta property="og:url" content="${SITE}${path}"><meta property="og:image" content="${SITE}/brand/logo-11-ui.png">`;
+  const robots = PUBLISH ? '' : '<meta name="robots" content="noindex,nofollow">';
   const nav = NAV.map(([h, l]) => `<a href="${h}"${h === current ? ' aria-current="page"' : ''}>${l}</a>`).join('');
   return `<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title><meta name="description" content="${desc}">
-<meta name="robots" content="noindex"><!-- PREVIEW until Owner approval -->
-<link rel="canonical" href="${SITE}${path}">
-<meta property="og:type" content="website"><meta property="og:locale" content="vi_VN"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}"><meta property="og:image" content="${SITE}/brand/logo-11-ui.png">
+<title>${title}</title><meta name="description" content="${desc}">${robots}${canonical}
+<meta property="og:type" content="website"><meta property="og:locale" content="vi_VN"><meta property="og:site_name" content="11"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">
 <meta name="theme-color" content="#d8ad18"><link rel="icon" type="image/png" href="/brand/logo-11-ui.png">
 <link rel="preload" href="/fonts/PlusJakartaSans-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/site.css"></head>
-<body><a class="skip" href="#main">Bỏ qua điều hướng</a>
-<header class="top"><div class="wrap bar"><a class="brand" href="/" aria-label="11 — trang chủ"><img src="/brand/logo-11-ui.png" alt="11" width="60" height="40"></a><nav class="menu" aria-label="Chính">${nav}</nav></div></header>
+<body>${SPRITE}<a class="skip" href="#main">Bỏ qua điều hướng</a>
+<header class="top"><div class="wrap bar"><a class="brand" href="/" aria-label="11 — trang chủ"><img src="/brand/logo-11-ui.png" alt="11" width="66" height="44"></a>
+<nav class="menu" aria-label="Chính">${nav}</nav>
+<div class="bar-cta">${playBtn('food', 'btn--primary btn--sm').replace('Sắp có trên Google Play', 'Sắp có trên Google Play')}</div>
+<details class="burger"><summary aria-label="Mở menu">${icon('menu')}</summary><div class="drawer">${nav}</div></details></div></header>
 <main id="main">${body}</main>
-<footer><div class="wrap"><div class="grid3">
-<div><span class="logo-chip"><img src="/brand/logo-11-ui.png" alt="11 — Cần là có" width="54" height="36"></span><p>11 — Cần là có.<br>Đặt món và giao hàng tại Cao Bằng.</p></div>
+<footer><div class="wrap"><div class="fgrid">
+<div><span class="logo-chip"><img src="/brand/logo-11-ui.png" alt="11 — Cần là có" width="54" height="36"></span><p><b>11 — Cần là có.</b><br>Đặt món và giao hàng tại Cao Bằng.</p></div>
 <div><h3>Ứng dụng</h3><ul><li><a href="/food">11Food — Thèm là có</a></li><li><a href="/ship">11Ship — Gọi là có</a></li></ul></div>
-<div><h3>Hỗ trợ và pháp lý</h3><ul><li><span class="soon">Chính sách quyền riêng tư — chờ Owner duyệt đăng</span></li><li><span class="soon">Điều khoản sử dụng — chờ Owner duyệt đăng</span></li><li><span class="soon">Yêu cầu xóa tài khoản — chờ triển khai</span></li><li><span class="soon">Liên hệ hỗ trợ — chờ Owner duyệt</span></li></ul></div>
-</div><p class="legal">© 11. Bản xem trước thiết kế — chưa công bố.</p></div></footer></body></html>`;
+<div><h3>Hỗ trợ</h3><ul><li><a href="/ho-tro">Trung tâm hỗ trợ</a></li><li><a href="/ho-tro#faq">Câu hỏi thường gặp</a></li><li><a href="/ho-tro#lien-he">Liên hệ</a></li></ul></div>
+<div><h3>Pháp lý</h3><ul><li><a href="/chinh-sach-quyen-rieng-tu">Chính sách quyền riêng tư</a></li><li><a href="/dieu-khoan">Điều khoản sử dụng</a></li><li><a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a></li></ul></div>
+</div><p class="legal">© 11 — Cần là có.</p></div></footer></body></html>`;
 }
 
-const appCard = (cls, logo, name, tag, text, href, cta) =>
-  `<article class="card ${cls}"><img class="logo" src="/brand/${logo}" alt="${name}" height="56"><p class="tag">${tag}</p><p>${text}</p><div class="cta"><a class="btn btn--primary" href="${href}">${cta}</a></div></article>`;
+const faq = (items) => items.map(([q, a]) => `<details class="qa"><summary>${q}</summary><p>${a}</p></details>`).join('');
+const feat = (ic, t, d) => `<li><span class="ficon">${icon(ic)}</span><div><b>${t}</b><span>${d}</span></div></li>`;
+const step = (t, d) => `<li><b>${t}</b><span>${d}</span></li>`;
 
-const faq = (items) => items.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('');
-const heroLogo = (file, name) => `<img src="/brand/${file}" alt="${name}" height="64" style="height:64px;width:auto;margin-bottom:16px">`;
+const CAO_BANG = `<section class="band"><div class="band-art">${landscape('Phong cảnh Cao Bằng: núi đá vôi, thác nước và dòng sông')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
+
+const FAQ_COMMON = [
+  ['Ứng dụng dùng ở đâu?', 'Tại Cao Bằng.'],
+  ['Tôi cần gì để bắt đầu?', 'Điện thoại Android và một tài khoản đăng ký bằng số điện thoại, xác minh bằng mã SMS.'],
+  ['Làm sao xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
+];
 
 export const pages = {
   '/': layout({
-    path: '/',
-    current: '/',
+    path: '/', current: '/',
     title: '11 — Cần là có | 11Food và 11Ship tại Cao Bằng',
-    desc: '11 — Cần là có. Hai ứng dụng tại Cao Bằng: 11Food để đặt món, 11Ship cho cửa hàng và shipper.',
-    body: `<section class="hero"><div class="wrap"><div><p class="eyebrow">Cao Bằng</p><h1>Cần là có.</h1><p class="lead">Hai ứng dụng đời thường: đặt đồ ăn với 11Food, gọi và nhận giao hàng với 11Ship.</p><div class="cta"><a class="btn btn--primary" href="/food">Xem 11Food</a><a class="btn btn--ghost" href="/ship">Xem 11Ship</a></div></div>${ph('Ảnh Cao Bằng / hình đại diện thương hiệu 11')}</div></section>
-<section><div class="wrap"><h2>Hai ứng dụng, một thương hiệu</h2><div class="apps">
-${appCard('', 'logo-11food-ui.png', '11Food', 'Thèm là có', 'Dành cho khách hàng: tìm quán, xem món và đặt đồ ăn ngay trên điện thoại.', '/food', 'Tìm hiểu 11Food')}
-${appCard('card--dark', 'logo-11ship-ui.png', '11Ship', 'Gọi là có', 'Dành cho cửa hàng và shipper: gọi shipper, nhận chuyến và theo dõi giao nhận.', '/ship', 'Tìm hiểu 11Ship')}
+    desc: '11 — Cần là có. Hệ sinh thái đặt món và giao hàng tại Cao Bằng: 11Food cho khách đặt đồ ăn, 11Ship cho cửa hàng và shipper.',
+    body: `<section class="hero hero--home"><div class="hero-art">${landscape('Phong cảnh Cao Bằng')}</div><div class="wrap hero-text">
+<h1 class="h1-brand"><img src="/brand/logo-11-ui.png" alt="11" width="190" height="127"><span>– Cần là có</span></h1>
+<p class="lead">Hệ sinh thái đặt món và giao hàng tại Cao Bằng, đồng hành cùng bạn trong cuộc sống hằng ngày.</p>
+<div class="cta"><a class="btn btn--primary" href="/food">${icon('fork')}Khám phá 11Food</a><a class="btn btn--ghost" href="/ship">${icon('bike')}Khám phá 11Ship</a></div></div></section>
+<section class="pull"><div class="wrap"><div class="duo">
+<article class="appcard appcard--food"><div class="appcard-body"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="170" height="68"><p class="tag">Thèm là có</p><p>Khám phá quán ăn, xem thực đơn và đặt đồ ăn tại Cao Bằng.</p><a class="btn btn--primary" href="/food">Tìm hiểu 11Food${icon('arrow')}</a></div>${bowl('Bát phở cách điệu')}</article>
+<article class="appcard appcard--ship"><div class="appcard-body"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="170" height="85"><p class="tag">Gọi là có</p><p>Dành cho cửa hàng và shipper: gọi và nhận đơn giao hàng tại Cao Bằng.</p><a class="btn btn--primary" href="/ship">Tìm hiểu 11Ship${icon('arrow')}</a></div>${route('Tuyến giao hàng từ cửa hàng đến điểm giao')}</article>
 </div></div></section>
-<section class="alt"><div class="wrap"><h2>Cách hoạt động</h2><div class="grid2">
-<div><h3>11Food</h3><ol class="steps"><li><b>Chọn quán</b><span>Xem quán và món.</span></li><li><b>Đặt món</b><span>Chọn món, xác nhận đơn.</span></li><li><b>Theo dõi đơn</b><span>Xem trạng thái đơn.</span></li></ol></div>
-<div><h3>11Ship</h3><ol class="steps"><li><b>Tạo tài khoản</b><span>Chọn vai trò cửa hàng hoặc shipper.</span></li><li><b>Gọi hoặc nhận chuyến</b><span>Cửa hàng gọi shipper; shipper nhận chuyến.</span></li><li><b>Theo dõi giao nhận</b><span>Xem trạng thái từng chuyến.</span></li></ol></div>
-</div></div></section>
-<section id="tai-ung-dung"><div class="wrap"><h2>Tải ứng dụng</h2><div class="apps"><div class="card"><h3>11Food</h3>${play('11Food')}</div><div class="card"><h3>11Ship</h3>${play('11Ship')}</div></div></div></section>`,
+<section><div class="wrap"><h2 class="center rule">Vì sao chọn 11?</h2><ul class="feats">
+${feat('fork', 'Đặt món dễ dàng', 'Tìm quán, chọn món và đặt ngay trên điện thoại.')}
+${feat('bike', 'Giao hàng tiện lợi', 'Kết nối cửa hàng và shipper gần bạn.')}
+${feat('pin', 'Phục vụ tại Cao Bằng', 'Tập trung cho nhu cầu của địa phương.')}
+${feat('check', 'Đơn giản, rõ ràng', 'Dễ dùng, theo dõi trạng thái đơn trong ứng dụng.')}</ul></div></section>
+<section class="alt" id="tai-ung-dung"><div class="wrap"><h2 class="center">Tải ứng dụng</h2><div class="duo duo--play"><div class="card"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="130" height="52">${playBtn('food')}</div><div class="card"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="130" height="65">${playBtn('ship')}</div></div></div></section>
+${CAO_BANG}`,
   }),
 
   '/food': layout({
-    path: '/food',
-    current: '/food',
+    path: '/food', current: '/food',
     title: '11Food — Thèm là có | Đặt đồ ăn tại Cao Bằng',
     desc: '11Food — Thèm là có. Khám phá quán ăn, chọn món yêu thích và đặt đồ ăn tại Cao Bằng.',
-    body: `<section class="hero"><div class="wrap"><div>${heroLogo('logo-11food-ui.png', '11Food')}<p class="eyebrow">Thèm là có</p><h1>Đói bụng? Mở 11Food.</h1><p class="lead">Khám phá quán ăn, chọn món yêu thích và đặt đồ ăn tại Cao Bằng.</p>${play('11Food')}</div>${ph('Ảnh món ăn thật / màn hình app đã nghiệm thu')}</div></section>
-<section><div class="wrap"><h2>Đặt món đơn giản</h2><ol class="steps"><li><b>Khám phá quán và món</b><span>Xem danh sách quán và thực đơn.</span></li><li><b>Tìm kiếm và chọn món</b><span>Tìm món bạn thèm, thêm vào đơn.</span></li><li><b>Đặt món</b><span>Xác nhận địa chỉ nhận và đặt.</span></li><li><b>Theo dõi đơn</b><span>Xem trạng thái đơn hàng trong ứng dụng.</span></li></ol></div></section>
-<section class="alt"><div class="wrap"><h2>Phạm vi phục vụ</h2><p class="lead">Hiện phục vụ tại Cao Bằng. Danh sách quán, thời gian giao và phí giao hiển thị trong ứng dụng.</p><p class="note">Số lượng quán, thời gian giao, phí và khuyến mại: chờ dữ liệu và quyết định của Owner, không công bố ở đây.</p></div></section>
-<section><div class="wrap"><h2>Câu hỏi thường gặp</h2>${faq([
-      ['11Food dùng ở đâu?', 'Tại Cao Bằng.'],
-      ['Tôi cần gì để đặt món?', 'Ứng dụng 11Food trên điện thoại Android và một tài khoản đăng ký bằng số điện thoại.'],
-      ['Làm sao xóa tài khoản?', 'Hướng dẫn xóa tài khoản sẽ có ở trang riêng sau khi chức năng được triển khai trên hệ thống chính thức.'],
-      ['Tôi là cửa hàng hoặc shipper?', 'Hãy xem 11Ship.'],
-    ])}
-<p><a class="btn btn--ghost" href="/ship">Xem 11Ship</a></p></div></section>`,
+    body: `<section class="hero hero--food"><div class="hero-art hero-art--food">${landscape('Phong cảnh Cao Bằng')}${bowl('Bát phở cách điệu')}</div><div class="wrap hero-text">
+<span class="chip">${icon('pin')}Cao Bằng</span>
+<p class="brandline"><img src="/brand/logo-11food-ui.png" alt="11Food" width="200" height="80"><span>| Thèm là có</span></p>
+<h1>Đói bụng? Mở 11Food.</h1><p class="lead">Khám phá quán ăn, chọn món yêu thích và đặt đồ ăn tại Cao Bằng.</p>${playBtn('food')}</div></section>
+<section class="pull"><div class="wrap"><ul class="feats feats--card">
+${feat('store', 'Khám phá quán ăn', 'Tìm quán ăn, cafe và nhiều món ngon quanh bạn.')}
+${feat('search', 'Chọn món dễ dàng', 'Xem thực đơn, chọn món yêu thích.')}
+${feat('bag', 'Đặt món nhanh gọn', 'Xác nhận đơn và đặt món ngay trên điện thoại.')}
+${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứng dụng.')}</ul></div></section>
+<section><div class="wrap"><h2>Đặt món đơn giản</h2><ol class="steps">${step('Chọn quán', 'Xem danh sách quán và thực đơn.')}${step('Chọn món', 'Tìm món bạn thèm, thêm vào đơn.')}${step('Đặt món', 'Xác nhận địa chỉ nhận và đặt.')}${step('Theo dõi đơn', 'Xem trạng thái đơn hàng.')}</ol></div></section>
+${CAO_BANG}
+<section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Food dùng cho ai?', 'Khách hàng muốn đặt đồ ăn. Cửa hàng và shipper dùng <a href="/ship">11Ship</a>.'], ...FAQ_COMMON])}</div></section>`,
   }),
 
   '/ship': layout({
-    path: '/ship',
-    current: '/ship',
+    path: '/ship', current: '/ship',
     title: '11Ship — Gọi là có | Giao hàng cho cửa hàng và shipper tại Cao Bằng',
     desc: '11Ship — Gọi là có. Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.',
-    body: `<section class="hero"><div class="wrap"><div>${heroLogo('logo-11ship-ui.png', '11Ship')}<p class="eyebrow">Gọi là có</p><h1>Có hàng cần giao? Mở 11Ship.</h1><p class="lead">Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.</p>${play('11Ship')}</div>${ph('Ảnh shipper thật / màn hình app đã nghiệm thu')}</div></section>
-<section><div class="wrap"><h2>Hai nhóm người dùng</h2><div class="apps">
-<div class="card"><h3>Cửa hàng</h3><p>Tạo yêu cầu giao hàng, gọi shipper và theo dõi từng chuyến.</p></div>
-<div class="card card--dark"><h3>Shipper</h3><p>Đăng ký, nhận chuyến và theo dõi giao nhận trong ứng dụng.</p></div></div>
-<p>Một tài khoản có thể có cả hai vai trò; sau khi đăng nhập bạn chọn vai trò muốn dùng.</p></div></section>
-<section class="alt"><div class="wrap"><h2>Cách dùng</h2><div class="grid2">
-<div><h3>Cửa hàng</h3><ol class="steps"><li><b>Đăng ký</b><span>Tạo tài khoản và hồ sơ cửa hàng.</span></li><li><b>Gọi shipper</b><span>Nhập điểm lấy, điểm giao.</span></li><li><b>Theo dõi</b><span>Xem trạng thái giao nhận.</span></li></ol></div>
-<div><h3>Shipper</h3><ol class="steps"><li><b>Đăng ký</b><span>Tạo hồ sơ shipper.</span></li><li><b>Nhận chuyến</b><span>Chọn chuyến trong khu vực hoạt động.</span></li><li><b>Giao hàng</b><span>Cập nhật trạng thái chuyến.</span></li></ol></div></div></div></section>
-<section><div class="wrap"><h2>Ví, thu nhập và phí</h2><p class="lead">Thông tin ví, phí và thu nhập theo chính sách thực tế của 11Ship, xem trong ứng dụng. Không có cam kết thu nhập.</p><p class="note">Chi tiết phí và chính sách ví: chờ Owner chốt nội dung công bố.</p></div></section>
-<section class="alt"><div class="wrap"><h2>Câu hỏi thường gặp</h2>${faq([
-      ['11Ship hoạt động ở đâu?', 'Tại Cao Bằng.'],
-      ['Tôi vừa là cửa hàng vừa là shipper?', 'Được, một tài khoản có thể có cả hai vai trò.'],
-      ['Làm sao xóa tài khoản?', 'Hướng dẫn xóa tài khoản sẽ có ở trang riêng sau khi chức năng được triển khai trên hệ thống chính thức.'],
-      ['Tôi muốn đặt đồ ăn?', 'Hãy xem 11Food.'],
-    ])}
-<p><a class="btn btn--ghost" href="/food">Xem 11Food</a></p></div></section>`,
+    body: `<section class="hero hero--ship"><div class="wrap hero-split"><div class="hero-text">
+<span class="chip chip--dark">${icon('pin')}Cao Bằng</span>
+<p class="brandline"><img class="onlight" src="/brand/logo-11ship-ui.png" alt="11Ship" width="200" height="100"><span>| Gọi là có</span></p>
+<h1>Có hàng cần giao? Mở 11Ship.</h1><p class="lead">Ứng dụng dành cho cửa hàng và shipper tại Cao Bằng.</p>${playBtn('ship', 'btn--primary')}</div>
+<div class="hero-route">${route('Tuyến giao hàng từ cửa hàng đến điểm giao')}</div></div></section>
+<section><div class="wrap"><h2>Dành cho ai?</h2><div class="duo">
+<article class="who"><span class="ficon">${icon('store')}</span><div><h3>Cửa hàng</h3><p>Gọi shipper và theo dõi từng đơn giao hàng.</p></div></article>
+<article class="who"><span class="ficon">${icon('bike')}</span><div><h3>Shipper</h3><p>Nhận đơn, giao hàng và theo dõi các chuyến của mình.</p></div></article></div>
+<p class="muted">Một tài khoản có thể có cả hai vai trò; sau khi đăng nhập bạn chọn vai trò muốn dùng.</p></div></section>
+<section class="alt"><div class="wrap"><h2>Cách hoạt động</h2><div class="duo">
+<div><h3>Cửa hàng</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo tài khoản và hồ sơ cửa hàng.')}${step('Gọi shipper', 'Nhập điểm lấy và điểm giao.')}${step('Theo dõi', 'Xem trạng thái giao nhận.')}</ol></div>
+<div><h3>Shipper</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo hồ sơ shipper để được duyệt.')}${step('Nhận đơn', 'Chọn đơn trong khu vực hoạt động.')}${step('Giao hàng', 'Cập nhật trạng thái chuyến giao.')}</ol></div></div></div></section>
+${CAO_BANG}
+<section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Ship dùng cho ai?', 'Cửa hàng và shipper. Muốn đặt đồ ăn, hãy dùng <a href="/food">11Food</a>.'], ['Tài khoản được duyệt như thế nào?', 'Hồ sơ quán hoặc hồ sơ shipper cần được duyệt trước khi bạn có thể bán hàng hoặc nhận đơn.'], ...FAQ_COMMON])}</div></section>`,
+  }),
+
+  '/ho-tro': layout({
+    path: '/ho-tro', current: '/ho-tro',
+    title: 'Hỗ trợ — 11Food và 11Ship', desc: 'Câu hỏi thường gặp và hỗ trợ người dùng 11Food, 11Ship.',
+    body: `<section class="doc"><div class="wrap narrow"><h1>Hỗ trợ</h1><p class="lead">Giải đáp nhanh cho người dùng 11Food và 11Ship.</p>
+<h2 id="faq">Câu hỏi thường gặp</h2>${faq([['11Food và 11Ship khác nhau thế nào?', '11Food dành cho khách hàng đặt đồ ăn. 11Ship dành cho cửa hàng và shipper.'], ['Dịch vụ phục vụ ở đâu?', 'Tại Cao Bằng.'], ['Mã xác minh gửi đến đâu?', 'Mã được gửi bằng tin nhắn SMS tới số điện thoại bạn nhập khi đăng ký.'], ['Tôi muốn xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.']])}
+<h2 id="lien-he">Liên hệ</h2><p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p></div></section>`,
+  }),
+
+  '/chinh-sach-quyen-rieng-tu': layout({
+    path: '/chinh-sach-quyen-rieng-tu', current: '',
+    title: 'Chính sách quyền riêng tư — 11Food và 11Ship', desc: 'Chính sách quyền riêng tư của 11Food và 11Ship.',
+    body: `<section class="doc"><div class="wrap narrow"><h1>Chính sách quyền riêng tư</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p><p>Nội dung chính sách quyền riêng tư đang được hoàn thiện và sẽ được đăng tại trang này.</p></div></section>`,
+  }),
+
+  '/dieu-khoan': layout({
+    path: '/dieu-khoan', current: '',
+    title: 'Điều khoản sử dụng — 11Food và 11Ship', desc: 'Điều khoản sử dụng của 11Food và 11Ship.',
+    body: `<section class="doc"><div class="wrap narrow"><h1>Điều khoản sử dụng</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p><p>Nội dung điều khoản sử dụng đang được hoàn thiện và sẽ được đăng tại trang này.</p></div></section>`,
+  }),
+
+  '/xoa-tai-khoan': layout({
+    path: '/xoa-tai-khoan', current: '',
+    title: 'Yêu cầu xóa tài khoản — 11Food và 11Ship', desc: 'Hướng dẫn yêu cầu xóa tài khoản 11Food và 11Ship.',
+    body: `<section class="doc"><div class="wrap narrow"><h1>Yêu cầu xóa tài khoản</h1><p class="lead">Áp dụng cho tài khoản 11Food và tài khoản 11Ship (cửa hàng, shipper). Hai ứng dụng dùng chung một tài khoản đăng nhập bằng số điện thoại.</p>
+${DELETE_URL === '' ? '<p>Chức năng yêu cầu xóa tài khoản trực tuyến đang được hoàn thiện và sẽ mở tại trang này.</p>' : `<p>Bạn cần số điện thoại và mật khẩu của tài khoản.</p><p><a class="btn btn--primary" href="${DELETE_URL}">Tiếp tục yêu cầu xóa tài khoản</a></p>`}</div></section>`,
   }),
 };

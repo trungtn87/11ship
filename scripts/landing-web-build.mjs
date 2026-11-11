@@ -5,7 +5,7 @@
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pages } from '../apps/landing-web/src/pages.mjs';
+import { pages, PUBLISH } from '../apps/landing-web/src/pages.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outIdx = process.argv.indexOf('--out');
@@ -26,5 +26,5 @@ for (const [path, html] of Object.entries(pages)) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'index.html'), html);
 }
-writeFileSync(join(dist, 'robots.txt'), 'User-agent: *\nDisallow: /\n# PREVIEW: remove this block when the Owner approves publication.\n');
+writeFileSync(join(dist, 'robots.txt'), PUBLISH ? 'User-agent: *\nAllow: /\n' : 'User-agent: *\nDisallow: /\n');
 console.log(`landing-web built into ${dist} (${Object.keys(pages).length} pages)`);
