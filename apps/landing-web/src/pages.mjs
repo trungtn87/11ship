@@ -80,7 +80,7 @@ const faq = (items) => items.map(([q, a]) => `<details class="qa"><summary>${q}<
 const feat = (ic, t, d) => `<li><span class="ficon">${icon(ic)}</span><div><b>${t}</b><span>${d}</span></div></li>`;
 const step = (t, d) => `<li><b>${t}</b><span>${d}</span></li>`;
 
-const CAO_BANG = `<section class="band"><div class="band-art">${img('banner-cao-bang.jpg', 'Thung lũng và dòng sông ở Cao Bằng', 600, 393, 'loading="lazy"')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
+const CAO_BANG = `<section class="band"><div class="band-art">${img('banner-cao-bang.webp', 'Hồ nước và núi đá ở Cao Bằng', 800, 515, 'loading="lazy"')}</div><div class="wrap"><div class="band-card">${icon('pin')}<div><h2>Cao Bằng</h2><p>Đồng hành cùng ẩm thực và cuộc sống nơi đây.</p></div></div></div></section>`;
 
 const FAQ_COMMON = [
   ['Ứng dụng dùng ở đâu?', 'Tại Cao Bằng.'],
