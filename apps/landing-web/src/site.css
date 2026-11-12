@@ -104,3 +104,45 @@ footer a{text-decoration:none;display:inline-flex;min-height:var(--tap-min);alig
 }
 @media(max-width:899px){.appcard{min-height:420px}.appcard-body{max-width:100%}.appcard>img{top:auto;bottom:0;width:100%;height:55%;-webkit-mask-image:linear-gradient(0deg,#000 55%,transparent);mask-image:linear-gradient(0deg,#000 55%,transparent)}.appcard--ship>img{-webkit-mask-image:linear-gradient(0deg,#000 55%,transparent);mask-image:linear-gradient(0deg,#000 55%,transparent)}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Home page — Figma "11 / Landing" (owner approved, 2026-11-12). Desktop 1440 px; mobile 390 px. */
+.loc{display:none;background:var(--c-yellow-faint);color:var(--c-yellow-strong);font-weight:700;font-size:13px;border-radius:12px;padding:6px 12px;white-space:nowrap}
+.hero-grid{display:grid;gap:var(--gap-6);align-items:center;padding-top:var(--gap-6);padding-bottom:var(--gap-6)}
+.hero--home{background:#fdf8e6}
+.eyebrow-chip{display:inline-flex;align-items:center;gap:var(--gap-2);background:var(--c-yellow-soft);color:#846908;font-weight:700;font-size:13px;border-radius:12px;padding:6px 12px;margin:0 0 var(--gap-4)}.eyebrow-chip .i{width:18px;height:18px}
+.hero--home h1{font-size:clamp(34px,6vw,51px);line-height:1.12}
+.hero--home .lead{margin-bottom:var(--gap-4)}
+.small{font-size:13px;margin:var(--gap-4) 0 0}
+.hero-photos{position:relative;height:260px}
+.hero-photos>div{position:absolute;overflow:hidden;border-radius:20px}
+.hero-photos img{width:100%;height:100%;object-fit:cover}
+.hp-main{left:0;top:0;width:100%;height:100%;border-radius:22px}
+.hp-food,.hp-ship{display:none}
+.kicker{color:var(--c-yellow-strong);font-weight:700;font-size:13px;margin:0 0 var(--gap-2)}
+.svc-sec{padding-top:var(--gap-8)}
+.svc{position:relative;overflow:hidden;border-radius:20px;border:1px solid var(--c-line);min-height:380px;display:flex;flex-direction:column}
+.svc-body{position:relative;z-index:2;padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-3);align-items:flex-start;max-width:100%}
+.svc-body p{margin:0}.svc .logo{height:auto;width:175px;max-width:60%}
+.svc img:not(.logo){position:absolute;object-fit:cover;width:100%;height:55%;bottom:0;left:0;-webkit-mask-image:linear-gradient(0deg,#000 60%,transparent);mask-image:linear-gradient(0deg,#000 60%,transparent)}
+.svc--food{background:#fffaed;border-color:#f2e7c4}.svc--food .tag{color:#92630e}
+.svc--ship{background:#ffc629;border-color:#f0b928}.svc--ship .tag{color:#624100}.svc--ship p{color:#241c0b}
+.btn--dark-cta{background:#181818;color:#fff}a.btn--dark-cta:hover{background:#000}
+.dl-sec{padding-top:var(--gap-8)}
+.dl{background:var(--c-black);color:#fff;border-radius:20px;padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-4)}
+.dl h2{color:#fff;font-size:24px;margin:0 0 var(--gap-2)}.dl p{margin:0;color:#dfdfe2}
+.stores{display:flex;flex-wrap:wrap;gap:var(--gap-3)}
+.store{display:inline-flex;align-items:center;gap:var(--gap-3);min-height:var(--control-h);padding:0 var(--gap-4);border:1px solid #83868d;border-radius:12px;background:#111215;color:#fff;font-weight:700;text-decoration:none}
+.store .i{color:var(--c-yellow);width:22px;height:22px}
+a.store:hover{background:#000}
+.store--soon{cursor:default;color:#dfdfe2}
+@media(min-width:760px){.hero-photos{height:380px}.hp-food,.hp-ship{display:block}.hp-main{width:62%;height:100%}.hp-food{right:0;top:0;width:36%;height:48%}.hp-ship{right:0;bottom:0;width:36%;height:48%}
+ .svc{min-height:260px;flex-direction:row}.svc-body{max-width:60%}.svc img:not(.logo){width:44%;height:100%;top:0;bottom:auto;left:auto;right:0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 40%);mask-image:linear-gradient(90deg,transparent,#000 40%)}
+ .dl{flex-direction:row;justify-content:space-between;align-items:center;padding:var(--gap-8)}
+ .svc-body{padding:28px}
+}
+@media(min-width:900px){
+ .loc{display:inline-block}
+ .hero-grid{grid-template-columns:1.05fr .95fr;gap:var(--gap-8)}
+ .hero--home .hero-text{padding:0}
+ .hero-photos{height:400px}
+}

@@ -51,6 +51,14 @@ const playBtn = (key, cls = 'btn--dark') => {
     : `<span class="btn ${cls} btn--soon" role="note">${icon('play')}Sắp có trên Google Play</span>`;
 };
 
+/** Store link for the download band: a real link only with a listing URL; otherwise a non-clickable "coming soon" badge. */
+const storeLink = (key, name) => {
+  const url = PLAY[key];
+  return url
+    ? `<a class="store" href="${url}" rel="noopener">${icon('play')}${name} trên Google Play</a>`
+    : `<span class="store store--soon" role="note">${icon('play')}${name}: sắp có trên Google Play</span>`;
+};
+
 function layout({ path, title, desc, current, body, dark = false }) {
   const canonical = SITE === '' ? '' : `<link rel="canonical" href="${SITE}${path}"><meta property="og:url" content="${SITE}${path}"><meta property="og:image" content="${SITE}/img/og-11.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`;
   const robots = PUBLISH ? '' : '<meta name="robots" content="noindex,nofollow">';
@@ -64,8 +72,8 @@ function layout({ path, title, desc, current, body, dark = false }) {
 <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/site.css"></head>
 <body>${SPRITE}<a class="skip" href="#main">Bỏ qua điều hướng</a>
 <header class="top"><div class="wrap bar"><a class="brand" href="/" aria-label="11 — trang chủ"><img src="/brand/logo-11-ui.png" alt="11" width="66" height="44"></a>
-<nav class="menu" aria-label="Chính">${nav}</nav>
-<div class="bar-cta">${playBtn('food', 'btn--primary btn--sm').replace('Sắp có trên Google Play', 'Sắp có trên Google Play')}</div>
+<span class="loc">Cao Bằng</span><nav class="menu" aria-label="Chính">${nav}</nav>
+<a class="btn btn--primary btn--sm bar-cta" href="/#tai-ung-dung">Tải ứng dụng</a>
 <details class="burger"><summary aria-label="Mở menu">${icon('menu')}</summary><div class="drawer">${nav}</div></details></div></header>
 <main id="main">${body}</main>
 <footer><div class="wrap"><div class="fgrid">
@@ -91,22 +99,36 @@ export const pages = {
   '/': layout({
     path: '/', current: '/',
     title: '11 — Cần là có | 11Food và 11Ship tại Cao Bằng',
-    desc: '11 — Cần là có. Hệ sinh thái đặt món và giao hàng tại Cao Bằng: 11Food cho khách đặt đồ ăn, 11Ship cho cửa hàng và shipper.',
-    body: `<section class="hero hero--home"><div class="hero-art">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div><div class="wrap hero-text">
-<h1 class="h1-brand"><img src="/brand/logo-11-ui.png" alt="11" width="190" height="127"><span>– Cần là có</span></h1>
-<p class="lead">Hệ sinh thái đặt món và giao hàng tại Cao Bằng, đồng hành cùng bạn trong cuộc sống hằng ngày.</p>
-<div class="cta"><a class="btn btn--primary" href="/food">${icon('fork')}Khám phá 11Food</a><a class="btn btn--ghost" href="/ship">${icon('bike')}Khám phá 11Ship</a></div></div></section>
-<section class="pull"><div class="wrap"><div class="duo">
-<article class="appcard appcard--food"><div class="appcard-body"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="170" height="68"><p class="tag">Thèm là có</p><p>Khám phá quán ăn, xem thực đơn và đặt đồ ăn tại Cao Bằng.</p><a class="btn btn--primary" href="/food">Tìm hiểu 11Food${icon('arrow')}</a></div>${img('card-food.webp', 'Phở vịt, bánh cuốn và hạt dẻ Cao Bằng', 1200, 900, 'loading="lazy"')}</article>
-<article class="appcard appcard--ship"><div class="appcard-body"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="170" height="85"><p class="tag">Gọi là có</p><p>Dành cho cửa hàng và shipper: gọi và nhận đơn giao hàng tại Cao Bằng.</p><a class="btn btn--primary" href="/ship">Tìm hiểu 11Ship${icon('arrow')}</a></div>${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'loading="lazy"')}</article>
+    desc: '11 — Cần là có. Một nơi cho nhu cầu đặt món và giao hàng tại Cao Bằng: 11Food cho khách đặt đồ ăn, 11Ship cho cửa hàng và shipper.',
+    body: `<section class="hero hero--home"><div class="wrap hero-grid">
+<div class="hero-text">
+<p class="eyebrow-chip">${icon('pin')}Dịch vụ tại Cao Bằng</p>
+<h1>11 — Cần là có.</h1>
+<p class="lead">Một nơi cho nhu cầu đặt món và giao hàng tại Cao Bằng. Chọn dịch vụ bạn cần, mọi thứ đều dễ dàng hơn.</p>
+<div class="cta"><a class="btn btn--primary" href="/food">Khám phá 11Food${icon('arrow')}</a><a class="btn btn--ghost" href="/ship">Khám phá 11Ship${icon('arrow')}</a></div>
+<p class="muted small">Tập trung phục vụ nhu cầu tại địa phương</p>
+</div>
+<div class="hero-photos">
+<div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div>
+<div class="hp-food">${img('card-food.webp', 'Phở vịt, bánh cuốn và hạt dẻ Cao Bằng', 1200, 900, 'loading="lazy"')}</div>
+<div class="hp-ship">${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'loading="lazy"')}</div>
 </div></div></section>
-<section><div class="wrap"><h2 class="center rule">Vì sao chọn 11?</h2><ul class="feats">
-${feat('fork', 'Đặt món dễ dàng', 'Tìm quán, chọn món và đặt ngay trên điện thoại.')}
-${feat('bike', 'Giao hàng tiện lợi', 'Kết nối cửa hàng và shipper gần bạn.')}
-${feat('pin', 'Phục vụ tại Cao Bằng', 'Tập trung cho nhu cầu của địa phương.')}
-${feat('check', 'Đơn giản, rõ ràng', 'Dễ dùng, theo dõi trạng thái đơn trong ứng dụng.')}</ul></div></section>
-<section class="alt" id="tai-ung-dung"><div class="wrap"><h2 class="center">Tải ứng dụng</h2><div class="duo duo--play"><div class="card"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="130" height="52">${playBtn('food')}</div><div class="card"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="130" height="65">${playBtn('ship')}</div></div></div></section>
-`,
+<section class="svc-sec"><div class="wrap">
+<p class="kicker">Chọn đúng dịch vụ</p>
+<h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
+<div class="duo">
+<article class="svc svc--food"><div class="svc-body"><img class="logo" src="/brand/logo-11food-ui.png" alt="11Food" width="175" height="69"><p class="tag">Thèm là có</p><p>Tìm quán, chọn món và đặt đồ ăn quanh bạn.</p><a class="btn btn--primary" href="/food">Tìm hiểu 11Food${icon('arrow')}</a></div>${img('card-food.webp', 'Phở vịt và bánh cuốn Cao Bằng', 1200, 900, 'loading="lazy"')}</article>
+<article class="svc svc--ship"><div class="svc-body"><img class="logo" src="/brand/logo-11ship-ui.png" alt="11Ship" width="175" height="87"><p class="tag">Gọi là có</p><p>Dành cho cửa hàng và shipper kết nối giao hàng.</p><a class="btn btn--dark-cta" href="/ship">Tìm hiểu 11Ship${icon('arrow')}</a></div>${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'loading="lazy"')}</article>
+</div></div></section>
+<section class="pull"><div class="wrap"><ul class="feats feats--card">
+${feat('fork', 'Đặt món dễ dàng', 'Xem quán và chọn món.')}
+${feat('bike', 'Giao hàng tiện lợi', 'Kết nối với shipper.')}
+${feat('pin', 'Phục vụ Cao Bằng', 'Tập trung địa phương.')}
+${feat('check', 'Rõ ràng, dễ dùng', 'Theo dõi đơn hàng.')}</ul></div></section>
+<section class="dl-sec" id="tai-ung-dung"><div class="wrap"><div class="dl">
+<div><h2>Sẵn sàng trải nghiệm 11?</h2><p>11Food và 11Ship hiện có cho điện thoại Android.</p></div>
+<div class="stores">${storeLink('food', '11Food')}${storeLink('ship', '11Ship')}</div>
+</div></div></section>`,
   }),
 
   '/food': layout({

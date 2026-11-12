@@ -71,7 +71,7 @@ describe('landing-web', () => {
       assert.doesNotMatch(page, /chờ Owner|Owner duyệt|CHUA-CHOT|placeholder|lorem/i, r);
       assert.doesNotMatch(page, /play\.google\.com|\.apk/i, r);
     }
-    assert.match(html('/'), /Sắp có trên Google Play/);
+    assert.match(html('/'), /sắp có trên Google Play/);
   });
 
   it('uses the locked brand: taglines, colours, font, approved logo files only', () => {
