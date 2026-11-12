@@ -351,15 +351,15 @@ export class NotificationRepository {
   }
 
   /**
-   * True when the recipient already has a notice of the SAME family (DELIVERY_, ORDER_, TOPUP_ ...) about the same object with a LATER version: the late
-   * one would announce a step backwards. The family keeps an Order version from being compared with a Delivery version on the same target id.
+   * P6-9 evidence only (never a reason to drop): does the recipient already hold a notice of the SAME family (DELIVERY_, ORDER_, TOPUP_ ...) about the
+   * same object? Recorded in the audit row as `newer_notice_exists`. Versions are not compared here.
    */
-  async hasNewerNotice(context: TransactionContext, userId: string, app: NotificationApp, kind: string, targetType: string, targetId: string, targetVersion: number): Promise<boolean> {
+  async hasNoticeOfFamily(context: TransactionContext, userId: string, app: NotificationApp, kind: string, targetType: string, targetId: string): Promise<boolean> {
     const result = await context.query(
       `SELECT 1 FROM app.notifications
-        WHERE recipient_user_id = $1::uuid AND app = $2 AND target_type = $3 AND target_id = $4::uuid AND target_version > $5::bigint AND split_part(kind, '_', 1) = split_part($6::text, '_', 1)
+        WHERE recipient_user_id = $1::uuid AND app = $2 AND target_type = $3 AND target_id = $4::uuid AND split_part(kind, '_', 1) = split_part($5::text, '_', 1)
         LIMIT 1`,
-      [userId, app, targetType, targetId, targetVersion, kind],
+      [userId, app, targetType, targetId, kind],
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -394,17 +394,30 @@ export class NotificationRepository {
    * number so a live app sees it, a later validity). It is never a per-delivery history.
    */
   async upsertCollapsedCard(context: TransactionContext, n: NewNotification): Promise<{ notificationId: string; refreshed: boolean }> {
+    // The card's times are the time of the EVENT (now minus its age). A refresh only happens when this event is not older than the card's last update:
+    // a late event may still push its own card reference, but it never moves an existing card backwards and never marks it unread again.
     const updated = await context.query<{ notification_id: string }>(
-      `UPDATE app.notifications
-          SET read_at = NULL, archived_at = NULL, updated_at = ${CLOCK}, seq = DEFAULT, title = $4, body = $5, source_event_id = $6::uuid,
-              valid_until = ${CLOCK} + ($7::bigint * interval '1 millisecond'), purge_after = ${CLOCK} + ($8::int * interval '1 day')
-        WHERE recipient_user_id = $1::uuid AND app = $2 AND dedupe_key = $3
-        RETURNING notification_id`,
-      [n.recipientUserId, n.app, n.dedupeKey, n.title, n.body, n.sourceEventId, n.validForMs, n.purgeDays],
+      `UPDATE app.notifications n
+          SET read_at = NULL, archived_at = NULL, updated_at = e.t, seq = DEFAULT, title = $4, body = $5, source_event_id = $6::uuid,
+              valid_until = CASE WHEN $7::bigint IS NULL THEN NULL ELSE e.t + ($7::bigint * interval '1 millisecond') END,
+              purge_after = e.t + ($8::int * interval '1 day'),
+              created_at = LEAST(n.created_at, e.t)
+         FROM (SELECT ${CLOCK} - ($9::bigint * interval '1 millisecond') AS t) AS e
+        WHERE n.recipient_user_id = $1::uuid AND n.app = $2 AND n.dedupe_key = $3 AND n.updated_at <= e.t
+        RETURNING n.notification_id`,
+      [n.recipientUserId, n.app, n.dedupeKey, n.title, n.body, n.sourceEventId, n.validForMs, n.purgeDays, Math.max(0, n.ageMs ?? 0)],
     );
     const hit = updated.rows[0];
     if (hit !== undefined) {
       return { notificationId: hit.notification_id, refreshed: true };
+    }
+    const existing = await context.query<{ notification_id: string }>(
+      `SELECT notification_id FROM app.notifications WHERE recipient_user_id = $1::uuid AND app = $2 AND dedupe_key = $3`,
+      [n.recipientUserId, n.app, n.dedupeKey],
+    );
+    const current = existing.rows[0];
+    if (current !== undefined) {
+      return { notificationId: current.notification_id, refreshed: false };
     }
     const created = await this.insertNotification(context, n);
     return { notificationId: created.notificationId, refreshed: !created.created };

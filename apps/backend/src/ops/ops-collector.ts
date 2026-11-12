@@ -13,7 +13,7 @@ import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactRe
 import { DiscordClient, OPS_DISCORD_CLIENT, buildDiscordBody } from './ops-discord';
 import { OpsEngine } from './ops-engine';
 import { OpsIncidentRepository } from './ops-incident-repository';
-import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateStaleEvents, evaluateSustained } from './ops-monitors';
+import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateStaleHigh, evaluateStaleNormal, evaluateSustained } from './ops-monitors';
 import { OpsReleaseRepository } from './ops-release-repository';
 import { OpsRepository } from './ops-repository';
 import { OpsSettingsService } from './ops-settings-service';
@@ -421,14 +421,14 @@ export class OpsCollector {
     });
   }
 
-  /** P6-9: the consumer writes one metric point per dropped / late-delivered event; Operations looks at the last 30 minutes. */
+  /** P6-9: the consumer writes one metric point per dropped / late event; Operations looks at the last 30 minutes, once per check. */
   async #staleEvents(): Promise<void> {
     const windowMinutes = 30;
     await this.transactions.withTransaction(async (context) => {
       const since = Date.now() - windowMinutes * 60_000;
       const count = async (key: string): Promise<number> => (await this.repo.recentMetrics(context, key, since, 400)).length;
-      const facts = { dropped: await count(STALE_METRIC.dropped), deliveredLate: await count(STALE_METRIC.deliveredLate), deliveredLateHigh: await count(STALE_METRIC.deliveredLateHigh), windowMinutes };
-      await this.engine.observe(context, evaluateStaleEvents(facts));
+      await this.engine.observe(context, evaluateStaleNormal({ dropped: await count(STALE_METRIC.dropped), deliveredLate: await count(STALE_METRIC.deliveredLate), windowMinutes }));
+      await this.engine.observe(context, evaluateStaleHigh({ deliveredLateHigh: await count(STALE_METRIC.deliveredLateHigh), windowMinutes }));
     });
   }
 

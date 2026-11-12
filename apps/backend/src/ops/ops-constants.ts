@@ -104,6 +104,8 @@ export const CHECK_EXTERNAL_PROBE = 'external_probe';
 export const CHECK_NOTIFICATIONS = 'notifications';
 /** P6-9: M08 events older than 24 h that were dropped or delivered late (metric `m08_stale_event.*`). */
 export const CHECK_M08_STALE_EVENT = 'm08_stale_event';
+/** P6-9 (S-3): a finance/account fact delivered more than 24 h late — its own check and fingerprint, so it can close while the ordinary one stays open. */
+export const CHECK_M08_STALE_HIGH = 'm08_stale_high';
 export const CHECK_M14 = 'm14';
 export const CHECK_OTP_SEND = 'otp_sending';
 
