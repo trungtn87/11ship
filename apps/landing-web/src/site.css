@@ -160,3 +160,5 @@ a.store:hover{background:#000}
 
 .hero-sub{font-size:clamp(18px,2.6vw,24px);font-weight:800;color:var(--c-yellow-strong);margin:0 0 var(--gap-3)}
 .hero-tag{font-weight:700;color:var(--c-ink);margin:var(--gap-4) 0 0}
+
+.fbrand{display:flex;align-items:center;gap:var(--gap-3)}.fbrand b{font-size:18px;color:#fff}.fbrand+p{margin:var(--gap-3) 0 0}

@@ -91,7 +91,7 @@ function layout({ path, title, desc, current, body, dark = false }) {
 <details class="burger"><summary aria-label="Mở menu">${icon('menu')}</summary><div class="drawer">${nav}</div></details></div></header>
 <main id="main">${body}</main>
 <footer><div class="wrap"><div class="fgrid">
-<div><span class="logo-chip"><img src="/brand/logo-11-ui.png" alt="11 — Cần là có" width="54" height="36"></span><p><b>11 — Cần là có.</b><br>Đặt món và giao hàng tại Cao Bằng.</p></div>
+<div><div class="fbrand"><span class="logo-chip"><img src="/brand/logo-11-ui.png" alt="11" width="54" height="36"></span><b>Cần là có.</b></div><p>Đặt món và giao hàng tại Cao Bằng.</p></div>
 <div><h3>Ứng dụng</h3><ul><li><a href="/food">11Food — Thèm là có</a></li><li><a href="/ship">11Ship — Gọi là có</a></li></ul></div>
 <div><h3>Hỗ trợ</h3><ul><li><a href="/ho-tro">Trung tâm hỗ trợ</a></li><li><a href="/ho-tro#faq">Câu hỏi thường gặp</a></li><li><a href="/ho-tro#lien-he">Liên hệ</a></li></ul></div>
 <div><h3>Pháp lý</h3><ul><li><a href="/chinh-sach-quyen-rieng-tu">Chính sách quyền riêng tư</a></li><li><a href="/dieu-khoan">Điều khoản sử dụng</a></li><li><a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a></li></ul></div>
