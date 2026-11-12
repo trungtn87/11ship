@@ -53,6 +53,25 @@ Rollback theo cặp:
 
 Các bước đầu của runbook (`load`, `up`, `connect`) không đổi; chỉ bổ sung kiểm tra `check` ở bước 2.
 
+## Gate trong luồng deploy backend thật, probe khi khởi động, quy tắc phiên bản dữ liệu (P6-1 vòng 2)
+
+**Deploy backend thật** là workflow `deploy-vps` → `scripts/deploy/github-vps-deploy.sh` → `scripts/deploy/vps-update.py update` trên VPS. Khi `M14_ROUTING_ORIGIN` đã cấu hình trong `/etc/11ship/staging.env`:
+- `update` chạy **gate gateway** (`ops/m14/gateway-gate.sh`, cùng hàm với `vps.sh check`) ngay sau khi giải nén release, **trước** bật timer, backup, migrate và restart. Gate đỏ → deploy dừng, không có gì thay đổi, thông báo lý do.
+- `rollback` (quay về release trước) chạy cùng gate **trước** khi đổi code: cặp backend↔gateway phải hợp lệ trước khi quay về. Gate script lấy từ release đang bị thay thế (mới hơn).
+- Khi chưa cấu hình routing, gate không chạy (không đổi hành vi cũ).
+- Nếu không có gate trong release (release cũ), `update` dừng: nâng release có gate trước.
+
+**Probe phía backend** (`apps/backend/src/delivery/m14-gateway-probe.ts`): lúc khởi động, backend hỏi `/health` của gateway **không chặn** việc khởi động. Gateway không sẵn sàng hoặc thiếu `routeVersion` hợp lệ → log ERROR một lần (thiếu/sai version) hoặc WARN một lần (chưa sẵn sàng/không tới được). Probe không đổi tuyến; route vẫn "chưa có tuyến" cho đến khi gateway đạt. Không có endpoint readiness nội bộ mới: readiness công khai không phụ thuộc gateway, để gateway tạm tắt không kéo backend ra khỏi luồng.
+
+**Quy tắc phiên bản dữ liệu (routeVersion = engine + profile digest + M14_DATA_VERSION):**
+- Bất kỳ thay đổi nào của **image Valhalla**, **configure/build graph** hoặc **PBF** đều **BẮT BUỘC đổi `M14_DATA_VERSION`** trước khi nâng. Nếu không, `routeVersion` giữ nguyên trong khi tuyến đã khác, và backend không phát hiện được.
+- `vps.sh check` cảnh báo khi image đổi mà `routeVersion` không đổi (so với lần kiểm tra trước trên máy này). Cảnh báo là cần thiết, không thay thế quy tắc trên.
+- Đổi tham số profile (shortest, highways, snapping) tự đổi `routeVersion` nhờ digest; không cần đổi `M14_DATA_VERSION`.
+
+**Backlog (chưa làm):** manifest bất biến băm image digest + cấu hình graph vào `routeVersion`; deploy script riêng cho gateway (hiện nâng gateway bằng `vps.sh`, gate chỉ chặn ở phía backend).
+
+**Giới hạn đã biết:** probe chỉ chạy lúc khởi động (gateway hỏng sau đó được thấy qua route "chưa có tuyến", không có log riêng); cache tuyến của backend tối đa 5 phút, `restart` backend xóa cache ngay sau khi đổi gateway.
+
 ## Kiểm tra sau khi nối backend (cùng Owner)
 1. Phí M06: đặt một đơn thử có quán và điểm giao đều có tọa độ trong vùng: quãng đường đường bộ và phí phải theo bảng M06 (không 10.000đ mặc định, không "chưa xác định"). Đối chiếu km với `load-test`/smoke.
 2. Trang chủ khách: danh sách quán hiện khoảng cách đường bộ.

@@ -35,6 +35,41 @@ REFRESH_WRAPPER_CONTENT = '\n'.join([
 ]) + '\n'
 
 
+M14_GATE = 'ops/m14/gateway-gate.sh'
+
+
+def m14_origin():
+    """The routing origin configured for the backend (read only, never printed). None when routing is not configured."""
+    try:
+        text = Path(ENV).read_text()
+    except OSError:
+        raise RuntimeError('backend environment unreadable: routing gate cannot run; deploy stopped') from None
+    for line in text.splitlines():
+        if line.startswith('M14_ROUTING_ORIGIN='):
+            return line.split('=', 1)[1].strip() or None
+    return None
+
+
+def m14_gate(release, stage):
+    """Gateway gate (P6-1 review round 2, SỬA-6): when routing is configured, the gateway must be ready with a valid routeVersion BEFORE this
+    release is migrated, restarted or rolled back. A red gate stops the deploy; nothing has changed yet. Same function as vps.sh check."""
+    origin = m14_origin()
+    if origin is None:
+        return
+    script = release / M14_GATE
+    if not script.is_file():
+        raise RuntimeError(stage + ': routing gate script is missing from the release; deploy stopped, nothing changed')
+    try:
+        result = subprocess.run(['bash', str(script), origin], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except (subprocess.SubprocessError, OSError):
+        raise RuntimeError(stage + ': routing gate could not run; deploy stopped, nothing changed') from None
+    if result.returncode != 0:
+        # The gate prints fixed messages only (its origin argument is the routing address, which the backend already uses).
+        detail = result.stderr.decode(errors='replace').strip().splitlines()[:1]
+        raise RuntimeError(stage + ': routing gateway is not ready for this backend; deploy stopped, nothing changed' + (' (' + detail[0] + ')' if detail else ''))
+    print(result.stdout.decode(errors='replace').strip())
+
+
 def run(args, **kwargs):
     # Suppress child stderr: DB/network errors can contain secrets. No shell evaluation.
     try:
@@ -386,6 +421,7 @@ def update(archive, sha, approve_reviewed_migrations=False):
     verify_service()
     old = code_release(BASE / 'current')
     new = extract(archive, sha)
+    m14_gate(new, 'update')
     run(['systemctl', 'enable', '--now', '11ship-attestation-refresh.timer'])
     run(['systemctl', 'start', '11ship-attestation-refresh.service'])
     run(['systemctl', 'enable', '--now', '11ship-auth-readiness.timer'])
@@ -429,6 +465,8 @@ def rollback():
     # No down/restore. All updates using this tool gate migrations for backward compatibility.
     if json.loads(probe(old, 'plan', operator=True)):
         raise RuntimeError('database differs from current release; reconcile before code rollback')
+    # Pair check before rollback: the gateway must be ready with a valid routeVersion. The gate script comes from the release being left (it is newer).
+    m14_gate(old, 'rollback')
     probe(target)
     switch(target, old)
     link('previous', old)

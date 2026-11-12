@@ -109,20 +109,32 @@ rollback() {
   fi
 }
 
-# Gate before the backend is pointed at the gateway (ROUTE_GATEWAY_OUTDATED, SỬA-1): the gateway must answer /health with ready:true and a routeVersion
-# that the backend accepts (same pattern as apps/backend/src/delivery/m14-route-client.ts). Read-only. Rollout order: gateway, this check, then backend.
-gateway_preflight() {
-  local body version
-  body="$(curl -sS --max-time 4 "$origin/health" 2>/dev/null)" || die "gateway $origin/health did not answer: do NOT connect the backend. Fix the gateway first (run up), then check again"
-  grep -q '"ready": *true' <<<"$body" || die 'gateway is not ready (ready:false, or no valid routeVersion): do NOT connect the backend. Upgrade the gateway first'
-  version="$(grep -o '"routeVersion": *"[^"]*"' <<<"$body" | head -1 | cut -d'"' -f4)"
-  grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$' <<<"$version" || die 'gateway routeVersion is missing or malformed: do NOT connect the backend. The gateway is older than the backend or misconfigured'
-  say "gateway check OK: ready, routeVersion=$version"
+# The gateway gate is shared with the deploy script: ops/m14/gateway-gate.sh (gateway_preflight, the same function).
+# shellcheck source=gateway-gate.sh
+. "$here/gateway-gate.sh"
+
+# SỬA-7 (cheap part): the image changed but routeVersion did not. Changing the image or the graph build without changing M14_DATA_VERSION
+# leaves the version identical while the routes differ. Compares with the last checked image on this host.
+image_state="${M14_IMAGE_STATE:-/var/lib/11ship-m14/routeversion-image.state}"
+check_image_change() {
+  local img last_img last_ver
+  img="$(docker image inspect --format '{{.Id}}' "$image:current" 2>/dev/null || true)"
+  [ -n "$img" ] || return 0
+  mkdir -p "$(dirname "$image_state")" 2>/dev/null || return 0
+  if [ -f "$image_state" ]; then
+    read -r last_img last_ver < "$image_state" || true
+    if [ -n "${last_img:-}" ] && [ "$last_img" != "$img" ] && [ "${last_ver:-}" = "$1" ]; then
+      printf 'WARNING: the routing image changed but routeVersion did not (%s). Change M14_DATA_VERSION before this image serves routes (ops/runbooks/m14-valhalla-vps.md, rule SỬA-7)
+' "$1" >&2
+    fi
+  fi
+  printf '%s %s
+' "$img" "$1" > "$image_state" 2>/dev/null || true
 }
 
 connect() {
   need_root
-  gateway_preflight
+  gateway_preflight "$origin"
   [ -f "$env_file" ] || die "$env_file not found"
   local backup="$env_file.m14-backup.$(date -u +%Y%m%dT%H%M%SZ)"
   cp -p "$env_file" "$backup"
@@ -177,7 +189,7 @@ case "$cmd" in
   build) build ;;
   load) load "$@" ;;
   up) up ;;
-  check) gateway_preflight ;;
+  check) gateway_preflight "$origin" && check_image_change "$GATEWAY_ROUTE_VERSION" ;;
   connect) connect ;;
   status) status ;;
   load-test) loadtest "$@" ;;

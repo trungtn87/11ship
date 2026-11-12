@@ -27,7 +27,7 @@ export const ZERO_LENGTH_ROUTE_VERSION = 'ZERO_LENGTH';
 /** Longest accepted shape string and its largest decoded point count; a bigger answer is "unavailable", never truncated. */
 export const MAX_SHAPE_CHARS = 60_000;
 export const MAX_SHAPE_POINTS = 5000;
-const ROUTE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/;
+export const ROUTE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/;
 
 /**
  * ROUTE_GATEWAY_OUTDATED: the answer has a readable distance and time but no route_version or no shape, i.e. a routing gateway older than this backend.
@@ -36,7 +36,7 @@ const ROUTE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/;
 export type RouteFailureReason = 'ROUTING_NOT_CONFIGURED' | 'POINT_INVALID' | 'ROUTE_TIMEOUT' | 'ROUTE_UNAVAILABLE' | 'ROUTE_GATEWAY_OUTDATED';
 export type RouteResult = { readonly status: 'ROUTE'; readonly leg: RouteLeg } | { readonly status: 'UNAVAILABLE'; readonly reason: RouteFailureReason };
 
-export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 /** Largest number of legs one matrix may ask for (the routing service allows few requests per minute; beyond this the answer is "unavailable"). */
 export const MAX_MATRIX_LEGS = 20;
@@ -153,8 +153,12 @@ const samePoint = (a: LatLng, b: LatLng): boolean => a.lat === b.lat && a.lng ==
 @Injectable()
 export class M14RouteClient implements RouteMatrixPort {
   readonly #cache = new Map<string, CacheEntry>();
-  /** The route_version of the last answer the gateway gave. A different version clears the cache, so no leg of an earlier profile or map data survives. */
+  /** The route_version of the generation that is current. A different version clears the cache, so no leg of an earlier profile or map data survives. */
   #servedRouteVersion: string | undefined;
+  /** Sequence number handed to each request when it is sent (monotonic). */
+  #issued = 0;
+  /** Sequence of the answer that defines the current generation. An answer sent earlier than that never replaces it (request race, SỬA-5). */
+  #generation = 0;
 
   constructor(
     @Optional() @Inject(M14_ROUTING) private readonly config?: M14RoutingConfig,
@@ -186,6 +190,8 @@ export class M14RouteClient implements RouteMatrixPort {
       return { status: 'ROUTE', leg: cached.leg };
     }
     try {
+      this.#issued += 1;
+      const sequence = this.#issued;
       const fetcher: Fetcher = this.fetcher ?? ((url, init) => fetch(url, init));
       const response = await fetcher(`${config.origin}/route`, {
         method: 'POST',
@@ -201,17 +207,22 @@ export class M14RouteClient implements RouteMatrixPort {
       if (leg === undefined) {
         return { status: 'UNAVAILABLE', reason: isGatewayOutdated(body) ? 'ROUTE_GATEWAY_OUTDATED' : 'ROUTE_UNAVAILABLE' };
       }
-      if (this.#servedRouteVersion !== undefined && this.#servedRouteVersion !== leg.routeVersion) {
-        this.#cache.clear();
-      }
-      this.#servedRouteVersion = leg.routeVersion;
-      if (this.#cache.size >= CACHE_MAX) {
-        const oldest = this.#cache.keys().next();
-        if (oldest.done !== true) {
-          this.#cache.delete(oldest.value);
+      // A late answer (sent before the current generation) still returns its own leg to its caller, but it neither clears the cache,
+      // nor sets the served version, nor is cached: an older profile must never replace a newer one.
+      if (sequence >= this.#generation) {
+        if (this.#servedRouteVersion !== undefined && this.#servedRouteVersion !== leg.routeVersion) {
+          this.#cache.clear();
         }
+        this.#servedRouteVersion = leg.routeVersion;
+        this.#generation = sequence;
+        if (this.#cache.size >= CACHE_MAX) {
+          const oldest = this.#cache.keys().next();
+          if (oldest.done !== true) {
+            this.#cache.delete(oldest.value);
+          }
+        }
+        this.#cache.set(key, { from, to, leg, atMs: nowMs });
       }
-      this.#cache.set(key, { from, to, leg, atMs: nowMs });
       return { status: 'ROUTE', leg };
     } catch (error) {
       const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';

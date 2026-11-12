@@ -1,4 +1,4 @@
-import { m14RouteAnswer } from './support/m14-fake-route';
+import { m14HealthAnswer, m14RouteAnswer } from './support/m14-fake-route';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -20,6 +20,13 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
 
   beforeAll(async () => {
     router = http.createServer((request, response) => {
+      if (request.method === 'GET') {
+        // The backend's startup probe of /health (M14GatewayProbe): answered, not recorded as a route request.
+        request.resume();
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(m14HealthAnswer()));
+        return;
+      }
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', () => {

@@ -232,3 +232,48 @@ describe('M14 gateway contract: old gateway, version flips, exact endpoints (P6-
     expect(second).toMatchObject({ status: 'ROUTE', leg: { distanceM: 2000 } });
   });
 });
+
+describe('M14 request race (P6-1 review round 2, SỬA-5)', () => {
+  type Reply = { ok: boolean; status: number; json(): Promise<unknown> };
+  const config = { origin: 'https://route.test', timeoutMs: 50 };
+  const OTHER_VERSION = 'valhalla-3.9.1/motorcycle-default-0badc0de/abc123def456';
+  const p1 = { lat: 22.66, lng: 106.25 };
+  const p2 = { lat: 22.67, lng: 106.26 };
+  const p3 = { lat: 22.61, lng: 106.21 };
+  const p4 = { lat: 22.62, lng: 106.22 };
+  const reply = (routeVersion: string): Reply => ({ ok: true, status: 200, json: async () => answer(6.2, 600, { routeVersion }) });
+
+  it('a request sent earlier that answers after a newer generation never replaces it: no old version in cache, served version or matrix', async () => {
+    const waiting: Array<(value: Reply) => void> = [];
+    const client = new M14RouteClient(config, () => new Promise<Reply>((resolve) => { waiting.push(resolve); }));
+
+    const earlier = client.routeResult(p1, p2, 1000); // sent first, answered last
+    const newer = client.routeResult(p3, p4, 1000); // sent second, answered first
+    expect(waiting).toHaveLength(2);
+
+    waiting[1]?.(reply(OTHER_VERSION));
+    await expect(newer).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: OTHER_VERSION } });
+
+    waiting[0]?.(reply(VERSION));
+    // The late caller still gets the leg it asked for (its own answer), so nothing is lost for that caller.
+    await expect(earlier).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: VERSION } });
+
+    // Not cached: the older pair is asked again, not served from the late answer.
+    const again = client.routeResult(p1, p2, 1500);
+    expect(waiting).toHaveLength(3);
+    waiting[2]?.(reply(OTHER_VERSION));
+    await expect(again).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: OTHER_VERSION } });
+
+    // The newer generation was not cleared by the late answer: its pair is still a cache hit (no request).
+    const hit = client.routeResult(p3, p4, 1600);
+    expect(waiting).toHaveLength(3);
+    await expect(hit).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: OTHER_VERSION } });
+
+    // A matrix after the race is built from the newer version only, never mixed with the old one.
+    const matrix = client.durations([p1, p2]);
+    expect(waiting).toHaveLength(5);
+    waiting[3]?.(reply(OTHER_VERSION));
+    waiting[4]?.(reply(OTHER_VERSION));
+    await expect(matrix).resolves.toMatchObject({ kind: 'ok', routeVersion: OTHER_VERSION });
+  });
+});

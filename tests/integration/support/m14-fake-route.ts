@@ -8,3 +8,8 @@ const SHAPE = encodePolyline6([{ lat: 22.665, lng: 106.258 }, { lat: 22.674, lng
 export function m14RouteAnswer(lengthKm: number, timeSeconds = 420): unknown {
   return { trip: { summary: { length: lengthKm, time: timeSeconds }, legs: [{ shape: SHAPE }] }, route_version: FAKE_ROUTE_VERSION };
 }
+
+// The answer of a fake M14 gateway to the backend's startup probe (GET /health, apps/backend/src/delivery/m14-gateway-probe.ts): ready, same version.
+export function m14HealthAnswer(): unknown {
+  return { ready: true, engine: 'Valhalla 3.9.1', costing: 'motorcycle', shortest: true, routeVersion: FAKE_ROUTE_VERSION };
+}
