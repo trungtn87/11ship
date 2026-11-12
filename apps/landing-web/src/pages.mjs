@@ -135,7 +135,7 @@ export const pages = {
 <p class="lead">Từ món ngon yêu thích đến những chuyến giao hàng tiện lợi, 11 luôn sẵn sàng đáp ứng nhu cầu hằng ngày của bạn ngay tại Cao Bằng.</p>
 <p class="hero-tag">Nhanh chóng, đơn giản và gần gũi.</p>
 </div>
-<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', '11Food và 11Ship tại Cao Bằng', 1672, 941, 'fetchpriority="high"')}</div></div></div></div></section>
+<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', '11Food và 11Ship tại Cao Bằng', 2000, 1125, 'fetchpriority="high"')}</div></div></div></div></section>
 <section class="svc-sec"><div class="wrap">
 <p class="kicker">Chọn đúng dịch vụ</p>
 <h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
