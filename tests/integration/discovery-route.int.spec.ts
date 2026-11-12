@@ -7,7 +7,7 @@ import { AuthApp, dataOf, startAuthApp } from './support/auth-fixtures';
 import { createCategory } from './support/menu-fixtures';
 import { completeSetup, createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 
-// Issue #190, section 6 — the road distance on the shop cards: from the customer's position to the PICKUP point of each public shop, by the M14 routing
+// Issue #190, section 6 — the road distance on the shop cards: from the PICKUP point of each public shop to the customer's position (P6-4 / #294), by the M14 routing
 // service (here a stand-in that answers a fixed road length, longer than any straight line), through the real Nest pipeline.
 describe('issue #190 — POST /v1/discovery/route-distances', () => {
   let app: AuthApp;
@@ -22,14 +22,17 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', () => {
-        hits.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        const asked = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { locations: { lat: number; lon: number }[] };
+        hits.push(asked);
         response.setHeader('content-type', 'application/json');
         if (!reachable) {
           response.statusCode = 400;
           response.end(JSON.stringify({ error_code: 442 }));
           return;
         }
-        response.end(JSON.stringify({ trip: { summary: { length: ROAD_KM, time: 1200 } } }));
+        // One-way roads: only a leg that STARTS at a shop pickup point (lat 21.0, lon 105.8) has the shop -> GPS length; the reverse is shorter.
+        const fromShop = asked.locations[0]?.lat === 21 && asked.locations[0]?.lon === 105.8;
+        response.end(JSON.stringify({ trip: { summary: { length: fromShop ? ROAD_KM : ROAD_KM - 4, time: 1200 } } }));
       });
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
@@ -52,7 +55,7 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
     return owner;
   }
 
-  it('answers the ROAD length from the customer position to the shop pickup point, not a straight line, and not the leg an order is priced with', async () => {
+  it('answers the ROAD length from the shop pickup point to the customer position, not a straight line, and not the leg an order is priced with', async () => {
     hits = [];
     const shop = await publicShop();
     const origin = { lat: 21.05, lng: 105.85 };
@@ -63,8 +66,9 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
     // The fixture's road is not the straight line: this is what proves the number is a route and not Haversine.
     const straight = haversineMeters(origin, { lat: 21.0, lng: 105.8 });
     expect(Math.abs(straight - ROAD_KM * 1000)).toBeGreaterThan(2000);
-    // The routing service was asked customer -> pickup (two points, pickup from the server's own row).
-    expect(hits).toEqual([{ locations: [{ lat: 21.05, lon: 105.85 }, { lat: 21, lon: 105.8 }] }]);
+    // The routing service was asked pickup -> customer GPS (pickup from the server's own row); the reverse leg answers 7.2 km, so the 11200 above
+    // also proves the direction.
+    expect(hits).toEqual([{ locations: [{ lat: 21, lon: 105.8 }, { lat: 21.05, lon: 105.85 }] }]);
   });
 
   it('a repeated question with the same position is answered from the short cache: no new routing call', async () => {

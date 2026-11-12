@@ -11,7 +11,7 @@ export type RouteDistanceStatus = 'ROUTE' | 'UNAVAILABLE';
 export interface RouteDistanceEntry {
   readonly shop_id: string;
   readonly status: RouteDistanceStatus;
-  /** Road distance in whole metres from the customer's position to the shop's pickup point; null unless status is ROUTE. */
+  /** Road distance in whole metres from the shop's pickup point to the customer's current position; null unless status is ROUTE. */
   readonly distance_m: number | null;
 }
 
@@ -21,8 +21,9 @@ export const MAX_CONCURRENT_ROUTES = 4;
 export const MAX_QUEUED_ROUTES = 60;
 
 /**
- * Road distance for the shop cards of Home and Search (issue #190, section 6): from the customer's CURRENT position to the PICKUP POINT of each shop,
- * by the M14 routing service. It is NOT the leg shop -> delivery address that M06 prices an order with; the two never share a value.
+ * Road distance for the shop cards of Home and Search (issue #190, section 6; direction fixed by P6-4 / #294): from the PICKUP POINT of each shop to the
+ * customer's CURRENT position (GPS), by the M14 routing service. Roads are one-way, so the reverse leg may differ and is never used. It is NOT the leg
+ * shop -> delivery address that M06 prices an order with and never uses a saved delivery address; the two never share a value.
  *
  * Only shops customers may see are routed (the same gate as the shop page), and the pickup point comes from the server's own row, never from the
  * request. No route, no routing service, a point without a road, a timeout or too much load is UNAVAILABLE: no straight line and no invented number
@@ -62,7 +63,7 @@ export class DiscoveryRouteService {
         if (!available || pickup === undefined) {
           return { shop_id: shopId, status: 'UNAVAILABLE', distance_m: null };
         }
-        const leg = await this.#limited(() => this.routes.route(input.origin, pickup));
+        const leg = await this.#limited(() => this.routes.route(pickup, input.origin));
         return leg === undefined ? { shop_id: shopId, status: 'UNAVAILABLE', distance_m: null } : { shop_id: shopId, status: 'ROUTE', distance_m: leg.distanceM };
       }),
     );
