@@ -58,9 +58,12 @@ const playBtn = (key, cls = 'btn--dark') => {
 };
 
 /** Badge of the download band: link when the URL is set, otherwise a "coming soon" note (never a fake link). */
-const badge = (url, store, platform) => url
-  ? `<a class="store" href="${url}" rel="noopener">${icon('play')}<span><b>${store}</b><small>${platform}</small></span></a>`
-  : `<span class="store store--soon" role="note">${icon('play')}<span><b>${store}</b><small>${platform}: sắp có</small></span></span>`;
+const badge = (url, store, platform, logo) => {
+  const mark = `<img class="store-logo" src="/img/store/${logo}" alt="" aria-hidden="true" width="28" height="28">`;
+  return url
+    ? `<a class="store" href="${url}" rel="noopener">${mark}<span><b>${store}</b><small>${platform}</small></span></a>`
+    : `<span class="store store--soon" role="note">${mark}<span><b>${store}</b><small>${platform}: sắp có</small></span></span>`;
+};
 
 /** Store link for the download band: a real link only with a listing URL; otherwise a non-clickable "coming soon" badge. */
 const storeLink = (key, name) => {
@@ -154,7 +157,7 @@ ${feat('pin', 'Phục vụ Cao Bằng', 'Tập trung địa phương.')}
 ${feat('check', 'Rõ ràng, dễ dùng', 'Theo dõi đơn hàng.')}</ul></div></section>
 <section class="dl-sec" id="tai-ung-dung"><div class="wrap"><div class="dl">
 <div><h2>Sẵn sàng trải nghiệm 11?</h2><p>11Food và 11Ship dành cho Android và iOS.</p></div>
-<div class="stores">${badge(STORE.googlePlay, 'Google Play', 'Android')}${badge(STORE.appStore, 'App Store', 'iOS')}</div>
+<div class="stores">${badge(STORE.googlePlay, 'Google Play', 'Android', 'google-play.svg')}${badge(STORE.appStore, 'App Store', 'iOS', 'app-store.svg')}</div>
 </div></div></section>`,
   }),
 

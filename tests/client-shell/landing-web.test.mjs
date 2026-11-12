@@ -39,7 +39,10 @@ describe('landing-web', () => {
       assert.match(page, /<html lang="vi">/);
       assert.match(page, /<title>[^<]{5,}<\/title>/);
       assert.match(page, /<meta name="description" content="[^"]{20,}"/);
-      for (const img of page.match(/<img [^>]*>/g) ?? []) assert.match(img, /alt="[^"]+"/, `${r} ${img}`);
+      for (const img of page.match(/<img [^>]*>/g) ?? []) {
+        if (img.includes('aria-hidden="true"')) continue; // decorative logo next to a visible store name
+        assert.match(img, /alt="[^"]+"/, `${r} ${img}`);
+      }
     }
   });
 

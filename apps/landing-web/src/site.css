@@ -157,3 +157,5 @@ a.store:hover{background:#000}
 .legal-sec{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-card);padding:var(--gap-6);margin-bottom:var(--gap-4)}
 .legal-sec h2{font-size:18px;margin:0 0 var(--gap-3)}.legal-sec p{color:var(--c-ink-2);font-size:15px;margin:0 0 var(--gap-3)}.legal-sec p:last-child{margin:0}
 @media(min-width:900px){.legal-grid{grid-template-columns:240px 1fr}.toc{position:sticky;top:88px}}
+
+.store-logo{width:28px;height:28px;flex:none}
