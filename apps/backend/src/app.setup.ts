@@ -22,30 +22,7 @@ export const GLOBAL_PREFIX = 'v1';
 const PUBLIC_DELETE_PAGE = new RegExp(`^/${DELETE_ACCOUNT_PAGE_PATH}(?:/(?:app\\.js|app\\.css)?)?(?:\\?.*)?$`);
 
 /** Public read-only draft: /dieu-khoan-su-dung is served by backend without a /v1 prefix. */
-const PUBLIC_TERMS_PAGE = new RegExp(`^/${TERMS_PAGE_PATH}/?(?:\\?.*)?import { INestApplication } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
-import { activationTransportMiddleware } from './admin-activation/admin-activation.controller';
-import { ACTIVATION_ROUTE_PREFIX } from './admin-activation/admin-activation-constants';
-import { ADMIN_AUTH_ROUTE_PREFIX, ADMIN_ROUTE_PREFIX, adminTransportMiddleware } from './http/admin-transport.middleware';
-import {
-  CLIENT_AUTH_ROUTE_PREFIX,
-  CLIENT_PROFILE_ROUTE_PREFIXES,
-  clientAuthTransportMiddleware,
-} from './http/client-auth-transport.middleware';
-import { ACCOUNT_RECOVERY_ROUTE_PREFIX } from './account-recovery/account-recovery-constants';
-import { DELETE_ACCOUNT_PAGE_PATH } from './account-deletion/account-deletion-page';
-import { TERMS_PAGE_PATH } from './legal/terms-page';
-import { AllExceptionsFilter } from './http/all-exceptions.filter';
-import { createRequestContextMiddleware } from './http/request-context.middleware';
-import { JsonLogger } from './logging/json-logger';
-import { APP_LOGGER } from './logging/logging.module';
-
-export const GLOBAL_PREFIX = 'v1';
-
-/** The public account deletion page (P5-6a) lives at the unprefixed /delete-account (+ its two assets), like the public tracking page. */
-const PUBLIC_DELETE_PAGE = new RegExp(`^/${DELETE_ACCOUNT_PAGE_PATH}(?:/(?:app\\.js|app\\.css)?)?(?:\\?.*)?$`);
-
-);
+const PUBLIC_TERMS_PAGE = new RegExp(`^/${TERMS_PAGE_PATH}/?(?:\\?.*)?$`);
 
 /**
  * Shared by main.ts and the tests so they exercise the same HTTP pipeline:
