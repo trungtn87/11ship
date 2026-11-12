@@ -9,7 +9,7 @@ const CONFIG_PATH = new URL('../site.config.json', import.meta.url);
 const FILE = existsSync(CONFIG_PATH) ? JSON.parse(readFileSync(CONFIG_PATH, 'utf8').replace(/^﻿/, '')) : {};
 const ENV = {
   LANDING_SITE_URL: FILE.siteUrl, LANDING_PUBLISH: FILE.publish ? '1' : '', LANDING_PLAY_FOOD_URL: FILE.playFoodUrl,
-  LANDING_PLAY_SHIP_URL: FILE.playShipUrl, LANDING_DELETE_ACCOUNT_URL: FILE.deleteAccountUrl,
+  LANDING_PLAY_SHIP_URL: FILE.playShipUrl,
   LANDING_GOOGLE_PLAY_URL: FILE.googlePlayUrl, LANDING_APP_STORE_URL: FILE.appStoreUrl,
   ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith('LANDING_') && v !== undefined && v !== '')),
 };
@@ -28,8 +28,6 @@ export const PUBLISH = ENV.LANDING_PUBLISH === '1' && SITE !== '';
 const PLAY = { food: ENV.LANDING_PLAY_FOOD_URL ?? '', ship: ENV.LANDING_PLAY_SHIP_URL ?? '' };
 /** Store links of the download band (Owner to fill). Empty = "sắp có" badge. */
 const STORE = { googlePlay: ENV.LANDING_GOOGLE_PLAY_URL ?? '', appStore: ENV.LANDING_APP_STORE_URL ?? '' };
-/** Public account-deletion page of the backend (POST /v1/account-deletion/confirm). Unset until verified as deployed. */
-const DELETE_URL = ENV.LANDING_DELETE_ACCOUNT_URL ?? '';
 
 const img = (f, alt, w, h, extra = '') => `<img src="/img/${f}" alt="${alt}" width="${w}" height="${h}" decoding="async" ${extra}>`;
 const NAV = [['/', 'Trang chủ'], ['/food', '11Food'], ['/ship', '11Ship'], ['/ho-tro', 'Hỗ trợ']];
@@ -137,7 +135,7 @@ export const pages = {
 <p class="lead">Từ món ngon yêu thích đến những chuyến giao hàng tiện lợi, 11 luôn sẵn sàng đáp ứng nhu cầu hằng ngày của bạn ngay tại Cao Bằng.</p>
 <p class="hero-tag">Nhanh chóng, đơn giản và gần gũi.</p>
 </div>
-<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', '11Food và 11Ship tại Cao Bằng', 1672, 941, 'fetchpriority="high"')}</div></div></div></div></section>
+<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div></div></div></div></section>
 <section class="svc-sec"><div class="wrap">
 <p class="kicker">Chọn đúng dịch vụ</p>
 <h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
@@ -193,10 +191,40 @@ ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứn
 
   '/ho-tro': layout({
     path: '/ho-tro', current: '/ho-tro',
-    title: 'Hỗ trợ — 11Food và 11Ship', desc: 'Câu hỏi thường gặp và hỗ trợ người dùng 11Food, 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Hỗ trợ</h1><p class="lead">Giải đáp nhanh cho người dùng 11Food và 11Ship.</p>
-<h2 id="faq">Câu hỏi thường gặp</h2>${faq([['11Food và 11Ship khác nhau thế nào?', '11Food dành cho khách hàng đặt đồ ăn. 11Ship dành cho cửa hàng và shipper.'], ['Dịch vụ phục vụ ở đâu?', 'Tại Cao Bằng.'], ['Mã xác minh gửi đến đâu?', 'Mã được gửi bằng tin nhắn SMS tới số điện thoại bạn nhập khi đăng ký.'], ['Tôi muốn xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.']])}
-<h2 id="lien-he">Liên hệ</h2>${CONTACT_TEXT === '' ? '<p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p>' : `<p>Email: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><br>Điện thoại: <a href="tel:${CONTACT_PHONE.replace(/s/g, '')}">${CONTACT_PHONE}</a></p>`}</div></section>`,
+    title: 'Hỗ trợ — 11Food và 11Ship', desc: 'Trung tâm hỗ trợ 11Food và 11Ship: chủ đề thường gặp, câu hỏi thường gặp và cách liên hệ.',
+    body: `<section class="sup-hero"><div class="wrap sup-hero-grid">
+<div>
+<p class="sup-eyebrow">11 / TRUNG TÂM HỖ TRỢ</p>
+<h1>11 luôn sẵn sàng hỗ trợ bạn.</h1>
+<p class="lead">Giải đáp các thắc mắc về đặt món, giao hàng và tài khoản. Chọn chủ đề bên dưới hoặc liên hệ trực tiếp với 11.</p>
+<span class="sup-chip">● Hỗ trợ tại Cao Bằng</span>
+</div>
+<aside class="contact-card" aria-labelledby="contact-title">
+<p class="contact-kicker">LIÊN HỆ TRỰC TIẾP</p>
+<h2 id="contact-title">Cần trao đổi thêm?</h2>
+${CONTACT_EMAIL === '' ? '<p class="contact-line">Thông tin liên hệ sẽ được cập nhật tại trang này.</p>' : `<a class="contact-line" href="mailto:${CONTACT_EMAIL}">✉&nbsp; ${CONTACT_EMAIL}</a><a class="contact-line" href="tel:${CONTACT_PHONE.replace(/s/g, '')}">☎&nbsp; ${CONTACT_PHONE}</a><p class="contact-note">Nhấn vào email hoặc số điện thoại để liên hệ.</p>`}
+</aside></div></section>
+<section class="topics-sec"><div class="wrap">
+<h2>Bạn cần hỗ trợ về vấn đề nào?</h2>
+<div class="topics">
+<a class="topic" href="/food"><span class="topic-num">01</span><div><b>11Food · Đặt món</b><span>Tìm quán, chọn món, theo dõi đơn.</span></div></a>
+<a class="topic" href="/ship"><span class="topic-num">02</span><div><b>11Ship · Giao hàng</b><span>Dành cho cửa hàng và người giao hàng.</span></div></a>
+<a class="topic" href="#faq"><span class="topic-num">03</span><div><b>Tài khoản · Xác minh</b><span>Đăng ký, mã SMS và quyền riêng tư.</span></div></a>
+</div></div></section>
+<section class="faq-sec" id="faq"><div class="wrap narrow">
+<h2>Câu hỏi thường gặp</h2>
+<p class="muted">Những thông tin hữu ích khi bắt đầu sử dụng 11Food và 11Ship.</p>
+${faq([
+  ['11Food và 11Ship khác nhau như thế nào?', '11Food giúp khách hàng tìm quán, đặt đồ ăn. 11Ship kết nối cửa hàng và shipper để thực hiện giao hàng.'],
+  ['Dịch vụ hiện phục vụ ở đâu?', '11 tập trung phục vụ tại Cao Bằng.'],
+  ['Tôi không nhận được mã xác minh SMS?', 'Hãy kiểm tra số điện thoại, tin nhắn SMS và thử yêu cầu gửi lại mã trên ứng dụng.'],
+  ['Làm thế nào để yêu cầu xóa tài khoản?', 'Mở ứng dụng, chọn chức năng xóa tài khoản và làm theo hướng dẫn. Xem thêm tại trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
+])}
+</div></section>
+<section class="account-sec"><div class="wrap"><div class="account-band">
+<div><h2>Tài khoản và quyền riêng tư</h2><p>Xem hướng dẫn xóa tài khoản và các chính sách của 11.</p></div>
+<div class="account-actions"><a class="btn btn--dark-cta" href="/xoa-tai-khoan">Yêu cầu xóa tài khoản${icon('arrow')}</a><a class="btn btn--ghost" href="/chinh-sach-quyen-rieng-tu">Quyền riêng tư${icon('arrow')}</a></div>
+</div></div></section>`,
   }),
 
   '/chinh-sach-quyen-rieng-tu': layout({
@@ -213,8 +241,21 @@ ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứn
 
   '/xoa-tai-khoan': layout({
     path: '/xoa-tai-khoan', current: '',
-    title: 'Yêu cầu xóa tài khoản — 11Food và 11Ship', desc: 'Hướng dẫn yêu cầu xóa tài khoản 11Food và 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Yêu cầu xóa tài khoản</h1><p class="lead">Áp dụng cho tài khoản 11Food và tài khoản 11Ship (cửa hàng, shipper). Hai ứng dụng dùng chung một tài khoản đăng nhập bằng số điện thoại.</p>
-${DELETE_URL === '' ? '<p>Chức năng yêu cầu xóa tài khoản trực tuyến đang được hoàn thiện và sẽ mở tại trang này.</p>' : `<p>Bạn cần số điện thoại và mật khẩu của tài khoản.</p><p><a class="btn btn--primary" href="${DELETE_URL}">Tiếp tục yêu cầu xóa tài khoản</a></p>`}</div></section>`,
+    title: 'Yêu cầu xóa tài khoản — 11Food và 11Ship', desc: 'Hướng dẫn gửi yêu cầu xóa tài khoản 11Food và 11Ship.',
+    body: `<section class="sup-hero sup-hero--plain"><div class="wrap">
+<p class="sup-eyebrow">11 / TÀI KHOẢN</p>
+<h1>Yêu cầu xóa tài khoản</h1>
+<p class="lead">Hướng dẫn gửi yêu cầu xóa tài khoản 11Food và 11Ship.</p>
+</div></section>
+<section class="steps-sec"><div class="wrap">
+<h2>Quy trình yêu cầu xóa tài khoản</h2>
+<ol class="flow">
+<li><span class="flow-num">01</span><b>Đăng nhập</b><span>Mở ứng dụng và đăng nhập bằng số điện thoại, mật khẩu của tài khoản.</span></li>
+<li><span class="flow-num">02</span><b>Gửi yêu cầu</b><span>Chọn chức năng xóa tài khoản trong ứng dụng.</span></li>
+<li><span class="flow-num">03</span><b>Xác nhận</b><span>Làm theo bước xác nhận hiển thị trong ứng dụng.</span></li>
+<li><span class="flow-num">04</span><b>Nhận kết quả</b><span>Hệ thống xử lý theo quy định áp dụng.</span></li>
+</ol>
+</div></section>`,
   }),
+
 };

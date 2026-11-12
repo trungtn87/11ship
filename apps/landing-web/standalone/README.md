@@ -14,7 +14,6 @@ Các trang: `/`, `/food`, `/ship`, `/ho-tro`, `/chinh-sach-quyen-rieng-tu`, `/di
 | `siteUrl` | Địa chỉ website, hiện là `https://11local.vn` (dùng cho canonical và ảnh chia sẻ) |
 | `publish` | `true` khi cho Google lập chỉ mục; `false` = `noindex` (mặc định, bản thử) |
 | `playFoodUrl`, `playShipUrl` | Link Google Play. Để trống = nút "Sắp có trên Google Play" |
-| `deleteAccountUrl` | Link trang xóa tài khoản của backend, chỉ điền khi đã deploy |
 | `contactEmail` | Email hỗ trợ hiện ở trang Hỗ trợ |
 | `privacyHtml`, `termsHtml` | Nội dung chính sách/điều khoản (HTML) đã được duyệt |
 

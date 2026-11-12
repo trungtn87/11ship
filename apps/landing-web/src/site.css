@@ -162,3 +162,46 @@ a.store:hover{background:#000}
 .hero-tag{font-weight:700;color:var(--c-ink);margin:var(--gap-4) 0 0}
 
 .fbrand{display:flex;align-items:center;gap:var(--gap-3)}.fbrand b{font-size:18px;color:#fff}.fbrand+p{margin:var(--gap-3) 0 0}
+
+/* Hỗ trợ và Xóa tài khoản — Figma "Hỗ trợ & pháp lý" (UI refresh, 2026-11-12) */
+.sup-hero{background:#fff9ec;padding:var(--gap-8) 0}
+.sup-hero--plain{padding:var(--gap-6) 0 var(--gap-4)}
+.sup-hero-grid{display:grid;gap:var(--gap-6);align-items:center}
+.sup-hero h1{font-size:clamp(30px,5vw,41px);line-height:1.15;margin:0 0 var(--gap-3)}
+.sup-eyebrow{color:#a47d05;font-weight:700;font-size:12px;letter-spacing:.04em;margin:0 0 var(--gap-3)}
+.sup-chip{display:inline-flex;align-items:center;background:#ffedb9;color:#865500;font-weight:700;font-size:12px;border-radius:15px;padding:6px 14px}
+.contact-card{background:#222226;color:#fff;border-radius:20px;padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-2)}
+.contact-kicker{color:#ffcc40;font-weight:700;font-size:12px;margin:0}
+.contact-card h2{color:#fff;font-size:23px;margin:0 0 var(--gap-2)}
+.contact-line{display:flex;align-items:center;min-height:var(--tap-min);font-weight:700;font-size:16px;color:#fff;text-decoration:none;word-break:break-all}
+.contact-line:hover{text-decoration:underline}
+.contact-note{color:#d6d6da;font-size:12px;margin:var(--gap-2) 0 0}
+.topics-sec{background:#fff;padding:var(--gap-8) 0 var(--gap-6)}
+.topics-sec h2,.faq-sec h2,.steps-sec h2{font-size:clamp(22px,3vw,27px);margin-bottom:var(--gap-4)}
+.topics{display:grid;gap:var(--gap-4)}
+.topic{display:flex;gap:var(--gap-3);align-items:flex-start;background:#fafaf8;border:1px solid #eae6dc;border-radius:16px;padding:var(--gap-4);text-decoration:none;min-height:var(--tap-min)}
+.topic:hover{background:#fff}
+.topic-num{width:56px;height:56px;border-radius:15px;background:#fff2ce;color:#6f5200;font-weight:800;font-size:19px;display:grid;place-items:center;flex:none}
+.topic b{display:block;font-size:17px;color:var(--c-black)}.topic span:not(.topic-num){color:#65656b;font-size:13px}
+.faq-sec{background:#f7f7f6;padding:var(--gap-8) 0}
+.faq-sec .muted{margin:-8px 0 var(--gap-4);font-size:14px}
+.faq-sec .qa{border-color:#e7e4de;border-radius:15px;background:#fff}
+.account-sec{padding:var(--gap-6) 0 var(--gap-8)}
+.account-band{background:#fff4d9;border:1px solid #ecddad;border-radius:19px;padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-4)}
+.account-band h2{font-size:20px;margin:0 0 var(--gap-1)}.account-band p{margin:0;color:#65656b;font-size:14px}
+.account-actions{display:flex;flex-wrap:wrap;gap:var(--gap-3)}
+.steps-sec{background:#f7f6f3;padding:var(--gap-8) 0}
+.flow{list-style:none;margin:0 0 var(--gap-6);padding:0;display:grid;gap:var(--gap-3)}
+.flow li{position:relative;background:#fff;border:1px solid #e6e2d9;border-radius:16px;padding:var(--gap-6) var(--gap-4) var(--gap-4)}
+.flow-num{position:absolute;left:var(--gap-4);top:var(--gap-4);width:42px;height:42px;border-radius:13px;background:#f7e8a8;color:#967208;font-weight:800;font-size:13px;display:grid;place-items:center}
+.flow b{display:block;font-size:15px;margin-top:var(--gap-6)}.flow span:not(.flow-num){color:#64666d;font-size:13px}
+.notice-card{background:#fff9e7;border:1px solid #ecddad;border-radius:17px;padding:var(--gap-6);display:flex;flex-direction:column;gap:var(--gap-3)}
+.notice-card h3{font-size:20px;margin:0}.notice-card p{margin:0;color:#64666d;font-size:14px}
+.btn--disabled{background:#e8e3d9;border-color:#dbd8ce;color:var(--c-black);cursor:default;pointer-events:none}
+@media(min-width:760px){
+ .sup-hero-grid{grid-template-columns:1.1fr .9fr}
+ .topics{grid-template-columns:repeat(3,1fr)}
+ .flow{grid-template-columns:repeat(4,1fr)}
+ .account-band{flex-direction:row;align-items:center;justify-content:space-between}
+ .sup-hero{padding:72px 0}
+}
