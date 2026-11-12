@@ -107,20 +107,25 @@ describe('M08 — notifications, reminders and sync', () => {
   });
 
   afterAll(async () => {
+    let failure: unknown;
     try {
       await cleanup();
-    } finally {
-      try { await app.close(); }
-      finally {
-        await new Promise<void>((resolve) => router.close(() => resolve()));
-        await new Promise<void>((resolve) => fcm.close(() => resolve()));
-      }
+    } catch (error) {
+      failure = error;
     }
+    try {
+      await app.close();
+    } catch (error) {
+      failure ??= error;
+    }
+    await new Promise<void>((resolve) => router.close(() => resolve()));
+    await new Promise<void>((resolve) => fcm.close(() => resolve()));
+    if (failure !== undefined) throw failure;
   });
 
   async function cleanup(): Promise<void> {
     const client = await app.pool.connect();
-    const tables = ['wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
+    const tables = ['wallet_withdrawal_events', 'wallet_withdrawals', 'wallet_topup_requests', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions'];
     try {
       await client.query('BEGIN');
       for (const table of tables) {
@@ -134,6 +139,10 @@ describe('M08 — notifications, reminders and sync', () => {
       await client.query('DELETE FROM app.notifications WHERE recipient_user_id = ANY($1::uuid[])', [users]);
       await client.query('DELETE FROM app.notification_settings WHERE user_id = ANY($1::uuid[])', [users]);
       await client.query('DELETE FROM app.notification_push_tokens WHERE user_id = ANY($1::uuid[])', [users]);
+      // Rows the withdrawal and topup tests committed: they reference the wallets deleted below.
+      await client.query(`DELETE FROM app.wallet_withdrawal_events WHERE withdrawal_id IN (SELECT withdrawal_id FROM app.wallet_withdrawals WHERE driver_id = ANY($1::uuid[]))`, [drivers]);
+      await client.query('DELETE FROM app.wallet_withdrawals WHERE driver_id = ANY($1::uuid[])', [drivers]);
+      await client.query('DELETE FROM app.wallet_topup_requests WHERE driver_id = ANY($1::uuid[])', [drivers]);
       await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
       await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
       await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shop.shopId]);
@@ -745,21 +754,31 @@ describe('M08 — notifications, reminders and sync', () => {
   const cardTimes = async (eventId: string): Promise<Json[]> => rows(`SELECT created_at, updated_at FROM app.notifications WHERE source_event_id = $1::uuid`, [eventId]);
   const ageHours = (iso: unknown): number => (Date.now() - Date.parse(String(iso))) / 3_600_000;
 
-  /** Seeds rows the consumer reads back from the owners' tables. The guard triggers are off only for this seeding, inside one transaction, as the delivery seeds above do. */
+  /**
+   * Seeds rows the consumer reads back from the owners' tables. The user guard triggers are lifted for this seeding only: the seed transaction COMMITs first
+   * (its deferred foreign keys are settled there), and only then the triggers come back on, in their own statements. A failing seed is rolled back, and the
+   * triggers are restored in every case, so nothing half-seeded or switched off leaks into another test.
+   */
   async function seed(tables: string[], body: (c: import('pg').PoolClient) => Promise<void>): Promise<void> {
     const client = await app.pool.connect();
+    let failure: unknown;
     try {
       await client.query('BEGIN');
       for (const t of tables) await client.query(`ALTER TABLE ${t} DISABLE TRIGGER USER`);
       await body(client);
-      for (const t of tables) await client.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
       await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+      failure = error;
+      await client.query('ROLLBACK').catch(() => undefined);
     }
+    try {
+      for (const t of tables) await client.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
+    } catch (restoreError) {
+      client.release(restoreError instanceof Error ? restoreError : new Error('trigger restore failed'));
+      throw failure ?? restoreError;
+    }
+    client.release();
+    if (failure !== undefined) throw failure;
   }
 
   it('a 25 h old account event is delivered late: inbox row at the time of the event, push SKIPPED/STALE_EVENT, audit, HIGH metric, and a redelivery adds nothing', async () => {
