@@ -21,7 +21,7 @@ nav.menu{display:none;margin:0 auto;gap:var(--gap-2)}
 nav.menu a,.drawer a{min-height:var(--tap-min);display:inline-flex;align-items:center;padding:0 var(--gap-3);text-decoration:none;font-weight:600}
 nav.menu a{border-radius:var(--r-control)}nav.menu a:hover{background:var(--c-bg)}
 nav.menu a[aria-current=page],.drawer a[aria-current=page]{box-shadow:inset 0 -3px 0 var(--c-yellow)}
-.bar-cta{display:none;margin-left:auto}
+header .bar-cta{display:none;margin-left:auto}
 .burger{margin-left:auto;position:relative}.burger summary{list-style:none;width:var(--tap-min);height:var(--tap-min);display:grid;place-items:center;cursor:pointer;border-radius:var(--r-control)}
 .burger summary::-webkit-details-marker{display:none}.burger[open] summary{background:var(--c-bg)}
 .drawer{position:absolute;right:0;top:100%;width:min(260px,86vw);background:#fff;border:1px solid var(--c-line);border-radius:var(--r-card);padding:var(--gap-2);display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(42,42,46,.12)}
@@ -89,7 +89,7 @@ footer a{text-decoration:none;display:inline-flex;min-height:var(--tap-min);alig
 
 @media(min-width:560px){.feats{grid-template-columns:1fr 1fr}.fgrid{grid-template-columns:1fr 1fr}}
 @media(min-width:900px){
- nav.menu{display:flex}.bar-cta{display:inline-flex;align-items:center}.burger{display:none}
+ nav.menu{display:flex}header .bar-cta{display:inline-flex;align-items:center}.burger{display:none}
  .hero-art{height:auto}
  .hero--home,.hero--food,.hero--ship{min-height:540px;justify-content:center}
  .hero--home .hero-art,.hero--food .hero-art,.hero--ship .hero-art{position:absolute;inset:0 0 0 40%;order:0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 38%);mask-image:linear-gradient(90deg,transparent,#000 38%)}
@@ -214,3 +214,33 @@ a.store:hover{background:#000}
 .faq-sec h2{text-align:left}
 .faq-help{background:#fff;border:1px solid #e7e4de;border-radius:15px;padding:var(--gap-6);margin-top:var(--gap-6)}
 .faq-help h3{font-size:18px;margin:0 0 var(--gap-2)}.faq-help p{margin:0 0 var(--gap-2);color:#606168;font-size:14px}.faq-help a{font-weight:700;color:var(--c-black)}
+
+/* Mobile layout (<760px) theo ảnh thiết kế mobile: header dạng thẻ, hai thẻ dịch vụ cạnh nhau, lưới 2x2, hai nút cửa hàng cạnh nhau */
+@media(max-width:759px){
+ header.top .bar{margin:10px 12px;min-height:60px;padding:0 12px;border:1px solid #ececec;border-radius:15px;box-shadow:0 7px 20px rgba(31,31,31,.08);background:#fff}
+ header.top{background:#fff;border-bottom:0}
+ .loc{display:inline-block;font-size:12px;padding:5px 9px}
+ .brand img{height:38px}
+ .bar{gap:8px}
+ .bar .btn--sm{min-height:36px;padding:0 12px;font-size:13px;border-radius:10px}
+ .svc-sec .duo{grid-template-columns:1fr 1fr;gap:10px}
+ .svc{min-height:0;flex-direction:column;border-radius:17px}
+ .svc-body{padding:14px 12px 0;gap:8px}
+ .svc-body p:not(.tag){font-size:12px;line-height:1.5}
+ .svc .logo{width:120px;max-width:100%}
+ .svc-body .btn{width:100%;min-height:40px;padding:0 8px;font-size:12px}
+ .svc img:not(.logo){position:relative;width:calc(100% - 24px);height:auto;aspect-ratio:1/1;bottom:auto;left:auto;margin:10px 12px 12px;border-radius:14px;-webkit-mask-image:none;mask-image:none}
+ .feats--card{padding:12px;border-radius:16px}
+ .feats{grid-template-columns:1fr 1fr;gap:8px}
+ .feats li{align-items:center;gap:8px}
+ .feats b{font-size:13px}.feats span:not(.ficon){font-size:12px;line-height:1.4}
+ .ficon{width:40px;height:40px}
+ .dl{text-align:center;align-items:center;padding:20px 14px}
+ .dl h2{font-size:20px}
+ .stores{flex-wrap:nowrap;width:100%;gap:8px}
+ .store{flex:1;min-width:0;justify-content:center;padding:0 8px;gap:6px}
+ .store b{font-size:13px}.store small{font-size:10px}
+ .store-logo{width:22px;height:22px}
+ .hero-photos{height:240px}
+ .hero--home h1{font-size:34px}
+}
