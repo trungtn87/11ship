@@ -241,6 +241,7 @@ a.store:hover{background:#000}
  .store{flex:1;min-width:0;justify-content:center;padding:0 8px;gap:6px}
  .store b{font-size:13px}.store small{font-size:10px}
  .store-logo{width:22px;height:22px}
- .hero-photos{height:240px}
+ .hero-photos{display:none}
+ .svc img:not(.logo){display:none}
  .hero--home h1{font-size:34px}
 }
