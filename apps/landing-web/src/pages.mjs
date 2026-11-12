@@ -134,15 +134,11 @@ export const pages = {
 <div class="hero-text">
 <p class="eyebrow-chip">${icon('pin')}Dịch vụ tại Cao Bằng</p>
 <h1>11 — Cần là có.</h1>
-<p class="lead">Một nơi cho nhu cầu đặt món và giao hàng tại Cao Bằng. Chọn dịch vụ bạn cần, mọi thứ đều dễ dàng hơn.</p>
-<div class="cta"><a class="btn btn--primary" href="/food">Khám phá 11Food${icon('arrow')}</a><a class="btn btn--ghost" href="/ship">Khám phá 11Ship${icon('arrow')}</a></div>
-<p class="muted small">Tập trung phục vụ nhu cầu tại địa phương</p>
+<p class="hero-sub">Đói bụng có 11Food, giao hàng có 11Ship!</p>
+<p class="lead">Từ món ngon yêu thích đến những chuyến giao hàng tiện lợi, 11 luôn sẵn sàng đáp ứng nhu cầu hằng ngày của bạn ngay tại Cao Bằng.</p>
+<p class="hero-tag">Nhanh chóng, đơn giản và gần gũi.</p>
 </div>
-<div class="hero-photos">
-<div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div>
-<div class="hp-food">${img('card-food.webp', 'Phở vịt, bánh cuốn và hạt dẻ Cao Bằng', 1200, 900, 'loading="lazy"')}</div>
-<div class="hp-ship">${img('hero-ship.webp', 'Shipper 11Ship mặc đồng phục vàng', 1600, 1100, 'loading="lazy"')}</div>
-</div></div></section>
+<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div></div></div></div></section>
 <section class="svc-sec"><div class="wrap">
 <p class="kicker">Chọn đúng dịch vụ</p>
 <h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
@@ -156,7 +152,7 @@ ${feat('bike', 'Giao hàng tiện lợi', 'Kết nối với shipper.')}
 ${feat('pin', 'Phục vụ Cao Bằng', 'Tập trung địa phương.')}
 ${feat('check', 'Rõ ràng, dễ dùng', 'Theo dõi đơn hàng.')}</ul></div></section>
 <section class="dl-sec" id="tai-ung-dung"><div class="wrap"><div class="dl">
-<div><h2>Sẵn sàng trải nghiệm 11?</h2><p>11Food và 11Ship dành cho Android và iOS.</p></div>
+<div><h2>Sẵn sàng trải nghiệm 11?</h2></div>
 <div class="stores">${badge(STORE.googlePlay, 'Google Play', 'Android', 'google-play.svg')}${badge(STORE.appStore, 'App Store', 'iOS', 'app-store.svg')}</div>
 </div></div></section>`,
   }),
