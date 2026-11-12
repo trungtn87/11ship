@@ -36,6 +36,23 @@ sudo bash ops/m14/vps.sh connect            # ghi M14_ROUTING_ORIGIN=http://127.
 ```
 Mỗi bước dừng khi lỗi và in nguyên nhân. Gửi lại đầu ra của `preflight`, `up`, `status`, `load-test` (không chứa bí mật) để Claude đối chiếu.
 
+## Thứ tự rollout bắt buộc: gateway trước, kiểm tra xanh, rồi mới backend (P6-1, SỬA-1)
+
+Backend mới đòi `routeVersion` và `trip.legs[0].shape` (xem `apps/backend/src/delivery/m14-route-client.ts`). Gateway cũ không có `route_version`, nên nếu backend mới được nối vào gateway cũ, mọi tuyến bị coi là **không có tuyến** (lý do nội bộ `ROUTE_GATEWAY_OUTDATED`, client chỉ thấy `ROUTE_UNAVAILABLE`). Không có đường thẳng dự phòng: đây là lỗi an toàn, không phải lỗi tuyến.
+
+Thứ tự bắt buộc:
+1. **Nâng gateway trước** (`vps.sh load` rồi `vps.sh up`; `up` tự rollback nếu lỗi).
+2. **Kiểm tra máy được:** `sudo bash ops/m14/vps.sh check`. Phải in `gateway check OK: ready, routeVersion=...`. Nếu in ERROR (chưa sẵn sàng, thiếu hoặc sai `routeVersion`, không trả lời): **dừng, không nối backend**.
+3. **Chỉ sau khi check xanh** mới chạy `sudo bash ops/m14/vps.sh connect` (chạy lại check ngay trong `connect`; lỗi thì không đụng env file).
+4. Lần deploy backend mới: nếu backend được nâng trước gateway thì rơi vào trạng thái "không có tuyến" cho đến khi gateway lên. Không nâng backend trước khi check xanh.
+
+Rollback theo cặp:
+- **Không rollback riêng gateway** khi backend đang dùng `routeVersion`. Rollback gateway về ảnh cũ thì backend mới báo không có tuyến. Thứ tự: rollback backend trước (`vps.sh restore-env <backup>` hoặc bản backend cũ), rồi mới rollback gateway (`vps.sh rollback`); hoặc làm cả hai cùng lúc.
+- Đổi cấu hình profile của gateway (`M14_SHORTEST`, tham số costing): `routeVersion` đổi theo. Backend giữ tuyến đã nhớ trong bộ nhớ tối đa 5 phút; để xóa ngay, **restart backend** (`systemctl restart 11ship-staging`) sau khi đổi gateway. Backend cũng xóa cache khi thấy version mới từ gateway.
+- Cờ rollback `M14_SHORTEST=0` là cấu hình gateway (compose); áp dụng theo cặp trên.
+
+Các bước đầu của runbook (`load`, `up`, `connect`) không đổi; chỉ bổ sung kiểm tra `check` ở bước 2.
+
 ## Kiểm tra sau khi nối backend (cùng Owner)
 1. Phí M06: đặt một đơn thử có quán và điểm giao đều có tọa độ trong vùng: quãng đường đường bộ và phí phải theo bảng M06 (không 10.000đ mặc định, không "chưa xác định"). Đối chiếu km với `load-test`/smoke.
 2. Trang chủ khách: danh sách quán hiện khoảng cách đường bộ.

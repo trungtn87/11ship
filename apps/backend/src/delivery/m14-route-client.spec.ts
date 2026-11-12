@@ -79,7 +79,7 @@ describe('M14 route result', () => {
   it('an answer without a shape is UNAVAILABLE and never turned into a straight line', async () => {
     const config = { origin: 'https://route.test', timeoutMs: 50 };
     const noShape = new M14RouteClient(config, async () => ({ ok: true, status: 200, json: async () => ({ trip: { summary: { length: 3, time: 60 } }, route_version: VERSION }) }));
-    await expect(noShape.routeResult(from, to)).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' });
+    await expect(noShape.routeResult(from, to)).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_GATEWAY_OUTDATED' });
     await expect(noShape.route(from, to)).resolves.toBeUndefined();
   });
 
@@ -179,5 +179,56 @@ describe('M14 matrix limits (issue #257)', () => {
     });
     await expect(client.durations(points(5))).resolves.toEqual({ kind: 'unavailable' });
     expect(calls).toBeLessThan(MAX_MATRIX_LEGS);
+  });
+});
+
+describe('M14 gateway contract: old gateway, version flips, exact endpoints (P6-1 review)', () => {
+  const config = { origin: 'https://route.test', timeoutMs: 50 };
+  const OTHER_VERSION = 'valhalla-3.9.1/motorcycle-default-0badc0de/abc123def456';
+  const replying = (respond: () => unknown) => new M14RouteClient(config, async () => ({ ok: true, status: 200, json: async () => respond() }));
+
+  it('an old gateway (distance and time only) is UNAVAILABLE with its own reason and never a straight line', async () => {
+    const client = replying(() => ({ trip: { summary: { length: 3.4, time: 300 } } }));
+    await expect(client.routeResult(from, to)).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_GATEWAY_OUTDATED' });
+    await expect(client.route(from, to)).resolves.toBeUndefined();
+    await expect(client.durations([from, to])).resolves.toEqual({ kind: 'unavailable' });
+  });
+
+  it('a gateway that gives a version but no shape is outdated; a broken shape is an ordinary unavailable', async () => {
+    await expect(replying(() => answer(3.4, 300, { legs: undefined })).routeResult(from, to)).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_GATEWAY_OUTDATED' });
+    await expect(replying(() => answer(3.4, 300, { shape: 'not a polyline ~~' })).routeResult(from, to)).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' });
+  });
+
+  it('a changed route_version clears the cache: after a flip no leg of the earlier profile is served', async () => {
+    let version = VERSION;
+    let calls = 0;
+    const client = new M14RouteClient(config, async () => {
+      calls += 1;
+      return { ok: true, status: 200, json: async () => answer(6.2, 600, { routeVersion: version }) };
+    });
+    const other = { lat: 22.66, lng: 106.25 };
+    await client.routeResult(from, to, 1000);
+    await client.routeResult(from, to, 2000);
+    expect(calls).toBe(1);
+    version = OTHER_VERSION;
+    await client.routeResult(other, to, 3000);
+    const afterFlip = await client.routeResult(from, to, 4000);
+    expect(calls).toBe(3);
+    expect(afterFlip).toMatchObject({ status: 'ROUTE', leg: { routeVersion: OTHER_VERSION } });
+  });
+
+  it('two endpoints in the same 5-decimal bucket never share a leg: the exact endpoints decide a hit', async () => {
+    const near = { lat: 22.665001, lng: 106.258 };
+    const nearer = { lat: 22.665004, lng: 106.258 };
+    let calls = 0;
+    const client = new M14RouteClient(config, async () => {
+      calls += 1;
+      return { ok: true, status: 200, json: async () => answer(calls, 60) };
+    });
+    const first = await client.routeResult(near, to, 1000);
+    const second = await client.routeResult(nearer, to, 2000);
+    expect(calls).toBe(2);
+    expect(first).toMatchObject({ status: 'ROUTE', leg: { distanceM: 1000 } });
+    expect(second).toMatchObject({ status: 'ROUTE', leg: { distanceM: 2000 } });
   });
 });

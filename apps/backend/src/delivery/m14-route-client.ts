@@ -29,7 +29,11 @@ export const MAX_SHAPE_CHARS = 60_000;
 export const MAX_SHAPE_POINTS = 5000;
 const ROUTE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/;
 
-export type RouteFailureReason = 'ROUTING_NOT_CONFIGURED' | 'POINT_INVALID' | 'ROUTE_TIMEOUT' | 'ROUTE_UNAVAILABLE';
+/**
+ * ROUTE_GATEWAY_OUTDATED: the answer has a readable distance and time but no route_version or no shape, i.e. a routing gateway older than this backend.
+ * It stays unavailable (no straight line). Callers collapse it to ROUTE_UNAVAILABLE so the client never sees the internal reason.
+ */
+export type RouteFailureReason = 'ROUTING_NOT_CONFIGURED' | 'POINT_INVALID' | 'ROUTE_TIMEOUT' | 'ROUTE_UNAVAILABLE' | 'ROUTE_GATEWAY_OUTDATED';
 export type RouteResult = { readonly status: 'ROUTE'; readonly leg: RouteLeg } | { readonly status: 'UNAVAILABLE'; readonly reason: RouteFailureReason };
 
 export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -123,9 +127,34 @@ export function parseLeg(body: unknown): RouteLeg | undefined {
   return { distanceM: Math.round(length * 1000), seconds: Math.round(time), geometry: shape, routeVersion };
 }
 
+/**
+ * True when the distance and time are readable but the answer has no route_version or no single shape: the signature of a gateway that predates
+ * this contract. Used only to pick the failure reason; the leg itself is never built from such an answer.
+ */
+export function isGatewayOutdated(body: unknown): boolean {
+  const root = obj(body);
+  const summary = obj(obj(root?.trip)?.summary);
+  if (summary === undefined || typeof summary.length !== 'number' || typeof summary.time !== 'number') return false;
+  const legs = obj(root?.trip)?.legs;
+  const hasShape = Array.isArray(legs) && legs.length === 1 && typeof obj(legs[0])?.shape === 'string';
+  return root?.route_version === undefined || !hasShape;
+}
+
+interface CacheEntry {
+  /** Exact endpoints of the cached leg. The map key rounds to 5 decimals (about 1 m) only to bucket lookups: a hit needs the exact same endpoints. */
+  readonly from: LatLng;
+  readonly to: LatLng;
+  readonly leg: RouteLeg;
+  readonly atMs: number;
+}
+
+const samePoint = (a: LatLng, b: LatLng): boolean => a.lat === b.lat && a.lng === b.lng;
+
 @Injectable()
 export class M14RouteClient implements RouteMatrixPort {
-  readonly #cache = new Map<string, { readonly leg: RouteLeg; readonly atMs: number }>();
+  readonly #cache = new Map<string, CacheEntry>();
+  /** The route_version of the last answer the gateway gave. A different version clears the cache, so no leg of an earlier profile or map data survives. */
+  #servedRouteVersion: string | undefined;
 
   constructor(
     @Optional() @Inject(M14_ROUTING) private readonly config?: M14RoutingConfig,
@@ -153,7 +182,7 @@ export class M14RouteClient implements RouteMatrixPort {
     }
     const key = `${from.lat.toFixed(5)},${from.lng.toFixed(5)}>${to.lat.toFixed(5)},${to.lng.toFixed(5)}`;
     const cached = this.#cache.get(key);
-    if (cached !== undefined && nowMs - cached.atMs < CACHE_TTL_MS) {
+    if (cached !== undefined && samePoint(cached.from, from) && samePoint(cached.to, to) && nowMs - cached.atMs < CACHE_TTL_MS) {
       return { status: 'ROUTE', leg: cached.leg };
     }
     try {
@@ -167,17 +196,22 @@ export class M14RouteClient implements RouteMatrixPort {
       if (!response.ok) {
         return { status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' };
       }
-      const leg = parseLeg(await response.json());
+      const body = await response.json();
+      const leg = parseLeg(body);
       if (leg === undefined) {
-        return { status: 'UNAVAILABLE', reason: 'ROUTE_UNAVAILABLE' };
+        return { status: 'UNAVAILABLE', reason: isGatewayOutdated(body) ? 'ROUTE_GATEWAY_OUTDATED' : 'ROUTE_UNAVAILABLE' };
       }
+      if (this.#servedRouteVersion !== undefined && this.#servedRouteVersion !== leg.routeVersion) {
+        this.#cache.clear();
+      }
+      this.#servedRouteVersion = leg.routeVersion;
       if (this.#cache.size >= CACHE_MAX) {
         const oldest = this.#cache.keys().next();
         if (oldest.done !== true) {
           this.#cache.delete(oldest.value);
         }
       }
-      this.#cache.set(key, { leg, atMs: nowMs });
+      this.#cache.set(key, { from, to, leg, atMs: nowMs });
       return { status: 'ROUTE', leg };
     } catch (error) {
       const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';

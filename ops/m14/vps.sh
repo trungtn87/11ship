@@ -6,10 +6,11 @@
 #   build                     build the image on this host (refuses when RAM/disk are short; use `load` with an image built elsewhere)
 #   load <image.tar.gz>       load an image built elsewhere; the .sha256 next to it must match
 #   up                        start the routing container, wait for /health, run smoke.py; on any failure restores the previous container (or removes this one)
-#   connect                   set M14_ROUTING_ORIGIN in the backend env file, restart the backend, check readiness; on failure restores the env file and restarts
+#   check                     read-only: the gateway at the origin must be ready with a valid routeVersion (the gate `connect` runs first)
+#   connect                   gateway check first (refuses otherwise), then set M14_ROUTING_ORIGIN in the backend env file, restart the backend, check readiness; on failure restores the env file and restarts
 #   status                    container, health, stats, backend origin (no secrets printed)
 #   load-test [n] [c]         n routes with c in parallel (default 40 / 4) and the resources it used
-#   rollback                  routing: previous image back (or stop). Backend: `restore-env <backup>` puts a saved env file back
+#   rollback                  routing: previous image back (or stop). Backend: `restore-env <backup>` puts a saved env file back. Roll the BACKEND back first or together with the gateway (ops/runbooks/m14-valhalla-vps.md)
 #   restore-env <backup>      restore a backup made by `connect`, restart the backend, check readiness
 #
 # Environment overrides: M14_IMAGE (default 11ship-m14-routing), M14_RATE_PER_MIN (default 600 here), M14_MAX_CONCURRENT (default 4 here),
@@ -97,6 +98,7 @@ up() {
 
 rollback() {
   need_root
+  say 'WARNING: a backend that expects routeVersion reports routes unavailable against an older gateway. Roll back the backend (restore-env) first or together with this.'
   if docker image inspect "$image:previous" >/dev/null 2>&1; then
     docker tag "$image:previous" "$image:current"
     "${compose[@]}" up -d --no-build --force-recreate
@@ -107,9 +109,20 @@ rollback() {
   fi
 }
 
+# Gate before the backend is pointed at the gateway (ROUTE_GATEWAY_OUTDATED, SỬA-1): the gateway must answer /health with ready:true and a routeVersion
+# that the backend accepts (same pattern as apps/backend/src/delivery/m14-route-client.ts). Read-only. Rollout order: gateway, this check, then backend.
+gateway_preflight() {
+  local body version
+  body="$(curl -sS --max-time 4 "$origin/health" 2>/dev/null)" || die "gateway $origin/health did not answer: do NOT connect the backend. Fix the gateway first (run up), then check again"
+  grep -q '"ready": *true' <<<"$body" || die 'gateway is not ready (ready:false, or no valid routeVersion): do NOT connect the backend. Upgrade the gateway first'
+  version="$(grep -o '"routeVersion": *"[^"]*"' <<<"$body" | head -1 | cut -d'"' -f4)"
+  grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$' <<<"$version" || die 'gateway routeVersion is missing or malformed: do NOT connect the backend. The gateway is older than the backend or misconfigured'
+  say "gateway check OK: ready, routeVersion=$version"
+}
+
 connect() {
   need_root
-  curl -fsS --max-time 4 "$origin/health" | grep -q '"ready": *true' || die 'routing is not healthy: run up first'
+  gateway_preflight
   [ -f "$env_file" ] || die "$env_file not found"
   local backup="$env_file.m14-backup.$(date -u +%Y%m%dT%H%M%SZ)"
   cp -p "$env_file" "$backup"
@@ -164,6 +177,7 @@ case "$cmd" in
   build) build ;;
   load) load "$@" ;;
   up) up ;;
+  check) gateway_preflight ;;
   connect) connect ;;
   status) status ;;
   load-test) loadtest "$@" ;;
