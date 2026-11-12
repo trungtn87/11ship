@@ -750,17 +750,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  Widget _termsCard() => N11Card(
+  /// Registration shows only the checkbox and a link; the accepted version is unchanged
+  /// until the Owner approves and activates the separate full policy document.
+  Widget _policyLinks() => N11Card(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text(kTermsTitle, style: N11Text.bodyStrong),
+        const Text('Đọc chính sách trước khi xác nhận:', style: N11Text.caption),
         const SizedBox(height: N11Space.gap2),
-        const Text(kTermsText, key: Key('terms-text'), style: N11Text.caption),
-        const SizedBox(height: N11Space.gap3),
-        Text(_ship ? 'Chính sách bảo mật' : kPrivacyTitle, style: N11Text.bodyStrong),
-        const SizedBox(height: N11Space.gap2),
-        const Text(kPrivacyText, key: Key('privacy-text'), style: N11Text.caption),
+        N11Link(
+          'Điều khoản sử dụng và Chính sách quyền riêng tư',
+          key: const Key('register-policy-link'),
+          onPressed: () => Navigator.of(context).push(n11Route(PolicyScreen(session: widget.session))),
+        ),
       ],
     ),
   );
@@ -817,10 +819,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('password'), tone: _error('password') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('confirm'), fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
-            const N11Card(child: SizedBox(height: 140, child: SingleChildScrollView(key: Key('consent-scroll'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              Text(kTermsTitle, style: N11Text.bodyStrong), Text(kTermsText, key: Key('terms-text'), style: N11Text.caption), SizedBox(height: 12),
-              Text(kPrivacyTitle, style: N11Text.bodyStrong), Text(kPrivacyText, key: Key('privacy-text'), style: N11Text.caption),
-            ])))),
+            _policyLinks(),
             KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(key: const Key('register-consent'), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: N11Colors.yellow, checkColor: N11Colors.black, value: _agree, onChanged: locked ? null : (bool? value) => setState(() => _agree = value ?? false), title: const Text(kConsentLabel, style: N11Text.body))),
             if (_error('consent') != null) Text(_error('consent')!, style: const TextStyle(color: N11Colors.error)),
             N11Button(key: const Key('register-next'), label: 'Tiếp tục', onPressed: locked ? null : () { if (_validate(detailsOnly: true)) setState(() => _step = 1); }),
@@ -949,10 +948,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             if (_ship)
               N11Field(key: _feedback.key('confirm'), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, fieldKey: const Key('register-confirm-password'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !busy, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null), onChanged: () => setState(() {})),
-            if (_ship)
-              SizedBox(height: 160, child: SingleChildScrollView(child: _termsCard()))
-            else
-              _termsCard(),
+            _policyLinks(),
             KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(
               key: const Key('register-consent'),
               contentPadding: EdgeInsets.zero,
