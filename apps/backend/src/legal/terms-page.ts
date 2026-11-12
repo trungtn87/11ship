@@ -192,6 +192,7 @@ footer{text-align:center;font-size:.85rem;color:#66766b;margin-top:30px}
 <p>Áp dụng cho khách hàng, chủ quán và người giao hàng trong hệ sinh thái 11Food &amp; 11Ship.</p>
 <div class="notice" role="status">BẢN DỰ THẢO — CHƯA CÓ HIỆU LỰC. Không phải văn bản đang được xác nhận khi đăng ký.</div>
 <p class="meta">Ngày dự thảo: 12/11/2026 · Phiên bản: ${TERMS_PAGE_VERSION} · Chỉ xuất bản chính thức sau khi bổ sung thông tin đơn vị vận hành và hoàn tất rà soát pháp lý.</p>
+<p class="meta"><a href="/chinh-sach-quyen-rieng-tu">Xem Chính sách quyền riêng tư</a></p>
 </div>
 <div class="layout"><nav aria-label="Mục lục điều khoản"><strong>Nội dung</strong>${nav}</nav><article>${body}</article></div>
 <footer>11Food &amp; 11Ship · Điều khoản sử dụng</footer>
