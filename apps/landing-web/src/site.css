@@ -146,3 +146,14 @@ a.store:hover{background:#000}
  .hero--home .hero-text{padding:0}
  .hero-photos{height:400px}
 }
+
+/* Legal pages (draft text from PR #340) and store badges */
+.store span{display:flex;flex-direction:column;line-height:1.2}.store b{font-size:16px}.store small{font-size:12px;font-weight:500;color:#dfdfe2}
+.legal .lead{max-width:none}
+.draft-note{background:var(--c-yellow-faint);border:1px solid var(--c-yellow-soft);border-radius:12px;padding:var(--gap-3) var(--gap-4);color:#846908;font-size:14px;margin:0 0 var(--gap-6)}
+.legal-grid{display:grid;gap:var(--gap-4)}
+.toc{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-card);padding:var(--gap-4);display:flex;flex-direction:column;align-self:start}
+.toc strong{margin-bottom:var(--gap-2)}.toc a{min-height:var(--tap-min);display:flex;align-items:center;font-size:14px;text-decoration:none;color:var(--c-ink-2)}.toc a:hover{color:var(--c-black);text-decoration:underline}
+.legal-sec{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-card);padding:var(--gap-6);margin-bottom:var(--gap-4)}
+.legal-sec h2{font-size:18px;margin:0 0 var(--gap-3)}.legal-sec p{color:var(--c-ink-2);font-size:15px;margin:0 0 var(--gap-3)}.legal-sec p:last-child{margin:0}
+@media(min-width:900px){.legal-grid{grid-template-columns:240px 1fr}.toc{position:sticky;top:88px}}

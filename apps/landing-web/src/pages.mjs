@@ -2,6 +2,7 @@
 // Copy states only what the apps do today. Undecided facts (contact channel, legal text, store URL) are never invented.
 
 import { existsSync, readFileSync } from 'node:fs';
+import { TERMS_SECTIONS, PRIVACY_SECTIONS, TERMS_VERSION, PRIVACY_VERSION } from './legal.mjs';
 
 // Settings come from site.config.json (next to src/), overridden by LANDING_* environment variables.
 const CONFIG_PATH = new URL('../site.config.json', import.meta.url);
@@ -9,10 +10,13 @@ const FILE = existsSync(CONFIG_PATH) ? JSON.parse(readFileSync(CONFIG_PATH, 'utf
 const ENV = {
   LANDING_SITE_URL: FILE.siteUrl, LANDING_PUBLISH: FILE.publish ? '1' : '', LANDING_PLAY_FOOD_URL: FILE.playFoodUrl,
   LANDING_PLAY_SHIP_URL: FILE.playShipUrl, LANDING_DELETE_ACCOUNT_URL: FILE.deleteAccountUrl,
+  LANDING_GOOGLE_PLAY_URL: FILE.googlePlayUrl, LANDING_APP_STORE_URL: FILE.appStoreUrl,
   ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith('LANDING_') && v !== undefined && v !== '')),
 };
 /** Support e-mail shown on /ho-tro. Empty until the Owner approves a public address. */
 const CONTACT_EMAIL = FILE.contactEmail ?? '';
+const CONTACT_PHONE = FILE.contactPhone ?? '';
+const CONTACT_TEXT = [CONTACT_EMAIL && `Email: ${CONTACT_EMAIL}`, CONTACT_PHONE && `Điện thoại: ${CONTACT_PHONE}`].filter(Boolean).join(' · ');
 /** Legal texts (HTML) shown on the privacy / terms pages. Empty = "being finalised" page. Only Owner-approved text goes here. */
 const PRIVACY_HTML = FILE.privacyHtml ?? '';
 const TERMS_HTML = FILE.termsHtml ?? '';
@@ -22,6 +26,8 @@ export const SITE = (ENV.LANDING_SITE_URL ?? '').replace(/\/$/, '');
 export const PUBLISH = ENV.LANDING_PUBLISH === '1' && SITE !== '';
 /** Google Play listing URLs. Unset = "coming soon" button, never a fake link. */
 const PLAY = { food: ENV.LANDING_PLAY_FOOD_URL ?? '', ship: ENV.LANDING_PLAY_SHIP_URL ?? '' };
+/** Store links of the download band (Owner to fill). Empty = "sắp có" badge. */
+const STORE = { googlePlay: ENV.LANDING_GOOGLE_PLAY_URL ?? '', appStore: ENV.LANDING_APP_STORE_URL ?? '' };
 /** Public account-deletion page of the backend (POST /v1/account-deletion/confirm). Unset until verified as deployed. */
 const DELETE_URL = ENV.LANDING_DELETE_ACCOUNT_URL ?? '';
 
@@ -50,6 +56,11 @@ const playBtn = (key, cls = 'btn--dark') => {
     ? `<a class="btn ${cls}" href="${url}" rel="noopener">${icon('play')}Tải trên Google Play</a>`
     : `<span class="btn ${cls} btn--soon" role="note">${icon('play')}Sắp có trên Google Play</span>`;
 };
+
+/** Badge of the download band: link when the URL is set, otherwise a "coming soon" note (never a fake link). */
+const badge = (url, store, platform) => url
+  ? `<a class="store" href="${url}" rel="noopener">${icon('play')}<span><b>${store}</b><small>${platform}</small></span></a>`
+  : `<span class="store store--soon" role="note">${icon('play')}<span><b>${store}</b><small>${platform}: sắp có</small></span></span>`;
 
 /** Store link for the download band: a real link only with a listing URL; otherwise a non-clickable "coming soon" badge. */
 const storeLink = (key, name) => {
@@ -95,6 +106,22 @@ const FAQ_COMMON = [
   ['Làm sao xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
 ];
 
+/** Placeholders from the draft become neutral text on public pages (no internal notes). */
+const neutral = (t) => t.replace(/\[CHỜ OWNER[^\]]*\]/g, (m) => (/EMAIL|KÊNH/.test(m) && CONTACT_TEXT !== '' ? CONTACT_TEXT : '[Thông tin đang được hoàn thiện]'));
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Full legal page. approvedHtml (Owner-approved text from site.config.json) replaces the draft when set. */
+const legalPage = (title, lead, sections, version, slug, approvedHtml) => {
+  if (approvedHtml !== '') return `<section class="doc"><div class="wrap narrow"><h1>${title}</h1>${approvedHtml}</div></section>`;
+  const toc = sections.map((x) => `<a href="#${slug}-${x.id}">${esc(x.title)}</a>`).join('');
+  const body = sections.map((x) => `<article class="legal-sec" id="${slug}-${x.id}"><h2>${esc(x.title)}</h2>${x.paragraphs.map((p) => `<p>${esc(neutral(p))}</p>`).join('')}</article>`).join('');
+  return `<section class="doc legal"><div class="wrap">
+<h1>${title}</h1><p class="lead">${lead}</p>
+<p class="draft-note" role="note">Bản dự thảo ${version}. Nội dung đang được hoàn thiện và sẽ có hiệu lực khi được công bố chính thức.</p>
+<div class="legal-grid"><nav class="toc" aria-label="Mục lục"><strong>Nội dung</strong>${toc}</nav><div class="legal-body">${body}</div></div>
+</div></section>`;
+};
+
 export const pages = {
   '/': layout({
     path: '/', current: '/',
@@ -126,8 +153,8 @@ ${feat('bike', 'Giao hàng tiện lợi', 'Kết nối với shipper.')}
 ${feat('pin', 'Phục vụ Cao Bằng', 'Tập trung địa phương.')}
 ${feat('check', 'Rõ ràng, dễ dùng', 'Theo dõi đơn hàng.')}</ul></div></section>
 <section class="dl-sec" id="tai-ung-dung"><div class="wrap"><div class="dl">
-<div><h2>Sẵn sàng trải nghiệm 11?</h2><p>11Food và 11Ship hiện có cho điện thoại Android.</p></div>
-<div class="stores">${storeLink('food', '11Food')}${storeLink('ship', '11Ship')}</div>
+<div><h2>Sẵn sàng trải nghiệm 11?</h2><p>11Food và 11Ship dành cho Android và iOS.</p></div>
+<div class="stores">${badge(STORE.googlePlay, 'Google Play', 'Android')}${badge(STORE.appStore, 'App Store', 'iOS')}</div>
 </div></div></section>`,
   }),
 
@@ -171,19 +198,19 @@ ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứn
     title: 'Hỗ trợ — 11Food và 11Ship', desc: 'Câu hỏi thường gặp và hỗ trợ người dùng 11Food, 11Ship.',
     body: `<section class="doc"><div class="wrap narrow"><h1>Hỗ trợ</h1><p class="lead">Giải đáp nhanh cho người dùng 11Food và 11Ship.</p>
 <h2 id="faq">Câu hỏi thường gặp</h2>${faq([['11Food và 11Ship khác nhau thế nào?', '11Food dành cho khách hàng đặt đồ ăn. 11Ship dành cho cửa hàng và shipper.'], ['Dịch vụ phục vụ ở đâu?', 'Tại Cao Bằng.'], ['Mã xác minh gửi đến đâu?', 'Mã được gửi bằng tin nhắn SMS tới số điện thoại bạn nhập khi đăng ký.'], ['Tôi muốn xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.']])}
-<h2 id="lien-he">Liên hệ</h2>${CONTACT_EMAIL === '' ? '<p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p>' : `<p>Email hỗ trợ: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></p>`}</div></section>`,
+<h2 id="lien-he">Liên hệ</h2>${CONTACT_TEXT === '' ? '<p>Thông tin liên hệ hỗ trợ sẽ được cập nhật tại trang này.</p>' : `<p>Email: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><br>Điện thoại: <a href="tel:${CONTACT_PHONE.replace(/s/g, '')}">${CONTACT_PHONE}</a></p>`}</div></section>`,
   }),
 
   '/chinh-sach-quyen-rieng-tu': layout({
     path: '/chinh-sach-quyen-rieng-tu', current: '',
-    title: 'Chính sách quyền riêng tư — 11Food và 11Ship', desc: 'Chính sách quyền riêng tư của 11Food và 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Chính sách quyền riêng tư</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p>${PRIVACY_HTML === '' ? '<p>Nội dung chính sách quyền riêng tư đang được hoàn thiện và sẽ được đăng tại trang này.</p>' : PRIVACY_HTML}</div></section>`,
+    title: 'Chính sách quyền riêng tư — 11Food và 11Ship', desc: 'Chính sách quyền riêng tư của 11Food và 11Ship: dữ liệu nào được xử lý, vì sao, và quyền của bạn.',
+    body: legalPage('Chính sách quyền riêng tư', 'Áp dụng cho khách hàng, chủ quán và shipper khi dùng 11Food và 11Ship.', PRIVACY_SECTIONS, PRIVACY_VERSION, 'privacy', PRIVACY_HTML),
   }),
 
   '/dieu-khoan': layout({
     path: '/dieu-khoan', current: '',
-    title: 'Điều khoản sử dụng — 11Food và 11Ship', desc: 'Điều khoản sử dụng của 11Food và 11Ship.',
-    body: `<section class="doc"><div class="wrap narrow"><h1>Điều khoản sử dụng</h1><p class="lead">Áp dụng cho 11Food và 11Ship.</p>${TERMS_HTML === '' ? '<p>Nội dung điều khoản sử dụng đang được hoàn thiện và sẽ được đăng tại trang này.</p>' : TERMS_HTML}</div></section>`,
+    title: 'Điều khoản sử dụng — 11Food và 11Ship', desc: 'Điều khoản sử dụng 11Food và 11Ship cho khách hàng, chủ quán và shipper.',
+    body: legalPage('Điều khoản sử dụng', 'Áp dụng cho khách hàng, chủ quán và shipper trong hệ sinh thái 11Food và 11Ship.', TERMS_SECTIONS, TERMS_VERSION, 'terms', TERMS_HTML),
   }),
 
   '/xoa-tai-khoan': layout({
