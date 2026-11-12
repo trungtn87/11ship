@@ -175,4 +175,54 @@ void main() {
     await h.session.refreshIdentityIfStale();
     expect(h.meCalls, 0);
   });
+
+  test('a refresh that only changes the name / profile version notifies, and the session shows the new name', () async {
+    final Harness h = await signedInAs(active());
+    int notified = 0;
+    h.session.addListener(() => notified++);
+    h.serverSays(identityJson(name: 'Tên đổi từ máy khác', version: 2));
+    h.later(const Duration(minutes: 5));
+    await h.session.refreshIdentityIfStale();
+    expect(notified, 1);
+    expect(h.session.profile?.fullName, 'Tên đổi từ máy khác');
+    expect(h.session.profile?.version, 2);
+  });
+
+  test('a refresh that only changes the phone number notifies', () async {
+    final Harness h = await signedInAs(active());
+    int notified = 0;
+    h.session.addListener(() => notified++);
+    h.serverSays(identityJson(phone: '+84911111111'));
+    h.later(const Duration(minutes: 5));
+    await h.session.refreshIdentityIfStale();
+    expect(notified, 1);
+    expect(h.session.identity?.phoneNormalized, '+84911111111');
+  });
+
+  test('editor opened on version 1; the refresh moved the server to version 2: Save still sends 1 and gets VERSION_CONFLICT', () async {
+    final Harness h = await signedInAs(active());
+    final int editorBase = h.session.profile!.version!;
+    h.serverSays(identityJson(name: 'Tên đổi từ máy khác', version: 2));
+    h.later(const Duration(minutes: 5));
+    await h.session.refreshIdentityIfStale();
+    expect(h.session.profile?.version, 2);
+
+    h.api.routes['PUT /v1/customer/me/profile'] = (String m, String p, Map<String, String> hd, String b) async =>
+        b.contains('"expected_version":$editorBase') ? apiError(409, 'VERSION_CONFLICT') : json(200, <String, Object?>{'data': <String, Object?>{'user_id': 'u', 'full_name': 'x', 'version': 3}});
+    h.api.routes['GET /v1/customer/me/profile'] = (String m, String p, Map<String, String> hd, String b) async =>
+        json(200, <String, Object?>{'data': <String, Object?>{'user_id': '11111111-1111-4111-8111-111111111111', 'full_name': 'Tên đổi từ máy khác', 'version': 2}});
+    expect(await h.session.saveProfile('Tên của tôi', expectedVersion: editorBase), ProfileSave.conflict);
+    final RecordedRequest put = h.api.to('PUT', '/v1/customer/me/profile').single;
+    expect(put.body, contains('"expected_version":1'));
+    expect(h.session.profile?.fullName, 'Tên đổi từ máy khác');
+  });
+
+  test('a refresh that changes nothing does not notify, version included', () async {
+    final Harness h = await signedInAs(active());
+    int notified = 0;
+    h.session.addListener(() => notified++);
+    h.later(const Duration(minutes: 5));
+    await h.session.refreshIdentityIfStale();
+    expect(notified, 0);
+  });
 }

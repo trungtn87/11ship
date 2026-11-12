@@ -515,6 +515,9 @@ class SessionController extends ChangeNotifier {
   }
 
   static bool _identityShowsDifferently(Identity a, Identity b) =>
+      a.profile.fullName != b.profile.fullName ||
+      a.profile.version != b.profile.version ||
+      a.phoneNormalized != b.phoneNormalized ||
       a.lockedWalletOnly != b.lockedWalletOnly ||
       a.deletionLocked != b.deletionLocked ||
       a.activeRole != b.activeRole ||
@@ -642,10 +645,11 @@ class SessionController extends ChangeNotifier {
 
   /// PUT with expected_version. VERSION_CONFLICT reloads the current profile and does NOT overwrite it. A lost answer keeps the
   /// same key and body for the person's own retry.
-  Future<ProfileSave> saveProfile(String fullName) async {
-    final Profile? current = _profile;
-    final int? version = current?.version;
-    if (version == null || _busy) {
+  /// [expectedVersion] is the version the editor opened on (its own snapshot), never the current one: a background identity refresh
+  /// may move the current version meanwhile, and that must surface as VERSION_CONFLICT, not as a silent overwrite (P5-6c).
+  Future<ProfileSave> saveProfile(String fullName, {required int expectedVersion}) async {
+    final int version = expectedVersion;
+    if (_busy) {
       return ProfileSave.failed;
     }
     final int epoch = _epoch;

@@ -1078,6 +1078,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _message;
   bool _messageOk = false;
   bool _loading = true;
+  /// The profile version this editor opened on. Saves send this, so a version the background refresh moved meanwhile gives VERSION_CONFLICT.
+  int? _baseVersion;
 
   @override
   void initState() {
@@ -1106,12 +1108,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     setState(() {
       _name.text = widget.session.profile?.fullName ?? '';
+      _baseVersion = widget.session.profile?.version;
       _loading = false;
     });
   }
 
   Future<void> _save() async {
-    final ProfileSave result = await widget.session.saveProfile(_name.text.trim());
+    final int? base = _baseVersion;
+    if (base == null) {
+      setState(() {
+        _message = 'Chưa tải được hồ sơ. Vui lòng thử lại.';
+        _messageOk = false;
+      });
+      return;
+    }
+    final ProfileSave result = await widget.session.saveProfile(_name.text.trim(), expectedVersion: base);
     if (!mounted) {
       return;
     }
@@ -1121,10 +1132,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _message = 'Đã lưu họ tên.';
           _messageOk = true;
           _name.text = widget.session.profile?.fullName ?? _name.text;
+          _baseVersion = widget.session.profile?.version;
         case ProfileSave.conflict:
           _message = failureMessage(const AuthFailure(AuthFailureKind.versionConflict));
           _messageOk = false;
           _name.text = widget.session.profile?.fullName ?? '';
+          _baseVersion = widget.session.profile?.version;
         case ProfileSave.unknown:
           _message = failureMessage(const AuthFailure(AuthFailureKind.unknownOutcome));
           _messageOk = false;
