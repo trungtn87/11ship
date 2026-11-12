@@ -137,7 +137,7 @@ export const pages = {
 <p class="lead">Từ món ngon yêu thích đến những chuyến giao hàng tiện lợi, 11 luôn sẵn sàng đáp ứng nhu cầu hằng ngày của bạn ngay tại Cao Bằng.</p>
 <p class="hero-tag">Nhanh chóng, đơn giản và gần gũi.</p>
 </div>
-<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div></div></div></div></section>
+<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', '11Food và 11Ship tại Cao Bằng', 1672, 941, 'fetchpriority="high"')}</div></div></div></div></section>
 <section class="svc-sec"><div class="wrap">
 <p class="kicker">Chọn đúng dịch vụ</p>
 <h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
@@ -170,7 +170,7 @@ ${feat('search', 'Chọn món dễ dàng', 'Xem thực đơn, chọn món yêu t
 ${feat('bag', 'Đặt món nhanh gọn', 'Xác nhận đơn và đặt món ngay trên điện thoại.')}
 ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứng dụng.')}</ul></div></section>
 <section><div class="wrap"><h2>Đặt món đơn giản</h2><ol class="steps">${step('Chọn quán', 'Xem danh sách quán và thực đơn.')}${step('Chọn món', 'Tìm món bạn thèm, thêm vào đơn.')}${step('Đặt món', 'Xác nhận địa chỉ nhận và đặt.')}${step('Theo dõi đơn', 'Xem trạng thái đơn hàng.')}</ol></div></section>
-<section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Food dùng cho ai?', 'Khách hàng muốn đặt đồ ăn. Cửa hàng và shipper dùng <a href="/ship">11Ship</a>.'], ...FAQ_COMMON])}</div></section>`,
+`,
   }),
 
   '/ship': layout({
@@ -188,7 +188,7 @@ ${feat('pin', 'Theo dõi đơn hàng', 'Xem trạng thái đơn hàng trong ứn
 <section class="alt"><div class="wrap"><h2>Cách hoạt động</h2><div class="duo">
 <div><h3>Cửa hàng</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo tài khoản và hồ sơ cửa hàng.')}${step('Gọi shipper', 'Nhập điểm lấy và điểm giao.')}${step('Theo dõi', 'Xem trạng thái giao nhận.')}</ol></div>
 <div><h3>Shipper</h3><ol class="steps steps--one">${step('Đăng ký', 'Tạo hồ sơ shipper để được duyệt.')}${step('Nhận đơn', 'Chọn đơn trong khu vực hoạt động.')}${step('Giao hàng', 'Cập nhật trạng thái chuyến giao.')}</ol></div></div></div></section>
-<section><div class="wrap narrow"><h2>Câu hỏi thường gặp</h2>${faq([['11Ship dùng cho ai?', 'Cửa hàng và shipper. Muốn đặt đồ ăn, hãy dùng <a href="/food">11Food</a>.'], ['Tài khoản được duyệt như thế nào?', 'Hồ sơ quán hoặc hồ sơ shipper cần được duyệt trước khi bạn có thể bán hàng hoặc nhận đơn.'], ...FAQ_COMMON])}</div></section>`,
+`,
   }),
 
   '/ho-tro': layout({
