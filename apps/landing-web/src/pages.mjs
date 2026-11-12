@@ -135,7 +135,7 @@ export const pages = {
 <p class="lead">Từ món ngon yêu thích đến những chuyến giao hàng tiện lợi, 11 luôn sẵn sàng đáp ứng nhu cầu hằng ngày của bạn ngay tại Cao Bằng.</p>
 <p class="hero-tag">Nhanh chóng, đơn giản và gần gũi.</p>
 </div>
-<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', 'Thác Bản Giốc, Cao Bằng', 2000, 1100, 'fetchpriority="high"')}</div></div></div></div></section>
+<div class="hero-photos"><div class="hp-main">${img('hero-home.webp', '11Food và 11Ship tại Cao Bằng', 1672, 941, 'fetchpriority="high"')}</div></div></div></div></section>
 <section class="svc-sec"><div class="wrap">
 <p class="kicker">Chọn đúng dịch vụ</p>
 <h2>Hai ứng dụng, cùng một trải nghiệm tiện lợi.</h2>
@@ -222,11 +222,6 @@ ${faq([
   ['5. Tôi cần làm gì khi đơn hàng gặp sự cố?', 'Nếu đơn hàng bị chậm, giao sai hoặc phát sinh vấn đề, vui lòng liên hệ bộ phận hỗ trợ và cung cấp <strong>mã đơn hàng cùng mô tả sự cố</strong>. Đội ngũ 11 sẽ tiếp nhận, kiểm tra và hỗ trợ xử lý theo tình trạng thực tế.'],
   ['6. Làm thế nào để yêu cầu xóa tài khoản?', 'Bạn thực hiện xóa tài khoản trực tiếp trong <strong>ứng dụng</strong> theo hướng dẫn. Thông tin về việc xử lý tài khoản và dữ liệu liên quan được trình bày tại trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
 ])}
-<div class="faq-help"><h3>Cần hỗ trợ thêm?</h3>
-<p>Nếu chưa tìm thấy câu trả lời phù hợp, hãy liên hệ trực tiếp với chúng tôi:</p>
-<p>${CONTACT_EMAIL === '' ? '' : `<strong>Email:</strong> <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><br><strong>Điện thoại:</strong> <a href="tel:${CONTACT_PHONE.replace(/s/g, '')}">${CONTACT_PHONE}</a>`}</p>
-<p>11 luôn sẵn sàng tiếp nhận phản hồi và hỗ trợ bạn trong quá trình sử dụng dịch vụ.</p>
-</div>
 </div></section>
 <section class="account-sec"><div class="wrap"><div class="account-band">
 <div><h2>Tài khoản và quyền riêng tư</h2><p>Xem hướng dẫn xóa tài khoản và các chính sách của 11.</p></div>
