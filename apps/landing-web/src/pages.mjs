@@ -211,15 +211,22 @@ ${CONTACT_EMAIL === '' ? '<p class="contact-line">Thông tin liên hệ sẽ đ�
 <a class="topic" href="/ship"><span class="topic-num">02</span><div><b>11Ship · Giao hàng</b><span>Dành cho cửa hàng và người giao hàng.</span></div></a>
 <a class="topic" href="#faq"><span class="topic-num">03</span><div><b>Tài khoản · Xác minh</b><span>Đăng ký, mã SMS và quyền riêng tư.</span></div></a>
 </div></div></section>
-<section class="faq-sec" id="faq"><div class="wrap narrow">
+<section class="faq-sec" id="faq"><div class="wrap">
 <h2>Câu hỏi thường gặp</h2>
 <p class="muted">Những thông tin hữu ích khi bắt đầu sử dụng 11Food và 11Ship.</p>
 ${faq([
-  ['11Food và 11Ship khác nhau như thế nào?', '11Food giúp khách hàng tìm quán, đặt đồ ăn. 11Ship kết nối cửa hàng và shipper để thực hiện giao hàng.'],
-  ['Dịch vụ hiện phục vụ ở đâu?', '11 tập trung phục vụ tại Cao Bằng.'],
-  ['Tôi không nhận được mã xác minh SMS?', 'Hãy kiểm tra số điện thoại, tin nhắn SMS và thử yêu cầu gửi lại mã trên ứng dụng.'],
-  ['Làm thế nào để yêu cầu xóa tài khoản?', 'Mở ứng dụng, chọn chức năng xóa tài khoản và làm theo hướng dẫn. Xem thêm tại trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
+  ['1. 11Food và 11Ship khác nhau như thế nào?', '<strong>11Food</strong> giúp khách hàng tìm kiếm quán ăn, lựa chọn món và đặt đồ ăn trực tuyến. <strong>11Ship</strong> kết nối cửa hàng với đội ngũ shipper để thực hiện các đơn giao hàng nhanh chóng, thuận tiện.'],
+  ['2. Dịch vụ 11 hiện hoạt động tại những khu vực nào?', '11 tập trung cung cấp dịch vụ tại <strong>Cao Bằng</strong>. Phạm vi phục vụ và khả năng nhận đơn được xác định theo vị trí thực tế, hiển thị trực tiếp trên ứng dụng.'],
+  ['3. Làm thế nào để theo dõi đơn hàng?', 'Bạn có thể kiểm tra tình trạng đơn hàng tại mục <strong>Đơn hàng</strong> trên ứng dụng. Thông tin được cập nhật theo từng giai đoạn, giúp bạn chủ động theo dõi quá trình xử lý và giao nhận.'],
+  ['4. Tôi không nhận được mã xác minh OTP, phải làm sao?', 'Vui lòng kiểm tra số điện thoại đã nhập, tín hiệu di động và hộp thư SMS. Nếu chưa nhận được mã, hãy sử dụng chức năng <strong>Gửi lại mã</strong> trên ứng dụng hoặc liên hệ bộ phận hỗ trợ.<br><br><strong>Lưu ý:</strong> Không cung cấp mã OTP hoặc mật khẩu cho bất kỳ ai, kể cả người tự nhận là nhân viên hỗ trợ của 11.'],
+  ['5. Tôi cần làm gì khi đơn hàng gặp sự cố?', 'Nếu đơn hàng bị chậm, giao sai hoặc phát sinh vấn đề, vui lòng liên hệ bộ phận hỗ trợ và cung cấp <strong>mã đơn hàng cùng mô tả sự cố</strong>. Đội ngũ 11 sẽ tiếp nhận, kiểm tra và hỗ trợ xử lý theo tình trạng thực tế.'],
+  ['6. Làm thế nào để yêu cầu xóa tài khoản?', 'Bạn thực hiện xóa tài khoản trực tiếp trong <strong>ứng dụng</strong> theo hướng dẫn. Thông tin về việc xử lý tài khoản và dữ liệu liên quan được trình bày tại trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
 ])}
+<div class="faq-help"><h3>Cần hỗ trợ thêm?</h3>
+<p>Nếu chưa tìm thấy câu trả lời phù hợp, hãy liên hệ trực tiếp với chúng tôi:</p>
+<p>${CONTACT_EMAIL === '' ? '' : `<strong>Email:</strong> <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><br><strong>Điện thoại:</strong> <a href="tel:${CONTACT_PHONE.replace(/s/g, '')}">${CONTACT_PHONE}</a>`}</p>
+<p>11 luôn sẵn sàng tiếp nhận phản hồi và hỗ trợ bạn trong quá trình sử dụng dịch vụ.</p>
+</div>
 </div></section>
 <section class="account-sec"><div class="wrap"><div class="account-band">
 <div><h2>Tài khoản và quyền riêng tư</h2><p>Xem hướng dẫn xóa tài khoản và các chính sách của 11.</p></div>
@@ -250,10 +257,10 @@ ${faq([
 <section class="steps-sec"><div class="wrap">
 <h2>Quy trình yêu cầu xóa tài khoản</h2>
 <ol class="flow">
-<li><span class="flow-num">01</span><b>Đăng nhập</b><span>Mở ứng dụng và đăng nhập bằng số điện thoại, mật khẩu của tài khoản.</span></li>
-<li><span class="flow-num">02</span><b>Gửi yêu cầu</b><span>Chọn chức năng xóa tài khoản trong ứng dụng.</span></li>
-<li><span class="flow-num">03</span><b>Xác nhận</b><span>Làm theo bước xác nhận hiển thị trong ứng dụng.</span></li>
-<li><span class="flow-num">04</span><b>Nhận kết quả</b><span>Hệ thống xử lý theo quy định áp dụng.</span></li>
+<li><div class="flow-head"><span class="flow-num">01</span><b>Đăng nhập</b></div><span>Mở ứng dụng và đăng nhập bằng số điện thoại, mật khẩu của tài khoản.</span></li>
+<li><div class="flow-head"><span class="flow-num">02</span><b>Gửi yêu cầu</b></div><span>Chọn chức năng xóa tài khoản trong ứng dụng.</span></li>
+<li><div class="flow-head"><span class="flow-num">03</span><b>Xác nhận</b></div><span>Làm theo bước xác nhận hiển thị trong ứng dụng.</span></li>
+<li><div class="flow-head"><span class="flow-num">04</span><b>Nhận kết quả</b></div><span>Hệ thống xử lý theo quy định áp dụng.</span></li>
 </ol>
 </div></section>`,
   }),

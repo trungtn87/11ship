@@ -205,3 +205,12 @@ a.store:hover{background:#000}
  .account-band{flex-direction:row;align-items:center;justify-content:space-between}
  .sup-hero{padding:72px 0}
 }
+
+.flow-head{display:flex;align-items:center;gap:var(--gap-3)}
+.flow .flow-num{position:static;width:40px;height:40px;flex:none}
+.flow b{margin:0}
+.flow li{padding:var(--gap-4)}
+.faq-sec .wrap{text-align:left}
+.faq-sec h2{text-align:left}
+.faq-help{background:#fff;border:1px solid #e7e4de;border-radius:15px;padding:var(--gap-6);margin-top:var(--gap-6)}
+.faq-help h3{font-size:18px;margin:0 0 var(--gap-2)}.faq-help p{margin:0 0 var(--gap-2);color:#606168;font-size:14px}.faq-help a{font-weight:700;color:var(--c-black)}
