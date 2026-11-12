@@ -118,9 +118,8 @@ const legalPage = (title, lead, sections, version, slug, approvedHtml) => {
   if (approvedHtml !== '') return `<section class="doc"><div class="wrap narrow"><h1>${title}</h1>${approvedHtml}</div></section>`;
   const toc = sections.map((x) => `<a href="#${slug}-${x.id}">${esc(x.title)}</a>`).join('');
   const body = sections.map((x) => `<article class="legal-sec" id="${slug}-${x.id}"><h2>${esc(x.title)}</h2>${x.paragraphs.map((p) => `<p>${esc(neutral(p))}</p>`).join('')}</article>`).join('');
-  return `<section class="doc legal"><div class="wrap">
-<h1>${title}</h1><p class="lead">${lead}</p>
-<p class="draft-note" role="note">Bản dự thảo ${version}. Nội dung đang được hoàn thiện và sẽ có hiệu lực khi được công bố chính thức.</p>
+  return `<section class="doc legal-page"><div class="wrap">
+<h1>${title}</h1>
 <div class="legal-grid"><nav class="toc" aria-label="Mục lục"><strong>Nội dung</strong>${toc}</nav><div class="legal-body">${body}</div></div>
 </div></section>`;
 };
