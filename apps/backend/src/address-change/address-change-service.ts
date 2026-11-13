@@ -16,6 +16,7 @@ import { OrderRecorder } from '../orders/order-recorder';
 import { OrderRepository } from '../orders/order-repository';
 import { OrderViews } from '../orders/order-views';
 import { isEnded } from '../orders/order-rules';
+import { RouteSnapshotRepository } from '../orders/route-snapshot-repository';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { ShopAvailabilityReader } from '../shop/shop-availability-reader';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -46,6 +47,7 @@ export class AddressChangeService {
     private readonly drivers: DriverRepository,
     private readonly shops: ShopAvailabilityReader,
     private readonly routes: M14RouteClient,
+    private readonly snapshots: RouteSnapshotRepository,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly orderViews: OrderViews,
     private readonly deliveryViews: DeliveryViews,
@@ -121,6 +123,7 @@ export class AddressChangeService {
         let newDistanceM: number | null = null;
         let newFeeVnd: number | null = null;
         let feeDifferenceVnd: number | null = null;
+        let newRouteSnapshotId: string | null = null;
 
         if (input.lat === null || input.lng === null) {
           // Text-only address change: keeps existing fee, distance set to null
@@ -135,6 +138,7 @@ export class AddressChangeService {
           newLng = input.lng;
           newDistanceM = originalDistanceM;
           newFeeVnd = originalFeeVnd;
+          newRouteSnapshotId = order.routeSnapshotId;
           feeDifferenceVnd = 0;
         } else {
           // Changed coordinates: recalculate route and fee
@@ -149,6 +153,7 @@ export class AddressChangeService {
             throw new AppError('ROUTE_UNAVAILABLE');
           }
           newDistanceM = route.distanceM;
+          newRouteSnapshotId = await this.snapshots.create(context, route);
           const quote = await this.agreements.estimate(context, route.distanceM);
           if (quote.status === 'UNPRICED') {
             throw new AppError(
@@ -199,6 +204,7 @@ export class AddressChangeService {
           newLng,
           newFeeVnd,
           newDistanceM,
+          newRouteSnapshotId,
           feeDifferenceVnd,
           note: input.note,
           expiresAtMs,
@@ -396,6 +402,7 @@ export class AddressChangeService {
            SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
                fee_estimate_distance_m = $6,
                fee_estimate_vnd = COALESCE($7, fee_estimate_vnd),
+               route_snapshot_id = $9::uuid,
                version = version + 1, updated_at = clock_timestamp()
            WHERE order_id = $8`,
           [
@@ -407,6 +414,7 @@ export class AddressChangeService {
             req.newDistanceM,
             feeToApply,
             orderId,
+            req.newRouteSnapshotId,
           ],
         );
 
@@ -417,6 +425,7 @@ export class AddressChangeService {
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                  route_distance_m = $7,
                  fee_vnd = COALESCE($8, fee_vnd),
+                 route_snapshot_id = $10::uuid,
                  version = version + 1, updated_at = clock_timestamp()
              WHERE delivery_id = $9`,
             [
@@ -429,6 +438,7 @@ export class AddressChangeService {
               req.newDistanceM,
               feeToApply,
               running.deliveryId,
+              req.newRouteSnapshotId,
             ],
           );
         }
@@ -609,6 +619,7 @@ export class AddressChangeService {
         let newDistanceM: number | null = null;
         let newFeeVnd: number | null = null;
         let feeDifferenceVnd: number | null = null;
+        let newRouteSnapshotId: string | null = null;
 
         if (input.lat === null || input.lng === null) {
           // Text-only address change: keeps existing fee, distance set to null
@@ -623,6 +634,7 @@ export class AddressChangeService {
           newLng = input.lng;
           newDistanceM = originalDistanceM;
           newFeeVnd = originalFeeVnd;
+          newRouteSnapshotId = delivery.routeSnapshotId;
           feeDifferenceVnd = 0;
         } else {
           if (delivery.pickupLat === null || delivery.pickupLng === null) {
@@ -633,6 +645,7 @@ export class AddressChangeService {
             throw new AppError('ROUTE_UNAVAILABLE');
           }
           newDistanceM = route.distanceM;
+          newRouteSnapshotId = await this.snapshots.create(context, route);
           const quote = await this.agreements.estimate(context, route.distanceM);
           if (quote.status === 'UNPRICED') {
             throw new AppError(
@@ -666,6 +679,7 @@ export class AddressChangeService {
                  dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                  route_distance_m = $7,
                  fee_vnd = COALESCE($8, fee_vnd),
+                 route_snapshot_id = $10::uuid,
                  version = version + 1, updated_at = clock_timestamp()
              WHERE delivery_id = $9`,
             [
@@ -678,6 +692,7 @@ export class AddressChangeService {
               newDistanceM,
               feeToApply,
               deliveryId,
+              newRouteSnapshotId,
             ],
           );
 
@@ -715,6 +730,7 @@ export class AddressChangeService {
             newLng,
             newFeeVnd,
             newDistanceM,
+            newRouteSnapshotId,
             feeDifferenceVnd,
             note: input.note,
             expiresAtMs,
@@ -762,6 +778,7 @@ export class AddressChangeService {
           newLng,
           newFeeVnd,
           newDistanceM,
+          newRouteSnapshotId,
           feeDifferenceVnd,
           note: input.note,
           expiresAtMs,
@@ -957,6 +974,7 @@ export class AddressChangeService {
            SET recipient_name = $1, recipient_phone = $2, dropoff_address_text = $3,
                dropoff_area_text = $4, dropoff_lat = $5, dropoff_lng = $6,
                route_distance_m = $7,
+               route_snapshot_id = $9::uuid,
                version = version + 1, updated_at = clock_timestamp()
            WHERE delivery_id = $8`,
           [
@@ -968,6 +986,7 @@ export class AddressChangeService {
             req.newLng,
             req.newDistanceM,
             deliveryId,
+            req.newRouteSnapshotId,
           ],
         );
 
@@ -976,6 +995,7 @@ export class AddressChangeService {
             `UPDATE app.orders
              SET recipient_name = $1, recipient_phone = $2, address_text = $3, address_lat = $4, address_lng = $5,
                  fee_estimate_distance_m = $6,
+                 route_snapshot_id = $8::uuid,
                  version = version + 1, updated_at = clock_timestamp()
              WHERE order_id = $7`,
             [
@@ -986,6 +1006,7 @@ export class AddressChangeService {
               req.newLng,
               req.newDistanceM,
               linkedOrderId,
+              req.newRouteSnapshotId,
             ],
           );
 

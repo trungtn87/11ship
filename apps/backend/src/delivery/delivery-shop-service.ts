@@ -50,6 +50,8 @@ export interface OrderCallSpec {
   readonly routeFrom: Pickup | undefined;
   /** A distance the ORDER already carries from its checkout route, used only when no route could be measured now. */
   readonly estimatedDistanceM?: number | null;
+  /** P6-2: the Order's route snapshot; its distance is used instead of a fresh route. */
+  readonly routeSnapshotId?: string | null;
   readonly requestId: string;
 }
 
@@ -185,6 +187,7 @@ export class DeliveryShopService {
               : null,
           feeBand: sameBand?.index ?? null,
           estimatedDistanceM: previous.routeDistanceM,
+          routeSnapshotId: previous.routeSnapshotId,
           route: route?.leg,
           routeFrom: route?.from,
           requestId,
@@ -235,6 +238,8 @@ export class DeliveryShopService {
       /** One of the three bands of the fee table, chosen by the shop for an address without a map point (an estimate, not a measured distance). */
       feeBand: number | null;
       estimatedDistanceM?: number | null;
+      /** P6-2: the Order's route snapshot. When set, the distance is the snapshot's (estimatedDistanceM) and no fresh route replaces it. */
+      routeSnapshotId?: string | null;
       route: RouteLeg | undefined;
       routeFrom: Pickup | undefined;
       requestId: string;
@@ -247,10 +252,11 @@ export class DeliveryShopService {
       throw new AppError('SHOP_PROFILE_INCOMPLETE');
     }
     // A distance measured from another position (the shop moved while the route was computed) is not used: the fee then stays unknown.
-    const route = spec.route !== undefined && spec.routeFrom !== undefined && spec.routeFrom.lat === shop.pickupLat && spec.routeFrom.lng === shop.pickupLng ? spec.route : undefined;
+    const snapshotDistanceM = spec.routeSnapshotId ? (spec.estimatedDistanceM ?? null) : null;
+    const route = !spec.routeSnapshotId && spec.route !== undefined && spec.routeFrom !== undefined && spec.routeFrom.lat === shop.pickupLat && spec.routeFrom.lng === shop.pickupLng ? spec.route : undefined;
     // The fee is settled when the call is made: from the measured route, or from an estimate the shop chose or the Order carried, or proposed by the shop
     // (AGREED). A call that has none of them is refused with a clear instruction instead of creating a delivery no Shipper could pick up.
-    let distanceM = route?.distanceM ?? null;
+    let distanceM = snapshotDistanceM ?? route?.distanceM ?? null;
     if (distanceM === null && spec.agreedFee === null) {
       if (spec.feeBand !== null) {
         const band = (await this.agreements.bands(context))?.bands[spec.feeBand];
@@ -305,7 +311,8 @@ export class DeliveryShopService {
       feeMode,
       feePayer: spec.feePayer,
       feeVnd: null,
-      routeDistanceM: route?.distanceM ?? (spec.agreedFee === null && spec.feeBand === null ? (spec.estimatedDistanceM ?? null) : null),
+      routeDistanceM: snapshotDistanceM ?? route?.distanceM ?? (spec.agreedFee === null && spec.feeBand === null ? (spec.estimatedDistanceM ?? null) : null),
+      routeSnapshotId: spec.routeSnapshotId ?? null,
     };
     let inserted = false;
     for (let attempt = 0; attempt < 6 && !inserted; attempt += 1) {

@@ -51,6 +51,8 @@ export interface OrderRow {
   /** The policy quote before a voluntary increase; read from the immutable placed event. */
   readonly feeQuoteVnd?: number | null;
   readonly feeEstimateDistanceM: number | null;
+  /** P6-2: the immutable route snapshot the distance and fee come from; null for Orders placed before P6-2. */
+  readonly routeSnapshotId: string | null;
   /** Null for priced quotes and historical Orders that predate persisted quote reasons. */
   readonly feeEstimateReason?: string | null;
   readonly editedAtMs: number | null;
@@ -95,6 +97,7 @@ interface RawOrder {
   fee_estimate_vnd: string | null;
   fee_quote_vnd: string | null;
   fee_estimate_distance_m: number | null;
+  route_snapshot_id: string | null;
   fee_estimate_reason: string | null;
   edited_ms: string | null;
   change_reason: string | null;
@@ -114,7 +117,7 @@ export const ORDER_COLUMNS = `o.order_id::text AS order_id, o.code, app.shop_dis
   o.status, o.version::text AS version, o.shop_name, o.shop_phone, o.shop_address_text, o.recipient_name, o.recipient_phone, o.address_text, o.address_lat, o.address_lng,
   o.source_address_id::text AS source_address_id, o.note, o.delivery_note, ${ms('o.scheduled_for', 'scheduled_ms')},
   o.items_original_total_vnd::text AS items_original_total_vnd, o.items_total_vnd::text AS items_total_vnd, o.paid_vnd::text AS paid_vnd,
-  o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m,
+  o.fee_estimate_vnd::text AS fee_estimate_vnd, o.fee_estimate_distance_m, o.route_snapshot_id::text AS route_snapshot_id,
   (SELECT e.details->>'quote_fee_vnd' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type IN ('order.placed', 'order.customer_edited') ORDER BY e.at DESC, e.event_id DESC LIMIT 1) AS fee_quote_vnd,
   (SELECT e.details->>'quote_reason' FROM app.order_events e WHERE e.order_id = o.order_id AND e.type IN ('order.placed', 'order.customer_edited') ORDER BY e.at DESC, e.event_id DESC LIMIT 1) AS fee_estimate_reason,
   ${ms('o.edited_at', 'edited_ms')}, o.change_reason, ${ms('o.customer_edited_at', 'customer_edited_ms')}, o.customer_edit_count,
@@ -149,6 +152,7 @@ function toOrder(row: RawOrder): OrderRow {
     feeEstimateVnd: safeOrNull(row.fee_estimate_vnd),
     feeQuoteVnd: safeOrNull(row.fee_quote_vnd),
     feeEstimateDistanceM: row.fee_estimate_distance_m,
+    routeSnapshotId: row.route_snapshot_id,
     feeEstimateReason: row.fee_estimate_reason,
     editedAtMs: safeOrNull(row.edited_ms),
     changeReason: row.change_reason,
@@ -193,6 +197,7 @@ export interface NewOrder {
   readonly itemsTotalVnd: number;
   readonly feeEstimateVnd: number | null;
   readonly feeEstimateDistanceM: number | null;
+  readonly routeSnapshotId: string | null;
 }
 
 export interface NewItem {
@@ -366,16 +371,16 @@ export class OrderRepository {
     const inserted = await context.query(
       `INSERT INTO app.orders (
          order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
-          address_lat, address_lng, source_address_id, note, delivery_note, scheduled_for, items_original_total_vnd, items_total_vnd, paid_vnd, fee_estimate_vnd, fee_estimate_distance_m,
+          address_lat, address_lng, source_address_id, note, delivery_note, scheduled_for, items_original_total_vnd, items_total_vnd, paid_vnd, fee_estimate_vnd, fee_estimate_distance_m, route_snapshot_id,
          version, created_at, updated_at)
        SELECT $1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, 'PENDING_CONFIRMATION', $6, $7, $8, $9, $10, $11,
-               $12::float8, $13::float8, $14::uuid, $15, $16, $17::timestamptz, $18::bigint, $18::bigint, 0, $19::bigint, $20::int,
+               $12::float8, $13::float8, $14::uuid, $15, $16, $17::timestamptz, $18::bigint, $18::bigint, 0, $19::bigint, $20::int, $21::uuid,
               1, clock.t, clock.t
          FROM (SELECT ${CLOCK} AS t) AS clock
        ON CONFLICT DO NOTHING`,
       [
         o.orderId, o.code, o.clientRef, o.customerUserId, o.shopId, o.shopName, o.shopPhone, o.shopAddressText, o.recipientName, o.recipientPhone, o.addressText,
-        o.addressLat, o.addressLng, o.sourceAddressId, o.note, o.deliveryNote, msToTs(o.scheduledForMs), o.itemsTotalVnd, o.feeEstimateVnd, o.feeEstimateDistanceM,
+        o.addressLat, o.addressLng, o.sourceAddressId, o.note, o.deliveryNote, msToTs(o.scheduledForMs), o.itemsTotalVnd, o.feeEstimateVnd, o.feeEstimateDistanceM, o.routeSnapshotId,
       ],
     );
     if (inserted.rowCount !== 1) {
@@ -614,18 +619,19 @@ export class OrderRepository {
       itemsTotalVnd: number;
       feeEstimateVnd: number | null;
       feeEstimateDistanceM: number | null;
+      routeSnapshotId: string | null;
     },
   ): Promise<OrderRow | undefined> {
     await context.query("SELECT set_config('app.customer_order_edit', 'on', true)");
     try {
       const result = await context.query<RawOrder>(
         `UPDATE app.orders o SET recipient_name = $3, recipient_phone = $4, address_text = $5, address_lat = $6::float8, address_lng = $7::float8, source_address_id = $8::uuid,
-                note = $9, delivery_note = $10, items_original_total_vnd = $11::bigint, items_total_vnd = $11::bigint, fee_estimate_vnd = $12::bigint, fee_estimate_distance_m = $13::int,
+                note = $9, delivery_note = $10, items_original_total_vnd = $11::bigint, items_total_vnd = $11::bigint, fee_estimate_vnd = $12::bigint, fee_estimate_distance_m = $13::int, route_snapshot_id = $14::uuid,
                 edited_at = NULL, change_reason = NULL, customer_edited_at = ${CLOCK}, customer_edit_count = o.customer_edit_count + 1,
                 version = o.version + 1, updated_at = GREATEST(${CLOCK}, o.updated_at)
           WHERE o.order_id = $1::uuid AND o.version = $2::bigint
           RETURNING ${ORDER_COLUMNS}`,
-        [orderId, expectedVersion, c.recipientName, c.recipientPhone, c.addressText, c.addressLat, c.addressLng, c.sourceAddressId, c.note, c.deliveryNote, c.itemsTotalVnd, c.feeEstimateVnd, c.feeEstimateDistanceM],
+        [orderId, expectedVersion, c.recipientName, c.recipientPhone, c.addressText, c.addressLat, c.addressLng, c.sourceAddressId, c.note, c.deliveryNote, c.itemsTotalVnd, c.feeEstimateVnd, c.feeEstimateDistanceM, c.routeSnapshotId],
       );
       const row = result.rows[0];
       return row === undefined ? undefined : toOrder(row);

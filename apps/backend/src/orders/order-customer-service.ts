@@ -7,7 +7,8 @@ import { UserRepository } from '../auth/user-repository';
 import { ClientActor, ClientSessionAuthority } from '../client-auth/client-session-authority';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { CustomersService } from '../customers/customers-service';
-import { M14RouteClient, RouteResult } from '../delivery/m14-route-client';
+import { M14RouteClient, RouteLeg, RouteResult } from '../delivery/m14-route-client';
+import { RouteSnapshotRepository, routeSnapshotMatchesLeg } from './route-snapshot-repository';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -44,7 +45,7 @@ interface PreparedCheckout {
 type CheckedAddress = { text: string; lat: number | null; lng: number | null; sourceId: string | null };
 
 type QuoteReason = 'PICKUP_PIN_MISSING' | 'DROPOFF_PIN_MISSING' | 'ROUTE_UNAVAILABLE' | 'ROUTE_TIMEOUT' | 'POLICY_NOT_CONFIGURED' | 'OUT_OF_PRICE_RANGE';
-interface CheckoutQuote { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: QuoteReason | null; readonly policyVersion: number | null; readonly snapshot: string; readonly quotedAtMs: number }
+interface CheckoutQuote { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: QuoteReason | null; readonly policyVersion: number | null; readonly snapshot: string; readonly quotedAtMs: number; /** The M14 leg the distance comes from (not persisted by itself); null when no route was measured. */ readonly leg: RouteLeg | null }
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
@@ -71,6 +72,7 @@ export class OrderCustomerService {
     private readonly customers: CustomersService,
     private readonly agreements: ShippingFeeAgreementService,
     private readonly routes: M14RouteClient,
+    private readonly snapshots: RouteSnapshotRepository,
     private readonly setupGate: ShopSetupGate,
   ) {}
 
@@ -209,7 +211,7 @@ export class OrderCustomerService {
   }
 
   /**
-   * POST .../orders/preview : what the checkout shows. Never writes. Lists every reason the Order could not be sent right now (a dish gone, a closed shop, a wanted
+   * POST .../orders/preview : what the checkout shows. Writes only the route snapshot of the quote (P6-2). Lists every reason the Order could not be sent right now (a dish gone, a closed shop, a wanted
    * time outside the hours, an unknown address) and the fee estimate of M06 when the pin and the route allow one (otherwise "chưa xác định", never 0).
    */
   async preview(principal: AuthPrincipal, input: CheckoutInput): Promise<JsonObject> {
@@ -219,6 +221,8 @@ export class OrderCustomerService {
       const actor = await this.#customer(context, principal, 'share');
       const checked = await this.#check(context, actor, input, null, false);
       const estimate = await this.#estimate(context, checked.shop, checked.address, prepared, leg);
+      // P6-2: the quote owns a new immutable snapshot of its route; a later place() must match it.
+      const routeSnapshotId = estimate.leg === null ? null : await this.snapshots.create(context, estimate.leg);
       const lines = checked.lines.map((l) => ({ item_id: l.itemId, name: l.name, note: l.note, quantity: l.quantity, unit_price_vnd: l.priceVnd, issue: l.issue }));
       const total = totalOf(checked.lines.filter((l) => l.priceVnd !== null).map((l) => ({ unitPriceVnd: l.priceVnd as number, quantity: l.quantity })));
       const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
@@ -229,7 +233,7 @@ export class OrderCustomerService {
         shop: { shop_id: input.shopId, name: checked.shop?.name ?? null, online: checked.shop?.status === 'ACTIVE' && checked.shop.availability.online },
         lines,
         items_total_vnd: total,
-        fee: this.#quoteView(estimate),
+        fee: this.#quoteView(estimate, routeSnapshotId),
         tip_vnd: input.tipVnd,
         expected_total_vnd: proposedFee === null ? null : total + proposedFee,
         server_now: iso(await freshClockMs(context)),
@@ -242,7 +246,7 @@ export class OrderCustomerService {
     const currentPickup = shop?.pickupLat != null && shop.pickupLng != null ? { lat: shop.pickupLat, lng: shop.pickupLng } : null;
     const currentPoint = address?.lat != null && address.lng != null ? { lat: address.lat, lng: address.lng } : null;
     const snapshot = `${currentPickup?.lat ?? 'x'},${currentPickup?.lng ?? 'x'}>${currentPoint?.lat ?? 'x'},${currentPoint?.lng ?? 'x'}`;
-    const unavailable = (reason: QuoteReason | null, distanceM: number | null = null, policyVersion: number | null = null): CheckoutQuote => ({ status: 'UNAVAILABLE', distanceM, feeVnd: null, reason, policyVersion, snapshot, quotedAtMs });
+    const unavailable = (reason: QuoteReason | null, distanceM: number | null = null, policyVersion: number | null = null, leg: RouteLeg | null = null): CheckoutQuote => ({ status: 'UNAVAILABLE', distanceM, feeVnd: null, reason, policyVersion, snapshot, quotedAtMs, leg });
     if (currentPickup === null) return unavailable('PICKUP_PIN_MISSING');
     if (currentPoint === null) return unavailable('DROPOFF_PIN_MISSING');
     // The route belongs only to the coordinates captured before its HTTP call.
@@ -251,16 +255,32 @@ export class OrderCustomerService {
     if (!this.#samePoint(prepared.pickup, currentPickup) || !this.#samePoint(prepared.point, currentPoint)) return unavailable(null);
     if (route === null || route.status === 'UNAVAILABLE') return unavailable(route?.reason === 'ROUTE_TIMEOUT' ? 'ROUTE_TIMEOUT' : 'ROUTE_UNAVAILABLE');
     const quote = await this.agreements.estimate(context, route.leg.distanceM);
-    if (quote.status === 'PRICED') return { status: 'PRICED', feeVnd: quote.feeVnd, distanceM: route.leg.distanceM, reason: null, policyVersion: quote.policyVersionNo, snapshot, quotedAtMs };
-    return unavailable(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE', route.leg.distanceM);
+    if (quote.status === 'PRICED') return { status: 'PRICED', feeVnd: quote.feeVnd, distanceM: route.leg.distanceM, reason: null, policyVersion: quote.policyVersionNo, snapshot, quotedAtMs, leg: route.leg };
+    return unavailable(quote.reason === 'POLICY_NOT_CONFIGURED' ? 'POLICY_NOT_CONFIGURED' : quote.reason === 'OUT_OF_PRICE_RANGE' ? 'OUT_OF_PRICE_RANGE' : 'ROUTE_UNAVAILABLE', route.leg.distanceM, null, route.leg);
+  }
+
+  /**
+   * P6-2: the snapshot an Order is placed on. A client that sent the snapshot id it saw must find the SAME route now (same engine version, metres, time and road);
+   * otherwise the quote changed. A client from before route snapshots (no id) gets a snapshot of the fresh leg: the distance and fee were already matched above.
+   * No route means no snapshot; a snapshot the customer saw but no longer has is a changed quote.
+   */
+  async #snapshotForPlace(context: TransactionContext, seenId: string | null, leg: RouteLeg | null): Promise<string | null> {
+    if (leg === null) {
+      if (seenId !== null) throw new AppError('ORDER_QUOTE_CHANGED');
+      return null;
+    }
+    if (seenId === null) return this.snapshots.create(context, leg);
+    const row = await this.snapshots.find(context, seenId);
+    if (row === undefined || !routeSnapshotMatchesLeg(row, leg)) throw new AppError('ORDER_QUOTE_CHANGED');
+    return seenId;
   }
 
   #samePoint(left: { readonly lat: number; readonly lng: number } | null, right: { readonly lat: number; readonly lng: number } | null): boolean {
     return left !== null && right !== null && left.lat === right.lat && left.lng === right.lng;
   }
 
-  #quoteView(q: CheckoutQuote): JsonObject {
-    return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, quoted_at: iso(q.quotedAtMs) };
+  #quoteView(q: CheckoutQuote, routeSnapshotId: string | null = null): JsonObject {
+    return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, route_snapshot_id: routeSnapshotId, quoted_at: iso(q.quotedAtMs) };
   }
 
   #proposedFee(baseFeeVnd: number | null, tipVnd: number): number | null {
@@ -421,6 +441,7 @@ export class OrderCustomerService {
         if (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.reason !== estimate.reason || input.expectedQuote.policyVersion !== estimate.policyVersion || input.expectedQuote.snapshot !== estimate.snapshot) {
           throw new AppError('ORDER_QUOTE_CHANGED');
         }
+        const routeSnapshotId = await this.#snapshotForPlace(context, input.expectedQuote.routeSnapshotId, estimate.leg);
         const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
         const items: NewItem[] = priced.map((l, index) => ({ lineId: randomUUID(), lineNo: index + 1, menuItemId: l.itemId, name: l.name as string, note: l.note, unitPriceVnd: l.priceVnd, quantity: l.quantity }));
         const orderId = randomUUID();
@@ -449,6 +470,7 @@ export class OrderCustomerService {
               itemsTotalVnd: total,
               feeEstimateVnd: proposedFee,
               feeEstimateDistanceM: estimate.distanceM,
+              routeSnapshotId,
             },
             items,
           );
@@ -669,6 +691,7 @@ export class OrderCustomerService {
         if (input.expectedQuote.status !== estimate.status || input.expectedQuote.distanceM !== estimate.distanceM || input.expectedQuote.feeVnd !== estimate.feeVnd || input.expectedQuote.reason !== estimate.reason || input.expectedQuote.snapshot !== estimate.snapshot) {
           throw new AppError('ORDER_QUOTE_CHANGED');
         }
+        const routeSnapshotId = await this.#snapshotForPlace(context, input.expectedQuote.routeSnapshotId, estimate.leg);
         const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
         const before = await this.orders.listItems(context, orderId);
         const base = await this.orders.maxLineNo(context, orderId);
@@ -687,6 +710,7 @@ export class OrderCustomerService {
           itemsTotalVnd: total,
           feeEstimateVnd: proposedFee,
           feeEstimateDistanceM: estimate.distanceM,
+          routeSnapshotId,
         });
         if (after === undefined) {
           throw new AppError('VERSION_CONFLICT');
