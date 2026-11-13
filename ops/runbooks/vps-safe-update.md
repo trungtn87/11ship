@@ -14,7 +14,7 @@ Không có thiết bị Android thật. Không gọi đăng ký/OTP thật và k
 Bằng chứng code đã kiểm:
 
 - `ClientDeviceService` từ chối Android khi thiếu `CLIENT_DEVICE_TRUST`; `currentSnapshot()` trả unavailable khi đọc/parse lỗi, tuổi >24h hoặc timestamp đi trước >5 phút.
-- `parseClientDevice()` kiểm hai package cố định `vn.eleven.food.test`, `vn.eleven.ship.test`, cùng signer bền vững, PEM pinned. Không có accept-all/fallback.
+- `parseClientDevice()` kiểm hai package cố định `vn.eleven.food`, `vn.eleven.ship`, cùng signer bền vững, PEM pinned. Không có accept-all/fallback.
 - Refresh đã ghi temp + rename, unit trong repo trỏ `/opt/11ship/current/scripts/android-attestation-refresh.mjs`, không pin SHA.
 - Repo trước task chưa có lệnh deploy tự động hoặc kiểm snapshot freshness sau deploy. Điều này giải thích vì sao health/Admin 200 **có thể bỏ sót** lỗi; không chứng minh lỗi thực tế là snapshot quá hạn.
 

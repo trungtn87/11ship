@@ -1,15 +1,16 @@
 name: Mobile APK
 
-# Builds the two Android test APKs (11Food-test.apk, 11Ship-test.apk). Run it by hand from the Actions tab
-# ("Run workflow") or it runs on pull requests that touch mobile/ or the brand assets.
+# Builds the two Android APKs (11Food-v<versionName>.apk, 11Ship-v<versionName>.apk; applicationId vn.eleven.food / vn.eleven.ship). Run it by hand
+# from the Actions tab ("Run workflow") or it runs on pull requests that touch mobile/ or the brand assets.
 #
 # Signing (Owner decision 2026-10-12, mobile/README.md "update in place"): the persistent test key comes from the GitHub Secrets
 # ANDROID_TEST_KEYSTORE_BASE64, ANDROID_TEST_KEYSTORE_PASSWORD, ANDROID_TEST_KEY_ALIAS and ANDROID_TEST_KEY_PASSWORD (create them
 # once with mobile/tool/create-test-keystore.sh). All four are required, there is NO fallback: when any is missing the job fails at
 # its first step (before checkout), naming the missing secret(s); nothing is built, signed or uploaded. No throw-away key is ever generated.
 #
-# versionCode = github.run_number (the existing sequence, never reset). A re-run of the same run keeps the same number: it is the
-# same build, not a new version.
+# Release identity: ONE source, mobile/<app>/pubspec.yaml "version: X.Y.Z+N" (read by mobile/tool/app-version.sh): versionName = X.Y.Z, versionCode = N.
+# A new distributed build needs a new N (increasing, never reset); rebuilding the same N is the same build. CI refuses an APK whose versionName or
+# versionCode differs from the pubspec. No run_number is used any more.
 
 on:
   workflow_dispatch:
@@ -54,11 +55,11 @@ jobs:
         include:
           - app: food
             label: 11Food
-            app_id: vn.eleven.food.test
+            app_id: vn.eleven.food
             server: FOOD
           - app: ship
             label: 11Ship
-            app_id: vn.eleven.ship.test
+            app_id: vn.eleven.ship
             server: SHIP
     env:
       ANDROID_TEST_KEYSTORE_BASE64: ${{ secrets.ANDROID_TEST_KEYSTORE_BASE64 }}
@@ -320,18 +321,27 @@ jobs:
           echo "flag=$flag" >> "$GITHUB_OUTPUT"
           echo "M14_OFFLINE_MAP for ${{ matrix.app }}: $flag"
 
+      - name: Release identity (pubspec is the source)
+        run: |
+          read -r name code apk_base < <(bash mobile/tool/app-version.sh ${{ matrix.app }})
+          {
+            echo "APP_VERSION_NAME=$name"
+            echo "APP_VERSION_CODE=$code"
+            echo "APK_BASENAME=$apk_base"
+          } >> "$GITHUB_ENV"
+          echo "${{ matrix.app }}: versionName $name, versionCode $code, file $apk_base.apk"
+
       - name: Build release APK
         run: |
-          version="$(sed -n 's/^version: *\([0-9.]*\)+.*/\1/p' mobile/${{ matrix.app }}/pubspec.yaml)"
           cd mobile/${{ matrix.app }}
           fv="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' 2>/dev/null)" || fv=unknown
           flutter build apk --release \
-            --build-name="$version" --build-number="${{ github.run_number }}" \
+            --build-name="$APP_VERSION_NAME" --build-number="$APP_VERSION_CODE" \
             --dart-define=M14_OFFLINE_MAP="${{ steps.m14.outputs.flag }}" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=APP_ID="${{ matrix.app_id }}" \
-            --dart-define=APP_VERSION="$version" \
-            --dart-define=BUILD_NUMBER="${{ github.run_number }}" \
+            --dart-define=APP_VERSION="$APP_VERSION_NAME" \
+            --dart-define=BUILD_NUMBER="$APP_VERSION_CODE" \
             --dart-define=CI_RUN="${{ github.run_id }}" \
             --dart-define=SOURCE_SHA="$SOURCE_SHA" \
             --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
@@ -408,7 +418,7 @@ jobs:
           chmod 700 "$work"
           printf '%s' "$ANDROID_TEST_KEYSTORE_BASE64" | base64 -d > "$work/test.jks"
           src="mobile/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk"
-          out="${{ matrix.label }}-test.apk"
+          out="$APK_BASENAME.apk"
           if [ ! -f "$src" ]; then
             echo "::error title=apk not found::$(find . -name '*.apk' -not -path './.git/*' 2>/dev/null | head -8 | tr '\n' '|')"
             exit 1
@@ -426,7 +436,8 @@ jobs:
           "$bt/aapt2" dump badging "$out" > "$work/badging.txt"
           grep -E "^package: |application-label:|uses-permission" "$work/badging.txt"
           grep -q "package: name='${{ matrix.app_id }}'" "$work/badging.txt" || { echo "::error title=applicationId changed::expected ${{ matrix.app_id }}"; exit 1; }
-          grep -q "versionCode='${{ github.run_number }}'" "$work/badging.txt" || { echo "::error title=versionCode mismatch::expected ${{ github.run_number }}"; exit 1; }
+          grep -q "versionCode='$APP_VERSION_CODE'" "$work/badging.txt" || { echo "::error title=versionCode mismatch::expected $APP_VERSION_CODE (pubspec)"; exit 1; }
+          grep -q "versionName='$APP_VERSION_NAME'" "$work/badging.txt" || { echo "::error title=versionName mismatch::expected $APP_VERSION_NAME (pubspec)"; exit 1; }
           mobile/tool/check-apk-permissions.sh ${{ matrix.app }} "$work/badging.txt"
 
           # The signing certificate: the APK's one must be the keystore's one (same persistent key). Only public fingerprints are printed.
@@ -444,11 +455,11 @@ jobs:
           rm -f "$work/test.jks"
           sha256sum "$out"
           printf '{"app":"%s","package_name":"%s","signer_sha256":"%s","version_code":%s,"source_sha":"%s"}\n' \
-            "${{ matrix.server }}" "${{ matrix.app_id }}" "$apk_fp" "${{ github.run_number }}" "$SOURCE_SHA" > "signer-${{ matrix.app }}.json"
+            "${{ matrix.server }}" "${{ matrix.app_id }}" "$apk_fp" "$APP_VERSION_CODE" "$SOURCE_SHA" > "signer-${{ matrix.app }}.json"
           {
-            echo "### ${{ matrix.label }}-test.apk"
-            echo "- applicationId: \`${{ matrix.app_id }}\`, versionCode ${{ github.run_number }} (run attempt ${{ github.run_attempt }}; a re-run of this run is the same build, not a new version), source \`$SOURCE_SHA\`"
-            echo "- Signed with the persistent test key from GitHub Secrets: it updates over older builds and keeps their data."
+            echo "### $APK_BASENAME.apk"
+            echo "- applicationId: \`${{ matrix.app_id }}\`, versionName \`$APP_VERSION_NAME\`, versionCode \`$APP_VERSION_CODE\` (pubspec.yaml), source \`$SOURCE_SHA\`"
+            echo "- Signed with the persistent key from GitHub Secrets: it updates over older builds of the same applicationId and keeps their data."
             echo "- Public signing certificate SHA-256 (for CLIENT_DEVICE_ALLOWED_SIGNERS_FILE): \`$apk_fp\`"
             echo "- API_BASE_URL \`$API_BASE_URL\`, device environment \`$DEVICE_ENVIRONMENT\`"
             echo "- apk sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
@@ -457,8 +468,8 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.label }}-test.apk
-          path: ${{ matrix.label }}-test.apk
+          name: ${{ matrix.app }}-apk
+          path: ${{ env.APK_BASENAME }}.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -571,7 +582,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/download-artifact@v4
         with:
-          name: 11Ship-test.apk
+          name: ship-apk
       - name: Enable KVM for the disposable emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -610,7 +621,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/download-artifact@v4
         with:
-          name: 11Food-test.apk
+          name: food-apk
       - name: Enable KVM for the disposable emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

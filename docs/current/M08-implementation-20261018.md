@@ -54,7 +54,7 @@ Service account có vai trò *Firebase Cloud Messaging API Admin*. Kiểm tra tr
 | Tên | Loại | Ghi chú |
 |---|---|---|
 | `FCM_PROJECT_ID`, `FCM_SENDER_ID` | variable | chung |
-| `FCM_SHIP_APP_ID`, `FCM_FOOD_APP_ID` | variable | `1:<sender>:android:<hex>` của từng app Android (applicationId `vn.eleven.ship.test` / `vn.eleven.food.test`) |
+| `FCM_SHIP_APP_ID`, `FCM_FOOD_APP_ID` | variable | `1:<sender>:android:<hex>` của từng app Android (applicationId chính thức `vn.eleven.ship` / `vn.eleven.food`, Owner 13/11/2026) |
 | `FCM_SHIP_API_KEY`, `FCM_FOOD_API_KEY` | secret | khóa API Android của từng app (định danh client, có trong mọi APK; không phải khóa máy chủ) |
 
 **Đã kiểm tự động:** client FCM với máy chủ Google giả (`push-provider.spec.ts`); token theo phiên, dừng khi đăng xuất/đổi tài khoản, gom thẻ, nhắc 5/15 phút và nhắc lấy hàng, **nhắc lấy hàng bị bỏ khi pickup / shop hủy / shipper trả đơn** (`m08-notifications.int.spec.ts`); xin quyền một lần sau đăng nhập, đăng ký token, chạm → định tuyến (Dart); job CI *push build compiles* biên dịch bản có Firebase bằng định danh giả và kiểm tra manifest + quyền.

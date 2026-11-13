@@ -12,10 +12,21 @@ Every other business action stays **locked with a visible reason** ("Chưa nối
 - `tool/prepare-android.sh <food|ship>` generates the Android project (`flutter create` + overlay + the Kotlin device bridge in `tool/android-templates/kotlin`). The result is not committed;
   everything native is in this repository, so the script rebuilds it. It needs `DEVICE_ENVIRONMENT` (see below).
 
-applicationId: `vn.eleven.food.test`, `vn.eleven.ship.test` (never change them: they identify the app on the phone).
+applicationId (official, Owner decision 13/11/2026): `vn.eleven.food` (11Food), `vn.eleven.ship` (11Ship). They identify the app on the phone: never change them after a release.
+Not the `.test` ids of the earlier test builds (removed; no Firebase `.test` app is registered). The SMS gateway keeps `vn.eleven.gateway.test`.
+
+## Release identity and version (single source)
+`mobile/<app>/pubspec.yaml` → `version: X.Y.Z+N`. `X.Y.Z` is the versionName and `N` the versionCode; `mobile/tool/app-version.sh <app>` is the only reader, used by the build, the APK name and CI verification.
+- First release: `1.0.0+1` for both apps (`versionCode` 1 is valid only if the package was never distributed before; see the Play check below).
+- versionName: a fix bumps PATCH, a compatible feature MINOR, a major change MAJOR.
+- versionCode: a NEW distributed build (test APK, Play upload or release) needs a larger `N`, increased per app and never reset, even when the versionName changes. Rebuilding the same `N` is the same build.
+- The two apps are versioned independently. CI refuses an APK whose versionName/versionCode differs from the pubspec.
+- Open point for the Owner: confirm in Google Play Console that neither `vn.eleven.food` nor `vn.eleven.ship` has ever been uploaded. If one was, its versionCode must be above the highest one used there (state the basis).
 
 ## Get the APKs
-GitHub → Actions → **Mobile APK** → open a run → Artifacts: `11Food-test.apk`, `11Ship-test.apk` (zip each, unzip, copy the .apk to the phone). Run it manually with *Run workflow*.
+GitHub → Actions → **Mobile APK** → open a run → Artifacts: `food-apk` (contains `11Food-v<versionName>.apk`) and `ship-apk` (contains `11Ship-v<versionName>.apk`). Unzip, copy the .apk to the phone. Run it manually with *Run workflow*.
+
+**Fresh install (13/11/2026):** the official packages are new applicationIds. Install them as new apps; do not look for or install over the old `.test` APKs. Users sign in again; account data stays on the backend.
 
 Install: allow "install unknown apps" for the app you open the file with, tap the .apk, install. Open the app; the banner shows the server state, and *Tài khoản → Chẩn đoán kết nối* shows version, build, source commit and both probes.
 
@@ -53,7 +64,7 @@ All three reuse the session above and the backend that already exists; nothing i
 
 ### Server inputs (development/test or production, loopback bind only)
 `CLIENT_AUTH_ANDROID_ENABLED=true` plus `CLIENT_DEVICE_ENVIRONMENT`, `CLIENT_DEVICE_ALLOWED_SIGNERS_FILE`, `CLIENT_DEVICE_ATTESTATION_ROOTS_FILE`, `CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE` (see `.env.example`). Staging or a remote bind with the gate on stop the startup; production needs all four inputs.
-- Signers file: the **Mobile APK** workflow publishes the public signing-certificate SHA-256 of the persistent key (job summary + the `android-signers.json` artifact: `{"FOOD":{"package_name":"vn.eleven.food.test","signer_sha256":"<hex>"},"SHIP":{...}}`). Nothing secret is printed.
+- Signers file: the **Mobile APK** workflow publishes the public signing-certificate SHA-256 of the persistent key (job summary + the `android-signers.json` artifact: `{"FOOD":{"package_name":"vn.eleven.food","signer_sha256":"<hex>"},"SHIP":{...}}`). Nothing secret is printed.
 - Roots file: the Android Key Attestation roots that **you pin** (PEM). The app and the server never use the OS trust store for this, and a client can not supply a root.
 - Revocation file: a snapshot of the official Android attestation status list with `fetched_at` (`{"fetched_at":"<ISO>","entries":{"<serial hex>":{"status":"REVOKED"}}}`). Older than 24 hours, or unreadable: the server answers 503 at verification.
 - `CLIENT_DEVICE_ENVIRONMENT` must equal the repository variable `N11_DEVICE_ENVIRONMENT` the APKs were built with (default `ship11-test`).
@@ -77,13 +88,21 @@ Secrets `ANDROID_TEST_KEYSTORE_BASE64`, `ANDROID_TEST_KEYSTORE_PASSWORD`, `ANDRO
 Every subsequent test APK must install as an update over the previous build, preserving application data and avoiding uninstall/reinstall. The Owner downloads the APK and taps **Update** manually; an automatic updater is not required.
 
 - Use a persistent test signing key for each application's entire lifetime. The two apps may share the existing test keystore; never regenerate it per build. Store credentials in GitHub Secrets, never commit private keys, and keep a private backup.
-- Keep applicationIds `vn.eleven.food.test` and `vn.eleven.ship.test` unchanged.
-- Increase Android versionCode for each new distributed build; re-running the same build is not a new version. Do not reset the sequence when changing workflows.
+- applicationIds `vn.eleven.food` and `vn.eleven.ship` are fixed from now on (the old `.test` ids are retired).
+- versionCode comes from the pubspec (see "Release identity"): increase it for each new distributed build; re-running the same build is not a new version. Never reset it.
 - Missing/incomplete signing secrets must stop APK distribution with a clear error. A throw-away signing key is no longer allowed.
 - Preserve local data across updates; future schema changes must migrate existing data rather than requiring a reinstall.
 
-Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionCode (= `github.run_number`, never reset),
-and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
+Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionName and versionCode (both from the pubspec), and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
+
+### Signing for the official packages — decision still open (Owner)
+- Today's secrets (`ANDROID_TEST_KEYSTORE_*`) are the persistent key used so far. Nothing here creates, replaces or copies a key silently.
+- 11Food and 11Ship **must share one signing certificate**: the peer-endorsement permission between the two apps checks the signer.
+- Owner must choose one of:
+  1. **Keep the current keystore** for the official packages (it stays a non-debug, persistent key; the name `TEST` is historical). Sideload updates keep working; a Play upload must then use Play App Signing with an upload key that differs from this one, and sideloaded APKs will not update the Play-installed copy.
+  2. **Create a dedicated release keystore** (Owner-generated, private backup, GitHub Secrets) and use it for both apps. Same consequence for Play as option 1 unless the same app-signing key is used.
+  3. **Play App Signing**: Google holds the app signing key; the upload key is local. Sideloaded APKs then cannot update Play installs. Choose this only if APK distribution outside Play is no longer needed.
+- Whatever is chosen: no debug key, no throw-away key, and the key, passwords and any service-account file stay out of the repository, logs and reports.
 
 If an already installed first APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.
 

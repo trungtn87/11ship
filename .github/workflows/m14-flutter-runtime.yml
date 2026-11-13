@@ -42,7 +42,7 @@ jobs:
           disable-animations: true
           script: |
             cd mobile/ship && flutter test integration_test/m14_test.dart --reporter expanded
-            adb shell "run-as vn.eleven.ship.test sh -c 'test ! -f databases/m14-history.db'"
+            adb shell "run-as vn.eleven.ship sh -c 'test ! -f databases/m14-history.db'"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

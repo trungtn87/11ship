@@ -11,8 +11,8 @@
 ## A. Owner làm trên Firebase (một lần, ~10 phút)
 1. Vào <https://console.firebase.google.com> → *Add project* (hoặc chọn dự án có sẵn). Ghi lại **Project ID** và **Project number** (= sender id) ở *Project settings → General*.
 2. *Project settings → General → Your apps → Add app → Android*, làm **hai lần**:
-   - package `vn.eleven.ship.test` (11Ship) → ghi **App ID** (`1:<số>:android:<hex>`);
-   - package `vn.eleven.food.test` (11Food) → ghi **App ID**.
+   - package `vn.eleven.ship` (11Ship, Owner 13/11/2026) → ghi **App ID** (`1:<số>:android:<hex>`);
+   - package `vn.eleven.food` (11Food) → ghi **App ID**.
    Bỏ qua bước tải `google-services.json` (build dùng biến, không dùng file này). Không cần SHA-1.
 3. API key Android của từng app: *Project settings → General → Your apps → (app) → `google-services.json` → `current_key`*, hoặc <https://console.cloud.google.com/apis/credentials> (khóa "Android key (auto created by Firebase)"). Hai app có thể cùng một khóa.
 4. Bật API: <https://console.cloud.google.com/apis/library/fcm.googleapis.com> → *Firebase Cloud Messaging API* phải ở trạng thái **Enabled** (V1).
@@ -22,8 +22,8 @@
 ```bash
 gh variable set FCM_PROJECT_ID    --repo trungtn87/11ship --body '<project id>'
 gh variable set FCM_SENDER_ID     --repo trungtn87/11ship --body '<project number>'
-gh variable set FCM_SHIP_APP_ID   --repo trungtn87/11ship --body '<app id của vn.eleven.ship.test>'
-gh variable set FCM_FOOD_APP_ID   --repo trungtn87/11ship --body '<app id của vn.eleven.food.test>'
+gh variable set FCM_SHIP_APP_ID   --repo trungtn87/11ship --body '<app id của vn.eleven.ship>'
+gh variable set FCM_FOOD_APP_ID   --repo trungtn87/11ship --body '<app id của vn.eleven.food>'
 gh secret   set FCM_SHIP_API_KEY  --repo trungtn87/11ship      # gh hỏi giá trị, dán vào, không đi qua chat
 gh secret   set FCM_FOOD_API_KEY  --repo trungtn87/11ship
 ```
@@ -59,7 +59,7 @@ journalctl -u 11ship-staging -n 30 --no-pager
 Gửi thử một thông báo thật tới một máy (registration token của máy thử; operator chỉ đọc nó từ `app.notification_push_tokens` khi cần, không dán vào chat/log): `npm run push:check -- --token '<registration token>'`. Thông báo thử không nằm trong hộp thư; chạm vào sẽ báo "không tìm thấy" — bình thường.
 Hoàn tác: xóa hai dòng `PUSH_FCM_*` rồi `systemctl restart 11ship-staging` → hộp thư/đồng bộ vẫn chạy, push ghi `PROVIDER_NOT_CONFIGURED`.
 
-## D. Thử trên điện thoại thật (Android 13+ khuyến nghị; cần 11Ship và 11Food đã cài đè bản push)
+## D. Thử trên điện thoại thật (Android 13+ khuyến nghị; cần 11Ship và 11Food bản có push đã cài (cài mới: không có bản `.test` để cài đè; xem mục 13/11/2026 trong mobile/README.md))
 Cần: 1 tài khoản Shop (11Food, đã có quán + sản phẩm), 1 tài khoản Shipper (11Ship, đã được duyệt, đang ở trạng thái nhận đơn), hai điện thoại hoặc hai app; VPS đã làm mục C.
 1. **Quyền**: đăng nhập 11Ship → hộp thoại *Cho phép gửi thông báo* hiện một lần → *Cho phép*. Làm tương tự 11Food. (Từ chối: *Cài đặt → Thông báo* trong app dẫn tới cài đặt hệ thống.)
 2. **Đăng ký token**: `Thông báo → Cài đặt` hiện "Thiết bị này nhận được thông báo" (không còn "chưa hỗ trợ"). Operator: `sudo -u postgres psql -d ship11_staging -c "select app, count(*) from app.notification_push_tokens where invalidated_at is null group by 1"` (tên cột xem migration `1794182400000`) phải thấy thiết bị vừa đăng ký; không in token.

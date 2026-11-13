@@ -10,7 +10,7 @@ const String sha = '0123456789abcdef0123456789abcdef01234567';
 
 const AppConfig config = AppConfig(
   apiBaseUrl: 'https://103.9.78.67.sslip.io',
-  appId: 'vn.eleven.food.test',
+  appId: 'vn.eleven.food',
   versionName: '0.1.0',
   buildNumber: '3',
   sourceSha: sha,
