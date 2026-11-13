@@ -12,6 +12,9 @@ import { NotificationEventService } from '../../apps/backend/src/notifications/n
 import { NotificationRuntime, NotificationRetention } from '../../apps/backend/src/notifications/notification-runtime';
 import { PushDispatcher } from '../../apps/backend/src/notifications/push-dispatcher';
 import { ReminderBatcher } from '../../apps/backend/src/notifications/reminder-batcher';
+import { NotificationRepository } from '../../apps/backend/src/notifications/notification-repository';
+import { CATEGORY_OF_KIND } from '../../apps/backend/src/notifications/notification-constants';
+import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
 import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
 import { ApiResponse, AuthApp, createActiveShopFor, createServiceArea, dataOf, errorCode, grantStrayRole, obtainProof, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 
@@ -963,5 +966,82 @@ describe('M08 — notifications, reminders and sync', () => {
     expect(await rows(`SELECT status, (expires_at > now()) AS live FROM app.notification_pushes WHERE recipient_user_id = $1::uuid`, [s.userId])).toEqual([{ status: 'PENDING', live: true }]);
     expect(await staleAudits(young.eventId)).toHaveLength(0);
     expect(await metricCount('m08_stale_event.delivered_late')).toBe(before);
+  });
+  // ---- P6-9 (review): one atomic upsert for a collapsed card; the newer fact wins and an older one never moves the card backwards ----------------------
+
+  const repo = (): NotificationRepository => app.running.app.get(NotificationRepository);
+  const txs = (): TransactionManager => app.running.app.get(TransactionManager);
+  const cardOf = async (dedupe: string): Promise<Json[]> => rows(`SELECT notification_id, title, source_event_id, created_at, updated_at, read_at, seq::text AS seq FROM app.notifications WHERE recipient_user_id = $1::uuid AND app = 'FOOD' AND dedupe_key = $2`, [shop.userId, dedupe]);
+  const putCard = (dedupe: string, eventId: string, title: string, hoursOld: number): Promise<{ notificationId: string; refreshed: boolean }> =>
+    txs().withTransaction((context) =>
+      repo().upsertCollapsedCard(context, {
+        notificationId: randomUUID(),
+        recipientUserId: shop.userId,
+        app: 'FOOD',
+        kind: 'ORDER_CHAT_MESSAGE',
+        category: CATEGORY_OF_KIND.ORDER_CHAT_MESSAGE,
+        title,
+        body: 'Mở để xem',
+        targetType: 'DELIVERY',
+        targetId: randomUUID(),
+        targetVersion: 0,
+        dedupeKey: dedupe,
+        sourceEventId: eventId,
+        validForMs: null,
+        purgeDays: 30,
+        ageMs: hoursOld * 3_600_000,
+      }),
+    );
+
+  it('two workers refreshing one card at the same time, in either call order: one card, the newer fact wins, the older one never moves it backwards', async () => {
+    for (const order of ['old-first', 'new-first'] as const) {
+      const dedupe = `race:${order}:${randomUUID()}`;
+      const oldEvent = randomUUID();
+      const newEvent = randomUUID();
+      const oldWrite = putCard(dedupe, oldEvent, 'Tin cũ', 25);
+      const newWrite = putCard(dedupe, newEvent, 'Tin mới', 1);
+      await Promise.all(order === 'old-first' ? [oldWrite, newWrite] : [newWrite, oldWrite]);
+      const cards = await cardOf(dedupe);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ title: 'Tin mới', source_event_id: newEvent });
+      expect(ageHours(cards[0]?.updated_at)).toBeGreaterThan(0.9);
+      expect(ageHours(cards[0]?.updated_at)).toBeLessThan(1.1);
+      // created_at is the time of the fact that created the card: whichever of the two reached the table first. Both are real facts.
+      const created = ageHours(cards[0]?.created_at);
+      expect(created > 24.9 && created < 25.1 || created > 0.9 && created < 1.1).toBe(true);
+    }
+  });
+
+  it('an older fact arriving after a newer one leaves the card alone: text, source, last update, unread state and created_at do not move', async () => {
+    const dedupe = `old-after-new:${randomUUID()}`;
+    const newEvent = randomUUID();
+    await putCard(dedupe, newEvent, 'Tin mới', 1);
+    await app.pool.query(`UPDATE app.notifications SET read_at = clock_timestamp() WHERE recipient_user_id = $1::uuid AND app = 'FOOD' AND dedupe_key = $2`, [shop.userId, dedupe]);
+    const before = (await cardOf(dedupe))[0] as Json;
+    expect(before.read_at).not.toBeNull();
+    await putCard(dedupe, randomUUID(), 'Tin cũ', 25);
+    const after = (await cardOf(dedupe))[0] as Json;
+    expect(after).toMatchObject({ title: 'Tin mới', source_event_id: newEvent });
+    expect(after.read_at).toEqual(before.read_at);
+    expect(after.updated_at).toEqual(before.updated_at);
+    expect(after.created_at).toEqual(before.created_at);
+    // The live cursor is renewed on every refresh, as it always was.
+    expect(BigInt(String(after.seq)) > BigInt(String(before.seq))).toBe(true);
+  });
+
+  it('a newer fact after the card was read makes it unread again, with its own text, source and time; the card was created by the older one', async () => {
+    const dedupe = `new-after-old:${randomUUID()}`;
+    const oldEvent = randomUUID();
+    const newEvent = randomUUID();
+    await putCard(dedupe, oldEvent, 'Tin cũ', 25);
+    await app.pool.query(`UPDATE app.notifications SET read_at = clock_timestamp() WHERE recipient_user_id = $1::uuid AND app = 'FOOD' AND dedupe_key = $2`, [shop.userId, dedupe]);
+    const before = (await cardOf(dedupe))[0] as Json;
+    await putCard(dedupe, newEvent, 'Tin mới', 1);
+    const after = (await cardOf(dedupe))[0] as Json;
+    expect(after).toMatchObject({ title: 'Tin mới', source_event_id: newEvent, read_at: null });
+    expect(ageHours(after.updated_at)).toBeLessThan(1.1);
+    expect(after.created_at).toEqual(before.created_at);
+    expect(ageHours(after.created_at)).toBeGreaterThan(24.9);
+    expect(BigInt(String(after.seq)) > BigInt(String(before.seq))).toBe(true);
   });
 });
