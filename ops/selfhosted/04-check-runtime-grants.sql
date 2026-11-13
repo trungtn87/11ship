@@ -89,6 +89,7 @@ WITH expected(table_name, privileges) AS (
     ('order_chat_messages', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
     ('order_chat_holds', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('address_change_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('route_snapshots', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_timeout_policy', ARRAY['SELECT', 'UPDATE']::text[]),
     ('order_timeout_policy_changes', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_parameters', ARRAY['SELECT', 'UPDATE']::text[]),

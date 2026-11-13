@@ -92,6 +92,10 @@
     "1797724800000_account-delete-request": {
       "sha256": "68b6122d1b092b322cb31bdd38c20ef0c4b04d47eb364b5a7e866f2bc9dbadd3",
       "review": "OD-26 / P5-6a; compatibility review 2026-11-08: Up adds one nullable column delete_requested_at to app.users (NULL for every existing row), one CHECK that allows it only on an ACTIVE row or on a row locked VIOLATION / SECURITY (every existing row satisfies it because the column is NULL), one partial index on that column, and one new table app.account_delete_limits (HMAC bucket keys and counters; empty). No existing column, constraint, function, grant, enum or data is changed, and lock_reason / locked_at rules are untouched. The previous backend names its users columns explicitly and never reads or writes the new column or table, so it keeps working unchanged until the new backend runs; the new backend needs this migration for POST /v1/account-deletion/confirm and the sweeper. The runtime role needs SELECT, INSERT, UPDATE on account_delete_limits (ops/selfhosted/02-runtime-grants.sql). Down drops the table, the index, the constraint and the column (any pending request is dropped, the account simply stays ACTIVE)."
+    },
+    "1797811200000_route-snapshots": {
+      "sha256": "64c21212ee7f57f6db23e4514b27b389494e11c5f67f9b18ae487513183c09fc",
+      "review": "PR #346 (P6-2, #294); compatibility review 2026-11-14 (drafted by the implementer, for Lead confirmation): Up adds app.route_snapshots (append-only), nullable route_snapshot_id on orders and deliveries, nullable new_route_snapshot_id on address_change_requests, and a pointer guard trigger. No backfill; existing rows and distances are unchanged. The previous backend neither reads nor writes these columns, so its inserts stay valid (NULL) and its updates never change the pointer, so the guard passes. Down is for disposable databases only."
     }
   }
 }
