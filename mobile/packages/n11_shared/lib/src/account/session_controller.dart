@@ -170,9 +170,10 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _validate(String token, int epoch) async {
+    final int seq = _identitySeq;
     try {
       final ApiResponse response = await api.signedCall('GET', '/v1/client-auth/me', token: token);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _identitySeq) {
         return;
       }
       if (response.status == 200) {
@@ -375,8 +376,9 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> _send(PendingAuth pending, int epoch) async {
     _pending = pending;
+    final int seq = _identitySeq;
     final ApiResponse response = await api.authCall(pending.path, pending.body, pending.idempotencyKey);
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return false;
     }
     final bool created = response.status == 201 && pending.kind == PendingKind.register;
@@ -391,7 +393,7 @@ class SessionController extends ChangeNotifier {
       throw const AuthFailure(AuthFailureKind.badResponse);
     }
     await bridge.storeToken(token);
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return false;
     }
     _sessionEndedNotice = false;
@@ -452,8 +454,9 @@ class SessionController extends ChangeNotifier {
   /// Reads `me` again and replaces the identity (after an onboarding step changed what the server says about the person).
   Future<void> refreshIdentity() async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final ApiResponse response = await protectedCall('GET', '/v1/client-auth/me');
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return;
     }
     final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
@@ -543,6 +546,7 @@ class SessionController extends ChangeNotifier {
 
   Future<void> selectContext(String context) async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final String body = jsonEncode(<String, Object?>{'context': context});
     // A lost answer is retried with the same key and body (the person taps again); any other outcome starts a new intent.
     final String key = _contextBody == body && _contextKey != null ? _contextKey! : newIdempotencyKey();
@@ -564,7 +568,7 @@ class SessionController extends ChangeNotifier {
       _contextBody = null;
       _contextKey = null;
     }
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return;
     }
     final Identity? identity = refusal == null ? Identity.tryParse(response.data) : null;
@@ -621,13 +625,14 @@ class SessionController extends ChangeNotifier {
   /// GET /v1/customer/me/profile. A 401 ends the session (token and personal values cleared).
   Future<bool> loadProfile() async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final String? token = await bridge.readToken();
     if (token == null) {
       return false;
     }
     try {
       final ApiResponse response = await api.signedCall('GET', '/v1/customer/me/profile', token: token);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _identitySeq) {
         return false;
       }
       if (response.status != 200) {
