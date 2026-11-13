@@ -758,30 +758,36 @@ describe('M08 — notifications, reminders and sync', () => {
   const ageHours = (iso: unknown): number => (Date.now() - Date.parse(String(iso))) / 3_600_000;
 
   /**
-   * Seeds rows the consumer reads back from the owners' tables. The user guard triggers are lifted for this seeding only: the seed transaction COMMITs first
-   * (its deferred foreign keys are settled there), and only then the triggers come back on, in their own statements. A failing seed is rolled back, and the
-   * triggers are restored in every case, so nothing half-seeded or switched off leaks into another test.
+   * Seeds rows the consumer reads back from the owners' tables, with the user guard triggers lifted for the seeding only.
+   * ONE transaction: BEGIN, DISABLE TRIGGER USER, the SQL seed, SET CONSTRAINTS ALL IMMEDIATE (the deferred foreign-key checks of the seed fire now, so no
+   * trigger event is still pending when the triggers are enabled again), ENABLE TRIGGER USER, COMMIT. Any error rolls everything back; ALTER TABLE is
+   * transactional, so the triggers are back on too. The triggers are never committed in the off state.
    */
   async function seed(tables: string[], body: (c: import('pg').PoolClient) => Promise<void>): Promise<void> {
     const client = await app.pool.connect();
-    let failure: unknown;
     try {
       await client.query('BEGIN');
       for (const t of tables) await client.query(`ALTER TABLE ${t} DISABLE TRIGGER USER`);
       await body(client);
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      for (const t of tables) await client.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
       await client.query('COMMIT');
     } catch (error) {
-      failure = error;
       await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-    try {
-      for (const t of tables) await client.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
-    } catch (restoreError) {
-      client.release(restoreError instanceof Error ? restoreError : new Error('trigger restore failed'));
-      throw failure ?? restoreError;
-    }
-    client.release();
-    if (failure !== undefined) throw failure;
+  }
+
+  /** Triggers of the given tables that are switched off (pg_trigger.tgenabled = 'D'). Must be empty before and after every seed, failing or not. */
+  async function disabledTriggersOf(tables: string[]): Promise<Json[]> {
+    return rows(
+      `SELECT c.relname AS table_name, t.tgname AS trigger_name, t.tgenabled
+         FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'app' AND c.relname = ANY($1::text[]) AND NOT t.tgisinternal AND t.tgenabled = 'D'`,
+      [tables.map((t) => t.replace(/^app./, ''))],
+    );
   }
 
   it('a 25 h old account event is delivered late: inbox row at the time of the event, push SKIPPED/STALE_EVENT, audit, HIGH metric, and a redelivery adds nothing', async () => {
@@ -1043,5 +1049,45 @@ describe('M08 — notifications, reminders and sync', () => {
     expect(after.created_at).toEqual(before.created_at);
     expect(ageHours(after.created_at)).toBeGreaterThan(24.9);
     expect(BigInt(String(after.seq)) > BigInt(String(before.seq))).toBe(true);
+  });
+  // ---- P6-9 (review): the seed switches the guard triggers off inside its own transaction and never commits them off -----------------------------------
+
+  const topupInsert = (c: import('pg').PoolClient | import('pg').Pool, requestId: string, walletId: string, driverId: string, userId: string) =>
+    c.query(
+      `INSERT INTO app.wallet_topup_requests (request_id, wallet_id, driver_id, amount_requested_vnd, state, created_by_user_id, resolved_by_user_id, version, created_at, updated_at, resolved_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, 100000, 'CONFIRMED', $4::uuid, $5::uuid, 2, clock_timestamp(), clock_timestamp(), clock_timestamp())`,
+      [requestId, walletId, driverId, userId, shop.userId],
+    );
+
+  it('a seed switches the guard triggers off only inside its transaction: they are off while it runs and on again when it commits', async () => {
+    const s = await newShipper(true);
+    const tables = ['app.wallet_topup_requests'];
+    const id = randomUUID();
+    await seed(tables, async (c) => {
+      const inside = await c.query(`SELECT count(*)::int AS n FROM pg_trigger t JOIN pg_class k ON k.oid = t.tgrelid WHERE k.relname = 'wallet_topup_requests' AND NOT t.tgisinternal AND t.tgenabled = 'D'`);
+      expect(inside.rows[0]?.n).toBeGreaterThan(0);
+      await topupInsert(c, id, s.walletId, s.driverId, s.userId);
+    });
+    expect(await rows(`SELECT 1 FROM app.wallet_topup_requests WHERE request_id = $1::uuid`, [id])).toHaveLength(1);
+    expect(await disabledTriggersOf(tables)).toEqual([]);
+  });
+
+  it('a seed that fails halfway is rolled back: no row, every trigger back on, and the next seed still works', async () => {
+    const s = await newShipper(true);
+    const tables = ['app.wallet_topup_requests'];
+    const failed = randomUUID();
+    await expect(
+      seed(tables, async (c) => {
+        await topupInsert(c, failed, s.walletId, s.driverId, s.userId);
+        throw new Error('seed boom');
+      }),
+    ).rejects.toThrow('seed boom');
+    expect(await rows(`SELECT 1 FROM app.wallet_topup_requests WHERE request_id = $1::uuid`, [failed])).toHaveLength(0);
+    expect(await disabledTriggersOf(tables)).toEqual([]);
+
+    const next = randomUUID();
+    await seed(tables, (c) => topupInsert(c, next, s.walletId, s.driverId, s.userId).then(() => undefined));
+    expect(await rows(`SELECT 1 FROM app.wallet_topup_requests WHERE request_id = $1::uuid`, [next])).toHaveLength(1);
+    expect(await disabledTriggersOf(tables)).toEqual([]);
   });
 });
