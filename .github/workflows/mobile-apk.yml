@@ -465,6 +465,57 @@ jobs:
             echo "- apk sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Google Play needs an Android App Bundle (AAB), not an APK. It is built from the same commit with the same release identity. It is signed
+      # with the UPLOAD key (ANDROID_UPLOAD_* secrets, a key separate from the direct-install key) only when those secrets exist; otherwise the
+      # AAB is kept as an UNSIGNED, not-uploadable build. Nothing is uploaded to Google Play by this workflow.
+      - name: Android App Bundle (AAB) for Play
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd mobile/${{ matrix.app }}
+          flutter build appbundle --release \
+            --build-name="$APP_VERSION_NAME" --build-number="$APP_VERSION_CODE" \
+            --dart-define=M14_OFFLINE_MAP="${{ steps.m14.outputs.flag }}" \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=APP_ID="${{ matrix.app_id }}" \
+            --dart-define=APP_VERSION="$APP_VERSION_NAME" \
+            --dart-define=BUILD_NUMBER="$APP_VERSION_CODE" \
+            --dart-define=CI_RUN="${{ github.run_id }}" \
+            --dart-define=SOURCE_SHA="$SOURCE_SHA" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
+            --dart-define=SIGNING_MODE="stable" \
+            --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" \
+            --dart-define=BUILD_FLUTTER="unknown"
+          src="build/app/outputs/bundle/release/app-release.aab"
+          out="$RUNNER_TEMP/$APK_BASENAME.aab"
+          cp "$src" "$out"
+          # Structure check: a bundle must hold the base module's manifest.
+          unzip -l "$out" | grep -q 'base/manifest/AndroidManifest.xml' || { echo "::error title=aab malformed::no base manifest"; exit 1; }
+          if [ -n "$ANDROID_UPLOAD_KEYSTORE_BASE64" ]; then
+            work="$RUNNER_TEMP/aab-sign"; mkdir -p "$work"; chmod 700 "$work"
+            printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$work/upload.jks"
+            jarsigner -keystore "$work/upload.jks" -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD -keypass:env ANDROID_UPLOAD_KEY_PASSWORD \
+              -sigalg SHA256withRSA -digestalg SHA-256 "$out" "$ANDROID_UPLOAD_KEY_ALIAS" >/dev/null
+            jarsigner -verify "$out" | tail -n 1
+            rm -f "$work/upload.jks"
+            echo "AAB status: signed with the upload key" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "AAB status: UNSIGNED, not uploadable (ANDROID_UPLOAD_* secrets are not set)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cp "$out" "$GITHUB_WORKSPACE/$APK_BASENAME.aab"
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-aab
+          path: ${{ env.APK_BASENAME }}.aab
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

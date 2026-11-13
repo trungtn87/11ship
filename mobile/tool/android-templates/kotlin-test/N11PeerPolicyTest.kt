@@ -106,7 +106,7 @@ class N11PeerPolicyTest {
     fun appLabelsAndPeersAreFixedAndSymmetric() {
         assertEquals("FOOD", N11PeerPolicy.appLabelOf(N11PeerPolicy.FOOD_PACKAGE))
         assertEquals("SHIP", N11PeerPolicy.appLabelOf(N11PeerPolicy.SHIP_PACKAGE))
-        assertNull(N11PeerPolicy.appLabelOf("vn.eleven.food"))
+        assertNull(N11PeerPolicy.appLabelOf("vn.eleven.food.test")) // the retired test id is refused
         assertEquals(N11PeerPolicy.SHIP_PACKAGE, N11PeerPolicy.peerPackageOf(N11PeerPolicy.FOOD_PACKAGE))
         assertEquals(N11PeerPolicy.FOOD_PACKAGE, N11PeerPolicy.peerPackageOf(N11PeerPolicy.SHIP_PACKAGE))
         assertNull(N11PeerPolicy.peerPackageOf("com.example.other"))
