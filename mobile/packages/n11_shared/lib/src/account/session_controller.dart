@@ -184,7 +184,7 @@ class SessionController extends ChangeNotifier {
           return;
         }
         _setIdentity(identity);
-        _profile = identity.profile;
+        _setProfile(identity.profile);
         _status = SessionStatus.signedIn;
         _lastFailure = null;
         _notify();
@@ -397,7 +397,7 @@ class SessionController extends ChangeNotifier {
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
     _setIdentity(identity);
-    _profile = identity.profile;
+    _setProfile(identity.profile);
     _pending = null;
     _status = SessionStatus.signedIn;
     _notify();
@@ -461,8 +461,15 @@ class SessionController extends ChangeNotifier {
       throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
     }
     _setIdentity(identity);
-    _profile = identity.profile;
+    _setProfile(identity.profile);
     _notify();
+  }
+
+  /// Every write of the profile (a save, a reload, a refresh) goes through here: it also moves [_identitySeq], so a background identity read that
+  /// was in flight before it drops its answer and cannot write an older profile back (P5-6c, Codex MEDIUM).
+  void _setProfile(Profile profile) {
+    _profile = profile;
+    _identitySeq++;
   }
 
   void _setIdentity(Identity identity) {
@@ -503,7 +510,7 @@ class SessionController extends ChangeNotifier {
         return;
       }
       _setIdentity(identity);
-      _profile = identity.profile;
+      _setProfile(identity.profile);
       if (_identityShowsDifferently(before, identity)) {
         _notify();
       }
@@ -565,7 +572,7 @@ class SessionController extends ChangeNotifier {
       throw refusal ?? const AuthFailure(AuthFailureKind.badResponse);
     }
     _setIdentity(identity);
-    _profile = identity.profile;
+    _setProfile(identity.profile);
     _notify();
   }
 
@@ -628,7 +635,7 @@ class SessionController extends ChangeNotifier {
       }
       final Object? data = response.data;
       if (data is Map<String, Object?> && data['version'] is int) {
-        _profile = Profile(fullName: data['full_name'] as String?, version: data['version']! as int);
+        _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
         _lastFailure = null;
         _notify();
         return true;
@@ -670,7 +677,7 @@ class SessionController extends ChangeNotifier {
       if (response.status == 200) {
         final Object? data = response.data;
         if (data is Map<String, Object?> && data['version'] is int) {
-          _profile = Profile(fullName: data['full_name'] as String?, version: data['version']! as int);
+          _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
           _profileKey = null;
           _profileBody = null;
           _lastFailure = null;
