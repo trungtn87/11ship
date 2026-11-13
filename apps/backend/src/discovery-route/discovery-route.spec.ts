@@ -75,7 +75,7 @@ describe('DiscoveryRouteService', () => {
       available: true,
       route: async (from: unknown, to: unknown) => {
         asked.push([from, to]);
-        return { distanceM: 3400, seconds: 600 };
+        return { distanceM: 3400, seconds: 600, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' };
       },
     };
     const result = await service({ shops: { [A]: snapshotOf(A) }, routes }).distances({ origin, shopIds: [A] });
@@ -91,7 +91,10 @@ describe('DiscoveryRouteService', () => {
       route: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
         legs.push({ from, to });
         // Asymmetric fake: leaving the pickup point is 5200 m, arriving at it is 3100 m.
-        return from.lat === pickup.lat && from.lng === pickup.lng ? { distanceM: 5200, seconds: 900 } : { distanceM: 3100, seconds: 500 };
+        const geometry = 'oqjfj@_dntiEoe`@nkX';
+        return from.lat === pickup.lat && from.lng === pickup.lng
+          ? { distanceM: 5200, seconds: 900, geometry, routeVersion: 'test' }
+          : { distanceM: 3100, seconds: 500, geometry, routeVersion: 'test' };
       },
     };
     const result = await service({ shops: { [A]: snapshotOf(A) }, routes }).distances({ origin, shopIds: [A] });
@@ -116,7 +119,7 @@ describe('DiscoveryRouteService', () => {
   });
 
   it('without a routing service nothing is invented', async () => {
-    const result = await service({ shops: { [A]: snapshotOf(A) }, routes: { available: false, route: async () => ({ distanceM: 1, seconds: 1 }) } }).distances({ origin, shopIds: [A] });
+    const result = await service({ shops: { [A]: snapshotOf(A) }, routes: { available: false, route: async () => ({ distanceM: 1, seconds: 1, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' }) } }).distances({ origin, shopIds: [A] });
     expect(result).toEqual({ routing_available: false, distances: [{ shop_id: A, status: 'UNAVAILABLE', distance_m: null }] });
   });
 
@@ -130,7 +133,7 @@ describe('DiscoveryRouteService', () => {
         peak = Math.max(peak, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 5));
         inFlight -= 1;
-        return { distanceM: 1000, seconds: 100 };
+        return { distanceM: 1000, seconds: 100, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' };
       },
     };
     const ids = Array.from({ length: 12 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
