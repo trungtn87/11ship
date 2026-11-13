@@ -17,13 +17,14 @@ const String idB = '22222222-2222-4222-8222-222222222222';
 
 HealthTransport healthy() => (Uri uri, Duration t) async => RawHealthResponse(status: 200, body: uri.path == kLivePath ? '{"data":{"status":"ok"}}' : '{"data":{"status":"ready"}}');
 
-Map<String, Object?> driverJson({String id = idA, bool locked = false}) => <String, Object?>{
+Map<String, Object?> driverJson({String id = idA, bool locked = false, bool deletionLocked = false}) => <String, Object?>{
       ...identityJson(active: 'DRIVER'),
       'user_id': id,
       'available_roles': <String>['CUSTOMER', 'DRIVER'],
       'onboarding': <String, Object?>{'shop': 'NOT_STARTED', 'driver': 'ACTIVE'},
       if (locked) 'account_status': 'LOCKED',
       if (locked) 'limited_access': 'WALLET_ONLY',
+      if (deletionLocked) 'deletion_locked': true,
     };
 
 Map<String, Object?> walletJson(int balance) => <String, Object?>{
@@ -316,5 +317,58 @@ void main() {
     expect(r.session.status, SessionStatus.signedIn);
     await pushWithdraw(tester, withdrawRoute(r.session));
     expect(find.byType(WithdrawScreen), findsOneWidget);
+  });
+
+  // OD-31: the locked-account banner says the deletion sentence only for a deletion lock; any other lock (or an older server without the flag) keeps the general one.
+  const String deletionSentence = 'Tài khoản đang trong quá trình xóa. Bạn chỉ có thể rút toàn bộ số dư ví; sau đó tài khoản sẽ được đóng.';
+  const String generalLockSentence = 'Bạn không nhận đơn mới và không dùng các chức năng giao hàng.';
+
+  Future<Rig> lockedRig(WidgetTester tester, Map<String, Object?> who) async {
+    final Rig r = rig()..who = who;
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    expect(r.session.identity?.lockedWalletOnly, isTrue);
+    await openTab(tester, 'account');
+    return r;
+  }
+
+  testWidgets('OD-31: a driver locked for a deletion request sees the deletion sentence, and still reaches the wallet and the withdrawal screen', (WidgetTester tester) async {
+    final Rig r = await lockedRig(tester, driverJson(locked: true, deletionLocked: true));
+    expect(r.session.identity?.deletionLocked, isTrue);
+    expect(find.byKey(const Key('locked-wallet-only')), findsOneWidget);
+    expect(find.text(deletionSentence), findsOneWidget);
+    expect(find.textContaining(generalLockSentence), findsNothing);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget);
+    Navigator.of(tester.element(find.byType(WithdrawScreen))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(accountEntry));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('wallet-card')), findsOneWidget);
+  });
+
+  testWidgets('OD-31: a driver locked for another reason (no deletion_locked) keeps the general sentence, and still reaches the wallet and the withdrawal screen', (WidgetTester tester) async {
+    final Rig r = await lockedRig(tester, driverJson(locked: true));
+    expect(r.session.identity?.deletionLocked, isFalse);
+    expect(find.byKey(const Key('locked-wallet-only')), findsOneWidget);
+    expect(find.textContaining(generalLockSentence), findsOneWidget);
+    expect(find.text(deletionSentence), findsNothing);
+    await pushWithdraw(tester, withdrawRoute(r.session));
+    expect(find.byType(WithdrawScreen), findsOneWidget);
+    Navigator.of(tester.element(find.byType(WithdrawScreen))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(accountEntry));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('wallet-card')), findsOneWidget);
+  });
+
+  testWidgets('OD-31: a stray deletion_locked on an identity that is not wallet-only is ignored: no locked banner at all', (WidgetTester tester) async {
+    final Rig r = rig()..who = <String, Object?>{...driverJson(), 'deletion_locked': true};
+    await boot(tester, r);
+    await loginAndSettle(tester, r);
+    await openTab(tester, 'account');
+    expect(r.session.identity?.deletionLocked, isFalse);
+    expect(find.byKey(const Key('locked-wallet-only')), findsNothing);
+    expect(find.text(deletionSentence), findsNothing);
   });
 }

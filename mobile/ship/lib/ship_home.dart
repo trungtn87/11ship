@@ -12,6 +12,31 @@ import 'ship_wallet.dart';
 const String kOnlineReason =
     'Chưa có dữ liệu trạng thái hoạt động. Chưa thể bật online.';
 
+/// The receiving radius: straight line (Haversine) from the shop to the shipper's GPS. Mirrors SHIPPER_SEARCH_RADIUS_M in
+/// apps/backend/src/shipping-policy/shipping-eligibility.ts; a display value only, the server decides.
+const double kShipSearchRadiusM = 3000.0;
+
+/// What the chip above the map says. It is NOT the delivery distance that fees are computed from.
+const String kShipRadiusLabel = 'Bán kính nhận đơn 3 km quanh vị trí của bạn (đường thẳng)';
+
+/// Shown instead of [kShipRadiusLabel] when the server says the account is not limited by the radius (PLATFORM): the ring stays only as a reference.
+const String kShipRadiusExemptLabel = 'Tài khoản của bạn không bị giới hạn bán kính nhận đơn; vòng 3 km chỉ để tham khảo (đường thẳng)';
+
+/// Outside the radius: a neutral grey with a medium alpha, so names and roads stay readable. Inside keeps the map's own colours.
+const int kShipRadiusOutsideColor = 0x66757575;
+const int kShipRadiusBorderColor = 0xFF1565C0;
+
+/// A GPS position the ring may be drawn around: numbers, finite, in range and not the (0, 0) "no fix" placeholder.
+bool shipRadiusCentreUsable(Map<String, dynamic>? position) {
+  final Object? lat = position?['lat'];
+  final Object? lon = position?['lon'];
+  if (lat is! num || lon is! num) return false;
+  final double la = lat.toDouble();
+  final double lo = lon.toDouble();
+  if (!la.isFinite || !lo.isFinite || la < -90 || la > 90 || lo < -180 || lo > 180) return false;
+  return !(la == 0 && lo == 0);
+}
+
 class ShipHome extends StatefulWidget {
   const ShipHome({
     super.key,
@@ -249,8 +274,13 @@ class ShipHomeLayout extends StatelessWidget {
     this.alert,
     this.connection,
     this.locationView,
+    this.radiusExempt = false,
   });
   final bool? online;
+
+  /// True only when the server states the account is exempt from the receiving radius (PLATFORM). The app is not given the driver type today, so
+  /// the home leaves it false; the label and the grey mask then never claim an exemption they cannot know.
+  final bool radiusExempt;
   final String reason;
   final VoidCallback onNotifications;
   final VoidCallback? onToggle;
@@ -361,7 +391,7 @@ class ShipHomeLayout extends StatelessWidget {
                       const Text('Khu vực nhận đơn', style: N11Text.h2),
                       Container(
                         key: Key(
-                          position == null
+                          !shipRadiusCentreUsable(position)
                               ? 'home-radius-pending'
                               : 'home-radius-ready',
                         ),
@@ -370,15 +400,17 @@ class ShipHomeLayout extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: position == null
+                          color: !shipRadiusCentreUsable(position)
                               ? N11Colors.disabledBg
                               : N11Colors.yellowSoft,
                           borderRadius: BorderRadius.circular(kRadiusPill),
                         ),
                         child: Text(
-                          position == null
+                          !shipRadiusCentreUsable(position)
                               ? 'Chờ vị trí để hiện bán kính'
-                              : 'Bán kính 3 km',
+                              : radiusExempt
+                              ? kShipRadiusExemptLabel
+                              : kShipRadiusLabel,
                           style: N11Text.caption,
                         ),
                       ),
@@ -388,11 +420,12 @@ class ShipHomeLayout extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(N11V5.inputRadius),
                     child: locationView == null
-                        ? _HomeMap(height: mapHeight, position: position)
+                        ? _HomeMap(height: mapHeight, position: position, radiusExempt: radiusExempt)
                         : _MapWithLocation(
                             height: mapHeight,
                             position: position,
                             view: locationView!,
+                            radiusExempt: radiusExempt,
                           ),
                   ),
                 ],
@@ -411,10 +444,12 @@ class _MapWithLocation extends StatefulWidget {
     required this.height,
     required this.position,
     required this.view,
+    this.radiusExempt = false,
   });
   final double height;
   final Map<String, dynamic>? position;
   final ShipLocationView view;
+  final bool radiusExempt;
   @override
   State<_MapWithLocation> createState() => _MapWithLocationState();
 }
@@ -430,6 +465,7 @@ class _MapWithLocationState extends State<_MapWithLocation> {
           _HomeMap(
             height: widget.height,
             position: widget.position,
+            radiusExempt: widget.radiusExempt,
             topInset: 56,
           ),
           Positioned(
@@ -453,8 +489,9 @@ class _MapWithLocationState extends State<_MapWithLocation> {
 }
 
 class _HomeMap extends StatefulWidget {
-  const _HomeMap({required this.height, this.position, this.topInset = 0});
+  const _HomeMap({required this.height, this.position, this.topInset = 0, this.radiusExempt = false});
   final double height;
+  final bool radiusExempt;
 
   /// Space kept free at the top for the location label laid over the map.
   final double topInset;
@@ -532,7 +569,8 @@ class _HomeMapState extends State<_HomeMap> {
         ),
       );
     }
-    final Map<String, dynamic>? position = widget.position;
+    // A position the ring cannot honestly be drawn around ((0,0), NaN, out of range) is treated as no position at all.
+    final Map<String, dynamic>? position = shipRadiusCentreUsable(widget.position) ? widget.position : null;
     return Semantics(
       container: true,
       explicitChildNodes: true,
@@ -562,9 +600,10 @@ class _HomeMapState extends State<_HomeMap> {
                   : <String, dynamic>{
                       'lat': position['lat'],
                       'lon': position['lon'],
-                      'radius_m': 3000.0,
-                      'color': 0xFF1976D2,
-                      'fill_color': 0x241976D2,
+                      'radius_m': kShipSearchRadiusM,
+                      'color': kShipRadiusBorderColor,
+                      // No tint inside; outside is greyed (not for an exempt account, whose ring is only a reference).
+                      if (!widget.radiusExempt) 'outside_color': kShipRadiusOutsideColor,
                     },
               onReady: () {
                 _timeout?.cancel();

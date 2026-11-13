@@ -44,7 +44,7 @@ function identityBlockOf(identity: ClientIdentity): JsonObject {
     role_selection_required: identity.role_selection_required,
     phone_verification_status: identity.phone_verification_status,
     // Present only for a LOCKED driver served through the limited, wallet-only access (Owner decision 2026-10-14).
-    ...(identity.account_status === undefined ? {} : { account_status: identity.account_status, limited_access: identity.limited_access ?? 'WALLET_ONLY' }),
+    ...(identity.account_status === undefined ? {} : { account_status: identity.account_status, limited_access: identity.limited_access ?? 'WALLET_ONLY', ...(identity.deletion_locked === true ? { deletion_locked: true } : {}) }),
   };
 }
 

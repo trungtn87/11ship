@@ -712,6 +712,25 @@ describe('account lifecycle, scopes and system settings', () => {
   // 10. A locked driver keeps the wallet and nothing else
   // =============================================================================================================================
   describe('a locked driver', () => {
+    it('case 10b (OD-31) — the deletion_locked flag is present only for a DELETE_REQUEST lock: a SECURITY lock, a VIOLATION lock and an ACTIVE driver do not carry it', async () => {
+      const flagOf = async (user: Seeded): Promise<unknown> => {
+        const login = await loginClient(user.phone, PASSWORD, SHIP);
+        expect(login.status).toBe(200);
+        const viaMe = dataOf(await me(tokenOf(login)));
+        expect(Object.hasOwn(dataOf(login), 'deletion_locked')).toBe(Object.hasOwn(viaMe, 'deletion_locked'));
+        expect(viaMe).not.toHaveProperty('lock_reason');
+        return viaMe.deletion_locked;
+      };
+      expect(await flagOf(await seedUser({ roles: ['CUSTOMER', 'DRIVER'], status: 'DISABLED', lockReason: 'DELETE_REQUEST' }))).toBe(true);
+      expect(await flagOf(await seedUser({ roles: ['CUSTOMER', 'DRIVER'], status: 'DISABLED', lockReason: 'SECURITY' }))).toBeUndefined();
+      expect(await flagOf(await seedUser({ roles: ['CUSTOMER', 'DRIVER'], status: 'DISABLED', lockReason: 'VIOLATION' }))).toBeUndefined();
+      const active = await seedUser({ roles: ['CUSTOMER', 'DRIVER'] });
+      const login = await loginClient(active.phone, PASSWORD, SHIP);
+      expect(login.status).toBe(200);
+      expect(dataOf(login)).not.toHaveProperty('account_status');
+      expect(dataOf(login)).not.toHaveProperty('deletion_locked');
+    });
+
     it('case 10 — signs in to 11Ship with the limited (wallet-only) access; cannot take new orders or use any other function; a locked non-driver cannot sign in', async () => {
       const driver = await seedUser({ roles: ['CUSTOMER', 'DRIVER'] });
       expect((await command('lock', driver.id, lockBody(1))).status).toBe(200);
@@ -723,10 +742,15 @@ describe('account lifecycle, scopes and system settings', () => {
       const identity = dataOf(login);
       expect(identity).toMatchObject({ user_id: driver.id, account_status: 'LOCKED', limited_access: 'WALLET_ONLY', available_roles: [], active_role: null, onboarding_required: false, role_selection_required: false });
       expect(identity.capabilities).toEqual({ customer_access: false, shop_profile_read: false, shop_manage: false, driver_profile_read: false });
+      // OD-31: a VIOLATION lock carries no deletion_locked flag, and the lock reason is never exposed.
+      expect(identity).not.toHaveProperty('deletion_locked');
+      expect(identity).not.toHaveProperty('lock_reason');
       const token = tokenOf(login);
       const mine = await me(token);
       expect(mine.status).toBe(200);
       expect(dataOf(mine)).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY' });
+      expect(dataOf(mine)).not.toHaveProperty('deletion_locked');
+      expect(dataOf(mine)).not.toHaveProperty('lock_reason');
 
       // Every other route and every business command stays closed (ACCOUNT_DISABLED): nothing new is accepted.
       for (const [method, path, body] of [
