@@ -32,3 +32,8 @@ scripts/deploy/__pycache__/
 
 # Graphify output is exploration data only, never committed
 graphify-out/
+
+# Firebase (M08 push): client config JSON and server service-account keys are never committed. Android identifiers come from CI variables; the server key lives only on the VPS (/etc/11ship/fcm).
+google-services.json
+*firebase-adminsdk*.json
+service-account*.json
