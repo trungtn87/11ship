@@ -293,7 +293,7 @@ void main() {
         ),
       );
       expect(find.text('4.5 (12 đánh giá)'), findsOneWidget);
-      expect(find.text('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -322,7 +322,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('≈ 3,4 km · đường đi'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: ≈ 3,4 km'), findsOneWidget);
       expect(find.textContaining('chim bay'), findsNothing);
       await tester.pumpWidget(
         MaterialApp(
@@ -336,7 +336,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Đang tính quãng đường…'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: đang tính…'), findsOneWidget);
       // Road unknown: it says so and does not expose a straight-line substitute.
       await tester.pumpWidget(
         MaterialApp(
@@ -350,7 +350,7 @@ void main() {
           ),
         ),
       );
-      expect(find.textContaining('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.textContaining('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       expect(find.textContaining('đường chim bay'), findsNothing);
       expect(find.textContaining('đường đi'), findsNothing);
       final FakeLocationProvider gps = FakeLocationProvider()
@@ -396,7 +396,7 @@ void main() {
         ),
       );
       expect(find.text('4.8 (120 đánh giá)'), findsOneWidget);
-      expect(find.text('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       expect(find.text('Đang mở cửa'), findsOneWidget);
       await tester.tap(find.byType(InkWell).first);
       expect(opened, isTrue);
