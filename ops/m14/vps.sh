@@ -10,8 +10,8 @@
 #   connect                   gateway check first (refuses otherwise), then set M14_ROUTING_ORIGIN in the backend env file, restart the backend, check readiness; on failure restores the env file and restarts
 #   status                    container, health, stats, backend origin (no secrets printed)
 #   load-test [n] [c]         n routes with c in parallel (default 40 / 4) and the resources it used
-#   rollback                  routing: previous image back (or stop). Backend: `restore-env <backup>` puts a saved env file back. Roll the BACKEND back first or together with the gateway (ops/runbooks/m14-valhalla-vps.md)
-#   restore-env <backup>      restore a backup made by `connect`, restart the backend, check readiness
+#   rollback                  BLOCKED (fails closed): a gateway rollback alone would leave a backend that expects routeVersion without routes. Roll the PAIR back through scripts/deploy/vps-update.py rollback (the production entrypoint)
+#   restore-env <backup>      restore a backup made by `connect`, restart the backend, check readiness. When the backup sets M14_ROUTING_ORIGIN, the gateway gate runs BEFORE anything changes and a red gate refuses the restore
 #
 # Environment overrides: M14_IMAGE (default 11ship-m14-routing), M14_RATE_PER_MIN (default 600 here), M14_MAX_CONCURRENT (default 4 here),
 # BACKEND_ENV_FILE (/etc/11ship/staging.env), BACKEND_SERVICE (11ship-staging), BACKEND_READY_URL (http://127.0.0.1:3000/v1/health/ready).
@@ -91,14 +91,19 @@ up() {
     say "routing is healthy and answered a real route (smoke.py); report: $(pwd)/routing-smoke.json"
     return 0
   fi
-  say 'health or smoke FAILED: rolling the routing container back'
-  rollback
+  say 'health or smoke FAILED: restoring the routing container that was running before this `up`'
+  restore_previous_gateway
   die 'routing did not become healthy; previous state restored (see `docker logs m14-routing-1`)'
 }
 
+# Fail closed (P6-1 review round 3, SỬA-9): no command rolls the routing gateway back on its own. A backend that expects routeVersion reports
+# routes unavailable against an older gateway, so the pair goes back together through the single production entrypoint, whose gate runs first.
 rollback() {
-  need_root
-  say 'WARNING: a backend that expects routeVersion reports routes unavailable against an older gateway. Roll back the backend (restore-env) first or together with this.'
+  die 'BLOCKED: this command does not roll the routing gateway back alone. Roll the PAIR back through the production entrypoint: sudo python3 scripts/deploy/vps-update.py rollback (the gateway gate runs before any change). Nothing was changed.'
+}
+
+# Internal: puts back the container that was running before a FAILED `up` (the state this script found; it creates no new mismatch).
+restore_previous_gateway() {
   if docker image inspect "$image:previous" >/dev/null 2>&1; then
     docker tag "$image:previous" "$image:current"
     "${compose[@]}" up -d --no-build --force-recreate
@@ -165,8 +170,12 @@ backend_ready() {
 
 restore_env() {
   need_root
-  local backup="${1:?backup file}"
+  local backup="${1:?backup file}" backup_origin
   [ -f "$backup" ] || die "no such backup: $backup"
+  # Gate BEFORE any change (P6-1 review round 3, SỬA-9): a restored env that points at a gateway must not reach a backend while that gateway is not ready.
+  if backup_origin="$(grep '^M14_ROUTING_ORIGIN=' "$backup" | tail -1 | cut -d= -f2-)" && [ -n "$backup_origin" ]; then
+    gateway_preflight "$backup_origin" || die 'restore refused: the gateway the backup points at is not ready; nothing was changed'
+  fi
   cp -p "$backup" "$env_file"
   systemctl restart "$service"
   backend_ready && say 'env restored, backend ready' || die 'env restored but the backend is not ready: investigate with journalctl'

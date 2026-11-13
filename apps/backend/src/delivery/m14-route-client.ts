@@ -153,12 +153,15 @@ const samePoint = (a: LatLng, b: LatLng): boolean => a.lat === b.lat && a.lng ==
 @Injectable()
 export class M14RouteClient implements RouteMatrixPort {
   readonly #cache = new Map<string, CacheEntry>();
-  /** The route_version of the generation that is current. A different version clears the cache, so no leg of an earlier profile or map data survives. */
+  /** The route_version of the current epoch. A change of version clears the cache, so no leg of an earlier profile or map data survives. */
   #servedRouteVersion: string | undefined;
-  /** Sequence number handed to each request when it is sent (monotonic). */
-  #issued = 0;
-  /** Sequence of the answer that defines the current generation. An answer sent earlier than that never replaces it (request race, SỬA-5). */
-  #generation = 0;
+  /**
+   * Epoch of the served route_version (SỬA-8). It moves only when a CURRENT answer shows a version other than the one served, or the first
+   * answer at all (nothing served yet). Each request captures the epoch when it is sent; an answer whose epoch is older than the current one
+   * never clears, sets the served version or writes the cache, but still returns its own leg to its caller. Completion order decides nothing:
+   * only the epoch the request was sent in does.
+   */
+  #epoch = 0;
 
   constructor(
     @Optional() @Inject(M14_ROUTING) private readonly config?: M14RoutingConfig,
@@ -190,8 +193,7 @@ export class M14RouteClient implements RouteMatrixPort {
       return { status: 'ROUTE', leg: cached.leg };
     }
     try {
-      this.#issued += 1;
-      const sequence = this.#issued;
+      const issuedEpoch = this.#epoch;
       const fetcher: Fetcher = this.fetcher ?? ((url, init) => fetch(url, init));
       const response = await fetcher(`${config.origin}/route`, {
         method: 'POST',
@@ -207,14 +209,14 @@ export class M14RouteClient implements RouteMatrixPort {
       if (leg === undefined) {
         return { status: 'UNAVAILABLE', reason: isGatewayOutdated(body) ? 'ROUTE_GATEWAY_OUTDATED' : 'ROUTE_UNAVAILABLE' };
       }
-      // A late answer (sent before the current generation) still returns its own leg to its caller, but it neither clears the cache,
-      // nor sets the served version, nor is cached: an older profile must never replace a newer one.
-      if (sequence >= this.#generation) {
-        if (this.#servedRouteVersion !== undefined && this.#servedRouteVersion !== leg.routeVersion) {
+      // An answer from an older epoch still returns its own leg to its caller, but it neither clears the cache, nor sets the served version,
+      // nor is cached: an older profile must never replace a newer one, whatever the order of the answers.
+      if (issuedEpoch === this.#epoch) {
+        if (this.#servedRouteVersion !== leg.routeVersion) {
+          this.#epoch += 1;
           this.#cache.clear();
+          this.#servedRouteVersion = leg.routeVersion;
         }
-        this.#servedRouteVersion = leg.routeVersion;
-        this.#generation = sequence;
         if (this.#cache.size >= CACHE_MAX) {
           const oldest = this.#cache.keys().next();
           if (oldest.done !== true) {

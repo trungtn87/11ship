@@ -277,3 +277,126 @@ describe('M14 request race (P6-1 review round 2, SỬA-5)', () => {
     await expect(matrix).resolves.toMatchObject({ kind: 'ok', routeVersion: OTHER_VERSION });
   });
 });
+
+describe('M14 cache epoch: completion order never decides the served version (P6-1 review round 3, SỬA-8)', () => {
+  type Reply = { ok: boolean; status: number; json(): Promise<unknown> };
+  const config = { origin: 'https://route.test', timeoutMs: 50 };
+  const OLD = VERSION;
+  const NEW = 'valhalla-3.9.1/motorcycle-default-0badc0de/abc123def456';
+  const p1 = { lat: 22.66, lng: 106.25 };
+  const p2 = { lat: 22.67, lng: 106.26 };
+  const p3 = { lat: 22.61, lng: 106.21 };
+  const p4 = { lat: 22.62, lng: 106.22 };
+  const p5 = { lat: 22.63, lng: 106.23 };
+  const p6 = { lat: 22.64, lng: 106.24 };
+  const p7 = { lat: 22.5, lng: 106.1 };
+  const p8 = { lat: 22.51, lng: 106.11 };
+  const reply = (routeVersion: string): Reply => ({ ok: true, status: 200, json: async () => answer(6.2, 600, { routeVersion }) });
+  const timeout = (): Error => Object.assign(new Error('timeout'), { name: 'TimeoutError' });
+
+  /** Each request waits until the test answers it: a Reply resolves it, an Error rejects it. */
+  function controlled() {
+    const waiting: Array<(value: Reply | Error) => void> = [];
+    const fetcher = () => new Promise<Reply>((resolve, reject) => {
+      waiting.push((value) => (value instanceof Error ? reject(value) : resolve(value)));
+    });
+    return { waiting, client: new M14RouteClient(config, fetcher) };
+  }
+
+  /** A client whose served version is OLD, with the pair p1 -> p2 cached. */
+  async function primed() {
+    const fixture = controlled();
+    const first = fixture.client.routeResult(p1, p2, 1000);
+    fixture.waiting[0]?.(reply(OLD));
+    await first;
+    return fixture;
+  }
+
+  it('new answer first, old answer last: the old one neither replaces the served version nor enters the cache (completion new -> old)', async () => {
+    const { waiting, client } = await primed();
+    const older = client.routeResult(p3, p4, 1000); // sent first, answered last, with the OLD version
+    const newer = client.routeResult(p5, p6, 1000); // sent second, answered first, with the NEW version
+    expect(waiting).toHaveLength(3);
+
+    waiting[2]?.(reply(NEW));
+    await expect(newer).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: NEW } });
+    waiting[1]?.(reply(OLD));
+    // The late caller still gets its own leg.
+    await expect(older).resolves.toMatchObject({ status: 'ROUTE', leg: { routeVersion: OLD } });
+
+    // The new pair is a cache hit (no request); the late pair was not cached and is asked again.
+    await expect(client.routeResult(p5, p6, 1500)).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    expect(waiting).toHaveLength(3);
+    const again = client.routeResult(p3, p4, 1500);
+    expect(waiting).toHaveLength(4);
+    waiting[3]?.(reply(NEW));
+    await expect(again).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+  });
+
+  it('old answer first, new answer last: the old version is still the served one until the new answer, which then clears the old cache (completion old -> new)', async () => {
+    const { waiting, client } = await primed();
+    const newer = client.routeResult(p3, p4, 1000); // sent first, answered last, with the NEW version
+    const older = client.routeResult(p5, p6, 1000); // sent second, answered first, with the OLD version
+    expect(waiting).toHaveLength(3);
+
+    waiting[2]?.(reply(OLD));
+    await expect(older).resolves.toMatchObject({ leg: { routeVersion: OLD } });
+    // Same version as served: no epoch change, the primed pair is still a hit (no request).
+    await expect(client.routeResult(p1, p2, 1100)).resolves.toMatchObject({ leg: { routeVersion: OLD } });
+    expect(waiting).toHaveLength(3);
+
+    waiting[1]?.(reply(NEW));
+    await expect(newer).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    // The new answer cleared every OLD leg: the primed pair is asked again, and the new pair is a hit.
+    const primedAgain = client.routeResult(p1, p2, 1200);
+    expect(waiting).toHaveLength(4);
+    waiting[3]?.(reply(NEW));
+    await expect(primedAgain).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    await expect(client.routeResult(p3, p4, 1300)).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    expect(waiting).toHaveLength(4);
+  });
+
+  it('a timeout or an error between two answers does not shift the epoch: the served version and cache survive it, and the late old answer stays out', async () => {
+    const { waiting, client } = await primed();
+    const failing = client.routeResult(p7, p8, 1000);
+    const newer = client.routeResult(p3, p4, 1000);
+    const older = client.routeResult(p5, p6, 1000); // sent in the same epoch as the newer one
+    expect(waiting).toHaveLength(4);
+
+    waiting[1]?.(timeout());
+    await expect(failing).resolves.toEqual({ status: 'UNAVAILABLE', reason: 'ROUTE_TIMEOUT' });
+    // The error changed nothing: the primed pair is still a hit with the OLD version.
+    await expect(client.routeResult(p1, p2, 1100)).resolves.toMatchObject({ leg: { routeVersion: OLD } });
+    expect(waiting).toHaveLength(4);
+
+    waiting[2]?.(reply(NEW));
+    await expect(newer).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    waiting[3]?.(reply(OLD));
+    await expect(older).resolves.toMatchObject({ leg: { routeVersion: OLD } });
+    // NEW is served; the late OLD answer was not cached, so the late pair is asked again.
+    await expect(client.routeResult(p3, p4, 1200)).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    expect(waiting).toHaveLength(4);
+    const late = client.routeResult(p5, p6, 1200);
+    expect(waiting).toHaveLength(5);
+    waiting[4]?.(reply(NEW));
+    await expect(late).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+  });
+
+  it('a running matrix with the NEW leg answered first and the OLD leg last fails closed (mixed versions) and leaves the NEW version served and cached', async () => {
+    const { waiting, client } = await primed();
+    const matrix = client.durations([p3, p4]); // legs p3 -> p4 and p4 -> p3, sent in the same epoch
+    expect(waiting).toHaveLength(3);
+
+    waiting[2]?.(reply(NEW));
+    waiting[1]?.(reply(OLD));
+    await expect(matrix).resolves.toEqual({ kind: 'unavailable' });
+
+    // The NEW leg (answered first) is the served version and is cached; the OLD leg was not cached.
+    await expect(client.routeResult(p4, p3, 1100)).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+    expect(waiting).toHaveLength(3);
+    const oldPair = client.routeResult(p3, p4, 1100);
+    expect(waiting).toHaveLength(4);
+    waiting[3]?.(reply(NEW));
+    await expect(oldPair).resolves.toMatchObject({ leg: { routeVersion: NEW } });
+  });
+});
