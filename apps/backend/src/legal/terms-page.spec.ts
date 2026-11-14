@@ -1,13 +1,13 @@
 import { describe, expect, it } from '@jest/globals';
 import { TERMS_PAGE_HTML, TERMS_PAGE_PATH, TERMS_PAGE_VERSION } from './terms-page';
 
-describe('public terms draft page', () => {
-  it('is a self-contained Vietnamese document with a visible not-effective banner', () => {
+describe('public terms page', () => {
+  it('is a self-contained Vietnamese document with a effective policy content', () => {
     expect(TERMS_PAGE_PATH).toBe('dieu-khoan-su-dung');
-    expect(TERMS_PAGE_VERSION).toBe('terms-20261112-draft-v3');
+    expect(TERMS_PAGE_VERSION).toBe('terms-20261114-v3');
     expect(TERMS_PAGE_HTML).toContain('<html lang="vi">');
-    expect(TERMS_PAGE_HTML).toContain('noindex,nofollow');
-    expect(TERMS_PAGE_HTML).toContain('BẢN DỰ THẢO — CHƯA CÓ HIỆU LỰC');
+    expect(TERMS_PAGE_HTML).toContain('index,follow');
+    expect(TERMS_PAGE_HTML).not.toMatch(/DỰ THẢO|CHƯA CÓ HIỆU LỰC|CHỜ OWNER/);
     expect(TERMS_PAGE_HTML).not.toContain('<script');
     expect(TERMS_PAGE_HTML).not.toContain('<form');
   });
