@@ -32,11 +32,11 @@ enum SessionStatus {
 /// the registration OTP off (the account is created with an unverified phone), [unknown] = unreadable or a mode this build does not know.
 enum RegistrationMode { unknown, required, notRequired }
 
-/// The consent the register screen shows and sends. The pair identifies the texts in account_views.dart (and docs/current/
-/// M01-terms-privacy-20261014.md); the server must be configured with the SAME pair (CLIENT_AUTH_TERMS_VERSION /
-/// CLIENT_AUTH_PRIVACY_VERSION) and refuses any other. Changing a text means a new version here AND on the server.
-const String kConsentTermsVersion = 'terms-20261014-v1';
-const String kConsentPrivacyVersion = 'privacy-20261017-v1';
+/// Registration consent covers the full Owner-approved policies shipped in legal_policy_draft.dart.
+/// Keep these two version tokens aligned with the public legal pages and server policy.
+/// The backend also accepts previously published versions for older installed apps.
+const String kConsentTermsVersion = 'terms-20261114-v3';
+const String kConsentPrivacyVersion = 'privacy-20261114-v3';
 
 enum PendingKind { register, login }
 

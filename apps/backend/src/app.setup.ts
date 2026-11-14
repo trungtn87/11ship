@@ -10,6 +10,8 @@ import {
 } from './http/client-auth-transport.middleware';
 import { ACCOUNT_RECOVERY_ROUTE_PREFIX } from './account-recovery/account-recovery-constants';
 import { DELETE_ACCOUNT_PAGE_PATH } from './account-deletion/account-deletion-page';
+import { TERMS_PAGE_PATH } from './legal/terms-page';
+import { PRIVACY_PAGE_PATH } from './legal/privacy-page';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { createRequestContextMiddleware } from './http/request-context.middleware';
 import { JsonLogger } from './logging/json-logger';
@@ -19,6 +21,10 @@ export const GLOBAL_PREFIX = 'v1';
 
 /** The public account deletion page (P5-6a) lives at the unprefixed /delete-account (+ its two assets), like the public tracking page. */
 const PUBLIC_DELETE_PAGE = new RegExp(`^/${DELETE_ACCOUNT_PAGE_PATH}(?:/(?:app\\.js|app\\.css)?)?(?:\\?.*)?$`);
+
+/** Public read-only terms and privacy drafts, served without a /v1 prefix. */
+const PUBLIC_TERMS_PAGE = new RegExp(`^/${TERMS_PAGE_PATH}/?(?:\\?.*)?$`);
+const PUBLIC_PRIVACY_PAGE = new RegExp(`^/${PRIVACY_PAGE_PATH}/?(?:\\?.*)?$`);
 
 /**
  * Shared by main.ts and the tests so they exercise the same HTTP pipeline:
@@ -127,7 +133,7 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/notifications`, captureRawBody);
   // PR #231: Public tracking routes /track/:token and /public/tracking/:token reach the v1 controller
   app.use((req: { url?: string }, _res: unknown, next: () => void) => {
-    if (typeof req.url === 'string' && (req.url.startsWith('/track/') || req.url.startsWith('/public/tracking/') || PUBLIC_DELETE_PAGE.test(req.url))) {
+    if (typeof req.url === 'string' && (req.url.startsWith('/track/') || req.url.startsWith('/public/tracking/') || PUBLIC_DELETE_PAGE.test(req.url) || PUBLIC_TERMS_PAGE.test(req.url) || PUBLIC_PRIVACY_PAGE.test(req.url))) {
       req.url = `/${GLOBAL_PREFIX}${req.url}`;
     }
     next();
