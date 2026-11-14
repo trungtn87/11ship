@@ -293,7 +293,8 @@ export class AdminOverviewService {
       const open = await this.wallets.openWithdrawals(context);
       return { value: open.pending, detail: { processing: open.processing, unknown_outcome: open.unknownOutcome }, link: { area: 'finance-withdrawals', query: { status: 'PENDING' } } };
     });
-    const complaints = await this.#metric(rights.canViewDeliveries, async (context) => ({ value: await this.feedback.unhandledComplaints(context), link: { area: 'complaints', query: {} } }));
+    // The count is taken inside the caller's own complaint scope (M08-R-12, issue #261): an ADMIN never sees a total that includes another scope.
+    const complaints = await this.#metric(rights.canViewDeliveries, async (context) => ({ value: await this.feedback.unhandledComplaints(context, rights.feedbackViewScope), link: { area: 'complaints', query: {} } }));
     return {
       shipper_profiles_pending: shipperProfiles,
       // M02 has no review step for a shop profile (a shop becomes ACTIVE when its owner completes onboarding): there is nothing waiting for approval.

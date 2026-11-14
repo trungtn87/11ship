@@ -267,7 +267,7 @@ export class AdminActionQueueService {
       }
       case 'COMPLAINT': {
         const handle = rights.canReviewApp('SHOP') || rights.canReviewApp('DRIVER');
-        const records = await this.reader.complaints(context, limit);
+        const records = await this.reader.complaints(context, limit, rights.feedbackViewScope);
         return records.map((record) => of(record, { area: 'complaints', query: {} }, handle, { waitingOn: waitingOnOf(record.reason) }));
       }
       case 'ADJUSTMENT_PENDING_FINANCE': {
