@@ -27,8 +27,16 @@ export function routeView(row: RouteSnapshotRow | undefined, withGeometry: boole
   };
 }
 
-/** The `route` and the legacy flag for a pointer that may be NULL. A NULL pointer is the only legacy case: nothing is backfilled. */
-export async function routeFieldsOf(snapshots: RouteSnapshotRepository, context: TransactionContext, snapshotId: string | null, withGeometry: boolean): Promise<RouteFields> {
+/**
+ * The `route` and the legacy flag for a pointer that may be NULL.
+ * `customerCreated` is the trusted source marker: an Order, or a delivery whose source is ORDER or CUSTOMER (the DB CHECK allows only DIRECT, ORDER,
+ * CUSTOMER). A DIRECT call (created by the shop, never through a checkout quote) gets route null and the flag false, whatever its pointer holds.
+ * For a customer-created record a NULL pointer means "created before P6-2": the flag is true and nothing is backfilled.
+ */
+export async function routeFieldsOf(snapshots: RouteSnapshotRepository, context: TransactionContext, snapshotId: string | null, withGeometry: boolean, customerCreated: boolean): Promise<RouteFields> {
+  if (!customerCreated) {
+    return { route: null, legacy_reference_only: false };
+  }
   if (snapshotId === null) {
     return { route: null, legacy_reference_only: true };
   }

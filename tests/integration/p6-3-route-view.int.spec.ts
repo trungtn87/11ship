@@ -6,6 +6,7 @@ import { encodePolyline6, M14_ROUTING } from '../../apps/backend/src/delivery/m1
 import { ApiResponse, AuthApp, dataOf, startAuthApp } from './support/auth-fixtures';
 import { cleanupOrders, codeOf, Customer, Dish, Json, newCustomer, newDish, newShipper, openAllWeek, PRIVACY, Shipper, TERMS } from './support/m10-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
+import { createLegacyDirectDelivery } from './support/legacy-direct-delivery';
 
 // P6-3 (#294): the detail views of an Order and of its delivery carry `route` from the immutable snapshot (P6-2). Who sees the road (geometry):
 // the customer of the Order, the shop of the Order, the Shipper while HOLDING the delivery; a Shipper who gave it back, another customer or shop, and
@@ -201,6 +202,29 @@ describe('P6-3 route view: detail, lists, and who may see the road', () => {
     const after = ok(await asShipper(shipper, 'GET', `/driver/deliveries/${deliveryId}`));
     expect(after.route).toEqual({ status: 'ROUTE', distance_m: 2500, duration_s: 420, route_version: answer.version });
     expect(hasRoad(after)).toBe(false);
+  });
+
+  // ---- a DIRECT call created by the shop (never through a checkout quote): route null, and the flag is FALSE (it is not a legacy customer record)
+
+  it('a shop-created DIRECT call gets route null and legacy_reference_only false, in the shop detail; its distance is kept', async () => {
+    const directId = await createLegacyDirectDelivery(app, { userId: shop.userId, shopId: shop.shopId }, {
+      recipient_name: 'Khách trực tiếp',
+      recipient_phone: '0912345678',
+      dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội',
+      dropoff_lat: 21.0,
+      dropoff_lng: 105.82,
+      goods_description: 'Hộp quà',
+      goods_value_vnd: 200_000,
+      paid_vnd: 0,
+      fee_payer: 'CUSTOMER',
+      distance_m: 2500,
+    });
+    const view = ok(await asShop('GET', `/shop/me/deliveries/${directId}`));
+    expect(view.source).toBe('DIRECT');
+    expect(view.route).toBeNull();
+    expect(view.legacy_reference_only).toBe(false);
+    expect((view.fee as Json).distance_m).toBe(2500);
+    expect(hasRoad(view)).toBe(false);
   });
 
   // ---- an Order without a snapshot (before P6-2) ------------------------------------------------------------------------------

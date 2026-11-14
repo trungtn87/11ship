@@ -263,7 +263,7 @@ export class DeliveryViews {
     };
     if (detail) {
       // P6-3: the shop of the delivery sees its drop-off (`recipient`), so it sees the road of the same call. The list passes detail=false.
-      Object.assign(view, await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true));
+      Object.assign(view, await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true, d.source !== 'DIRECT'));
       view.timeline = (await this.deliveries.listEvents(context, d.deliveryId, 200)).map(eventView);
       view.story = buildDeliveryStory(await this.storyOf(context, d, incident), 'shop').map((entry) => ({ at: entry.at, text: entry.text }));
     }
@@ -342,7 +342,7 @@ export class DeliveryViews {
       feeView.status = 'AWAITING_CUSTOMER';
     }
     // P6-3: the customer of the delivery sees its drop-off (below), so the road of the same call. Lists pass withRoute=false and get no `route` key.
-    const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true) : {};
+    const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true, d.source !== 'DIRECT') : {};
     return {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -392,7 +392,7 @@ export class DeliveryViews {
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     const active = assignment.status === 'ACTIVE';
     // P6-3: the road only while this Shipper HOLDS the delivery, the same condition under which the drop-off point is given (`active` below).
-    const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, active) : {};
+    const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, active, d.source !== 'DIRECT') : {};
     const running = active && RUNNING_STATES.includes(d.state);
     const before = d.state === 'accepted' || d.state === 'location_confirmed';
     let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
@@ -567,7 +567,7 @@ export class DeliveryViews {
       },
       assignments: assignmentViews,
       // P6-3: the road follows the same rule as the drop-off above (`canContact`), so the Admin scope is unchanged.
-      ...(await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, canContact)),
+      ...(await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, canContact, d.source !== 'DIRECT')),
       timeline: (await this.deliveries.listEvents(context, d.deliveryId, 300)).map(eventView),
       incident:
         incident === undefined

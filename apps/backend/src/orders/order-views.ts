@@ -188,7 +188,7 @@ export class OrderViews {
     view.can = { edit: o.status === 'PENDING_CONFIRMATION', cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true, request_address_change: canRequestAddressChange, cancel_address_change: canCancelAddressChange };
     if (detail) {
       // P6-3: the customer of this Order sees its road (the drop-off is already in `recipient`).
-      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true));
+      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');
     }
@@ -227,7 +227,7 @@ export class OrderViews {
     };
     if (detail) {
       // P6-3: the shop of this Order already sees the drop-off in `recipient`, so it sees the road of the same Order (no new permission).
-      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true));
+      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'shop');
     }
@@ -245,7 +245,7 @@ export class OrderViews {
     }
     view.customer = { user_id: o.customerUserId };
     // P6-3: the Admin detail carries the same drop-off as `recipient` above (admin scope unchanged), so the road of the Order is given with it.
-    Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true));
+    Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
     view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
     view.delivery = calls.length === 0 ? null : (calls[calls.length - 1] as JsonObject);
     view.timeline = (await this.orders.listEvents(context, o.orderId, 400)).map((e) => eventView(e, true));

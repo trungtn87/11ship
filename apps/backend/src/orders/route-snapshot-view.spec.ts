@@ -49,27 +49,34 @@ describe('P6-3 route view: the object', () => {
 });
 
 describe('P6-3 route view: a pointer that may be NULL', () => {
-  it('an Order or delivery without a snapshot (created before P6-2) gets route null and the legacy flag, and nothing is read', async () => {
+  it('a customer-created record without a snapshot (before P6-2) gets route null and the legacy flag, and nothing is read', async () => {
     const { repo, reads } = fakeSnapshots(SNAPSHOT);
-    expect(await routeFieldsOf(repo, CONTEXT, null, true)).toEqual({ route: null, legacy_reference_only: true });
-    expect(await routeFieldsOf(repo, CONTEXT, null, false)).toEqual({ route: null, legacy_reference_only: true });
+    expect(await routeFieldsOf(repo, CONTEXT, null, true, true)).toEqual({ route: null, legacy_reference_only: true });
+    expect(await routeFieldsOf(repo, CONTEXT, null, false, true)).toEqual({ route: null, legacy_reference_only: true });
     expect(reads).toEqual([]);
   });
 
-  it('a pointer to a snapshot gives its route with the flag off, and exactly one read', async () => {
+  it('a customer-created record with a snapshot gives its route with the flag off, and exactly one read', async () => {
     const { repo, reads } = fakeSnapshots(SNAPSHOT);
-    expect(await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, true)).toMatchObject({ route: { distance_m: 2500, geometry: SNAPSHOT.geometry }, legacy_reference_only: false });
+    expect(await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, true, true)).toMatchObject({ route: { distance_m: 2500, geometry: SNAPSHOT.geometry }, legacy_reference_only: false });
     expect(reads).toEqual([SNAPSHOT.id]);
   });
 
-  it('a pointer whose row is missing gives route null with the flag off (not mistaken for a legacy Order)', async () => {
+  it('a shop-created DIRECT call (not customer-created) gets route null and the flag FALSE, with or without a pointer, and nothing is read', async () => {
+    const { repo, reads } = fakeSnapshots(SNAPSHOT);
+    expect(await routeFieldsOf(repo, CONTEXT, null, true, false)).toEqual({ route: null, legacy_reference_only: false });
+    expect(await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, true, false)).toEqual({ route: null, legacy_reference_only: false });
+    expect(reads).toEqual([]);
+  });
+
+  it('a pointer whose row is missing gives route null with the flag off (not mistaken for a legacy record)', async () => {
     const { repo } = fakeSnapshots(undefined);
-    expect(await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, true)).toEqual({ route: null, legacy_reference_only: false });
+    expect(await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, true, true)).toEqual({ route: null, legacy_reference_only: false });
   });
 
   it('withGeometry false is honoured through the helper too', async () => {
     const { repo } = fakeSnapshots(SNAPSHOT);
-    const fields = await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, false);
+    const fields = await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, false, true);
     expect(fields.route !== null && 'geometry' in fields.route).toBe(false);
   });
 });
