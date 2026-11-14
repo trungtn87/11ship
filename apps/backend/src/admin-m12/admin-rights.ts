@@ -55,6 +55,14 @@ export class AdminRights {
     return this.canViewApp('SHOP') || this.canViewApp('DRIVER');
   }
 
+  /**
+   * The parts of M11 (complaints) this administrator may READ: the SHOP / DRIVER view grant, the same scope the complaint list uses (issue #261). SYSTEM has
+   * both. Every count or row of an unhandled complaint is taken through this scope; there is no unscoped total.
+   */
+  get feedbackViewScope(): { readonly shop: boolean; readonly driver: boolean } {
+    return { shop: this.canViewApp('SHOP'), driver: this.canViewApp('DRIVER') };
+  }
+
   /** Reading a recipient's contact and settling goods: VIEW and the review right on DRIVER. */
   get canReviewDeliveries(): boolean {
     return this.isSystem || ((this.apps.get('DRIVER')?.canView ?? false) && (this.apps.get('DRIVER')?.canReviewProfile ?? false));
