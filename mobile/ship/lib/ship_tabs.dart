@@ -213,6 +213,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     brand: shipBrand,
     actions: actions,
     registerLabel: 'Đăng ký làm shipper',
+    registerKind: ButtonKind.outline,
     signedInTitle: 'Shipper',
     showAccountStatus: false,
     showDiagnostics: false,

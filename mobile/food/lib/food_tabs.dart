@@ -416,8 +416,10 @@ Widget _account(
                             session: session, shopPayments: true)))),
               const N11ListItem(
                   icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-              // F04 guest (Owner 14/11): a small text link at the end of the screen. It opens the existing sign-in; after signing in it
-              // opens the existing shop-management screen (it reads the server first). No guest route, API or new rule.
+            ],
+            // F04 guest (Owner 14/11): a small text link LAST on the screen (after "Kiểm tra cập nhật"). It opens the existing sign-in; after
+            // signing in it opens the existing shop-management screen (it reads the server first). No guest route, API or new rule.
+            footerEntries: <Widget>[
               if (session.status != SessionStatus.signedIn)
                 Center(
                   child: TextButton(

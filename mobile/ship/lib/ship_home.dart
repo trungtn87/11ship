@@ -179,8 +179,11 @@ class _ShipHomeState extends State<ShipHome> {
             ),
       paused: online.paused,
       busy: online.busy,
-      // Existing location flow only (restores or starts location sharing); it never flips the online switch.
-      onLocate: () => unawaited(online.reconcile(force: true)),
+      // Existing location flow only (restores or starts location sharing); it never flips the online switch. Offered only when that flow can
+      // run (signed in with a driver profile): ShipOnline.reconcile does nothing otherwise, so a guest sees no dead button (see Open-blockers).
+      onLocate: widget.session.status == SessionStatus.signedIn && widget.driver?.profile != null
+          ? () => unawaited(online.reconcile(force: true))
+          : null,
       message: online.message,
       // One alert replaces the three separate notices (connection banner, GPS line, problem note): the alert when there is a cause, else the normal
       // connection banner, else nothing.

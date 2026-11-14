@@ -47,6 +47,8 @@ void main() {
     expect(find.text('Quản lý cửa hàng'), findsOneWidget);
     // The link sits below the sign-in / sign-up actions (the bottom of the screen).
     expect(tester.getTopLeft(link).dy, greaterThan(tester.getTopLeft(find.byKey(const Key('open-login'))).dy));
+    // It is the last row: below "Trợ giúp" (the last list row before the footer).
+    expect(tester.getTopLeft(link).dy, greaterThan(tester.getTopLeft(find.text('Trợ giúp')).dy));
     await tester.tap(link);
     await tester.pumpAndSettle();
     expect(find.byType(LoginScreen), findsOneWidget);

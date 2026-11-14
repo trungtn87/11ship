@@ -124,6 +124,8 @@ void main() {
     expect(find.text('Đăng ký · Duyệt hồ sơ · Nhận đơn'), findsOneWidget);
     expect(find.byKey(const Key('driver-register-note-account')), findsOneWidget);
     expect(find.text('Đăng ký làm shipper'), findsOneWidget);
+    // Outlined brand-yellow button with dark text (not a solid yellow fill).
+    expect(tester.widget<N11Button>(find.byKey(const Key('open-register'))).kind, ButtonKind.outline);
     expect(find.text('Hồ sơ shipper'), findsNothing);
     // The register action opens the account registration with the 11Ship brand (not a shipper approval).
     await tester.ensureVisible(find.byKey(const Key('open-register')));
@@ -143,6 +145,13 @@ void main() {
     // No income figures or commission/benefit amounts for guests.
     expect(find.textContaining('%'), findsNothing);
     expect(find.textContaining('₫'), findsNothing);
+  });
+
+  testWidgets('S01 guest: the receiving area shows no "Bật định vị ngay" (its flow needs a signed-in driver; no dead button)', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    expect(find.byKey(const Key('home-locate-cta')), findsNothing);
+    expect(find.byKey(const Key('ship-home-header')), findsOneWidget);
+    expect(find.text('Khu vực nhận đơn'), findsOneWidget);
   });
 
   testWidgets('S02 offline orders: "Về trang chủ" switches to the Home tab', (WidgetTester tester) async {
