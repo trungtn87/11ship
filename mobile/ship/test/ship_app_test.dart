@@ -147,9 +147,10 @@ void main() {
     expect(find.textContaining('₫'), findsNothing);
   });
 
-  testWidgets('S01 guest: no "Bật định vị ngay" button (its behaviour is a separate PR); gradient header and receiving area still shown', (WidgetTester tester) async {
+  testWidgets('S01 guest without a position: "Bật định vị ngay" shows and the map still shows on the first screen; gradient header and receiving area still shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    expect(find.text('Bật định vị ngay'), findsNothing);
+    // The button is local only (s01_locate_test.dart covers what it does); here it must not push the map out of the first screen.
+    expect(find.text('Bật định vị ngay'), findsOneWidget);
     // First screen at 390x844: the map panel starts above the bottom navigation (about y 730), so its label is on the first screen.
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     tester.view.devicePixelRatio = 3;
