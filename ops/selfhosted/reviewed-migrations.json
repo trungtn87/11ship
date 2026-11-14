@@ -98,7 +98,7 @@
       "review": "PR #346 (P6-2, #294); compatibility review 2026-11-14 (drafted by the implementer, for Lead confirmation): Up adds app.route_snapshots (append-only), nullable route_snapshot_id on orders and deliveries, nullable new_route_snapshot_id on address_change_requests, and a pointer guard trigger. No backfill; existing rows and distances are unchanged. The previous backend neither reads nor writes these columns, so its inserts stay valid (NULL) and its updates never change the pointer, so the guard passes. Down is for disposable databases only."
     },
     "1797897600000_route-snapshots-review-round2": {
-      "sha256": "6dd2f1999eb8cc7cdd41646f9cb7de67340cdb389d1e2e30c4bf04a1e184b468",
+      "sha256": "c9e868c853755f37030351c026cae7aeb4a800b5c7c18441920cfec00642e08c",
       "review": "PR #346 (P6-2 review round 2, #294; Codex MEDIUM-1 and MEDIUM-2); compatibility review 2026-11-14, drafted by the implementer for Lead confirmation: Up adds a unique content_key to app.route_snapshots (backfilled once inside the migration, the only UPDATE of that table, with its append-only trigger disabled for that statement; the table is not deployed), a BEFORE INSERT trigger that sets it, a narrow retention function app.purge_unreferenced_route_snapshots (SECURITY DEFINER, EXECUTE only for the runtime role, PUBLIC revoked), a row guard that refuses to delete a referenced snapshot, and replaces the pointer guard of Orders and deliveries with a pair guard (pointer and distance must agree on INSERT and UPDATE). Existing rows and distances are unchanged; the previous backend neither writes these pointers nor changes distances, so its statements keep working. Down is for disposable databases only."
     }
   }
