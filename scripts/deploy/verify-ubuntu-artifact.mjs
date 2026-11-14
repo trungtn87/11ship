@@ -69,6 +69,7 @@ try {
     'apps/admin-web/dist/js/dom/main.js',
     'database/migrations',
     'scripts/db-migrate-remote.js',
+    'scripts/push-check.js',
     'scripts/deploy/android-readiness.cjs',
     'scripts/deploy/vps-update.py',
     'scripts/deploy/vps-diagnose.py',
@@ -121,6 +122,11 @@ try {
   }
 
   // The operator commands must refuse (exit 1) with no target configured, proving they start from the artifact.
+  // Exercise the documented npm command too: a script present in the repository is not enough if the runtime manifest omits it.
+  const pushCheck = spawnSync('npm', ['run', '--silent', 'push:check'], { cwd: rel, env: scrubbed, encoding: 'utf8' });
+  if (pushCheck.status !== 1 || !pushCheck.stderr.includes('push:check: NOT_CONFIGURED')) {
+    fail('npm run push:check must start from the artifact and refuse NOT_CONFIGURED with no credentials');
+  }
   for (const script of ['db-migrate-remote.js', 'admin-auth-init-limit-config.js', 'admin-auth-bootstrap-system.js', 'sms-gateway-ctl.js']) {
     const run = spawnSync(process.execPath, [join('scripts', script), ...(script === 'sms-gateway-ctl.js' ? ['list'] : [])], { cwd: rel, env: scrubbed, encoding: 'utf8', input: '' });
     if (run.status !== 1) {
