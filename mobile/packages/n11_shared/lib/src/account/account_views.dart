@@ -22,6 +22,7 @@ import 'phone_verification.dart';
 import 'vn_mobile.dart';
 import 'otp_input.dart';
 import 'session_controller.dart';
+import 'registration_consent.dart';
 
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
 // docs/ui/m01-ship-web.md S05/S10/S11): guest, login, register, signed-in account, own profile and the logout dialog. They reuse
@@ -750,20 +751,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  /// Registration shows only the checkbox and a link; the accepted version is unchanged
-  /// until the Owner approves and activates the separate full policy document.
-  Widget _policyLinks() => N11Card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const Text('Đọc chính sách trước khi xác nhận:', style: N11Text.caption),
-        const SizedBox(height: N11Space.gap2),
-        N11Link(
-          'Điều khoản sử dụng và Chính sách quyền riêng tư',
-          key: const Key('register-policy-link'),
-          onPressed: () => Navigator.of(context).push(n11Route(PolicyScreen(session: widget.session))),
-        ),
-      ],
+  void _showPolicyPopup() {
+    showRegistrationPoliciesPopup(
+      context,
+      termsText: kTermsText,
+      privacyText: kPrivacyText,
+      termsVersion: kConsentTermsVersion,
+      privacyVersion: kConsentPrivacyVersion,
+    );
+  }
+
+  Widget _registrationConsent({required bool disabled}) => KeyedSubtree(
+    key: _feedback.key('consent'),
+    child: RegistrationConsentCheckbox(
+      value: _agree,
+      onChanged: disabled ? null : (bool? value) => setState(() => _agree = value ?? false),
+      onViewPolicy: _showPolicyPopup,
     ),
   );
 
@@ -819,8 +822,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('password'), tone: _error('password') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('confirm'), fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
-            _policyLinks(),
-            KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(key: const Key('register-consent'), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: N11Colors.yellow, checkColor: N11Colors.black, value: _agree, onChanged: locked ? null : (bool? value) => setState(() => _agree = value ?? false), title: const Text(kConsentLabel, style: N11Text.body))),
+            _registrationConsent(disabled: locked),
             if (_error('consent') != null) Text(_error('consent')!, style: const TextStyle(color: N11Colors.error)),
             N11Button(key: const Key('register-next'), label: 'Tiếp tục', onPressed: locked ? null : () { if (_validate(detailsOnly: true)) setState(() => _step = 1); }),
           ],
@@ -948,18 +950,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             if (_ship)
               N11Field(key: _feedback.key('confirm'), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, fieldKey: const Key('register-confirm-password'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !busy, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu nhập lại chưa khớp.' : null), onChanged: () => setState(() {})),
-            _policyLinks(),
-            KeyedSubtree(key: _feedback.key('consent'), child: CheckboxListTile(
-              key: const Key('register-consent'),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              activeColor: N11Colors.yellow,
-              checkColor: N11Colors.black,
-              side: const BorderSide(color: N11Colors.lineStrong, width: 2),
-              value: _agree,
-              onChanged: busy ? null : (bool? value) => setState(() => _agree = value ?? false),
-              title: Text(_ship ? 'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách bảo mật' : kConsentLabel, style: N11Text.body),
-            )),
+            _registrationConsent(disabled: busy),
             if (_error('consent') != null) Text(_error('consent')!, style: const TextStyle(color: N11Colors.error)),
             if (food) N11Banner(
               kind: BannerKind.info,
