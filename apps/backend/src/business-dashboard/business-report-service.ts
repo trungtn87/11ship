@@ -47,8 +47,8 @@ export class BusinessReportService {
         if(kind==='shippers'){current=shipperSuccessRates(current);previous=shipperSuccessRates(previous);}
         reports[kind]={status:'OK',current:JSON.parse(JSON.stringify(current)) as JsonObject,previous:JSON.parse(JSON.stringify(previous)) as JsonObject};
       }
-      let trade=await this.trade.summary(c,periods.current,rights.has(FINANCE_PERMISSION_READ));
-      const previousTrade=await this.trade.summary(c,periods.previous,rights.has(FINANCE_PERMISSION_READ));
+      let trade=await this.trade.summary(c,periods.current,rights.has(FINANCE_PERMISSION_READ),rights.feedbackViewScope);
+      const previousTrade=await this.trade.summary(c,periods.previous,rights.has(FINANCE_PERMISSION_READ),rights.feedbackViewScope);
       const shops=await this.shops.dashboardCounts(c);const drivers=await this.drivers.dashboardCounts(c);
       const names=await this.shops.namesOf(c,(trade.ranking as JsonObject[]).map(r=>String(r.shop_id)));
       trade={...trade,shops:shops.total,active_shops:shops.active,shippers:drivers.total,online_shippers:await this.locations.countFreshAmong(c,drivers.acceptingIds),ranking:(trade.ranking as JsonObject[]).map(r=>({...r,name:names.get(String(r.shop_id))??'Quán'}))};
