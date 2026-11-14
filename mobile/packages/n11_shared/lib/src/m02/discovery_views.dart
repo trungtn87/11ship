@@ -311,11 +311,15 @@ class DiscoveryHome extends StatefulWidget {
     this.bell,
     this.ratings,
     this.position,
+    this.onNotifyWhenShops,
   });
 
   final DiscoveryPosition? position;
   final DiscoveryController controller;
   final PublicShopApi publicApi;
+
+  /// Navigation only (no API): the "Nhận tin khi có quán" button of the empty area. Null = no button.
+  final VoidCallback? onNotifyWhenShops;
 
   /// M11: the public ratings of a shop, opened from its page. Null = no rating entry.
   final M11Source? ratings;
@@ -572,35 +576,38 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                 ),
               ],
             ),
-            if (c.categories.isNotEmpty) ...<Widget>[
-              const SizedBox(height: N11V5.categoryGap),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: <Widget>[
-                    _chip(
-                      'home-cat-all',
-                      'Tất cả',
-                      c.categoryId == null,
-                      () => c.categoryId == null
-                          ? null
-                          : c.toggleCategory(c.categoryId!),
-                    ),
-                    for (final CategoryChoice cat in c.categories)
-                      _chip(
-                        'home-cat-${cat.id}',
-                        cat.name,
-                        c.categoryId == cat.id,
-                        () => c.toggleCategory(cat.id),
-                      ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
     );
+    // Category row sits on the light background below the yellow header (F01), scrolls sideways.
+    if (c.categories.isNotEmpty) {
+      out.add(
+        SingleChildScrollView(
+          key: const Key('home-v5-category-row'),
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              _chip(
+                'home-cat-all',
+                'Tất cả',
+                c.categoryId == null,
+                () => c.categoryId == null
+                    ? null
+                    : c.toggleCategory(c.categoryId!),
+              ),
+              for (final CategoryChoice cat in c.categories)
+                _chip(
+                  'home-cat-${cat.id}',
+                  cat.name,
+                  c.categoryId == cat.id,
+                  () => c.toggleCategory(cat.id),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
     if (c.area != null) out.add(_DiscoveryBanner(areaName: c.area!.name));
     if (c.stale) {
       out.add(
@@ -690,16 +697,38 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         out.add(_failed(c.refresh));
       case DiscoveryLoad.ready:
         if (c.shops.isEmpty) {
-          out.add(
-            EmptyState(
-              key: const Key('home-empty'),
-              icon: Icons.restaurant,
-              title: 'Chưa có quán phù hợp',
-              text: c.filtersActive
-                  ? 'Không có quán nào khớp bộ lọc hiện tại.'
-                  : 'Khu vực này chưa có quán nào có món để hiển thị.',
-            ),
-          );
+          if (!c.filtersActive) {
+            out.add(
+              Column(
+                key: const Key('home-no-shops'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const N11InfoCard(
+                    title: 'Chưa có quán đang phục vụ',
+                    text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn. Bạn có thể nhận tin khi có quán mới.',
+                  ),
+                  if (widget.onNotifyWhenShops != null) ...<Widget>[
+                    const SizedBox(height: N11Space.gap2),
+                    N11Button(
+                      key: const Key('home-notify-cta'),
+                      label: 'Nhận tin khi có quán',
+                      kind: ButtonKind.secondary,
+                      onPressed: widget.onNotifyWhenShops,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          } else {
+            out.add(
+              EmptyState(
+                key: const Key('home-empty'),
+                icon: Icons.restaurant,
+                title: 'Chưa có quán phù hợp',
+                text: 'Không có quán nào khớp bộ lọc hiện tại.',
+              ),
+            );
+          }
           if (c.filtersActive) {
             out.add(
               N11Button(
@@ -1446,24 +1475,26 @@ class _PositionButton extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final bool busy = position.loading || resolving;
+    // Short line so it never crowds the bell at 360px: the reason is in the area label above.
     final String label = busy
-        ? 'Đang định vị…'
-        : outsideCoverage
-        ? 'Thử xác định lại khu vực'
-        : failed
-        ? 'Chưa xác định được khu vực. Thử lại'
+        ? 'Đang tìm vị trí…'
         : position.failure == LocationFailure.denied
-        ? 'Chưa được cấp quyền vị trí. Thử lại'
+        ? 'Cấp quyền vị trí'
         : position.failure == LocationFailure.disabled
-        ? 'Vị trí đang tắt. Thử lại'
-        : position.attemptedAt != null
-        ? 'Chưa lấy được vị trí. Thử lại'
-        : 'Đang chờ GPS. Thử lại';
-    return TextButton.icon(
-      key: const Key('discovery-locate'),
-      onPressed: busy ? null : retry ?? position.locate,
-      icon: const Icon(Icons.my_location, size: 18),
-      label: Text(label),
+        ? 'Bật vị trí'
+        : 'Thử lại';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        key: const Key('discovery-locate'),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+        ),
+        onPressed: busy ? null : retry ?? position.locate,
+        icon: const Icon(Icons.my_location, size: 16),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
     );
   }
 }

@@ -313,7 +313,10 @@ class ShipHomeLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
+            Container(
+              key: const Key('ship-home-header'),
+              // Light yellow fading to white (Owner 14/11): the header band only; the content below stays on the normal background.
+              decoration: const BoxDecoration(gradient: N11Colors.headerFadeGradient),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(
                 children: <Widget>[
@@ -697,6 +700,19 @@ class ShipActivityPanel extends StatelessWidget {
                 style: N11Text.h2,
               ),
             ),
+            // Badge beside the switch while the server does not yet allow turning online (the switch is disabled).
+            if (onToggle == null)
+              Flexible(
+                child: Container(
+                  key: const Key('home-status-badge'),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: N11Colors.yellowSoft,
+                    borderRadius: BorderRadius.circular(kRadiusPill),
+                  ),
+                  child: const Text('Chưa đủ điều kiện', style: N11Text.caption, softWrap: true),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 8),

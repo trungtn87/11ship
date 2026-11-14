@@ -182,14 +182,14 @@ void main() {
     expect(find.text('Danh sách quán chưa sẵn sàng'), findsOneWidget);
   });
 
-  testWidgets('account: login and register are open, shop management is locked "not on Android" and grants nothing', (WidgetTester tester) async {
+  testWidgets('account: login and register are open; the guest "Quản lý cửa hàng" link is the only shop entry and grants nothing', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
     final Finder login = find.byKey(const Key('open-login'));
     final Finder register = find.byKey(const Key('open-register'));
     expect(tester.widget<N11Button>(login).onPressed, isNotNull);
     expect(tester.widget<N11Button>(register).onPressed, isNotNull);
-    expect(find.text('Quản lý cửa hàng'), findsNothing);
+    expect(find.text('Quản lý cửa hàng'), findsOneWidget);
     expect(find.text('Chẩn đoán kết nối'), findsNothing);
     expect(find.textContaining('chờ backend'), findsNothing, reason: texts(tester));
   });
@@ -311,7 +311,8 @@ void main() {
   testWidgets('account omits removed groups and rows', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
-    for (final String label in <String>['Trạng thái tài khoản', 'Quản lý cửa hàng', 'Chính sách và điều khoản', 'Chẩn đoán kết nối', 'Trạng thái', 'Cửa hàng']) {
+    // "Quản lý cửa hàng" is the guest link at the end of the screen (F04, see f04_guest_shop_link_test.dart), not a row.
+    for (final String label in <String>['Trạng thái tài khoản', 'Chính sách và điều khoản', 'Chẩn đoán kết nối', 'Trạng thái', 'Cửa hàng']) {
       expect(find.text(label), findsNothing);
     }
     expect(find.text('Trợ giúp'), findsOneWidget);

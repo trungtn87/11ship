@@ -123,7 +123,7 @@ export class OrderListView {
     this.#from = h('input', { id: 'order-from', type: 'date', class: 'search-input', 'aria-label': 'Từ ngày' });
     this.#to = h('input', { id: 'order-to', type: 'date', class: 'search-input', 'aria-label': 'Đến ngày' });
     this.#shop = h('input', { id: 'order-shop', type: 'search', class: 'search-input', placeholder: 'Quán', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Quán', maxlength: '80' });
-    const refresh = h('button', { type: 'button', class: 'btn btn-secondary btn-inline' }, icon('refresh', 18), 'Làm mới');
+    const refresh = h('button', { type: 'button', class: 'btn btn-quiet btn-inline' }, icon('refresh', 18), 'Làm mới');
     this.#results = h('div', { class: 'results' });
     this.#drawer = h('aside', { class: 'drawer', id: 'order-drawer', 'aria-label': 'Chi tiết đơn hàng', hidden: true });
     const typed = (): void => {

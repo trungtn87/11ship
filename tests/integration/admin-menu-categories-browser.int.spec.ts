@@ -147,7 +147,8 @@ describe('admin dish groups (real browser)', () => {
     await signIn(page, { phone: system.account.phone, password: system.account.password, userId: system.account.userId, secret: system.login.secret });
 
     // The menu entry and the page.
-    expect(await page.evaluate<boolean>(`!!document.querySelector('a[href="/catalog/categories"]') && document.body.innerText.includes('DANH MỤC')`)).toBe(true);
+    // The "Nhóm món" link sits under the QUẢN LÝ sidebar section (the section that replaced DANH MỤC, 14/11 sidebar regrouping).
+    expect(await page.evaluate<boolean>(`[...document.querySelectorAll('.side-group')].some((group) => group.querySelector('.side-heading')?.textContent?.trim() === 'QUẢN LÝ' && !!group.querySelector('a[href="/catalog/categories"]'))`)).toBe(true);
     await page.goto(`${origin}/catalog/categories`);
     await page.waitFor(`document.querySelector('#catalog-title') && document.querySelector('#catalog-search') && document.querySelectorAll('.table tbody tr').length >= 6`);
     // Other suites may have left unrelated groups: this suite looks only at the groups that carry its tag.

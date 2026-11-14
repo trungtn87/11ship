@@ -148,7 +148,8 @@ class N11Banner extends StatelessWidget {
 // ---- Buttons ---------------------------------------------------------------------------------------------------------
 
 /// Primary = yellow, secondary = outlined, ghost = text, dark = charcoal.
-enum ButtonKind { primary, secondary, dark, ghost }
+/// [outline]: white with a brand-yellow border and dark text (Owner 14/11, shipper registration). Never white text on yellow.
+enum ButtonKind { primary, secondary, dark, ghost, outline }
 
 class N11Button extends StatefulWidget {
   const N11Button({
@@ -200,9 +201,11 @@ class _N11ButtonState extends State<N11Button> {
       ButtonKind.secondary => _pressed && enabled ? N11Colors.bg : N11Colors.white,
       ButtonKind.dark => N11Colors.black,
       ButtonKind.ghost => _pressed && enabled ? N11Colors.bg : Colors.transparent,
+      ButtonKind.outline => _pressed && enabled ? N11Colors.yellowFaint : N11Colors.white,
     };
     Color ink = widget.kind == ButtonKind.dark ? N11Colors.white : N11Colors.black;
-    Color border = widget.kind == ButtonKind.secondary ? N11Colors.line : Colors.transparent;
+    Color border = widget.kind == ButtonKind.secondary ? N11Colors.line : widget.kind == ButtonKind.outline ? N11Colors.yellow : Colors.transparent;
+    final double borderWidth = widget.kind == ButtonKind.outline ? 2 : 1;
     if (widget.loading) {
       background = widget.kind == ButtonKind.dark ? N11Colors.black : N11Colors.yellowSoft;
     }
@@ -229,7 +232,7 @@ class _N11ButtonState extends State<N11Button> {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: background,
-              border: Border.all(color: border),
+              border: Border.all(color: border, width: borderWidth),
               borderRadius: radius,
             ),
             child: Padding(
