@@ -67,8 +67,8 @@ WidgetBuilder? _settingsBuilder(AppFlows? flows) {
 List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
     TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, ownsConnectionBanner: true, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, driver: flows?.driver, walletSource: buildWalletSource(session: session), reset: flows?.reset, notifications: flows?.notifications, onNotifications: () => actions.goTab('notifications'))),
-    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows)),
-    TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: (BuildContext context, ShellActions actions) => _income(context, actions, session)),
+    TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows, actions)),
+    TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: (BuildContext context, ShellActions actions) => _income(context, actions, session, flows)),
     TabSpec(id: 'notifications', label: 'Thông báo', icon: Icons.notifications_outlined, title: 'Thông báo', fullBleed: true, body: (BuildContext context, ShellActions actions) => _notifications(session, flows, actions)),
     TabSpec(id: 'account', label: 'Tài khoản', icon: Icons.person_outline, title: 'Tài khoản', body: (BuildContext context, ShellActions actions) => _account(session, actions, flows)),
   ];
@@ -76,25 +76,9 @@ List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
 
 Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.soon));
 
-/// A card with a label, a value that is "—" because nothing is known, and the reason.
-Widget _unknownFigure({required String label, required String note}) {
-  return N11Card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(children: <Widget>[const Icon(Icons.insights_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text(label, style: N11Text.h2))]),
-        const SizedBox(height: N11Space.gap2),
-        const Text('—', style: N11Text.title),
-        const SizedBox(height: N11Space.gap2),
-        ReasonNote(note),
-      ],
-    ),
-  );
-}
-
 // ---- S02: orders -----------------------------------------------------------------------------------------------------
 
-Widget _orders(SessionController session, AppFlows? flows) {
+Widget _orders(SessionController session, AppFlows? flows, ShellActions actions) {
   final ShipperDeliverySource? deliveries = flows?.shipperDeliveries;
   final String onboarding = session.identity?.driverOnboarding ?? 'NOT_STARTED';
   final bool shipper = session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
@@ -102,13 +86,16 @@ Widget _orders(SessionController session, AppFlows? flows) {
     // M07: offers, my deliveries, drop-off and pickup confirmation, result and history.
     return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationStatusLine(online: shipOnlineFor(session, driver: flows?.driver)..attach()), feedbackSlot: _feedbackSlot(flows));
   }
-  return const OrdersBody();
+  return OrdersBody(onHome: () => actions.goTab('home'));
 }
 
 enum OrdersView { active, history }
 
 class OrdersBody extends StatefulWidget {
-  const OrdersBody({super.key});
+  const OrdersBody({super.key, this.onHome});
+
+  /// "Về trang chủ": switches to the Home tab (S01) where the receiving status is set. Null = no button.
+  final VoidCallback? onHome;
 
   @override
   State<OrdersBody> createState() => _OrdersBodyState();
@@ -128,7 +115,9 @@ class _OrdersBodyState extends State<OrdersBody> {
           N11Button(key: const Key('orders-history'), label: 'Lịch sử', compact: true, kind: _view == OrdersView.history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = OrdersView.history)),
         ],
       ),
-      const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Chưa có đơn nào được giao cho bạn.'),
+      const EmptyState(icon: Icons.receipt_long_outlined, title: 'Chưa có đơn hàng', text: 'Chưa có đơn nào được giao cho bạn. Đơn chỉ hiện khi bạn đang nhận đơn.'),
+      if (widget.onHome != null)
+        N11Button(key: const Key('orders-home'), label: 'Về trang chủ', kind: ButtonKind.secondary, onPressed: widget.onHome),
       _soonChip(),
     ]);
   }
@@ -136,15 +125,65 @@ class _OrdersBodyState extends State<OrdersBody> {
 
 // ---- S03: income -----------------------------------------------------------------------------------------------------
 
-Widget _income(BuildContext context, ShellActions actions, SessionController session) {
+Widget _income(BuildContext context, ShellActions actions, SessionController session, AppFlows? flows) {
+  if (session.status != SessionStatus.signedIn) {
+    // S03 guest (Owner 14/11): only the process & benefits card and the sign-in / sign-up actions. No income figures, no wallet.
+    return vstack(<Widget>[
+      _processCard(),
+      N11Button(key: const Key('income-guest-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: shipBrand, reset: flows?.reset)))),
+      N11Button(key: const Key('income-guest-register'), label: 'Đăng ký làm shipper', onPressed: () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: shipBrand)))),
+    ]);
+  }
   return vstack(<Widget>[
-    // M04: entry to the wallet screens, connected to the server through the session (a sample only in a preview build).
-    if (session.status == SessionStatus.signedIn) WalletEntry(session: session),
     const GatedButton(label: 'Chọn khoảng ngày', reason: 'Chọn ngày sẽ có khi dữ liệu thu nhập sẵn sàng.', kind: ButtonKind.secondary, icon: Icons.schedule),
-    _unknownFigure(label: 'Tổng thu nhập', note: 'Chưa có dữ liệu. "—" nghĩa là chưa biết, không phải 0 đồng.'),
-    const EmptyState(icon: Icons.bar_chart_outlined, title: 'Chưa có dữ liệu thu nhập', text: FrameReasons.empty),
+    // "Tổng thu nhập" stays on top: no confirmed figure yet, so it reads "-- đ" (never a made-up number) and opens the wallet.
+    N11Card(
+      key: const Key('income-summary'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(children: <Widget>[const Icon(Icons.insights_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Tổng thu nhập', style: N11Text.h2))]),
+          const SizedBox(height: N11Space.gap2),
+          const Text('-- đ', style: N11Text.title),
+          const SizedBox(height: N11Space.gap2),
+          const ReasonNote('Thu nhập sẽ hiện khi có dữ liệu xác nhận.'),
+          const SizedBox(height: N11Space.gap2),
+          Align(
+            alignment: Alignment.centerRight,
+            child: N11Button(key: const Key('income-open-wallet'), label: 'Xem ví shipper', kind: ButtonKind.secondary, compact: true, onPressed: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session)))),
+          ),
+        ],
+      ),
+    ),
+    // M04: entry to the wallet screens, connected to the server through the session (kept for signed-in people).
+    WalletEntry(session: session),
+    // Replaces the duplicate empty card: recent transactions live in the wallet history.
+    N11Card(
+      key: const Key('income-recent'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(children: <Widget>[const Icon(Icons.history, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Giao dịch gần đây', style: N11Text.h2))]),
+          const SizedBox(height: N11Space.gap2),
+          const Text('Chưa có giao dịch để hiển thị. Lịch sử đầy đủ nằm trong ví.', style: N11Text.body),
+        ],
+      ),
+    ),
   ]);
 }
+
+/// The process and benefits of a driver, for guests (S03 and S05). Text only: no new screen, no figures.
+Widget _processCard() => N11Card(
+      key: const Key('driver-process-card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(children: <Widget>[const Icon(Icons.route_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Quy trình & quyền lợi tài xế', style: N11Text.h2))]),
+          const SizedBox(height: N11Space.gap2),
+          const Text('Đăng ký tài khoản, gửi hồ sơ shipper để được duyệt, rồi bật nhận đơn khi đủ điều kiện. Thu nhập và ví chỉ hiện sau khi bạn đăng nhập.', style: N11Text.body),
+        ],
+      ),
+    );
 
 // ---- S04: notifications (M08) ---------------------------------------------------------------------------------------------
 
@@ -164,6 +203,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     session: session,
     brand: shipBrand,
     actions: actions,
+    registerLabel: 'Đăng ký làm shipper',
     signedInTitle: 'Shipper',
     showAccountStatus: false,
     showDiagnostics: false,
@@ -209,7 +249,10 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           sub: 'Hoàn tất đơn và rút toàn bộ số dư ví',
           onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverActivityScreen(controller: driver, walletSource: wallet))),
         ),
-      if (driver == null)
+      // S05 guest: no "Hồ sơ shipper" row; the process & benefits entry instead.
+      if (session.status != SessionStatus.signedIn)
+        const N11ListItem(key: Key('driver-process-entry'), icon: Icons.route_outlined, title: 'Quy trình & quyền lợi tài xế', sub: 'Đăng ký, duyệt hồ sơ và nhận đơn'),
+      if (driver == null && session.status == SessionStatus.signedIn)
         N11ListItem(
           icon: Icons.badge_outlined,
           title: 'Hồ sơ shipper',

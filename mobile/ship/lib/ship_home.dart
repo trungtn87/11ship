@@ -179,6 +179,8 @@ class _ShipHomeState extends State<ShipHome> {
             ),
       paused: online.paused,
       busy: online.busy,
+      // Existing location flow only (restores or starts location sharing); it never flips the online switch.
+      onLocate: () => unawaited(online.reconcile(force: true)),
       message: online.message,
       // One alert replaces the three separate notices (connection banner, GPS line, problem note): the alert when there is a cause, else the normal
       // connection banner, else nothing.
@@ -275,8 +277,12 @@ class ShipHomeLayout extends StatelessWidget {
     this.connection,
     this.locationView,
     this.radiusExempt = false,
+    this.onLocate,
   });
   final bool? online;
+
+  /// "Bật định vị ngay" inside the receiving-area card; shown only while the area cannot be drawn yet. Null = no button.
+  final VoidCallback? onLocate;
 
   /// True only when the server states the account is exempt from the receiving radius (PLATFORM). The app is not given the driver type today, so
   /// the home leaves it false; the label and the grey mask then never claim an exemption they cannot know.
@@ -313,7 +319,9 @@ class ShipHomeLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
+            Container(
+              key: const Key('ship-home-header'),
+              decoration: const BoxDecoration(gradient: N11Colors.brandWarmGradient),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(
                 children: <Widget>[
@@ -417,6 +425,14 @@ class ShipHomeLayout extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: N11Space.gap3),
+                  if (onLocate != null && !shipRadiusCentreUsable(position)) ...<Widget>[
+                    N11Button(
+                      key: const Key('home-locate-cta'),
+                      label: 'Bật định vị ngay',
+                      onPressed: onLocate,
+                    ),
+                    const SizedBox(height: N11Space.gap3),
+                  ],
                   ClipRRect(
                     borderRadius: BorderRadius.circular(N11V5.inputRadius),
                     child: locationView == null
@@ -697,6 +713,19 @@ class ShipActivityPanel extends StatelessWidget {
                 style: N11Text.h2,
               ),
             ),
+            // Badge beside the switch while the server does not yet allow turning online (the switch is disabled).
+            if (onToggle == null)
+              Flexible(
+                child: Container(
+                  key: const Key('home-status-badge'),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: N11Colors.yellowSoft,
+                    borderRadius: BorderRadius.circular(kRadiusPill),
+                  ),
+                  child: const Text('Chưa đủ điều kiện', style: N11Text.caption, softWrap: true),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 8),

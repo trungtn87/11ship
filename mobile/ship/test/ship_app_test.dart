@@ -106,11 +106,32 @@ void main() {
   testWidgets('income remains unknown and notifications introduce no fake data', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'income');
-    expect(find.text('—'), findsOneWidget);
-    expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
+    // S03 guest (Owner 14/11): process card and sign-in actions only; no income figures, no transactions.
+    expect(find.byKey(const Key('driver-process-card')), findsOneWidget);
+    expect(find.text('Tổng thu nhập'), findsNothing);
+    expect(find.text('Giao dịch gần đây'), findsNothing);
+    expect(find.byKey(const Key('income-guest-login')), findsOneWidget);
     await openTab(tester, 'notifications');
     expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
+  });
+
+  testWidgets('S05 guest: "Đăng ký làm shipper" and the process entry; no "Hồ sơ shipper" row', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'account');
+    expect(find.byKey(const Key('driver-process-entry')), findsOneWidget);
+    expect(find.text('Đăng ký làm shipper'), findsOneWidget);
+    expect(find.text('Hồ sơ shipper'), findsNothing);
+  });
+
+  testWidgets('S02 offline orders: "Về trang chủ" switches to the Home tab', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'orders');
+    expect(find.byKey(const Key('orders-home')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('orders-home')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('ship-home-scroll')), findsOneWidget);
   });
 
   testWidgets('orders view toggles between active and history, both empty', (WidgetTester tester) async {

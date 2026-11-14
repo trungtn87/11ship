@@ -16,6 +16,13 @@ abstract final class N11Colors {
   static const Color accentOrange = Color(0xFFED6A00);
   static const Color homeBannerStart = Color(0xFFFFF3B0);
   static const Color homeBannerEnd = Color(0xFFFFD84D);
+  // Owner 14/11: #FFC400 stays the brand yellow with #191919 text on it (never white on yellow). #FF9900 is only the end of the warm gradient.
+  static const Color brandWarm = Color(0xFFFF9900);
+  static const LinearGradient brandWarmGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[yellow, brandWarm],
+  );
   static const Color black = Color(0xFF191919);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);
