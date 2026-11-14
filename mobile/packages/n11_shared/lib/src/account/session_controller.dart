@@ -85,6 +85,17 @@ class SessionController extends ChangeNotifier {
   bool _logoutUnconfirmed = false;
   RegistrationMode _registrationMode = RegistrationMode.unknown;
   int _epoch = 0;
+  /// Counts every login / register / retry request sent; a stale attempt clears its stored token only while it is still the latest (P5-6d).
+  int _authAttempt = 0;
+  /// The newest attempt whose token the platform store has accepted (updated inside the token queue). A stale attempt's cleanup
+  /// removes its token unless a newer attempt has already stored one (P5-6d).
+  int _storedAttempt = 0;
+  /// Counts server/session ends (401 on a protected call). A profile save that was in flight across one must not refill the profile (P5-6d).
+  int _sessionEnds = 0;
+  /// Every token read, write and clear goes through this queue in call order (P5-6d): a slow platform write from an older attempt cannot land
+  /// after a newer one, and a read cannot see a half-finished write.
+  Future<void> _tokenQueue = Future<void>.value();
+  int _tokenPending = 0;
   bool _disposed = false;
 
   SessionStatus get status => _status;
@@ -107,6 +118,21 @@ class SessionController extends ChangeNotifier {
     _disposed = true;
     super.dispose();
   }
+
+  /// Runs one token operation after every earlier one has finished (P5-6d). A failed operation does not stop the queue.
+  /// When nothing is queued the operation starts at once, so an idle read costs no extra turn of the event loop.
+  Future<T> _tokenOp<T>(Future<T> Function() operation) {
+    final Future<T> result = _tokenPending == 0 ? operation() : _tokenQueue.then((_) => operation());
+    _tokenPending++;
+    _tokenQueue = result.then<void>((_) {
+      _tokenPending--;
+    }, onError: (Object _) {
+      _tokenPending--;
+    });
+    return result;
+  }
+
+  Future<String?> _readToken() => _tokenOp(() => bridge.readToken());
 
   void _notify() {
     if (!_disposed) {
@@ -131,7 +157,7 @@ class SessionController extends ChangeNotifier {
     }
     String? token;
     try {
-      token = await bridge.readToken();
+      token = await _readToken();
     } on DeviceBridgeException {
       token = null;
     }
@@ -153,7 +179,7 @@ class SessionController extends ChangeNotifier {
     final int epoch = ++_epoch;
     String? token;
     try {
-      token = await bridge.readToken();
+      token = await _readToken();
     } on DeviceBridgeException {
       token = null;
     }
@@ -222,13 +248,14 @@ class SessionController extends ChangeNotifier {
   /// 401: the token and every personal value go, the device key stays so the person can sign in again.
   Future<void> _endSession(int epoch, {required bool notice}) async {
     try {
-      await bridge.clearToken();
+      await _tokenOp(() => bridge.clearToken());
     } on DeviceBridgeException {
       // The in-memory state is cleared below regardless.
     }
     if (epoch != _epoch) {
       return;
     }
+    _sessionEnds++;
     _toGuest();
     _sessionEndedNotice = notice;
     _notify();
@@ -376,6 +403,7 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> _send(PendingAuth pending, int epoch) async {
     _pending = pending;
+    final int attempt = ++_authAttempt;
     final int seq = _identitySeq;
     final ApiResponse response = await api.authCall(pending.path, pending.body, pending.idempotencyKey);
     if (epoch != _epoch || seq != _identitySeq) {
@@ -392,8 +420,30 @@ class SessionController extends ChangeNotifier {
     if (identity == null || token is! String) {
       throw const AuthFailure(AuthFailureKind.badResponse);
     }
-    await bridge.storeToken(token);
-    if (epoch != _epoch || seq != _identitySeq) {
+    // The attempt check runs inside the token queue, right before the write: a newer attempt owns the stored token, so an older one writes nothing.
+    final bool stored = await _tokenOp(() async {
+      if (attempt != _authAttempt) {
+        return false;
+      }
+      await bridge.storeToken(token);
+      _storedAttempt = attempt;
+      return true;
+    });
+    if (!stored || epoch != _epoch || seq != _identitySeq) {
+      // The person left the form while the token was stored: remove it, but only inside the queue and only while this is still the newest attempt.
+      if (stored) {
+        await _tokenOp(() async {
+          // Removed unless a newer attempt has already stored its own token; a newer attempt that started but failed before storing
+          // leaves this token orphaned, so it must still go (P5-6d).
+          if (_storedAttempt <= attempt) {
+            try {
+              await bridge.clearToken();
+            } on DeviceBridgeException {
+              // The next start reads whatever the store holds; nothing was signed in here.
+            }
+          }
+        });
+      }
       return false;
     }
     _sessionEndedNotice = false;
@@ -432,7 +482,7 @@ class SessionController extends ChangeNotifier {
       throw const AuthFailure(AuthFailureKind.sessionEnded);
     }
     final int epoch = _epoch;
-    final String? token = await bridge.readToken();
+    final String? token = await _readToken();
     if (token == null) {
       throw const AuthFailure(AuthFailureKind.sessionEnded);
     }
@@ -588,7 +638,7 @@ class SessionController extends ChangeNotifier {
     final int epoch = ++_epoch;
     String? token;
     try {
-      token = await bridge.readToken();
+      token = await _readToken();
     } on DeviceBridgeException {
       token = null;
     }
@@ -597,7 +647,7 @@ class SessionController extends ChangeNotifier {
     _loggedOutNotice = true;
     _logoutUnconfirmed = false;
     try {
-      await bridge.clearToken();
+      await _tokenOp(() => bridge.clearToken());
     } on DeviceBridgeException {
       // Cleared in memory; the next start asks the server anyway.
     }
@@ -626,7 +676,7 @@ class SessionController extends ChangeNotifier {
   Future<bool> loadProfile() async {
     final int epoch = _epoch;
     final int seq = _identitySeq;
-    final String? token = await bridge.readToken();
+    final String? token = await _readToken();
     if (token == null) {
       return false;
     }
@@ -665,7 +715,8 @@ class SessionController extends ChangeNotifier {
       return ProfileSave.failed;
     }
     final int epoch = _epoch;
-    final String? token = await bridge.readToken();
+    final int sessionEnds = _sessionEnds;
+    final String? token = await _readToken();
     if (token == null) {
       return ProfileSave.failed;
     }
@@ -676,16 +727,22 @@ class SessionController extends ChangeNotifier {
     _setBusy(true);
     try {
       final ApiResponse response = await api.signedCall('PUT', '/v1/customer/me/profile', token: token, body: body, idempotencyKey: key);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || sessionEnds != _sessionEnds) {
         return ProfileSave.failed;
       }
       if (response.status == 200) {
         final Object? data = response.data;
         if (data is Map<String, Object?> && data['version'] is int) {
-          _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
+          final int savedVersion = data['version']! as int;
+          // The save is committed on the server either way; but a newer version already applied here (a refresh or reload that came
+          // after this PUT started) wins over this older answer, so the profile is not rolled back (P5-6d).
+          final int? appliedVersion = _profile?.version;
+          if (appliedVersion == null || appliedVersion <= savedVersion) {
+            _setProfile(Profile(fullName: data['full_name'] as String?, version: savedVersion));
+            _lastFailure = null;
+          }
           _profileKey = null;
           _profileBody = null;
-          _lastFailure = null;
           _notify();
           return ProfileSave.saved;
         }
