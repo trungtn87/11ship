@@ -298,11 +298,30 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     expect((await app.pool.query('SELECT route_snapshot_id::text AS p, route_distance_m FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ p: snapB, route_distance_m: 4000 });
   });
 
-  it('retention: an unreferenced snapshot is purged; one an Order, a delivery or an address change points to is kept', async () => {
-    answer = { km: 5.0, version: 'valhalla-orphan', shape: SHAPE_C };
-    const orphan = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
-    answer = { km: 6.0, version: 'valhalla-ac', shape: SHAPE_C };
-    const forAddressChange = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+  /** A snapshot row stored as if it were 8 days old (created_at can be set on INSERT; the table is append-only afterwards). */
+  const insertOldSnapshot = async (routeVersion: string, distanceM: number): Promise<string> => {
+    const id = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.route_snapshots (id, route_version, distance_m, duration_s, geometry, created_at)
+       VALUES ($1::uuid, $2, $3::int, 420, $4, clock_timestamp() - interval '8 days')`,
+      [id, `${routeVersion}-${id}`, distanceM, SHAPE_C],
+    );
+    return id;
+  };
+
+  it('retention refuses any interval below the fixed 7-day floor, and removes nothing with it', async () => {
+    answer = { km: 5.5, version: 'valhalla-floor', shape: SHAPE_C };
+    const fresh = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    await expect(app.pool.query("SELECT app.purge_unreferenced_route_snapshots(interval '0')")).rejects.toThrow(/ROUTE_SNAPSHOT_RETENTION_TOO_SHORT/);
+    await expect(app.pool.query("SELECT app.purge_unreferenced_route_snapshots(interval '1 day')")).rejects.toThrow(/ROUTE_SNAPSHOT_RETENTION_TOO_SHORT/);
+    expect(await snapshotRow(fresh)).toBeDefined();
+  });
+
+  it('retention: a snapshot older than 7 days that nothing references is purged; a fresh one and one an address change points to are kept', async () => {
+    const oldOrphan = await insertOldSnapshot('valhalla-old-orphan', 5100);
+    const oldForAddressChange = await insertOldSnapshot('valhalla-old-ac', 5200);
+    answer = { km: 5.5, version: 'valhalla-fresh', shape: SHAPE_C };
+    const fresh = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
     const orderNow = await orderRow(firstOrderId);
     await app.pool.query(
       `INSERT INTO app.address_change_requests (change_request_id, order_id, delivery_id, source, requested_by, status, target_actor,
@@ -310,14 +329,33 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
          expires_at, version, created_at, updated_at, order_version, new_route_snapshot_id)
        VALUES ($1::uuid, $2::uuid, NULL, 'ORDER', $3::uuid, 'PENDING', 'SHOP', 'a', '0912345678', 'x', 'a', '0912345678', 'y',
          now() + interval '1 day', 1, now(), now(), $4::bigint, $5::uuid)`,
-      [randomUUID(), firstOrderId, alice.userId, orderNow.version, forAddressChange],
+      [randomUUID(), firstOrderId, alice.userId, orderNow.version, oldForAddressChange],
     );
-    const pointedByOrder = String(orderNow.route_snapshot_id);
-    const removed = await purge('0 seconds');
+    const removed = await purge('7 days');
     expect(removed).toBeGreaterThanOrEqual(1);
-    expect(await snapshotRow(orphan)).toBeUndefined();
-    expect(await snapshotRow(forAddressChange)).toBeDefined();
-    expect(await snapshotRow(pointedByOrder)).toBeDefined();
+    expect(await snapshotRow(oldOrphan)).toBeUndefined();
+    expect(await snapshotRow(oldForAddressChange)).toBeDefined();
+    expect(await snapshotRow(fresh)).toBeDefined();
+    expect(await snapshotRow(String((await orderRow(firstOrderId)).route_snapshot_id))).toBeDefined();
+  });
+
+  it('race, placement first: an old snapshot a transaction has just pointed to survives a purge that runs meanwhile', async () => {
+    const raced = await insertOldSnapshot('valhalla-race-1', 7000);
+    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
+    const placement = await app.pool.connect();
+    const janitor = await app.pool.connect();
+    try {
+      await placement.query('BEGIN');
+      await placement.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      await placement.query('UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 7000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid', [deliveryId, raced]);
+      await janitor.query("SELECT app.purge_unreferenced_route_snapshots(interval '7 days')");
+      await placement.query('COMMIT');
+    } finally {
+      placement.release();
+      janitor.release();
+    }
+    expect(await snapshotRow(raced)).toBeDefined();
+    expect(String((await app.pool.query('SELECT route_snapshot_id::text AS p FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.p)).toBe(raced);
   });
 
   it('the row guard refuses a referenced snapshot even inside the purge session; a hand DELETE and UPDATE stay refused', async () => {
@@ -334,26 +372,6 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     await expect(app.pool.query('DELETE FROM app.route_snapshots WHERE id = $1::uuid', [referenced])).rejects.toThrow(/append-only/);
     await expect(app.pool.query('UPDATE app.route_snapshots SET distance_m = 1 WHERE id = $1::uuid', [referenced])).rejects.toThrow(/append-only/);
     expect(await snapshotRow(referenced)).toBeDefined();
-  });
-
-  it('race, placement first: a snapshot a transaction has just pointed to survives a purge that runs meanwhile', async () => {
-    answer = { km: 7.0, version: 'valhalla-race-1', shape: SHAPE_C };
-    const raced = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
-    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
-    const placement = await app.pool.connect();
-    const janitor = await app.pool.connect();
-    try {
-      await placement.query('BEGIN');
-      await placement.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
-      await placement.query('UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 7000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid', [deliveryId, raced]);
-      await janitor.query("SELECT app.purge_unreferenced_route_snapshots(interval '0')");
-      await placement.query('COMMIT');
-    } finally {
-      placement.release();
-      janitor.release();
-    }
-    expect(await snapshotRow(raced)).toBeDefined();
-    expect(String((await app.pool.query('SELECT route_snapshot_id::text AS p FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.p)).toBe(raced);
   });
 
   it('race, purge first: a purge that locked the snapshot makes a concurrent placement fail; nothing points to a removed row', async () => {
@@ -381,5 +399,63 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     }
     expect(await snapshotRow(doomed)).toBeUndefined();
     expect(String((await app.pool.query('SELECT route_snapshot_id::text AS p FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.p)).not.toBe(doomed);
+  });
+
+  it('pointer transitions on an Order: non-NULL to NULL is refused outside a session and inside one while the distance stays; NULL to a pair and non-NULL to a pair are right', async () => {
+    answer = { km: 2.5, version: 'valhalla-3.9.1/motorcycle-shortest/test-a', shape: SHAPE_A };
+    const addressT = newAddress();
+    const feeT = (await preview(addressT)).fee as Json;
+    const placed = await placeOn(addressT, feeT, { route_snapshot_id: String(feeT.route_snapshot_id) });
+    const orderId = String((dataOf(placed) as Json).order_id);
+    answer = { km: 9.9, version: 'valhalla-trans-x', shape: SHAPE_B };
+    const snapX = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    answer = { km: 3.3, version: 'valhalla-trans-y', shape: SHAPE_C };
+    const snapY = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const sql = (pointer: string, distance: string): string =>
+      `UPDATE app.orders SET route_snapshot_id = ${pointer}, fee_estimate_distance_m = ${distance}, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid`;
+    // 1. non-NULL to NULL outside a session: refused (the pointer is checked before any early return)
+    expect(await attempt(sql('NULL', 'fee_estimate_distance_m'), [orderId], false)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    // 2. non-NULL to NULL inside a session while the distance stays: refused
+    expect(await attempt(sql('NULL', 'fee_estimate_distance_m'), [orderId], true)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: String(feeT.route_snapshot_id), fee_estimate_distance_m: 2500 });
+    // 3. non-NULL to NULL inside a session together with the distance (text-only change, unpinned edit): allowed
+    expect(await attempt(sql('NULL', 'NULL'), [orderId], true)).toBe('OK');
+    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: null, fee_estimate_distance_m: null });
+    // 4. NULL to a pointer outside a session: refused
+    expect(await attempt(sql(`'${snapY}'::uuid`, '3300'), [orderId], false)).toMatch(/IMMUTABLE/);
+    // 5. NULL to a pointer inside a session with the wrong distance: MISMATCH
+    expect(await attempt(sql(`'${snapX}'::uuid`, '3300'), [orderId], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    // 6. NULL to a pointer inside a session with its own distance: allowed
+    expect(await attempt(sql(`'${snapX}'::uuid`, '9900'), [orderId], true)).toBe('OK');
+    // 7. non-NULL to another non-NULL with its own distance: allowed
+    expect(await attempt(sql(`'${snapY}'::uuid`, '3300'), [orderId], true)).toBe('OK');
+    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: snapY, fee_estimate_distance_m: 3300 });
+  });
+
+  it('pointer transitions on a delivery: the same rules as on an Order', async () => {
+    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
+    answer = { km: 9.9, version: 'valhalla-trans-x', shape: SHAPE_B };
+    const snapX = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    answer = { km: 3.3, version: 'valhalla-trans-y', shape: SHAPE_C };
+    const snapY = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const sql = (pointer: string, distance: string): string =>
+      `UPDATE app.deliveries SET route_snapshot_id = ${pointer}, route_distance_m = ${distance}, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid`;
+    const before = (await app.pool.query('SELECT route_snapshot_id::text AS p, route_distance_m AS d FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0] as Json;
+    // 1. non-NULL to NULL outside a session: refused
+    expect(await attempt(sql('NULL', 'route_distance_m'), [deliveryId], false)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    // 2. non-NULL to NULL inside a session while the distance stays: refused
+    expect(await attempt(sql('NULL', 'route_distance_m'), [deliveryId], true)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    expect((await app.pool.query('SELECT route_snapshot_id::text AS p, route_distance_m AS d FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual(before);
+    // 3. non-NULL to NULL inside a session together with the distance: allowed
+    expect(await attempt(sql('NULL', 'NULL'), [deliveryId], true)).toBe('OK');
+    // 4. NULL to a pointer outside a session: refused
+    expect(await attempt(sql(`'${snapY}'::uuid`, '3300'), [deliveryId], false)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    // 5. NULL to a pointer inside a session with the wrong distance: MISMATCH
+    expect(await attempt(sql(`'${snapX}'::uuid`, '3300'), [deliveryId], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    // 6. NULL to a pointer inside a session with its own distance: allowed
+    expect(await attempt(sql(`'${snapX}'::uuid`, '9900'), [deliveryId], true)).toBe('OK');
+    // 7. non-NULL to another non-NULL with its own distance: allowed
+    expect(await attempt(sql(`'${snapY}'::uuid`, '3300'), [deliveryId], true)).toBe('OK');
+    expect((await app.pool.query('SELECT route_snapshot_id::text AS p, route_distance_m AS d FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ p: snapY, d: 3300 });
   });
 });

@@ -6,6 +6,13 @@
 --     Order, delivery or address-change request points to and that are older than the given interval. The append-only trigger allows DELETE only while the
 --     function sets app.route_snapshot_purge = 'on' for its own transaction; UPDATE and TRUNCATE stay refused; a hand DELETE stays refused. A row trigger
 --     refuses any row that is still referenced, and a foreign key is the last line (a referenced row cannot be deleted at all).
+--  4. Pointer guard order (review round 3): the pointer change is checked FIRST, before any early return. A non-NULL pointer that changes is refused outside an
+--     approved session (app.address_change_in_progress or app.customer_order_edit) with ROUTE_SNAPSHOT_IMMUTABLE. Inside a session, a non-NULL pointer may
+--     move to another non-NULL snapshot (pair checked below) or be cleared to NULL ONLY when the distance is cleared in the same statement: that is the
+--     existing text-only address change and the edit to an unpinned address (both clear the distance too). A pointer cleared while its distance remains is refused.
+--  5. PRECONDITION (review round 3): the backfill of content_key and the UNIQUE index assume no two existing rows have identical content. A database that already
+--     ran the round-1 snapshot migration WITH data must remove duplicate content first (keep one row, repoint references); otherwise this migration fails
+--     with 23505 and rolls back. No such data exists where this migration has not been applied.
 --  3. Pair guard: when an Order or delivery points to a snapshot, its distance column must equal app.route_snapshots.distance_m of that snapshot. This is
 --     checked on INSERT and on UPDATE of the pointer or of the distance, also inside the customer-edit and address-change sessions. A pointer-only,
 --     distance-only or mismatched pair is refused with ROUTE_SNAPSHOT_MISMATCH (pointer changes outside an approved session keep ROUTE_SNAPSHOT_IMMUTABLE).
@@ -60,8 +67,9 @@ CREATE FUNCTION app.purge_unreferenced_route_snapshots(p_older_than interval) RE
 DECLARE
   removed integer;
 BEGIN
-  IF p_older_than IS NULL OR p_older_than < interval '0' THEN
-    RAISE EXCEPTION 'ROUTE_SNAPSHOT_RETENTION_INVALID' USING ERRCODE = 'invalid_parameter_value';
+  -- Fixed floor at the SECURITY DEFINER boundary: the runtime role cannot remove a fresh quote's snapshot by passing a short interval.
+  IF p_older_than IS NULL OR p_older_than < interval '7 days' THEN
+    RAISE EXCEPTION 'ROUTE_SNAPSHOT_RETENTION_TOO_SHORT' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   PERFORM set_config('app.route_snapshot_purge', 'on', true);
   WITH victims AS (
@@ -91,17 +99,25 @@ CREATE FUNCTION app.orders_route_snapshot_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
 DECLARE
   snap_distance integer;
+  session_ok boolean := COALESCE(current_setting('app.address_change_in_progress', true), '') = 'on'
+                     OR COALESCE(current_setting('app.customer_order_edit', true), '') = 'on';
 BEGIN
+  -- 1. the pointer itself: checked before anything else, so no early return can skip it
+  IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS DISTINCT FROM OLD.route_snapshot_id THEN
+    IF NOT session_ok THEN
+      RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF NEW.route_snapshot_id IS NULL AND NEW.fee_estimate_distance_m IS NOT NULL THEN
+      RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+    END IF;
+  END IF;
+  -- 2. no pointer (before this change, or cleared together with its distance): nothing to pair
   IF NEW.route_snapshot_id IS NULL THEN
     RETURN NEW;
   END IF;
+  -- 3. the pair: an unchanged pointer with an unchanged distance is not re-checked
   IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS NOT DISTINCT FROM OLD.route_snapshot_id AND NEW.fee_estimate_distance_m IS NOT DISTINCT FROM OLD.fee_estimate_distance_m THEN
     RETURN NEW;
-  END IF;
-  IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS DISTINCT FROM OLD.route_snapshot_id
-     AND COALESCE(current_setting('app.address_change_in_progress', true), '') <> 'on'
-     AND COALESCE(current_setting('app.customer_order_edit', true), '') <> 'on' THEN
-    RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   SELECT r.distance_m INTO snap_distance FROM app.route_snapshots r WHERE r.id = NEW.route_snapshot_id;
   IF snap_distance IS NULL OR NEW.fee_estimate_distance_m IS DISTINCT FROM snap_distance THEN
@@ -115,16 +131,24 @@ CREATE FUNCTION app.deliveries_route_snapshot_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
 DECLARE
   snap_distance integer;
+  session_ok boolean := COALESCE(current_setting('app.address_change_in_progress', true), '') = 'on';
 BEGIN
+  -- 1. the pointer itself: checked before anything else, so no early return can skip it
+  IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS DISTINCT FROM OLD.route_snapshot_id THEN
+    IF NOT session_ok THEN
+      RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF NEW.route_snapshot_id IS NULL AND NEW.route_distance_m IS NOT NULL THEN
+      RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+    END IF;
+  END IF;
+  -- 2. no pointer: nothing to pair
   IF NEW.route_snapshot_id IS NULL THEN
     RETURN NEW;
   END IF;
+  -- 3. the pair: an unchanged pointer with an unchanged distance is not re-checked
   IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS NOT DISTINCT FROM OLD.route_snapshot_id AND NEW.route_distance_m IS NOT DISTINCT FROM OLD.route_distance_m THEN
     RETURN NEW;
-  END IF;
-  IF TG_OP = 'UPDATE' AND NEW.route_snapshot_id IS DISTINCT FROM OLD.route_snapshot_id
-     AND COALESCE(current_setting('app.address_change_in_progress', true), '') <> 'on' THEN
-    RAISE EXCEPTION 'ROUTE_SNAPSHOT_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   SELECT r.distance_m INTO snap_distance FROM app.route_snapshots r WHERE r.id = NEW.route_snapshot_id;
   IF snap_distance IS NULL OR NEW.route_distance_m IS DISTINCT FROM snap_distance THEN
