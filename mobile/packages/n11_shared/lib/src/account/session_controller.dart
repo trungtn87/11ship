@@ -87,6 +87,9 @@ class SessionController extends ChangeNotifier {
   int _epoch = 0;
   /// Counts every login / register / retry request sent; a stale attempt clears its stored token only while it is still the latest (P5-6d).
   int _authAttempt = 0;
+  /// The newest attempt whose token the platform store has accepted (updated inside the token queue). A stale attempt's cleanup
+  /// removes its token unless a newer attempt has already stored one (P5-6d).
+  int _storedAttempt = 0;
   /// Counts server/session ends (401 on a protected call). A profile save that was in flight across one must not refill the profile (P5-6d).
   int _sessionEnds = 0;
   /// Every token read, write and clear goes through this queue in call order (P5-6d): a slow platform write from an older attempt cannot land
@@ -423,13 +426,16 @@ class SessionController extends ChangeNotifier {
         return false;
       }
       await bridge.storeToken(token);
+      _storedAttempt = attempt;
       return true;
     });
     if (!stored || epoch != _epoch || seq != _identitySeq) {
       // The person left the form while the token was stored: remove it, but only inside the queue and only while this is still the newest attempt.
       if (stored) {
         await _tokenOp(() async {
-          if (attempt == _authAttempt) {
+          // Removed unless a newer attempt has already stored its own token; a newer attempt that started but failed before storing
+          // leaves this token orphaned, so it must still go (P5-6d).
+          if (_storedAttempt <= attempt) {
             try {
               await bridge.clearToken();
             } on DeviceBridgeException {

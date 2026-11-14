@@ -84,13 +84,17 @@ void main() {
   }
 
   /// A fresh session on a slow bridge, with login answers that carry token-1, token-2, ... in order.
-  SlowTokenBridge slowLoginBridge() {
+  /// [failAt] (1-based call number) answers 401 instead, so that attempt fails before it stores anything.
+  SlowTokenBridge slowLoginBridge({int? failAt}) {
     final SlowTokenBridge bridge = SlowTokenBridge();
     api = FakeApiTransport();
     installAccountRoutes(api);
     api.routes['POST /v1/client-auth/login'] =
         (String m, String p, Map<String, String> h, String b) async {
       final int n = api.to('POST', '/v1/client-auth/login').length;
+      if (n == failAt) {
+        return apiError(401, 'INVALID_CREDENTIALS');
+      }
       return json(200, <String, Object?>{
         'data': <String, Object?>{...identityJson(), 'access_token': 'token-$n'}
       }, headers: <String, String>{
@@ -269,6 +273,58 @@ void main() {
       await session.protectedCall('GET', '/v1/client-auth/me');
       expect(api.to('GET', '/v1/client-auth/me').last.headers['authorization'],
           'Bearer token-2');
+    });
+
+    test(
+        '(g) the older store is held, the person leaves, a newer login fails before storing: the older token is removed when it lands, and start() does not sign in',
+        () async {
+      final SlowTokenBridge bridge = slowLoginBridge(failAt: 2)
+        ..storeGates[0] = Completer<void>();
+
+      final Future<bool> older =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => bridge.stores == 1);
+      session.abandon();
+
+      expect(
+          await session.login(phone: '0901234567', password: 'Correct-Horse-9'),
+          isFalse);
+      expect(bridge.stores, 1, reason: 'the failed attempt never reached the store');
+
+      bridge.storeGates[0]!.complete();
+      expect(await older, isFalse);
+      expect(bridge.token, isNull,
+          reason: 'the token of the abandoned attempt is an orphan and must be removed');
+
+      await session.start();
+      expect(session.status, SessionStatus.guest);
+      expect(session.identity, isNull);
+    });
+
+    test(
+        '(h) the older store is held, the person leaves, a newer login stores successfully: the last write is the newer token and nothing deletes it',
+        () async {
+      final SlowTokenBridge bridge = slowLoginBridge()
+        ..storeGates[0] = Completer<void>();
+
+      final Future<bool> older =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => bridge.stores == 1);
+      session.abandon();
+
+      final Future<bool> newer =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => api.to('POST', '/v1/client-auth/login').length == 2);
+      await settle();
+
+      bridge.storeGates[0]!.complete();
+      expect(await older, isFalse);
+      expect(await newer, isTrue);
+      expect(bridge.token, 'token-2');
+      expect(session.status, SessionStatus.signedIn);
+      await session.start();
+      expect(session.status, SessionStatus.signedIn);
+      expect(session.identity, isNotNull);
     });
   });
 }
