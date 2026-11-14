@@ -85,6 +85,10 @@ class SessionController extends ChangeNotifier {
   bool _logoutUnconfirmed = false;
   RegistrationMode _registrationMode = RegistrationMode.unknown;
   int _epoch = 0;
+  /// Counts every login / register / retry request sent; a stale attempt clears its stored token only while it is still the latest (P5-6d).
+  int _authAttempt = 0;
+  /// Counts server/session ends (401 on a protected call). A profile save that was in flight across one must not refill the profile (P5-6d).
+  int _sessionEnds = 0;
   bool _disposed = false;
 
   SessionStatus get status => _status;
@@ -229,6 +233,7 @@ class SessionController extends ChangeNotifier {
     if (epoch != _epoch) {
       return;
     }
+    _sessionEnds++;
     _toGuest();
     _sessionEndedNotice = notice;
     _notify();
@@ -376,6 +381,7 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> _send(PendingAuth pending, int epoch) async {
     _pending = pending;
+    final int attempt = ++_authAttempt;
     final int seq = _identitySeq;
     final ApiResponse response = await api.authCall(pending.path, pending.body, pending.idempotencyKey);
     if (epoch != _epoch || seq != _identitySeq) {
@@ -394,6 +400,14 @@ class SessionController extends ChangeNotifier {
     }
     await bridge.storeToken(token);
     if (epoch != _epoch || seq != _identitySeq) {
+      // The person left the form while the token was stored: remove it, unless a newer attempt started since (its token is its own).
+      if (attempt == _authAttempt) {
+        try {
+          await bridge.clearToken();
+        } on DeviceBridgeException {
+          // The next start reads whatever the store holds; nothing was signed in here.
+        }
+      }
       return false;
     }
     _sessionEndedNotice = false;
@@ -665,6 +679,7 @@ class SessionController extends ChangeNotifier {
       return ProfileSave.failed;
     }
     final int epoch = _epoch;
+    final int sessionEnds = _sessionEnds;
     final String? token = await bridge.readToken();
     if (token == null) {
       return ProfileSave.failed;
@@ -676,16 +691,22 @@ class SessionController extends ChangeNotifier {
     _setBusy(true);
     try {
       final ApiResponse response = await api.signedCall('PUT', '/v1/customer/me/profile', token: token, body: body, idempotencyKey: key);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || sessionEnds != _sessionEnds) {
         return ProfileSave.failed;
       }
       if (response.status == 200) {
         final Object? data = response.data;
         if (data is Map<String, Object?> && data['version'] is int) {
-          _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
+          final int savedVersion = data['version']! as int;
+          // The save is committed on the server either way; but a newer version already applied here (a refresh or reload that came
+          // after this PUT started) wins over this older answer, so the profile is not rolled back (P5-6d).
+          final int? appliedVersion = _profile?.version;
+          if (appliedVersion == null || appliedVersion <= savedVersion) {
+            _setProfile(Profile(fullName: data['full_name'] as String?, version: savedVersion));
+            _lastFailure = null;
+          }
           _profileKey = null;
           _profileBody = null;
-          _lastFailure = null;
           _notify();
           return ProfileSave.saved;
         }
