@@ -84,6 +84,9 @@ try:
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
     wait('Bản đồ offline Cao Bằng đã hiển thị')
+    # Guest without a position: "Bật định vị ngay" is shown on the first screen (above the bottom navigation, about y 730) and the map above is unchanged.
+    _, locate_y = wait('Bật định vị ngay')
+    assert locate_y < 730, f'the locate button must be on the first screen, got y={locate_y}'
     capture('01-home-offline-no-gps')
     wait('Chưa xác định trạng thái hoạt động', scroll=True)
     wait('Bật online · Chưa khả dụng', scroll=True)

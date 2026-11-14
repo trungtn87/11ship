@@ -47,6 +47,7 @@ class ShipHome extends StatefulWidget {
     this.driver,
     this.walletSource,
     this.onlineOverride,
+    this.locationProvider,
     this.liveTick = const Duration(seconds: 15),
   });
   final SessionController session;
@@ -59,6 +60,9 @@ class ShipHome extends StatefulWidget {
   /// For tests: the online controller to use instead of the session's own.
   final ShipOnline? onlineOverride;
 
+  /// For tests: the phone's one-shot position source behind "Bật định vị ngay" (default: the shared channel, without an ops report).
+  final LocationProvider? locationProvider;
+
   /// How often the home re-reads the phone's own GPS/network state and re-evaluates what is live while the shipper wants to share (a local read, no request).
   final Duration liveTick;
 
@@ -66,11 +70,42 @@ class ShipHome extends StatefulWidget {
   State<ShipHome> createState() => _ShipHomeState();
 }
 
+/// The state of the S01 "Bật định vị ngay" button. It is local only: it never starts sharing, never reaches the server and never changes the online switch.
+enum ShipLocateState { idle, busy, denied, disabled, failed }
+
 class _ShipHomeState extends State<ShipHome> {
   late ShipLocationReporter reporter;
   late ShipOnline online;
   int _epoch = -1;
   Timer? _tick;
+
+  late final LocationProvider _locator = widget.locationProvider ?? MethodChannelLocationProvider(reportFaults: false);
+
+  /// One fix taken by "Bật định vị ngay" on this phone, used to draw the receiving area while the shared position cannot be drawn.
+  Map<String, dynamic>? _localFix;
+  ShipLocateState _locate = ShipLocateState.idle;
+
+  /// Asks the phone for the location permission only when it is missing, then takes ONE fix. That is the whole flow: no sharing, no upload, no online
+  /// change, for a guest and for a signed-in shipper alike.
+  Future<void> _locateOnce() async {
+    if (_locate == ShipLocateState.busy) return;
+    setState(() => _locate = ShipLocateState.busy);
+    ShipLocateState next = ShipLocateState.failed;
+    Map<String, dynamic>? fix;
+    try {
+      final LocationFix found = await _locator.currentFix();
+      fix = <String, dynamic>{'lat': found.latitude, 'lon': found.longitude};
+      next = ShipLocateState.idle;
+    } on LocationException catch (error) {
+      if (error.failure == LocationFailure.denied) next = ShipLocateState.denied;
+      if (error.failure == LocationFailure.disabled) next = ShipLocateState.disabled;
+    }
+    if (!mounted) return;
+    setState(() {
+      if (fix != null) _localFix = fix;
+      _locate = next;
+    });
+  }
   @override
   void initState() {
     super.initState();
@@ -121,6 +156,13 @@ class _ShipHomeState extends State<ShipHome> {
       builder: (BuildContext context, Widget? child) =>
           _layout(context, monitor),
     );
+  }
+
+  /// The position the map draws: the shared one as before, unless it cannot draw the area and this phone has its own fix from "Bật định vị ngay".
+  Map<String, dynamic>? _mapPosition(ShipLocationView? view) {
+    final Map<String, dynamic>? shared = view != null && !view.showPin ? null : reporter.position;
+    if (_localFix == null || shipRadiusCentreUsable(shared)) return shared;
+    return _localFix;
   }
 
   Widget _layout(BuildContext context, HealthMonitor? monitor) {
@@ -199,7 +241,10 @@ class _ShipHomeState extends State<ShipHome> {
           ? ConnectionBanner(monitor: monitor)
           : null,
       locationView: view,
-      position: view != null && !view.showPin ? null : reporter.position,
+      position: _mapPosition(view),
+      onLocate: _locate == ShipLocateState.busy ? null : _locateOnce,
+      locateState: _locate,
+      onOpenSettings: (String kind) => unawaited(reporter.openSettings(kind)),
       onNotifications: widget.onNotifications,
       bell: widget.notifications == null
           ? null
@@ -275,12 +320,22 @@ class ShipHomeLayout extends StatelessWidget {
     this.connection,
     this.locationView,
     this.radiusExempt = false,
+    this.onLocate,
+    this.locateState = ShipLocateState.idle,
+    this.onOpenSettings,
   });
   final bool? online;
 
   /// True only when the server states the account is exempt from the receiving radius (PLATFORM). The app is not given the driver type today, so
   /// the home leaves it false; the label and the grey mask then never claim an exemption they cannot know.
   final bool radiusExempt;
+
+  /// "Bật định vị ngay" in the receiving-area card: shown only while the area cannot be drawn yet. Null = no button. Local only (see the home).
+  final VoidCallback? onLocate;
+  final ShipLocateState locateState;
+
+  /// Opens the phone's own settings screen for 'app' or 'location' (used after a refusal).
+  final void Function(String kind)? onOpenSettings;
   final String reason;
   final VoidCallback onNotifications;
   final VoidCallback? onToggle;
@@ -301,6 +356,41 @@ class ShipHomeLayout extends StatelessWidget {
 
   /// The map label and its explanation; when given it replaces the small [gpsStatus] line.
   final ShipLocationView? locationView;
+
+  /// The short plain-language line under the card after a refusal (no technical wording), with the one action that fixes it. Null when there is
+  /// nothing to explain (the area can be drawn, or nothing has been tried yet).
+  Widget? _locateHelp() {
+    if (onLocate == null || shipRadiusCentreUsable(position)) return null;
+    final ({String text, String action, VoidCallback? run})? help = switch (locateState) {
+      ShipLocateState.denied => (
+        text: 'Bạn chưa cho 11Ship dùng vị trí nên chưa vẽ được khu vực nhận đơn quanh bạn.',
+        action: 'Mở cài đặt',
+        run: () => onOpenSettings?.call('app'),
+      ),
+      ShipLocateState.disabled => (
+        text: 'Định vị của điện thoại đang tắt. Bật định vị để xem khu vực nhận đơn.',
+        action: 'Mở cài đặt',
+        run: () => onOpenSettings?.call('location'),
+      ),
+      ShipLocateState.failed => (
+        text: 'Chưa lấy được vị trí. Hãy ra nơi thoáng hơn rồi thử lại.',
+        action: 'Thử lại',
+        run: onLocate,
+      ),
+      ShipLocateState.idle || ShipLocateState.busy => null,
+    };
+    if (help == null) return null;
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(help.text, key: const Key('home-locate-note'), style: N11Text.caption)),
+        TextButton(
+          key: const Key('home-locate-action'),
+          onPressed: help.run,
+          child: Text(help.action),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -420,16 +510,43 @@ class ShipHomeLayout extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: N11Space.gap3),
+                  if (_locateHelp() case final Widget help) ...<Widget>[
+                    help,
+                    const SizedBox(height: N11Space.gap2),
+                  ],
                   ClipRRect(
                     borderRadius: BorderRadius.circular(N11V5.inputRadius),
-                    child: locationView == null
-                        ? _HomeMap(height: mapHeight, position: position, radiusExempt: radiusExempt)
-                        : _MapWithLocation(
-                            height: mapHeight,
-                            position: position,
-                            view: locationView!,
-                            radiusExempt: radiusExempt,
+                    // The locate button is laid over the map's top-right corner, never in the text flow: the map keeps its height and its place
+                    // on the first screen (a line added above it pushed it under the bottom navigation on 390x844).
+                    child: Stack(
+                      children: <Widget>[
+                        locationView == null
+                            ? _HomeMap(height: mapHeight, position: position, radiusExempt: radiusExempt)
+                            : _MapWithLocation(
+                                height: mapHeight,
+                                position: position,
+                                view: locationView!,
+                                radiusExempt: radiusExempt,
+                              ),
+                        if (onLocate != null && !shipRadiusCentreUsable(position))
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: N11Button(
+                              key: const Key('home-locate-cta'),
+                              label: locateState == ShipLocateState.busy
+                                  ? 'Đang tìm vị trí…'
+                                  : 'Bật định vị ngay',
+                              kind: ButtonKind.secondary,
+                              compact: true,
+                              icon: Icons.my_location,
+                              onPressed: locateState == ShipLocateState.busy
+                                  ? null
+                                  : onLocate,
+                            ),
                           ),
+                      ],
+                    ),
                   ),
                 ],
               ),
