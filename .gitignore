@@ -32,3 +32,4 @@ scripts/deploy/__pycache__/
 
 # Graphify output is exploration data only, never committed
 graphify-out/
+landing-web-standalone/
