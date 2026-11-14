@@ -28,20 +28,18 @@ class RegistrationConsentCheckbox extends StatelessWidget {
       side: const BorderSide(color: N11Colors.lineStrong, width: 2),
       value: value,
       onChanged: onChanged,
-      title: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          const Text('Tôi đã đọc và đồng ý với ', style: N11Text.body),
-          InkWell(
-            key: const Key('register-policy-link'),
-            onTap: onViewPolicy,
-            child: Text(
-              'Điều khoản sử dụng và Chính sách quyền riêng tư',
-              style: N11Text.link,
-            ),
-          ),
-          const Text('.', style: N11Text.body),
-        ],
+      title: const Text(
+        'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư',
+        style: N11Text.body,
+      ),
+      secondary: InkWell(
+        key: const Key('register-policy-link'),
+        onTap: onViewPolicy,
+        borderRadius: BorderRadius.circular(8),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 7, vertical: 12),
+          child: Text('Xem', style: N11Text.link),
+        ),
       ),
     );
   }
