@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 
-// P5-6d (Codex round 4 on #337): (a)/(b) a late PUT answer must not write back an older profile or refill a profile after session end;
-// (c)/(d) a login whose token was stored after the person left the form must not leave that token behind, but must not delete a newer
-// attempt's token.
+// P5-6d (Codex round 4 on #337; round 1 on #347): (a)/(b) a late PUT answer must not write back an older profile or refill a profile after
+// session end. (c)-(f) the platform token store is slow: a write lands when its future completes, so a late store/clear of an older attempt
+// must never overwrite or delete the token of a newer attempt, and the token that protectedCall sends is the one left in the store.
 
 const AppConfig config = AppConfig(
     apiBaseUrl: 'https://api.example.test', deviceEnvironment: 'fixture-env');
@@ -17,18 +17,32 @@ Map<String, Object?> identityWith(String name, int version) =>
       'account_status': 'ACTIVE'
     };
 
-/// A bridge whose n-th storeToken writes the value at once and then waits for gates[n] (when present), like a slow platform keystore.
-class HeldStoreBridge extends FakeDeviceBridge {
-  final List<Completer<void>> gates = <Completer<void>>[];
+/// A slow platform keystore: each call is counted when it starts; a gate (by call number) holds it; the value lands only when the call
+/// completes, so a held older call that completes late really does write after a newer one.
+class SlowTokenBridge extends FakeDeviceBridge {
+  final Map<int, Completer<void>> storeGates = <int, Completer<void>>{};
+  final Map<int, Completer<void>> clearGates = <int, Completer<void>>{};
   int stores = 0;
+  int clears = 0;
 
   @override
-  Future<void> storeToken(String token) async {
+  Future<void> storeToken(String value) async {
     final int n = stores++;
-    this.token = token;
-    if (n < gates.length) {
-      await gates[n].future;
+    final Completer<void>? gate = storeGates[n];
+    if (gate != null) {
+      await gate.future;
     }
+    token = value;
+  }
+
+  @override
+  Future<void> clearToken() async {
+    final int n = clears++;
+    final Completer<void>? gate = clearGates[n];
+    if (gate != null) {
+      await gate.future;
+    }
+    token = null;
   }
 }
 
@@ -38,6 +52,9 @@ Future<void> until(bool Function() condition) async {
   }
   expect(condition(), isTrue, reason: 'the awaited step never happened');
 }
+
+/// Lets already-scheduled microtasks and platform calls run (no gate is released by it).
+Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
 
 void main() {
   late FakeApiTransport api;
@@ -64,6 +81,26 @@ void main() {
     expect(session.status, SessionStatus.signedIn);
     expect(session.profile?.version, 1);
     clock = clock.add(const Duration(minutes: 5));
+  }
+
+  /// A fresh session on a slow bridge, with login answers that carry token-1, token-2, ... in order.
+  SlowTokenBridge slowLoginBridge() {
+    final SlowTokenBridge bridge = SlowTokenBridge();
+    api = FakeApiTransport();
+    installAccountRoutes(api);
+    api.routes['POST /v1/client-auth/login'] =
+        (String m, String p, Map<String, String> h, String b) async {
+      final int n = api.to('POST', '/v1/client-auth/login').length;
+      return json(200, <String, Object?>{
+        'data': <String, Object?>{...identityJson(), 'access_token': 'token-$n'}
+      }, headers: <String, String>{
+        'x-device-binding-id': '33333333-3333-4333-8333-333333333333',
+        'x-device-binding-generation': '1'
+      });
+    };
+    session = createSessionController(ClientApp.food, config,
+        transport: api, bridge: bridge);
+    return bridge;
   }
 
   Map<String, Object?> profileJson(String name, int version) =>
@@ -138,18 +175,14 @@ void main() {
     test(
         '(c) storeToken is still running when the person leaves the form: the token is cleared, and start() does not sign in',
         () async {
-      final HeldStoreBridge bridge = HeldStoreBridge()
-        ..gates.add(Completer<void>());
-      api = FakeApiTransport();
-      installAccountRoutes(api);
-      session = createSessionController(ClientApp.food, config,
-          transport: api, bridge: bridge);
+      final SlowTokenBridge bridge = slowLoginBridge()
+        ..storeGates[0] = Completer<void>();
 
       final Future<bool> login =
           session.login(phone: '0901234567', password: 'Correct-Horse-9');
       await until(() => bridge.stores == 1);
       session.abandon();
-      bridge.gates.single.complete();
+      bridge.storeGates[0]!.complete();
 
       expect(await login, isFalse);
       expect(bridge.token, isNull,
@@ -161,28 +194,10 @@ void main() {
     });
 
     test(
-        '(d) a newer login has already stored its token: the late older store does not delete that newer token',
+        '(d) an older store is still running when a newer login starts: its late write and its clear never remove the newer token',
         () async {
-      final HeldStoreBridge bridge = HeldStoreBridge()
-        ..gates.addAll(<Completer<void>>[Completer<void>(), Completer<void>()]);
-      api = FakeApiTransport();
-      installAccountRoutes(api);
-      int logins = 0;
-      api.routes['POST /v1/client-auth/login'] =
-          (String m, String p, Map<String, String> h, String b) async {
-        logins++;
-        return json(200, <String, Object?>{
-          'data': <String, Object?>{
-            ...identityJson(),
-            'access_token': 'token-$logins'
-          }
-        }, headers: <String, String>{
-          'x-device-binding-id': '33333333-3333-4333-8333-333333333333',
-          'x-device-binding-generation': '1'
-        });
-      };
-      session = createSessionController(ClientApp.food, config,
-          transport: api, bridge: bridge);
+      final SlowTokenBridge bridge = slowLoginBridge()
+        ..storeGates[0] = Completer<void>();
 
       final Future<bool> older =
           session.login(phone: '0901234567', password: 'Correct-Horse-9');
@@ -191,19 +206,69 @@ void main() {
 
       final Future<bool> newer =
           session.login(phone: '0901234567', password: 'Correct-Horse-9');
-      await until(() => bridge.stores == 2);
-      expect(bridge.token, 'token-2');
+      await until(() => api.to('POST', '/v1/client-auth/login').length == 2);
 
-      bridge.gates[0].complete();
+      bridge.storeGates[0]!.complete();
       expect(await older, isFalse);
-      expect(bridge.token, 'token-2',
-          reason:
-              'a stale attempt must not delete the token of a newer attempt');
-
-      bridge.gates[1].complete();
       expect(await newer, isTrue);
-      expect(bridge.token, 'token-2');
+      expect(bridge.token, 'token-2',
+          reason: 'the newer attempt is the last write; the stale attempt deletes nothing');
       expect(session.status, SessionStatus.signedIn);
+    });
+
+    test(
+        '(e) the stale attempt is clearing its token when a newer login starts: the newer token survives the late clear and matches the signed-in identity',
+        () async {
+      final SlowTokenBridge bridge = slowLoginBridge()
+        ..storeGates[0] = Completer<void>()
+        ..clearGates[0] = Completer<void>();
+
+      final Future<bool> older =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => bridge.stores == 1);
+      session.abandon();
+      bridge.storeGates[0]!.complete();
+      await until(() => bridge.clears == 1);
+
+      final Future<bool> newer =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => api.to('POST', '/v1/client-auth/login').length == 2);
+      await settle();
+
+      bridge.clearGates[0]!.complete();
+      expect(await older, isFalse);
+      expect(await newer, isTrue);
+      expect(bridge.token, 'token-2',
+          reason: 'the late clear of the stale attempt must not delete the newer token');
+      expect(session.status, SessionStatus.signedIn);
+      expect(session.identity?.userId, isNotNull);
+    });
+
+    test(
+        '(f) the older store is held, the person leaves, a newer login completes: after the older store lands, the store holds the newer token and protectedCall sends it',
+        () async {
+      final SlowTokenBridge bridge = slowLoginBridge()
+        ..storeGates[0] = Completer<void>();
+
+      final Future<bool> older =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => bridge.stores == 1);
+      session.abandon();
+
+      final Future<bool> newer =
+          session.login(phone: '0901234567', password: 'Correct-Horse-9');
+      await until(() => api.to('POST', '/v1/client-auth/login').length == 2);
+      await settle();
+
+      bridge.storeGates[0]!.complete();
+      expect(await older, isFalse);
+      expect(await newer, isTrue);
+      expect(bridge.token, 'token-2',
+          reason: 'the older store landed late; the newer token must be the last write');
+
+      await session.protectedCall('GET', '/v1/client-auth/me');
+      expect(api.to('GET', '/v1/client-auth/me').last.headers['authorization'],
+          'Bearer token-2');
     });
   });
 }
