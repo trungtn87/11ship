@@ -666,5 +666,5 @@ const toAdjustment = (r: RawAdjustment): AdjustmentRow => ({
 });
 
 /** The same rule as complaintInScope() in SQL (shop part, driver part as parameters): a file naming both a shop and a Shipper needs both parts. */
-const complaintScopeSql = (alias: string, shopParam: number, driverParam: number): string =>
+export const complaintScopeSql = (alias: string, shopParam: number, driverParam: number): string =>
   `((${alias}.shop_id IS NULL OR $${String(shopParam)}::boolean) AND (${alias}.driver_id IS NULL OR $${String(driverParam)}::boolean) AND (${alias}.shop_id IS NOT NULL OR ${alias}.driver_id IS NOT NULL OR ($${String(shopParam)}::boolean AND $${String(driverParam)}::boolean)))`;

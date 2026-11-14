@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
+import { complaintScopeSql } from '../feedback/complaint-repository';
+import { FeedbackScope } from '../feedback/feedback-constants';
 import { TransactionContext } from '../transaction/transaction-context';
 
 /** One record still waiting, as stored. The service adds the wording, the rights and the sort; nothing here is invented or counted twice. */
@@ -73,14 +75,14 @@ export class AdminActionQueueReader {
    * Complaints that still wait for the administration (the same three statuses the overview counts) PLUS closed ones with a reconsideration request still
    * PENDING. One row per complaint: its follow-up messages are never counted.
    */
-  async complaints(context: TransactionContext, limit: number): Promise<QueueRecord[]> {
+  async complaints(context: TransactionContext, limit: number, scope: FeedbackScope): Promise<QueueRecord[]> {
     const result = await context.query<{ complaint_id: string; code: string; status: string; awaiting_from: string | null; since: string; related_code: string; reconsider: string | null }>(
       `SELECT c.complaint_id::text AS complaint_id, c.code, c.status, c.awaiting_from, c.related_code, ${ms('c.created_at')} AS since, ${ms('r.requested_at')} AS reconsider
          FROM app.complaints c
          LEFT JOIN LATERAL (SELECT requested_at FROM app.complaint_reconsiderations q WHERE q.complaint_id = c.complaint_id AND q.status = 'PENDING' ORDER BY requested_at LIMIT 1) r ON true
-        WHERE c.status IN ('PENDING', 'IN_PROGRESS', 'AWAITING_INFO') OR r.requested_at IS NOT NULL
+        WHERE (c.status IN ('PENDING', 'IN_PROGRESS', 'AWAITING_INFO') OR r.requested_at IS NOT NULL) AND ${complaintScopeSql('c', 2, 3)}
         ORDER BY COALESCE(r.requested_at, c.created_at), c.complaint_id LIMIT $1::int`,
-      [limit],
+      [limit, scope.shop, scope.driver],
     );
     return result.rows.map((row) => {
       const open = row.status === 'PENDING' || row.status === 'IN_PROGRESS' || row.status === 'AWAITING_INFO';

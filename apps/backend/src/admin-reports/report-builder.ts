@@ -108,7 +108,7 @@ export class ReportBuilder {
       case 'shippers':
         return this.#shippers(context, period, rights, limit);
       case 'quality':
-        return this.#quality(context, period);
+        return this.#quality(context, period, rights);
       case 'money':
         return this.#money(context, period, limit);
       default:
@@ -205,9 +205,9 @@ export class ReportBuilder {
     };
   }
 
-  async #quality(context: TransactionContext, period: Period): Promise<Report> {
+  async #quality(context: TransactionContext, period: Period, rights: AdminRights): Promise<Report> {
     const q = await this.deliveries.quality(context, period.fromMs, period.toMs);
-    const complaints = await this.feedback.unhandledComplaints(context);
+    const complaints = await this.feedback.unhandledComplaints(context, rights.feedbackViewScope);
     return {
       kind: 'quality',
       title: REPORT_TITLE.quality,
