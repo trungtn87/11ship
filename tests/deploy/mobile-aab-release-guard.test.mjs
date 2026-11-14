@@ -51,14 +51,20 @@ test('the upload-key secrets and the upload pin are named only in this workflow'
   }
 });
 
-test('the upload secrets reach only the signing step, not the whole job', () => {
+test('the upload secrets reach only the signing step, not the whole job (Codex, PR #351)', () => {
   const steps = workflow.split(/\n\s{6}- /);
-  const withUpload = steps.filter(s => s.includes('ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets'));
-  // one step for the presence check and one for the signing step; every other step stays free of them
-  assert.equal(withUpload.length, 2);
-  assert.ok(withUpload.some(s => s.includes('name: Sign the bundle with the upload key')));
-  assert.ok(withUpload.some(s => s.includes('name: Require the upload-key secrets')));
-  assert.equal(/^\s{4}env:\s*\n\s{6}ANDROID_UPLOAD_/m.test(workflow), false, 'no job-level env carries the upload secrets');
+  const withUpload = steps.filter(s => /ANDROID_UPLOAD_(KEYSTORE_BASE64|KEYSTORE_PASSWORD|KEY_ALIAS|KEY_PASSWORD):\s*\$\{\{\s*secrets\./.test(s));
+  assert.equal(withUpload.length, 1, 'exactly one step receives the upload secrets');
+  assert.ok(withUpload[0].includes('name: Sign the bundle with the upload key'));
+  assert.equal(/^\s{4}env:/m.test(workflow), false, 'no job-level env at all');
+  assert.equal(/^env:/m.test(workflow), false, 'no workflow-level env');
+});
+
+test('every action is a SHA-pinned allowlist entry; the workflow names no tag, branch or latest', () => {
+  const uses = [...workflow.matchAll(/^\s*(?:-\s+)?uses:\s*(\S+)/gm)].map(m => m[1]);
+  assert.equal(uses.length, 4, 'checkout, setup-java, flutter-action, upload-artifact');
+  for (const value of uses) assert.match(value, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/, value);
+  assert.doesNotMatch(workflow, /@(v\d|main|master|latest)\b/);
 });
 
 test('nothing uploads to Google Play, publishes a release or creates a tag', () => {
@@ -194,6 +200,41 @@ test('a version that differs from pubspec is refused', () => {
   const r = check('ship', SHIP_OK, { code: '2' });
   assert.equal(r.status, 1);
   assert.match(r.out, /version mismatch/);
+});
+
+const SHIP_FGS = 'android.permission.FOREGROUND_SERVICE';
+const SHIP_FGS_LOC = 'android.permission.FOREGROUND_SERVICE_LOCATION';
+
+test('ship needs BOTH foreground-service permissions: each one alone is refused (Codex, PR #351)', () => {
+  const onlyFgs = check('ship', { ...SHIP_OK, permissions: SHIP_OK.permissions.filter(p => p !== SHIP_FGS_LOC) });
+  assert.equal(onlyFgs.status, 1, onlyFgs.out);
+  assert.match(onlyFgs.out, /FOREGROUND_SERVICE_LOCATION/);
+  const onlyLocation = check('ship', { ...SHIP_OK, permissions: SHIP_OK.permissions.filter(p => p !== SHIP_FGS) });
+  assert.equal(onlyLocation.status, 1, onlyLocation.out);
+  assert.match(onlyLocation.out, /FOREGROUND_SERVICE\b/);
+  assert.equal(check('ship', SHIP_OK).status, 0, 'both present: accepted');
+});
+
+test('food must carry neither foreground-service permission, and its service stays out of the bundle', () => {
+  for (const perm of [SHIP_FGS, SHIP_FGS_LOC]) {
+    const r = check('food', { ...FOOD_OK, permissions: [...FOOD_OK.permissions, perm] });
+    assert.equal(r.status, 1, perm);
+    assert.match(r.out, /forbidden permission|unexpected permission/);
+  }
+  const gps = check('food', { ...FOOD_OK, services: [{ name: 'vn.eleven.m14.gps.RecorderService', fgs: 'location' }] });
+  assert.equal(gps.status, 1);
+  assert.match(gps.out, /GPS service|location foreground service/);
+});
+
+test('the DYNAMIC_RECEIVER permission is accepted only for the app\'s own package (Codex, PR #351)', () => {
+  const own = (pkg, spec) => ({ ...spec, permissions: [...spec.permissions, `${pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`] });
+  assert.equal(check('food', own('vn.eleven.food', FOOD_OK)).status, 0, 'own package: accepted');
+  assert.equal(check('ship', own('vn.eleven.ship', SHIP_OK)).status, 0, 'own package: accepted');
+  const foreign = check('food', own('vn.eleven.ship', FOOD_OK));
+  assert.equal(foreign.status, 1, 'the other app\'s prefix is refused');
+  assert.match(foreign.out, /unexpected permission/);
+  const prefixed = check('ship', { ...SHIP_OK, permissions: [...SHIP_OK.permissions, 'vn.eleven.ship.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'] });
+  assert.equal(prefixed.status, 1, 'a look-alike prefix is refused');
 });
 
 test('an unlisted permission is refused (the allowlist is exact)', () => {

@@ -163,6 +163,15 @@ function deployJobViolations(block) {
 // Only this exact file, job id, environment and shape pass; everything else in the file is held to the strictest rules below.
 const AAB_RELEASE = { file: 'mobile-aab-release.yml', job: 'aab', environment: 'android-release', runsOn: 'ubuntu-24.04', ifRef: "github.ref == 'refs/heads/main'" };
 const AAB_JOB_KEYS = ['name', 'if', 'runs-on', 'timeout-minutes', 'environment', 'steps'];
+// Every action the AAB job may use, pinned by full 40-hex commit SHA (the tag in the workflow comment is for humans only).
+// Verified against GitHub on 14/11/2026: actions/checkout v4.4.0, actions/setup-java v4.9.1, subosito/flutter-action v2.23.0,
+// actions/upload-artifact v4.6.2. Any other action, tag, branch, short SHA or docker:// reference fails the guard.
+const AAB_ACTIONS = {
+  'actions/checkout': '11d5960a326750d5838078e36cf38b85af677262',
+  'actions/setup-java': 'cf277c60eb25467037889841efdb72551f06f6c3',
+  'subosito/flutter-action': '1a449444c387b1966244ae4d4f8c696479add0b2',
+  'actions/upload-artifact': 'ea165f8d65b6e75b540449e92b4886f43607fa02',
+};
 
 // The lines under a top-level key (up to the next line at column 0).
 function blockAfter(text, key) {
@@ -204,6 +213,14 @@ function aabReleaseViolations(text, jobs) {
   if (/:\s*write(-all)?\b|write-all/.test(text)) add('no write permission');
   if (/\bgh\s+(workflow|api|run)\b|workflow_run|repository_dispatch|workflow_call|deploy-vps|diagnose-vps|ci-gate|\bself-hosted\b/i.test(text)) add('must not trigger or call another workflow, or use a self-hosted runner');
   if (!text.includes('if [ "$GITHUB_REF" != "refs/heads/main" ]; then')) add('a step must refuse any ref other than main');
+  // Every `uses:` line (job- or step-level, list or mapping form) must be an allowed action pinned by its full SHA.
+  for (const line of text.split('\n')) {
+    const m = /^\s*(?:-\s+)?uses\s*:\s*(.*?)\s*$/.exec(line);
+    if (!m) continue;
+    const value = m[1].replace(/\s+#.*$/, '');
+    const pin = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([0-9a-f]{40})$/.exec(value);
+    if (!pin || AAB_ACTIONS[pin[1]] !== pin[2]) add(`uses "${value}" is not an allowed action pinned by its full 40-hex SHA`);
+  }
   const job = jobs[AAB_RELEASE.job];
   if (job !== undefined) {
     const props = jobProps(job);
@@ -347,6 +364,30 @@ test('AAB exception: a write permission or a workflow_run/repository_dispatch tr
   failsWith(AAB_FILE, aabMutate('permissions:\n  contents: read', 'permissions:\n  contents: write'), /no write permission/);
   failsWith(AAB_FILE, aabMutate('permissions:\n  contents: read', 'permissions: write-all'), /no write permission/);
   failsWith(AAB_FILE, aabMutate('on:\n  workflow_dispatch:', 'on:\n  workflow_run:\n    workflows: [Mobile APK]\n  workflow_dispatch:'), /only trigger is workflow_dispatch/);
+});
+
+test('AAB exception: every action is pinned by its full 40-hex SHA from the allowlist (tags, branches, short SHAs, new or local actions all fail)', () => {
+  const checkout = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262';
+  // the real file: every uses line is allowed (positive)
+  assert.deepEqual(topologyViolations(AAB_FILE, aabReal()), []);
+  const bad = [
+    ['tag', 'actions/checkout@v4'],
+    ['branch', 'actions/checkout@main'],
+    ['short sha', 'actions/checkout@11d5960'],
+    ['sha of a different commit for the same action', 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'],
+    ['a new third-party action, pinned or not', 'some-org/cache@0123456789abcdef0123456789abcdef01234567'],
+    ['a new action by tag', 'softprops/action-gh-release@v2'],
+    ['docker reference', 'docker://alpine:3.20'],
+    ['local action', './.github/actions/deploy'],
+    ['upper-case SHA', 'actions/checkout@11D5960A326750D5838078E36CF38B85AF677262'],
+  ];
+  for (const [, value] of bad) {
+    failsWith(AAB_FILE, aabMutate(`uses: ${checkout}`, `uses: ${value}`), /is not an allowed action pinned by its full 40-hex SHA/);
+  }
+  // a step added at the job level or in a list, with a new action, is refused too
+  failsWith(AAB_FILE, aabReal().replace('\n    steps:\n', '\n    steps:\n      - uses: actions/cache@0123456789abcdef0123456789abcdef01234567\n'), /is not an allowed action/);
+  // a reusable-workflow call at job level with a SHA-pinned path is still refused (not an allowed action, and not a job key)
+  failsWith(AAB_FILE, aabMutate('    environment: android-release\n', `    environment: android-release\n    uses: ${checkout}\n`), /job keys outside the allowlist|is not an allowed action/);
 });
 
 test('AAB exception: the exception is keyed to the file; the same pair under another job id in another file never passes', () => {

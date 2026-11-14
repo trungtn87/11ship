@@ -82,14 +82,25 @@ def main(argv):
     never = sorted(permissions & NEVER)
     if never:
         fail('forbidden permission', f'{app_name} must not request: ' + ', '.join(never))
-    unexpected = sorted(permissions - spec['allowed'])
+    # AndroidX adds a receiver permission named after THIS app's own package only; another package's prefix is refused.
+    own_receiver = spec['package'] + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+    allowed = spec['allowed'] | {own_receiver}
+    unexpected = sorted(permissions - allowed)
     if unexpected:
         fail('unexpected permission', f'{app_name} permissions outside the allowlist: ' + ', '.join(unexpected))
     for need in ('android.permission.INTERNET', 'vn.eleven.n11.permission.PEER_ENDORSEMENT'):
         if need not in permissions:
             fail('missing permission', f'{app_name} must declare {need}')
-    if not spec['may_have_fgs_location'] and 'android.permission.FOREGROUND_SERVICE_LOCATION' in permissions:
-        fail('forbidden permission', f'{app_name} must not declare FOREGROUND_SERVICE_LOCATION')
+    fgs = {'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_LOCATION'}
+    if spec['may_have_fgs_location']:
+        # Ship's location service is a foreground service of type location: BOTH permissions are required, never one alone.
+        missing = sorted(fgs - permissions)
+        if missing:
+            fail('missing permission', 'ship must declare ' + ' and '.join(missing) + ' (location foreground service)')
+    else:
+        present = sorted(fgs & permissions)
+        if present:
+            fail('forbidden permission', f'{app_name} must not declare ' + ', '.join(present))
 
     services = {}
     for service in root.iter('service'):
