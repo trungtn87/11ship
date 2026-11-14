@@ -1,13 +1,13 @@
 import { describe, expect, it } from '@jest/globals';
 import { PRIVACY_PAGE_HTML, PRIVACY_PAGE_PATH, PRIVACY_PAGE_VERSION } from './privacy-page';
 
-describe('public privacy draft page', () => {
-  it('is a self-contained, clearly marked draft without executable scripts', () => {
+describe('public privacy policy page', () => {
+  it('is a self-contained, approved document without executable scripts', () => {
     expect(PRIVACY_PAGE_PATH).toBe('chinh-sach-quyen-rieng-tu');
-    expect(PRIVACY_PAGE_VERSION).toBe('privacy-20261112-draft-v3');
+    expect(PRIVACY_PAGE_VERSION).toBe('privacy-20261114-v3');
     expect(PRIVACY_PAGE_HTML).toContain('<html lang="vi">');
-    expect(PRIVACY_PAGE_HTML).toContain('noindex,nofollow');
-    expect(PRIVACY_PAGE_HTML).toContain('BẢN DỰ THẢO — CHƯA CÓ HIỆU LỰC');
+    expect(PRIVACY_PAGE_HTML).toContain('index,follow');
+    expect(PRIVACY_PAGE_HTML).not.toMatch(/DỰ THẢO|CHƯA CÓ HIỆU LỰC|CHỜ OWNER/);
     expect(PRIVACY_PAGE_HTML).not.toContain('<script');
     expect(PRIVACY_PAGE_HTML).not.toContain('<form');
   });
