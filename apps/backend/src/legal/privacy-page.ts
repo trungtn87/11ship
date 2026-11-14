@@ -25,7 +25,7 @@ section:last-child{border:0;padding:0;margin:0}section p:last-child{margin:0}
 footer{text-align:center;font-size:.85rem;color:#66766b;margin-top:30px}
 @media(max-width:720px){.layout{display:block}nav{position:static;max-height:190px;margin-bottom:18px}article{padding:22px 18px}.intro{padding:20px 18px}header .wrap{padding:16px 20px}}
 </style></head><body>
-<header><div class="wrap"><span class="brand">11Food <span aria-hidden="true">·</span> 11Ship</span><span class="version">Dự thảo: privacy-20261114-v3</span></div></header>
+<header><div class="wrap"><span class="brand">11Food <span aria-hidden="true">·</span> 11Ship</span><span class="version">Phiên bản: privacy-20261114-v3</span></div></header>
 <main><div class="intro">
 <h1>Chính sách quyền riêng tư</h1>
 <p>Thông tin về dữ liệu cá nhân của khách hàng, chủ quán và shipper khi sử dụng 11Food &amp; 11Ship.</p>
