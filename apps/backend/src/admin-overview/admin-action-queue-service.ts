@@ -34,7 +34,8 @@ type Link = { readonly area: string; readonly query: Readonly<Record<string, str
 interface Item {
   readonly kind: QueueKind;
   readonly key: string;
-  readonly code: string;
+  /** null = the caller may not see this file's code (out of its complaint scope); never a guessed value. */
+  readonly code: string | null;
   readonly status: string;
   readonly reason: string;
   readonly waitingSinceMs: number;
@@ -271,7 +272,7 @@ export class AdminActionQueueService {
         return records.map((record) => of(record, { area: 'complaints', query: {} }, handle, { waitingOn: waitingOnOf(record.reason) }));
       }
       case 'ADJUSTMENT_PENDING_FINANCE': {
-        const records = await this.reader.pendingAdjustments(context, limit);
+        const records = await this.reader.pendingAdjustments(context, limit, rights.feedbackViewScope);
         return records.map((record) => of(record, { area: 'complaints', query: {} }, rights.has(FINANCE_ADJUSTMENT_RIGHT)));
       }
       case 'TOPUP_PENDING': {
