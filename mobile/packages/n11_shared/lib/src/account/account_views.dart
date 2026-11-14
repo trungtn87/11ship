@@ -23,6 +23,7 @@ import 'vn_mobile.dart';
 import 'otp_input.dart';
 import 'session_controller.dart';
 import 'registration_consent.dart';
+import 'legal_policy_draft.dart';
 
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
 // docs/ui/m01-ship-web.md S05/S10/S11): guest, login, register, signed-in account, own profile and the logout dialog. They reuse
@@ -524,18 +525,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// The two texts and the checkbox label identify the pair of versions kConsentTermsVersion / kConsentPrivacyVersion (same as
-// apps/client-shared/src/consent.ts and docs/current/M01-terms-privacy-20261014.md): they are not reworded here without a new
-// version. They describe what the app really does today and nothing it does not do yet.
+// The Account policy page and registration popup share the same official text.
 const String kTermsTitle = 'Điều khoản sử dụng';
-const String kTermsText =
-    'Bạn dùng 11Food/11Ship đúng pháp luật, cung cấp thông tin đúng sự thật và tự giữ bí mật mật khẩu. Tài khoản gắn với số điện thoại bạn xác minh bằng mã SMS. Hiện ứng dụng có đăng ký, đăng nhập, hồ sơ cá nhân và gửi hồ sơ quán hoặc hồ sơ shipper; đặt món, giao hàng, ví và doanh thu chưa hoạt động. Tạo tài khoản hoặc gửi hồ sơ chưa mở quyền bán hàng hay nhận đơn: quyền đó chỉ có sau khi hồ sơ được duyệt. 11Ship có thể khóa tài khoản khi phát hiện gian lận hoặc vi phạm điều khoản.';
 const String kPrivacyTitle = 'Chính sách quyền riêng tư';
-const String kPrivacyText =
-    '11Ship lưu số điện thoại, họ tên, mật khẩu ở dạng mã hóa một chiều, phiên đăng nhập, thông tin xác thực thiết bị Android để bảo vệ tài khoản, và thời điểm cùng phiên bản bạn đã chấp thuận. Mã xác minh được gửi bằng tin nhắn SMS tới số bạn nhập. Khi bạn tạo hồ sơ quán, ứng dụng chỉ lấy vị trí một lần lúc bạn bấm nút để ghi vị trí quán; ứng dụng không theo dõi vị trí nền. Hồ sơ Shipper có thể bao gồm họ tên, số điện thoại, biển số xe và thông tin tài khoản ngân hàng. Thông tin ngân hàng được sử dụng để xác minh chủ tài khoản và phục vụ các nghiệp vụ thanh toán liên quan. Thông tin này không được công khai cho khách hàng, chủ quán hoặc Shipper khác. Dữ liệu dùng để vận hành, bảo mật và hỗ trợ tài khoản.';
 const String kConsentLabel = 'Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.';
 
-/// The same two texts, readable without an account (Tài khoản -> Chính sách và điều khoản). Static: it sends nothing.
+/// Official policy content, available to users without registration.
 class PolicyScreen extends StatelessWidget {
   const PolicyScreen({super.key, required this.session});
 
@@ -553,11 +548,11 @@ class PolicyScreen extends StatelessWidget {
             children: <Widget>[
               Text(kTermsTitle, style: N11Text.bodyStrong),
               SizedBox(height: N11Space.gap2),
-              Text(kTermsText, key: Key('policy-terms'), style: N11Text.caption),
+              LegalPolicyContent(key: Key('policy-terms'), sections: kTermsPolicySections),
               SizedBox(height: N11Space.gap3),
               Text(kPrivacyTitle, style: N11Text.bodyStrong),
               SizedBox(height: N11Space.gap2),
-              Text(kPrivacyText, key: Key('policy-privacy'), style: N11Text.caption),
+              LegalPolicyContent(key: Key('policy-privacy'), sections: kPrivacyPolicySections),
             ],
           ),
         ),
@@ -752,13 +747,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showPolicyPopup() {
-    showRegistrationPoliciesPopup(
-      context,
-      termsText: kTermsText,
-      privacyText: kPrivacyText,
-      termsVersion: kConsentTermsVersion,
-      privacyVersion: kConsentPrivacyVersion,
-    );
+    showRegistrationPoliciesPopup(context);
   }
 
   Widget _registrationConsent({required bool disabled}) => KeyedSubtree(
