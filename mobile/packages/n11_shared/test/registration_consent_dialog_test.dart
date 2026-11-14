@@ -43,7 +43,7 @@ void main() {
     expect(agreed, isFalse);
     expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).value, isFalse);
 
-    await tester.tap(find.byType(Checkbox));
+    await tester.tap(find.byKey(const Key('register-consent')));
     await tester.pumpAndSettle();
     expect(agreed, isTrue);
   });
