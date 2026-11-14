@@ -1,3 +1,4 @@
+import { describe, expect, it } from '@jest/globals';
 import { TERMS_PAGE_HTML, TERMS_PAGE_PATH, TERMS_PAGE_VERSION } from './terms-page';
 
 describe('public terms draft page', () => {
