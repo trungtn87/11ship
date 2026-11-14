@@ -156,7 +156,8 @@ WITH expected(table_name, privileges) AS (
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
 ), functions(signature) AS (
   VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
-         ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
+         ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)'),
+         ('app.purge_unreferenced_route_snapshots(interval)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,
          CASE WHEN to_regprocedure(signature) IS NULL THEN 'MISSING_FUNCTION'

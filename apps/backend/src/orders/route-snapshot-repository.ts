@@ -29,23 +29,49 @@ export function routeSnapshotMatchesLeg(row: RouteSnapshotRow, leg: RouteLeg): b
 
 @Injectable()
 export class RouteSnapshotRepository {
-  /** Stores a new snapshot of the leg and returns its id. Every quote gets its own row: an identical answer is not reused, so each address change is a new snapshot. */
+  /**
+   * Stores the snapshot of the leg and returns its id. An identical route (same engine version, metres, time and road) is NOT stored twice: the
+   * content_key is unique, so the existing row is returned. A row is locked (FOR KEY SHARE) before it is returned, so the retention job cannot delete it
+   * before the caller references it; if the job got there first, the row is gone and a new one is stored.
+   */
   async create(context: TransactionContext, leg: RouteLeg): Promise<string> {
-    const id = randomUUID();
-    await context.query(
+    const inserted = await context.query<{ id: string }>(
       `INSERT INTO app.route_snapshots (id, route_version, distance_m, duration_s, geometry)
-       VALUES ($1::uuid, $2, $3::int, $4::int, $5)`,
-      [id, leg.routeVersion, leg.distanceM, leg.seconds, leg.geometry],
+       VALUES ($1::uuid, $2, $3::int, $4::int, $5)
+       ON CONFLICT (content_key) DO NOTHING
+       RETURNING id::text AS id`,
+      [randomUUID(), leg.routeVersion, leg.distanceM, leg.seconds, leg.geometry],
     );
-    return id;
+    if (inserted.rows[0] !== undefined) {
+      return inserted.rows[0].id;
+    }
+    const existing = await context.query<{ id: string }>(
+      `SELECT id::text AS id FROM app.route_snapshots
+        WHERE route_version = $1 AND distance_m = $2::int AND duration_s = $3::int AND geometry = $4
+        FOR KEY SHARE`,
+      [leg.routeVersion, leg.distanceM, leg.seconds, leg.geometry],
+    );
+    const row = existing.rows[0];
+    if (row !== undefined) {
+      return row.id;
+    }
+    // The identical row was removed between the two statements (retention): store it again.
+    return this.create(context, leg);
   }
 
+  /** The snapshot with this id, locked (FOR KEY SHARE) for the caller's transaction; undefined when it does not exist (never stored, or already removed). */
   async find(context: TransactionContext, id: string): Promise<RouteSnapshotRow | undefined> {
     const result = await context.query<RawRouteSnapshot>(
-      `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid`,
+      `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid FOR KEY SHARE`,
       [id],
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { id: row.id, routeVersion: row.route_version, distanceM: row.distance_m, durationS: row.duration_s, geometry: row.geometry };
+  }
+
+  /** Retention (D6-3): removes at most 200 snapshots older than the interval that nothing references. Returns how many were removed. */
+  async purgeUnreferenced(context: TransactionContext, olderThan: string): Promise<number> {
+    const result = await context.query<{ n: number }>('SELECT app.purge_unreferenced_route_snapshots($1::interval)::int AS n', [olderThan]);
+    return result.rows[0]?.n ?? 0;
   }
 }

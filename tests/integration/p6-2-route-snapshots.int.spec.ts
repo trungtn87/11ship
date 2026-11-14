@@ -21,6 +21,9 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
   const SHAPE_A = encodePolyline6([{ lat: 21.0, lng: 105.82 }, { lat: 21.01, lng: 105.83 }, { lat: 21.02, lng: 105.84 }]);
   const SHAPE_B = encodePolyline6([{ lat: 21.0, lng: 105.82 }, { lat: 21.0, lng: 105.9 }, { lat: 21.02, lng: 105.84 }]);
   let addressCounter = 0;
+  const SHAPE_C = encodePolyline6([{ lat: 21.0, lng: 105.82 }, { lat: 21.05, lng: 105.8 }, { lat: 21.02, lng: 105.84 }]);
+  // The order of the first placed test: its delivery is used by the pair and race tests.
+  let firstOrderId = '';
 
   beforeAll(async () => {
     answer.shape = SHAPE_A;
@@ -47,6 +50,10 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
   });
 
   afterAll(async () => {
+    // The address-change request this suite writes points at its Order: it is removed first (the table is never deleted by the app).
+    await app.pool.query('ALTER TABLE app.address_change_requests DISABLE TRIGGER USER');
+    await app.pool.query('DELETE FROM app.address_change_requests WHERE order_id IN (SELECT order_id FROM app.orders WHERE customer_user_id = $1::uuid)', [alice.userId]);
+    await app.pool.query('ALTER TABLE app.address_change_requests ENABLE TRIGGER USER');
     await cleanupOrders(app, { shopIds: [shop.shopId], customerIds: [alice.userId], drivers: [], userIds: [alice.userId, shop.userId], policyAdded: addedPolicy });
     await app.close();
     await new Promise<void>((resolve) => router.close(() => resolve()));
@@ -105,6 +112,7 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     const created = await placeOn(address, fee.fee as Json, { route_snapshot_id: snapshotId });
     expect(created.status).toBe(201);
     const orderId = String((dataOf(created) as Json).order_id);
+    firstOrderId = orderId;
     expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: snapshotId, fee_estimate_distance_m: 2500 });
     expect(ok(await asCustomer('GET', `/customers/me/orders/${orderId}`)).money).toMatchObject({ fee: { distance_m: 2500 } });
 
@@ -149,7 +157,8 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     const orderId = String((dataOf(created) as Json).order_id);
     const row = await orderRow(orderId);
     expect(row.route_snapshot_id).toEqual(expect.any(String));
-    expect(row.route_snapshot_id).not.toBe(fee.route_snapshot_id);
+    // Identical route: the same row (content identity), not a copy.
+    expect(row.route_snapshot_id).toBe(fee.route_snapshot_id);
     expect(await snapshotRow(String(row.route_snapshot_id))).toMatchObject({ distance_m: 2500, geometry: SHAPE_A });
   });
 
@@ -214,27 +223,163 @@ describe('P6-2 route snapshots: quote, place, delivery, immutability', () => {
     expect(await snapshotRow(id)).toMatchObject({ distance_m: 2500 });
   });
 
-  it('the pointer of an Order moves only inside an approved session (customer edit or address change), never on its own', async () => {
-    answer = { km: 2.5, version: 'valhalla-3.9.1/motorcycle-shortest/test-a', shape: SHAPE_A };
-    const address = newAddress();
-    const fee = (await preview(address)).fee as Json;
-    const created = await placeOn(address, fee, { route_snapshot_id: String(fee.route_snapshot_id) });
-    const orderId = String((dataOf(created) as Json).order_id);
-    const otherFee = (await preview(newAddress())).fee as Json;
-    const other = String(otherFee.route_snapshot_id);
-    const bump = `UPDATE app.orders SET route_snapshot_id = $2::uuid, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid`;
-    await expect(app.pool.query(bump, [orderId, other])).rejects.toThrow(/ROUTE_SNAPSHOT_IMMUTABLE/);
-    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: String(fee.route_snapshot_id) });
+  // ---- review round 2 (#346): content identity, retention, the pointer/distance pair, races -----------------------------------
 
+  const countSnapshots = async (routeVersion: string): Promise<number> =>
+    Number((await app.pool.query('SELECT count(*)::int AS n FROM app.route_snapshots WHERE route_version = $1', [routeVersion])).rows[0]?.n);
+  const purge = async (olderThan: string): Promise<number> =>
+    Number((await app.pool.query('SELECT app.purge_unreferenced_route_snapshots($1::interval)::int AS n', [olderThan])).rows[0]?.n);
+
+  /** One change in its own transaction; returns 'OK' or the database message. `session` = an approved address-change session. */
+  const attempt = async (sql: string, params: unknown[], session: boolean): Promise<string> => {
     const client = await app.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
-      await client.query(bump, [orderId, other]);
+      if (session) {
+        await client.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      }
+      await client.query(sql, params);
       await client.query('COMMIT');
+      return 'OK';
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      return error instanceof Error ? error.message : String(error);
     } finally {
       client.release();
     }
-    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: other });
+  };
+
+  it('an identical route repeated by preview reuses its row: no new rows', async () => {
+    answer = { km: 2.5, version: 'valhalla-dedup', shape: SHAPE_B };
+    const first = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const before = await countSnapshots('valhalla-dedup');
+    const again: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      again.push(String(((await preview(newAddress())).fee as Json).route_snapshot_id));
+    }
+    expect(again).toEqual([first, first, first]);
+    expect(await countSnapshots('valhalla-dedup')).toBe(before);
+  });
+
+  it('the pair pointer + distance on an Order: pointer-only, distance-only and a mismatched pair are refused; a synced pair in an approved session is accepted', async () => {
+    answer = { km: 2.5, version: 'valhalla-3.9.1/motorcycle-shortest/test-a', shape: SHAPE_A };
+    const addressA = newAddress();
+    const feeA = (await preview(addressA)).fee as Json;
+    const placed = await placeOn(addressA, feeA, { route_snapshot_id: String(feeA.route_snapshot_id) });
+    expect(placed.status).toBe(201);
+    const orderId = String((dataOf(placed) as Json).order_id);
+    answer = { km: 4.0, version: 'valhalla-3.9.1/motorcycle-shortest/test-a', shape: SHAPE_B };
+    const snapB = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const pointerOnly = 'UPDATE app.orders SET route_snapshot_id = $2::uuid, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid';
+    const distanceOnly = 'UPDATE app.orders SET fee_estimate_distance_m = 4000, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid';
+    const mismatched = 'UPDATE app.orders SET route_snapshot_id = $2::uuid, fee_estimate_distance_m = 2500, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid';
+    const synced = 'UPDATE app.orders SET route_snapshot_id = $2::uuid, fee_estimate_distance_m = 4000, version = version + 1, updated_at = clock_timestamp() WHERE order_id = $1::uuid';
+    expect(await attempt(pointerOnly, [orderId, snapB], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(distanceOnly, [orderId], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(mismatched, [orderId, snapB], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(pointerOnly, [orderId, snapB], false)).toMatch(/ROUTE_SNAPSHOT_IMMUTABLE/);
+    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: String(feeA.route_snapshot_id), fee_estimate_distance_m: 2500 });
+    expect(await attempt(synced, [orderId, snapB], true)).toBe('OK');
+    expect(await orderRow(orderId)).toMatchObject({ route_snapshot_id: snapB, fee_estimate_distance_m: 4000 });
+  });
+
+  it('the pair on a delivery: pointer-only, distance-only and a mismatched pair are refused; a synced pair in an approved session is accepted', async () => {
+    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
+    answer = { km: 4.0, version: 'valhalla-3.9.1/motorcycle-shortest/test-a', shape: SHAPE_B };
+    const snapB = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const pointerOnly = 'UPDATE app.deliveries SET route_snapshot_id = $2::uuid, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid';
+    const distanceOnly = 'UPDATE app.deliveries SET route_distance_m = 4000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid';
+    const mismatched = 'UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 2500, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid';
+    const synced = 'UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 4000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid';
+    expect(await attempt(pointerOnly, [deliveryId, snapB], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(distanceOnly, [deliveryId], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(mismatched, [deliveryId, snapB], true)).toMatch(/ROUTE_SNAPSHOT_MISMATCH/);
+    expect(await attempt(synced, [deliveryId, snapB], true)).toBe('OK');
+    expect((await app.pool.query('SELECT route_snapshot_id::text AS p, route_distance_m FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ p: snapB, route_distance_m: 4000 });
+  });
+
+  it('retention: an unreferenced snapshot is purged; one an Order, a delivery or an address change points to is kept', async () => {
+    answer = { km: 5.0, version: 'valhalla-orphan', shape: SHAPE_C };
+    const orphan = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    answer = { km: 6.0, version: 'valhalla-ac', shape: SHAPE_C };
+    const forAddressChange = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const orderNow = await orderRow(firstOrderId);
+    await app.pool.query(
+      `INSERT INTO app.address_change_requests (change_request_id, order_id, delivery_id, source, requested_by, status, target_actor,
+         original_recipient_name, original_recipient_phone, original_address_text, new_recipient_name, new_recipient_phone, new_address_text,
+         expires_at, version, created_at, updated_at, order_version, new_route_snapshot_id)
+       VALUES ($1::uuid, $2::uuid, NULL, 'ORDER', $3::uuid, 'PENDING', 'SHOP', 'a', '0912345678', 'x', 'a', '0912345678', 'y',
+         now() + interval '1 day', 1, now(), now(), $4::bigint, $5::uuid)`,
+      [randomUUID(), firstOrderId, alice.userId, orderNow.version, forAddressChange],
+    );
+    const pointedByOrder = String(orderNow.route_snapshot_id);
+    const removed = await purge('0 seconds');
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(await snapshotRow(orphan)).toBeUndefined();
+    expect(await snapshotRow(forAddressChange)).toBeDefined();
+    expect(await snapshotRow(pointedByOrder)).toBeDefined();
+  });
+
+  it('the row guard refuses a referenced snapshot even inside the purge session; a hand DELETE and UPDATE stay refused', async () => {
+    const referenced = String((await orderRow(firstOrderId)).route_snapshot_id);
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.route_snapshot_purge', 'on', true)");
+      await expect(client.query('DELETE FROM app.route_snapshots WHERE id = $1::uuid', [referenced])).rejects.toThrow(/ROUTE_SNAPSHOT_REFERENCED/);
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    }
+    await expect(app.pool.query('DELETE FROM app.route_snapshots WHERE id = $1::uuid', [referenced])).rejects.toThrow(/append-only/);
+    await expect(app.pool.query('UPDATE app.route_snapshots SET distance_m = 1 WHERE id = $1::uuid', [referenced])).rejects.toThrow(/append-only/);
+    expect(await snapshotRow(referenced)).toBeDefined();
+  });
+
+  it('race, placement first: a snapshot a transaction has just pointed to survives a purge that runs meanwhile', async () => {
+    answer = { km: 7.0, version: 'valhalla-race-1', shape: SHAPE_C };
+    const raced = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
+    const placement = await app.pool.connect();
+    const janitor = await app.pool.connect();
+    try {
+      await placement.query('BEGIN');
+      await placement.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      await placement.query('UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 7000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid', [deliveryId, raced]);
+      await janitor.query("SELECT app.purge_unreferenced_route_snapshots(interval '0')");
+      await placement.query('COMMIT');
+    } finally {
+      placement.release();
+      janitor.release();
+    }
+    expect(await snapshotRow(raced)).toBeDefined();
+    expect(String((await app.pool.query('SELECT route_snapshot_id::text AS p FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.p)).toBe(raced);
+  });
+
+  it('race, purge first: a purge that locked the snapshot makes a concurrent placement fail; nothing points to a removed row', async () => {
+    answer = { km: 8.0, version: 'valhalla-race-2', shape: SHAPE_C };
+    const doomed = String(((await preview(newAddress())).fee as Json).route_snapshot_id);
+    const deliveryId = String((await app.pool.query('SELECT delivery_id::text AS id FROM app.deliveries WHERE order_id = $1::uuid', [firstOrderId])).rows[0]?.id);
+    const janitor = await app.pool.connect();
+    const placement = await app.pool.connect();
+    try {
+      await janitor.query('BEGIN');
+      await janitor.query("SELECT set_config('app.route_snapshot_purge', 'on', true)");
+      await janitor.query('SELECT id FROM app.route_snapshots WHERE id = $1::uuid FOR UPDATE', [doomed]);
+      await placement.query('BEGIN');
+      await placement.query("SELECT set_config('app.address_change_in_progress', 'on', true)");
+      const pending = placement
+        .query('UPDATE app.deliveries SET route_snapshot_id = $2::uuid, route_distance_m = 8000, version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid', [deliveryId, doomed])
+        .then(() => 'OK', (error: unknown) => (error instanceof Error ? error.message : String(error)));
+      await janitor.query('DELETE FROM app.route_snapshots WHERE id = $1::uuid', [doomed]);
+      await janitor.query('COMMIT');
+      expect(await pending).toMatch(/ROUTE_SNAPSHOT_MISMATCH|foreign key/);
+      await placement.query('ROLLBACK').catch(() => undefined);
+    } finally {
+      janitor.release();
+      placement.release();
+    }
+    expect(await snapshotRow(doomed)).toBeUndefined();
+    expect(String((await app.pool.query('SELECT route_snapshot_id::text AS p FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]?.p)).not.toBe(doomed);
   });
 });
