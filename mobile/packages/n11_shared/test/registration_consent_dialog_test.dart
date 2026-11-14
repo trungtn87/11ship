@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/src/account/registration_consent.dart';
 
 void main() {
-  testWidgets('policy link opens popup; close preserves unchecked consent', (WidgetTester tester) async {
+  testWidgets('policy link opens official texts without changing consent', (WidgetTester tester) async {
     bool agreed = false;
     await tester.pumpWidget(
       MaterialApp(
@@ -13,13 +13,7 @@ void main() {
               return RegistrationConsentCheckbox(
                 value: agreed,
                 onChanged: (bool? value) => update(() => agreed = value ?? false),
-                onViewPolicy: () => showRegistrationPoliciesPopup(
-                  context,
-                  termsText: 'Điều khoản đang áp dụng.',
-                  privacyText: 'Quyền riêng tư đang áp dụng.',
-                  termsVersion: 'terms-active',
-                  privacyVersion: 'privacy-active',
-                ),
+                onViewPolicy: () => showRegistrationPoliciesPopup(context),
               );
             },
           ),
@@ -31,12 +25,13 @@ void main() {
     await tester.tap(find.byKey(const Key('register-policy-link')));
     await tester.pumpAndSettle();
     expect(find.text('Chính sách và điều khoản'), findsOneWidget);
-    expect(find.text('Điều khoản đang áp dụng.'), findsOneWidget);
-    expect(find.textContaining('DỰ THẢO, CHƯA CÓ HIỆU LỰC'), findsOneWidget);
+    expect(find.text('1. Phạm vi áp dụng và đơn vị vận hành'), findsOneWidget);
+    expect(find.textContaining('DỰ THẢO'), findsNothing);
+    expect(find.textContaining('CHƯA CÓ HIỆU LỰC'), findsNothing);
 
     await tester.tap(find.text('Quyền riêng tư'));
     await tester.pumpAndSettle();
-    expect(find.text('Quyền riêng tư đang áp dụng.'), findsOneWidget);
+    expect(find.text('1. Đơn vị xử lý và phạm vi'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('close-policy-popup')));
     await tester.pumpAndSettle();
@@ -48,7 +43,7 @@ void main() {
     expect(agreed, isTrue);
   });
 
-  testWidgets('disabled consent remains readable but cannot be accepted', (WidgetTester tester) async {
+  testWidgets('disabled consent can still view the policy but cannot be accepted', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -56,13 +51,7 @@ void main() {
             builder: (BuildContext context) => RegistrationConsentCheckbox(
               value: false,
               onChanged: null,
-              onViewPolicy: () => showRegistrationPoliciesPopup(
-                context,
-                termsText: 'Đang áp dụng',
-                privacyText: 'Đang áp dụng',
-                termsVersion: 'terms-active',
-                privacyVersion: 'privacy-active',
-              ),
+              onViewPolicy: () => showRegistrationPoliciesPopup(context),
             ),
           ),
         ),
