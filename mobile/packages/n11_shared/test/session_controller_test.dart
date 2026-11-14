@@ -353,7 +353,7 @@ void main() {
       final t = await signedIn();
       t.api.routes['PUT /v1/customer/me/profile'] = (String m, String p, Map<String, String> h, String b) async =>
           json(200, <String, Object?>{'data': <String, Object?>{'user_id': 'u', 'full_name': 'Trần Thị Bình', 'version': 2}});
-      expect(await t.session.saveProfile('Trần Thị Bình'), ProfileSave.saved);
+      expect(await t.session.saveProfile('Trần Thị Bình', expectedVersion: 1), ProfileSave.saved);
       final RecordedRequest put = t.api.to('PUT', '/v1/customer/me/profile').single;
       expect(put.body, '{"full_name":"Trần Thị Bình","expected_version":1}');
       expect(put.headers['idempotency-key'], isNotEmpty);
@@ -365,7 +365,7 @@ void main() {
       t.api.routes['PUT /v1/customer/me/profile'] = (String m, String p, Map<String, String> h, String b) async => apiError(409, 'VERSION_CONFLICT');
       t.api.routes['GET /v1/customer/me/profile'] = (String m, String p, Map<String, String> h, String b) async =>
           json(200, <String, Object?>{'data': <String, Object?>{'user_id': 'u', 'full_name': 'Tên mới trên máy chủ', 'version': 5}});
-      expect(await t.session.saveProfile('Tên của tôi'), ProfileSave.conflict);
+      expect(await t.session.saveProfile('Tên của tôi', expectedVersion: 1), ProfileSave.conflict);
       expect(t.session.profile?.fullName, 'Tên mới trên máy chủ');
       expect(t.session.profile?.version, 5);
       expect(t.api.to('PUT', '/v1/customer/me/profile'), hasLength(1));
@@ -380,8 +380,8 @@ void main() {
         }
         return json(200, <String, Object?>{'data': <String, Object?>{'user_id': 'u', 'full_name': 'Trần Thị Bình', 'version': 2}});
       };
-      expect(await t.session.saveProfile('Trần Thị Bình'), ProfileSave.unknown);
-      expect(await t.session.saveProfile('Trần Thị Bình'), ProfileSave.saved);
+      expect(await t.session.saveProfile('Trần Thị Bình', expectedVersion: 1), ProfileSave.unknown);
+      expect(await t.session.saveProfile('Trần Thị Bình', expectedVersion: 1), ProfileSave.saved);
       final List<RecordedRequest> puts = t.api.to('PUT', '/v1/customer/me/profile');
       expect(puts[1].body, puts[0].body);
       expect(puts[1].headers['idempotency-key'], puts[0].headers['idempotency-key']);
@@ -391,7 +391,7 @@ void main() {
     test('401 while saving ends the session: token and personal values are cleared, no hardware key is needed', () async {
       final t = await signedIn();
       t.api.routes['PUT /v1/customer/me/profile'] = (String m, String p, Map<String, String> h, String b) async => apiError(401, 'SESSION_REVOKED');
-      await t.session.saveProfile('Khác');
+      await t.session.saveProfile('Khác', expectedVersion: 1);
       expect(t.session.status, SessionStatus.guest);
       expect(t.session.profile, isNull);
       expect(t.bridge.token, isNull);
