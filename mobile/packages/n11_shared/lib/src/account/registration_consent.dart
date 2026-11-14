@@ -45,15 +45,9 @@ class RegistrationConsentCheckbox extends StatelessWidget {
   }
 }
 
-/// The complete draft is included offline for review. The current accepted
-/// versions are shown separately; viewing a draft never changes consent.
-Future<void> showRegistrationPoliciesPopup(
-  BuildContext context, {
-  required String termsText,
-  required String privacyText,
-  required String termsVersion,
-  required String privacyVersion,
-}) {
+/// Open the two Owner-approved policies. Viewing does not toggle the checkbox
+/// or change any of the user's partially completed registration inputs.
+Future<void> showRegistrationPoliciesPopup(BuildContext context) {
   return showDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) => AlertDialog(
@@ -62,11 +56,11 @@ Future<void> showRegistrationPoliciesPopup(
       content: SizedBox(
         width: double.maxFinite,
         height: MediaQuery.sizeOf(dialogContext).height * 0.64,
-        child: DefaultTabController(
+        child: const DefaultTabController(
           length: 2,
           child: Column(
             children: <Widget>[
-              const TabBar(
+              TabBar(
                 tabs: <Widget>[
                   Tab(text: 'Điều khoản'),
                   Tab(text: 'Quyền riêng tư'),
@@ -75,18 +69,8 @@ Future<void> showRegistrationPoliciesPopup(
               Expanded(
                 child: TabBarView(
                   children: <Widget>[
-                    _PolicyTab(
-                      version: termsVersion,
-                      activeText: termsText,
-                      draftVersion: kTermsDraftVersion,
-                      draft: kTermsDraft,
-                    ),
-                    _PolicyTab(
-                      version: privacyVersion,
-                      activeText: privacyText,
-                      draftVersion: kPrivacyDraftVersion,
-                      draft: kPrivacyDraft,
-                    ),
+                    _PolicyTab(sections: kTermsPolicySections),
+                    _PolicyTab(sections: kPrivacyPolicySections),
                   ],
                 ),
               ),
@@ -105,37 +89,18 @@ Future<void> showRegistrationPoliciesPopup(
   );
 }
 
-class _PolicyTab extends StatelessWidget {
-  const _PolicyTab({
-    required this.version,
-    required this.activeText,
-    required this.draftVersion,
-    required this.draft,
-  });
+/// Content shared by the registration popup and the Account policy page.
+class LegalPolicyContent extends StatelessWidget {
+  const LegalPolicyContent({super.key, required this.sections});
 
-  final String version;
-  final String activeText;
-  final String draftVersion;
-  final List<LegalDraftSection> draft;
+  final List<LegalPolicySection> sections;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      key: PageStorageKey<String>(version),
-      padding: const EdgeInsets.symmetric(vertical: 14),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text('Nội dung đang áp dụng · $version', style: N11Text.bodyStrong),
-        const SizedBox(height: 8),
-        SelectableText(activeText, style: N11Text.body),
-        const Divider(height: 32),
-        const Text(
-          'Bản chi tiết tham khảo — DỰ THẢO, CHƯA CÓ HIỆU LỰC',
-          style: N11Text.bodyStrong,
-        ),
-        const SizedBox(height: 5),
-        Text('Phiên bản: $draftVersion', style: N11Text.caption),
-        const SizedBox(height: 14),
-        for (final LegalDraftSection section in draft) ...<Widget>[
+        for (final LegalPolicySection section in sections) ...<Widget>[
           Text(section.title, style: N11Text.bodyStrong),
           const SizedBox(height: 6),
           for (final String paragraph in section.paragraphs) ...<Widget>[
@@ -144,6 +109,22 @@ class _PolicyTab extends StatelessWidget {
           ],
           const SizedBox(height: 8),
         ],
+      ],
+    );
+  }
+}
+
+class _PolicyTab extends StatelessWidget {
+  const _PolicyTab({required this.sections});
+
+  final List<LegalPolicySection> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      children: <Widget>[
+        LegalPolicyContent(sections: sections),
       ],
     );
   }
