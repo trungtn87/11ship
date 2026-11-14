@@ -15,7 +15,7 @@ describe('public privacy draft page', () => {
     for (const item of ['Shipper', 'số điện thoại', 'tài khoản ngân hàng', 'vị trí', 'nhạy cảm', 'lưu trữ', 'xóa dữ liệu', 'đồng ý', 'Đơn vị xử lý']) {
       expect(PRIVACY_PAGE_HTML.toLocaleLowerCase('vi')).toContain(item.toLocaleLowerCase('vi'));
     }
-    expect((PRIVACY_PAGE_HTML.match(/<section id=/g) ?? []).toHaveLength(12);
+    expect((PRIVACY_PAGE_HTML.match(/<section id=/g) ?? [])).toHaveLength(12);
     expect(PRIVACY_PAGE_HTML).toContain('href="/dieu-khoan-su-dung"');
   });
 });
