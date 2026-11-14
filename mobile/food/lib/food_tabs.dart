@@ -257,7 +257,25 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
           controller: m02.discovery,
           publicApi: m02.publicApi,
           ratings: flows?.feedback,
-          bell: _bell(context, flows, actions)));
+          bell: _bell(context, flows, actions),
+          onNotifyWhenShops: _notifyWhenShopsAction(context, session, flows)));
+}
+
+/// "Nhận tin khi có quán": navigation only. Guest -> sign in; signed in -> notification settings. Null when neither is possible.
+VoidCallback? _notifyWhenShopsAction(
+    BuildContext context, SessionController session, AppFlows? flows) {
+  if (session.status != SessionStatus.signedIn) {
+    return () => Navigator.of(context).push(n11Route(LoginScreen(
+        session: session,
+        brand: foodBrand,
+        reset: flows?.reset,
+        shop: flows?.shop)));
+  }
+  final NotificationSource? source = flows?.notificationSource;
+  final PushSync? push = flows?.push;
+  if (source == null || push == null) return null;
+  return () => Navigator.of(context).push(n11Route(
+      NotificationSettingsScreen(source: source, push: push, shipper: false)));
 }
 
 // ---- Gọi ship tab (customer mode) -------------------------------------------------------------------------------------
@@ -332,8 +350,20 @@ Widget _orders(SessionController session, AppFlows? flows) {
         pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));
   }
+  if (!signedIn) {
+    // F03 guest: ONE centred block with the sign-in action (no duplicate empty card).
+    return Center(
+      key: const Key('orders-guest'),
+      child: Padding(
+        padding: const EdgeInsets.all(N11Space.pad),
+        child: SizedBox(
+          width: double.infinity,
+          child: _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
+        ),
+      ),
+    );
+  }
   return vstack(<Widget>[
-    _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
     const EmptyState(
         icon: Icons.receipt_long_outlined,
         title: 'Chưa có đơn hàng',
