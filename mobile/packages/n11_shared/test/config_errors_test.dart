@@ -53,7 +53,7 @@ void main() {
     test('lists build facts and probe rows, no free text from the server', () {
       final String report = diagnosticsReport(
         foodBrand,
-        const AppConfig(apiBaseUrl: 'https://103.9.78.67.sslip.io', appId: 'vn.eleven.food.test', versionName: '0.1.0', buildNumber: '5', sourceSha: sha, signing: SigningMode.ephemeral),
+        const AppConfig(apiBaseUrl: 'https://103.9.78.67.sslip.io', appId: 'vn.eleven.food', versionName: '0.1.0', buildNumber: '5', sourceSha: sha, signing: SigningMode.ephemeral),
         HealthSnapshot(
           phase: HealthPhase.backendNotReady,
           generation: 1,
@@ -64,7 +64,7 @@ void main() {
       );
       expect(report, contains(sha));
       expect(report, contains('0.1.0 (bản dựng 5)'));
-      expect(report, contains('vn.eleven.food.test'));
+      expect(report, contains('vn.eleven.food'));
       expect(report, contains('https://103.9.78.67.sslip.io'));
       expect(report, contains('Còn sống (live): đạt (HTTP 200, 40 ms)'));
       expect(report, contains('503'));

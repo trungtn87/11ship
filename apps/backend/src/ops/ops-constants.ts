@@ -72,8 +72,8 @@ export const COMPONENT_LABEL: Readonly<Record<ReleaseComponent, string>> = {
 
 /** The Android applicationIds the update flow serves. They are NOT configurable here: M13 never changes an application id or a signing key. */
 export const APPLICATION_IDS: Readonly<Record<'FOOD' | 'SHIP' | 'GATEWAY', string>> = {
-  FOOD: 'vn.eleven.food.test',
-  SHIP: 'vn.eleven.ship.test',
+  FOOD: 'vn.eleven.food',
+  SHIP: 'vn.eleven.ship',
   GATEWAY: 'vn.eleven.gateway.test',
 };
 

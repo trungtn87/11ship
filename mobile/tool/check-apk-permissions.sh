@@ -11,8 +11,8 @@
 set -euo pipefail
 app="${1:?app}"; badging="${2:?badging file}"
 case "$app" in
-  food) app_id="vn.eleven.food.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK android.permission.ACCESS_NETWORK_STATE com.google.android.c2dm.permission.RECEIVE" ;;
-  ship) app_id="vn.eleven.ship.test"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_NETWORK_STATE android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE" ;;
+  food) app_id="vn.eleven.food"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK android.permission.ACCESS_NETWORK_STATE com.google.android.c2dm.permission.RECEIVE" ;;
+  ship) app_id="vn.eleven.ship"; allowed="android.permission.INTERNET vn.eleven.n11.permission.PEER_ENDORSEMENT $app_id.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION android.permission.ACCESS_NETWORK_STATE android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_LOCATION android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE" ;;
   *) echo "usage: $0 <food|ship> <badging-file>" >&2; exit 2 ;;
 esac
 found="$(sed -n "s/^uses-permission[a-z0-9-]*: name='\([^']*\)'.*/\1/p" "$badging" | sort -u)"

@@ -227,7 +227,7 @@ describe('production env template', () => {
     const { loadConfig } = require(configFile);
     const dir = mkdtempSync(join(tmpdir(), 'prod-env-'));
     const signer = 'ab'.repeat(32);
-    writeFileSync(join(dir, 'signers.json'), JSON.stringify({ FOOD: { package_name: 'vn.eleven.food.test', signer_sha256: signer }, SHIP: { package_name: 'vn.eleven.ship.test', signer_sha256: signer } }));
+    writeFileSync(join(dir, 'signers.json'), JSON.stringify({ FOOD: { package_name: 'vn.eleven.food', signer_sha256: signer }, SHIP: { package_name: 'vn.eleven.ship', signer_sha256: signer } }));
     writeFileSync(join(dir, 'roots.pem'), read('tests/fixtures/selfhosted-test-ca.pem'));
     writeFileSync(join(dir, 'revocation.json'), JSON.stringify({ fetched_at: '2026-10-14T00:00:00Z', entries: {} }));
     const key32 = Buffer.alloc(32, 7).toString('base64');

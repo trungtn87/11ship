@@ -12,8 +12,8 @@ test('internal readiness uses real parsers and guard: legacy missing/expired/fut
   try {
     execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', join(dir, 'key'), '-out', join(dir, 'roots'), '-days', '1', '-subj', '/CN=readiness-test', '-addext', 'basicConstraints=critical,CA:TRUE'], { stdio: 'ignore' });
     writeFileSync(join(dir, 'signers'), JSON.stringify({
-      FOOD: { package_name: 'vn.eleven.food.test', signer_sha256: 'ab'.repeat(32) },
-      SHIP: { package_name: 'vn.eleven.ship.test', signer_sha256: 'ab'.repeat(32) },
+      FOOD: { package_name: 'vn.eleven.food', signer_sha256: 'ab'.repeat(32) },
+      SHIP: { package_name: 'vn.eleven.ship', signer_sha256: 'ab'.repeat(32) },
     }));
     const env = { APP_ENV: 'production', HOST: '127.0.0.1', CLIENT_AUTH_ANDROID_ENABLED: 'true', CLIENT_DEVICE_ENVIRONMENT: 'production',
       CLIENT_DEVICE_ALLOWED_SIGNERS_FILE: join(dir, 'signers'), CLIENT_DEVICE_ATTESTATION_ROOTS_FILE: join(dir, 'roots'), CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE: join(dir, 'snapshot') };
@@ -29,7 +29,7 @@ test('internal readiness uses real parsers and guard: legacy missing/expired/fut
     snapshot(0);
     assert.equal((await checkAndroid({ APP_ENV: 'production', CLIENT_AUTH_ANDROID_ENABLED: 'false' })).accountAuthentication, 'password');
     const signers = readFileSync(join(dir, 'signers'), 'utf8');
-    writeFileSync(join(dir, 'signers'), signers.replace('vn.eleven.food.test', 'untrusted.package'));
+    writeFileSync(join(dir, 'signers'), signers.replace('vn.eleven.food', 'untrusted.package'));
     await assert.rejects(checkAndroid(env), /CLIENT_DEVICE_ALLOWED_SIGNERS_FILE/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -4,6 +4,7 @@
 Run only against a disposable emulator. Authentication/OTP success is covered by
 Flutter/controller tests; this smoke does not claim real-device attestation.
 """
+import glob
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,16 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-PACKAGE = 'vn.eleven.ship.test'
+
+def _apk(pattern):
+    # The workflow names the APK 11Ship-v<versionName>.apk; exactly one file must match (a stale copy is refused).
+    found = sorted(glob.glob(pattern))
+    if len(found) != 1:
+        raise SystemExit(f"expected one APK matching {pattern}, found {found}")
+    return found[0]
+
+
+PACKAGE = 'vn.eleven.ship'
 OUTPUT = Path(os.environ.get('SHIP_UI_OUTPUT', '/tmp/ship-android-ui'))
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
@@ -71,7 +81,7 @@ def capture(name):
 
 
 try:
-    adb('install', '-r', '11Ship-test.apk')
+    adb('install', '-r', _apk('11Ship-v*.apk'))
     # Cold launch without network or location access: map must render from APK assets.
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
