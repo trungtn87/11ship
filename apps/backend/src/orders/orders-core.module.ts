@@ -8,6 +8,7 @@ import { OrderRecorder } from './order-recorder';
 import { OrderReportReader } from './order-report-reader';
 import { OrderRepository } from './order-repository';
 import { OrderSalesReader } from './order-sales-reader';
+import { RouteSnapshotRepository } from './route-snapshot-repository';
 
 /**
  * The part of M10 that M07 and M08 may depend on: the Order tables' SQL, the three records every Order change leaves and the adapter behind M07's order
@@ -15,7 +16,7 @@ import { OrderSalesReader } from './order-sales-reader';
  */
 @Module({
   imports: [AuditModule, OutboxModule],
-  providers: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
-  exports: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter],
+  providers: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter, RouteSnapshotRepository],
+  exports: [BusinessTradeReader, OrderReportReader, OrderRepository, OrderSalesReader, OrderRecorder, OrderDeliveryAdapter, OrderFeedbackAdapter, RouteSnapshotRepository],
 })
 export class OrdersCoreModule {}

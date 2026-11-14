@@ -156,7 +156,7 @@ export interface PlaceInput extends CheckoutInput {
   readonly clientRef: string;
   /** The total the customer saw: a changed price or dish is refused so they check and send again. */
   readonly expectedItemsTotalVnd: number;
-  readonly expectedQuote: { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: string | null; readonly policyVersion: number | null; readonly snapshot: string; readonly complete: boolean } | null;
+  readonly expectedQuote: { readonly status: 'PRICED' | 'UNAVAILABLE'; readonly distanceM: number | null; readonly feeVnd: number | null; readonly reason: string | null; readonly policyVersion: number | null; readonly snapshot: string; readonly complete: boolean; readonly routeSnapshotId: string | null } | null;
 }
 
 /** POST /v1/customers/me/orders : the checkout with the prices and the total the customer saw. */
@@ -164,7 +164,7 @@ export function parsePlaceBody(body: unknown): PlaceInput {
   const b = shaped(body, ['client_ref', 'shop_id', 'lines', 'recipient_name', 'recipient_phone', 'address', 'items_total_vnd'], ['note', 'delivery_note', 'scheduled_for', 'expected_quote', 'tip_vnd']);
   let expectedQuote: PlaceInput['expectedQuote'] = null;
   if (b.expected_quote !== undefined) {
-    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version']);
+    const q = shaped(b.expected_quote, ['status', 'distance_m', 'fee_vnd', 'snapshot'], ['reason', 'policy_version', 'route_snapshot_id']);
     const nullableWhole = (v: unknown): number | null => v === null ? null : whole(v, 0, Number.MAX_SAFE_INTEGER);
     if (q.status !== 'PRICED' && q.status !== 'UNAVAILABLE') return reject();
     const distanceM = nullableWhole(q.distance_m);
@@ -178,6 +178,8 @@ export function parsePlaceBody(body: unknown): PlaceInput {
       policyVersion: q.policy_version === undefined ? null : nullableWhole(q.policy_version),
       snapshot: text(q.snapshot, 1, 300),
       complete: Object.prototype.hasOwnProperty.call(q, 'reason') && Object.prototype.hasOwnProperty.call(q, 'policy_version'),
+      // P6-2: the snapshot the customer saw in the preview. Absent or null = a client from before route snapshots (the place then snapshots the fresh leg).
+      routeSnapshotId: q.route_snapshot_id === undefined || q.route_snapshot_id === null ? null : uuid(q.route_snapshot_id),
     };
   }
   return { ...checkout(b, true), clientRef: uuid(b.client_ref), expectedItemsTotalVnd: whole(b.items_total_vnd, 1, Number.MAX_SAFE_INTEGER), expectedQuote };

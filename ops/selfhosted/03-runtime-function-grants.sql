@@ -30,3 +30,7 @@ GRANT EXECUTE ON FUNCTION app.shop_display_delivery(uuid) TO ship11_app;
 -- Business finance message ordering, without direct sequence access.
 GRANT EXECUTE ON FUNCTION app.next_business_message_sequence() TO ship11_app;
 GRANT EXECUTE ON FUNCTION app.next_shop_entitlement_sequence() TO ship11_app;
+
+-- P6-2 review round 2 (#294): retention of unreferenced route snapshots. The function is the ONLY way a snapshot row is deleted; SECURITY DEFINER, owned by the
+-- migration role, PUBLIC has no EXECUTE. The runtime role runs it from the API janitor and needs no DELETE privilege on app.route_snapshots.
+GRANT EXECUTE ON FUNCTION app.purge_unreferenced_route_snapshots(interval) TO ship11_app;
