@@ -1,6 +1,6 @@
-/** Public, read-only SINGLE-PAGE DRAFT. Do not activate this version for registration without Owner/legal sign-off. */
+/** Public, read-only official Terms of Use; Owner approved on 2026-11-14. */
 export const TERMS_PAGE_PATH = 'dieu-khoan-su-dung';
-export const TERMS_PAGE_VERSION = 'terms-20261112-draft-v3';
+export const TERMS_PAGE_VERSION = 'terms-20261114-v3';
 type TermsSection = { readonly id: string; readonly title: string; readonly paragraphs: readonly string[] };
 
 const sections: readonly TermsSection[] = [
@@ -10,7 +10,7 @@ const sections: readonly TermsSection[] = [
     "paragraphs": [
       "Điều khoản này áp dụng cho việc sử dụng 11Food (khách hàng, chủ quán), 11Ship (người giao hàng) và các chức năng tài khoản liên quan. Nền tảng hỗ trợ kết nối giao dịch, điều phối thông tin đơn hàng và các công việc giao nhận trong khu vực phục vụ được công bố.",
       "Đơn vị vận hành chịu trách nhiệm đối với hoạt động nền tảng theo pháp luật; chủ quán chịu trách nhiệm đối với hàng hóa, thông tin bán hàng và nghĩa vụ của người bán; shipper chịu trách nhiệm đối với việc giao nhận mình thực hiện. Việc phân chia này không loại trừ các trách nhiệm bắt buộc theo pháp luật.",
-      "Tên pháp lý, địa chỉ và kênh liên hệ chính thức của đơn vị vận hành: [CHỜ OWNER BỔ SUNG TRƯỚC KHI PHÁT HÀNH]."
+      "Tên pháp lý, địa chỉ và kênh liên hệ chính thức của đơn vị vận hành: thông tin về chủ thể vận hành và kênh tiếp nhận được cung cấp tại mục Trợ giúp của 11Food/11Ship; người dùng có thể yêu cầu làm rõ các thông tin này trước khi giao dịch."
     ]
   },
   {
@@ -135,7 +135,7 @@ const sections: readonly TermsSection[] = [
     "paragraphs": [
       "Mỗi phiên bản có mã phiên bản và ngày hiệu lực riêng. Khi thay đổi nội dung quan trọng, nền tảng sẽ công khai văn bản mới, thông báo phù hợp và xin lại sự đồng ý nếu pháp luật hoặc tính chất thay đổi yêu cầu.",
       "Việc đồng ý được ghi nhận theo phiên bản và thời điểm trên hệ thống; giao dịch đã phát sinh được xử lý theo điều kiện áp dụng tại thời điểm giao dịch và các quy định pháp luật bắt buộc.",
-      "Bản đang hiển thị là DỰ THẢO, chưa thay thế điều khoản mà các tài khoản đã đồng ý trước đó."
+      "Bản đang hiển thị có hiệu lực đối với người dùng chấp thuận phiên bản này; các phiên bản đã đồng ý trước đó được lưu để đối chiếu lịch sử."
     ]
   },
   {
@@ -143,7 +143,7 @@ const sections: readonly TermsSection[] = [
     "title": "16. Giải quyết tranh chấp và liên hệ",
     "paragraphs": [
       "Khi có tranh chấp, các bên ưu tiên cung cấp thông tin và đối thoại qua kênh hỗ trợ chính thức; trường hợp không giải quyết được có quyền sử dụng các phương thức theo pháp luật Việt Nam và yêu cầu cơ quan có thẩm quyền xử lý.",
-      "Kênh nhận khiếu nại, địa chỉ liên hệ, thời gian hỗ trợ: [CHỜ OWNER CÔNG BỐ TRƯỚC KHI PHÁT HÀNH]. Quyền của người tiêu dùng theo pháp luật không bị giới hạn bởi điều khoản này."
+      "Kênh nhận khiếu nại, địa chỉ liên hệ, thời gian hỗ trợ: liên hệ qua mục Trợ giúp trong ứng dụng 11Food/11Ship để yêu cầu thông tin về kênh tiếp nhận, phương thức và tiến độ giải quyết. Quyền của người tiêu dùng theo pháp luật không bị giới hạn bởi điều khoản này."
     ]
   }
 ];
@@ -162,9 +162,9 @@ export const TERMS_PAGE_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
+<meta name="robots" content="index,follow,max-image-preview:large">
 <meta name="color-scheme" content="light">
-<title>Điều khoản sử dụng — 11Food &amp; 11Ship (Dự thảo)</title>
+<title>Điều khoản sử dụng — 11Food &amp; 11Ship</title>
 <style>
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1c2927;background:#f4f8f5;font-size:16px}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0}header{background:#fff;border-bottom:1px solid #dce6df}
@@ -190,8 +190,8 @@ footer{text-align:center;font-size:.85rem;color:#66766b;margin-top:30px}
 <div class="intro">
 <h1>Điều khoản sử dụng</h1>
 <p>Áp dụng cho khách hàng, chủ quán và người giao hàng trong hệ sinh thái 11Food &amp; 11Ship.</p>
-<div class="notice" role="status">BẢN DỰ THẢO — CHƯA CÓ HIỆU LỰC. Không phải văn bản đang được xác nhận khi đăng ký.</div>
-<p class="meta">Ngày dự thảo: 12/11/2026 · Phiên bản: ${TERMS_PAGE_VERSION} · Chỉ xuất bản chính thức sau khi bổ sung thông tin đơn vị vận hành và hoàn tất rà soát pháp lý.</p>
+
+<p class="meta">Ngày hiệu lực của phiên bản: 14/11/2026 · Phiên bản: ${TERMS_PAGE_VERSION}</p>
 <p class="meta"><a href="/chinh-sach-quyen-rieng-tu">Xem Chính sách quyền riêng tư</a></p>
 </div>
 <div class="layout"><nav aria-label="Mục lục điều khoản"><strong>Nội dung</strong>${nav}</nav><article>${body}</article></div>
