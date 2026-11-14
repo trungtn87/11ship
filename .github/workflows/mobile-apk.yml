@@ -66,6 +66,10 @@ jobs:
       ANDROID_TEST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TEST_KEYSTORE_PASSWORD }}
       ANDROID_TEST_KEY_ALIAS: ${{ secrets.ANDROID_TEST_KEY_ALIAS }}
       ANDROID_TEST_KEY_PASSWORD: ${{ secrets.ANDROID_TEST_KEY_PASSWORD }}
+      # Public certificate fingerprints (SHA-256 of the DER certificate; not secrets). Repository variables set by the Owner. When set, CI refuses any
+      # signer that differs: the app-signing key (direct-install APKs, the same certificate as Play App Signing) and the upload key (AAB).
+      ANDROID_APP_SIGNER_PIN: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
+      ANDROID_UPLOAD_CERT_PIN: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Require the persistent signing secrets
@@ -452,6 +456,13 @@ jobs:
             grep -i 'certificate SHA-256 digest' "$work/verify.txt" | cat -A | cut -c1-200
             echo "::error title=signer mismatch::the APK is not signed with the persistent test key"; exit 1
           fi
+          # Pinned identity: when the Owner sets ANDROID_APP_SIGNER_SHA256, the APK must carry exactly that certificate (no silent key change).
+          if [ -n "${ANDROID_APP_SIGNER_PIN:-}" ]; then
+            [ "$apk_fp" = "$ANDROID_APP_SIGNER_PIN" ] || { echo "::error title=signer pin mismatch::APK signer $apk_fp is not the pinned app-signing certificate"; exit 1; }
+            echo "Signer pin: matches ANDROID_APP_SIGNER_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Signer pin: ANDROID_APP_SIGNER_SHA256 is not set (signer not pinned yet)" >> "$GITHUB_STEP_SUMMARY"
+          fi
           rm -f "$work/test.jks"
           sha256sum "$out"
           printf '{"app":"%s","package_name":"%s","signer_sha256":"%s","version_code":%s,"source_sha":"%s"}\n' \
@@ -495,16 +506,30 @@ jobs:
           cp "$src" "$out"
           # Structure check: a bundle must hold the base module's manifest.
           unzip -l "$out" | grep -q 'base/manifest/AndroidManifest.xml' || { echo "::error title=aab malformed::no base manifest"; exit 1; }
-          if [ -n "$ANDROID_UPLOAD_KEYSTORE_BASE64" ]; then
+          if [ -z "$ANDROID_UPLOAD_KEYSTORE_BASE64" ]; then
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "::error title=upload key missing::a manual build for Play needs the ANDROID_UPLOAD_* secrets; nothing is produced unsigned"; exit 1
+            fi
+            echo "AAB status: UNSIGNED, not uploadable (ANDROID_UPLOAD_* secrets are not set; pull request build only)" >> "$GITHUB_STEP_SUMMARY"
+          else
             work="$RUNNER_TEMP/aab-sign"; mkdir -p "$work"; chmod 700 "$work"
             printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$work/upload.jks"
             jarsigner -keystore "$work/upload.jks" -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD -keypass:env ANDROID_UPLOAD_KEY_PASSWORD \
               -sigalg SHA256withRSA -digestalg SHA-256 "$out" "$ANDROID_UPLOAD_KEY_ALIAS" >/dev/null
             jarsigner -verify "$out" | tail -n 1
+            # The certificate that actually signed the bundle (first certificate of its signature block), compared with the upload keystore's one.
+            aab_fp="$(unzip -p "$out" 'META-INF/*.RSA' | openssl pkcs7 -inform DER -print_certs 2>/dev/null | openssl x509 -outform DER | sha256sum | cut -d' ' -f1)"
+            up_fp="$(keytool -exportcert -keystore "$work/upload.jks" -alias "$ANDROID_UPLOAD_KEY_ALIAS" -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD 2>/dev/null | sha256sum | cut -d' ' -f1)"
             rm -f "$work/upload.jks"
-            echo "AAB status: signed with the upload key" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "AAB status: UNSIGNED, not uploadable (ANDROID_UPLOAD_* secrets are not set)" >> "$GITHUB_STEP_SUMMARY"
+            [ "$aab_fp" = "$up_fp" ] || { echo "::error title=aab signer mismatch::the bundle is not signed with the upload keystore certificate"; exit 1; }
+            # The upload key must differ from the app-signing key (Play App Signing): a bundle signed with the app-signing key is refused by design.
+            if [ -n "$ANDROID_APP_SIGNER_PIN" ] && [ "$aab_fp" = "$ANDROID_APP_SIGNER_PIN" ]; then
+              echo "::error title=upload key equals app-signing key::use a separate upload key"; exit 1
+            fi
+            if [ -n "$ANDROID_UPLOAD_CERT_PIN" ] && [ "$aab_fp" != "$ANDROID_UPLOAD_CERT_PIN" ]; then
+              echo "::error title=upload cert pin mismatch::the bundle is not signed with the pinned upload certificate"; exit 1
+            fi
+            echo "AAB status: signed with the upload key; upload certificate SHA-256 $aab_fp" >> "$GITHUB_STEP_SUMMARY"
           fi
           cp "$out" "$GITHUB_WORKSPACE/$APK_BASENAME.aab"
 

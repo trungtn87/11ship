@@ -96,6 +96,7 @@ Every subsequent test APK must install as an update over the previous build, pre
 Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionName and versionCode (both from the pubspec), and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
 
 ### Signing for the official packages — decision still open (Owner)
+Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md).
 - Today's secrets (`ANDROID_TEST_KEYSTORE_*`) are the persistent key used so far. Nothing here creates, replaces or copies a key silently.
 - 11Food and 11Ship **must share one signing certificate**: the peer-endorsement permission between the two apps checks the signer.
 - Owner must choose one of:
