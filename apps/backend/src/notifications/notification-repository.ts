@@ -339,6 +339,31 @@ export class NotificationRepository {
     return result.rowCount === 1;
   }
 
+  /**
+   * P6-9: a late event settles its outcome after the rows it produced are known: DELIVERED_LATE wins over STALE_EVENT, STALE_EVENT only replaces the
+   * plain 'OK' (so an event with one late card and one dropped reminder ends as DELIVERED_LATE).
+   */
+  async settleEventOutcome(context: TransactionContext, eventId: string, outcome: 'STALE_EVENT' | 'DELIVERED_LATE'): Promise<void> {
+    await context.query(
+      `UPDATE app.notification_consumed_events SET outcome = $2 WHERE event_id = $1::uuid AND outcome = ANY($3::text[])`,
+      [eventId, outcome, outcome === 'DELIVERED_LATE' ? ['OK', 'STALE_EVENT'] : ['OK']],
+    );
+  }
+
+  /**
+   * P6-9 evidence only (never a reason to drop): does the recipient already hold a notice of the SAME family (DELIVERY_, ORDER_, TOPUP_ ...) about the
+   * same object? Recorded in the audit row as `newer_notice_exists`. Versions are not compared here.
+   */
+  async hasNoticeOfFamily(context: TransactionContext, userId: string, app: NotificationApp, kind: string, targetType: string, targetId: string): Promise<boolean> {
+    const result = await context.query(
+      `SELECT 1 FROM app.notifications
+        WHERE recipient_user_id = $1::uuid AND app = $2 AND target_type = $3 AND target_id = $4::uuid AND split_part(kind, '_', 1) = split_part($5::text, '_', 1)
+        LIMIT 1`,
+      [userId, app, targetType, targetId, kind],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** Inserts a notification, or returns the existing one for the same (recipient, app, dedupe key) with `created = false`. */
   async insertNotification(context: TransactionContext, n: NewNotification): Promise<{ notificationId: string; created: boolean }> {
     const inserted = await context.query<{ notification_id: string }>(
@@ -368,21 +393,38 @@ export class NotificationRepository {
    * The ONE "Có đơn giao hàng mới" card of a Shipper: it is created on the first new offer and, while it exists, only refreshed (unread again, a new sequence
    * number so a live app sees it, a later validity). It is never a per-delivery history.
    */
+  /**
+   * The collapsed card of a recipient (one row per recipient, app and dedupe key). ONE atomic statement: a card that does not exist is inserted with the
+   * time of its fact; a card that exists is refreshed by ON CONFLICT. The sequence number is always renewed (the live app sees every refresh, as before).
+   * Content, unread state and validity follow the NEWER fact only: an event older than the card's last update never moves its text, its source, its
+   * unread flag or its last update backwards. Its created_at is the time the card was first created (unchanged on a refresh).
+   */
   async upsertCollapsedCard(context: TransactionContext, n: NewNotification): Promise<{ notificationId: string; refreshed: boolean }> {
-    const updated = await context.query<{ notification_id: string }>(
-      `UPDATE app.notifications
-          SET read_at = NULL, archived_at = NULL, updated_at = ${CLOCK}, seq = DEFAULT, title = $4, body = $5, source_event_id = $6::uuid,
-              valid_until = ${CLOCK} + ($7::bigint * interval '1 millisecond'), purge_after = ${CLOCK} + ($8::int * interval '1 day')
-        WHERE recipient_user_id = $1::uuid AND app = $2 AND dedupe_key = $3
-        RETURNING notification_id`,
-      [n.recipientUserId, n.app, n.dedupeKey, n.title, n.body, n.sourceEventId, n.validForMs, n.purgeDays],
+    const result = await context.query<{ notification_id: string; inserted: boolean }>(
+      `INSERT INTO app.notifications AS n (notification_id, recipient_user_id, app, kind, category, title, body, target_type, target_id, target_version, dedupe_key, source_event_id,
+                                      valid_until, created_at, updated_at, purge_after)
+       SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::uuid, $10::bigint, $11, $12::uuid,
+              CASE WHEN $13::bigint IS NULL THEN NULL ELSE c.t + ($13::bigint * interval '1 millisecond') END,
+              c.t, c.t, c.t + ($14::int * interval '1 day')
+         FROM (SELECT ${CLOCK} - ($15::bigint * interval '1 millisecond') AS t) AS c
+       ON CONFLICT (recipient_user_id, app, dedupe_key) DO UPDATE SET
+          seq = DEFAULT,
+          read_at = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN NULL ELSE n.read_at END,
+          archived_at = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN NULL ELSE n.archived_at END,
+          title = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN EXCLUDED.title ELSE n.title END,
+          body = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN EXCLUDED.body ELSE n.body END,
+          source_event_id = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN EXCLUDED.source_event_id ELSE n.source_event_id END,
+          valid_until = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN EXCLUDED.valid_until ELSE n.valid_until END,
+          purge_after = CASE WHEN EXCLUDED.updated_at >= n.updated_at THEN EXCLUDED.purge_after ELSE n.purge_after END,
+          updated_at = GREATEST(n.updated_at, EXCLUDED.updated_at)
+       RETURNING notification_id, (xmax = 0) AS inserted`,
+      [n.notificationId, n.recipientUserId, n.app, n.kind, n.category, n.title, n.body, n.targetType, n.targetId, n.targetVersion, n.dedupeKey, n.sourceEventId, n.validForMs, n.purgeDays, Math.max(0, n.ageMs ?? 0)],
     );
-    const hit = updated.rows[0];
-    if (hit !== undefined) {
-      return { notificationId: hit.notification_id, refreshed: true };
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new TechnicalError('internal', 'Collapsed notification neither inserted nor refreshed');
     }
-    const created = await this.insertNotification(context, n);
-    return { notificationId: created.notificationId, refreshed: !created.created };
+    return { notificationId: row.notification_id, refreshed: !row.inserted };
   }
 
   async findNotification(context: TransactionContext, notificationId: string, userId: string, app: NotificationApp): Promise<NotificationRow | undefined> {

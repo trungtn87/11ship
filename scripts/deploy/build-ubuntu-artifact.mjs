@@ -39,6 +39,7 @@ export const COPY_ENTRIES = [
   ['scripts/android-attestation-refresh.mjs', 'scripts/android-attestation-refresh.mjs'],
   ['scripts/deploy/android-readiness.cjs', 'scripts/deploy/android-readiness.cjs'],
   ['scripts/deploy/vps-update.py', 'scripts/deploy/vps-update.py'],
+  ['ops/m14/gateway-gate.sh', 'ops/m14/gateway-gate.sh'], // M14 gateway gate: run by vps-update.py before a backend release is changed (P6-1 round 2)
   ['scripts/deploy/vps-diagnose.py', 'scripts/deploy/vps-diagnose.py'],
   ['ops/selfhosted', 'ops/selfhosted'],
   ['ops/vinahost', 'ops/vinahost'],

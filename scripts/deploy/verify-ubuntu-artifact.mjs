@@ -73,6 +73,7 @@ try {
     'scripts/deploy/android-readiness.cjs',
     'scripts/deploy/vps-update.py',
     'scripts/deploy/vps-diagnose.py',
+    'ops/m14/gateway-gate.sh',
     'ops/vinahost/11ship-auth-readiness.service',
     'ops/vinahost/11ship-auth-readiness.timer',
     'ops/vinahost/11ship-staging.service',

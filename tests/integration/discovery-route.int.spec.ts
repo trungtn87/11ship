@@ -1,3 +1,4 @@
+import { m14HealthAnswer, m14RouteAnswer } from './support/m14-fake-route';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
@@ -19,6 +20,13 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
 
   beforeAll(async () => {
     router = http.createServer((request, response) => {
+      if (request.method === 'GET') {
+        // The backend's startup probe of /health (M14GatewayProbe): answered, not recorded as a route request.
+        request.resume();
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(m14HealthAnswer()));
+        return;
+      }
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', () => {
@@ -32,7 +40,7 @@ describe('issue #190 — POST /v1/discovery/route-distances', () => {
         }
         // One-way roads: only a leg that STARTS at a shop pickup point (lat 21.0, lon 105.8) has the shop -> GPS length; the reverse is shorter.
         const fromShop = asked.locations[0]?.lat === 21 && asked.locations[0]?.lon === 105.8;
-        response.end(JSON.stringify({ trip: { summary: { length: fromShop ? ROAD_KM : ROAD_KM - 4, time: 1200 } } }));
+        response.end(JSON.stringify(m14RouteAnswer(fromShop ? ROAD_KM : ROAD_KM - 4, 1200)));
       });
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));

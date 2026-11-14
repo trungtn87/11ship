@@ -6,11 +6,12 @@
 #   build                     build the image on this host (refuses when RAM/disk are short; use `load` with an image built elsewhere)
 #   load <image.tar.gz>       load an image built elsewhere; the .sha256 next to it must match
 #   up                        start the routing container, wait for /health, run smoke.py; on any failure restores the previous container (or removes this one)
-#   connect                   set M14_ROUTING_ORIGIN in the backend env file, restart the backend, check readiness; on failure restores the env file and restarts
+#   check                     read-only: the gateway at the origin must be ready with a valid routeVersion (the gate `connect` runs first)
+#   connect                   gateway check first (refuses otherwise), then set M14_ROUTING_ORIGIN in the backend env file, restart the backend, check readiness; on failure restores the env file and restarts
 #   status                    container, health, stats, backend origin (no secrets printed)
 #   load-test [n] [c]         n routes with c in parallel (default 40 / 4) and the resources it used
-#   rollback                  routing: previous image back (or stop). Backend: `restore-env <backup>` puts a saved env file back
-#   restore-env <backup>      restore a backup made by `connect`, restart the backend, check readiness
+#   rollback                  BLOCKED (fails closed): a gateway rollback alone would leave a backend that expects routeVersion without routes. Roll the PAIR back through scripts/deploy/vps-update.py rollback (the production entrypoint)
+#   restore-env <backup>      restore a backup made by `connect`, restart the backend, check readiness. When the backup sets M14_ROUTING_ORIGIN, the gateway gate runs BEFORE anything changes and a red gate refuses the restore
 #
 # Environment overrides: M14_IMAGE (default 11ship-m14-routing), M14_RATE_PER_MIN (default 600 here), M14_MAX_CONCURRENT (default 4 here),
 # BACKEND_ENV_FILE (/etc/11ship/staging.env), BACKEND_SERVICE (11ship-staging), BACKEND_READY_URL (http://127.0.0.1:3000/v1/health/ready).
@@ -90,13 +91,19 @@ up() {
     say "routing is healthy and answered a real route (smoke.py); report: $(pwd)/routing-smoke.json"
     return 0
   fi
-  say 'health or smoke FAILED: rolling the routing container back'
-  rollback
+  say 'health or smoke FAILED: restoring the routing container that was running before this `up`'
+  restore_previous_gateway
   die 'routing did not become healthy; previous state restored (see `docker logs m14-routing-1`)'
 }
 
+# Fail closed (P6-1 review round 3, SỬA-9): no command rolls the routing gateway back on its own. A backend that expects routeVersion reports
+# routes unavailable against an older gateway, so the pair goes back together through the single production entrypoint, whose gate runs first.
 rollback() {
-  need_root
+  die 'BLOCKED: this command does not roll the routing gateway back alone. Roll the PAIR back through the production entrypoint: sudo python3 scripts/deploy/vps-update.py rollback (the gateway gate runs before any change). Nothing was changed.'
+}
+
+# Internal: puts back the container that was running before a FAILED `up` (the state this script found; it creates no new mismatch).
+restore_previous_gateway() {
   if docker image inspect "$image:previous" >/dev/null 2>&1; then
     docker tag "$image:previous" "$image:current"
     "${compose[@]}" up -d --no-build --force-recreate
@@ -107,9 +114,32 @@ rollback() {
   fi
 }
 
+# The gateway gate is shared with the deploy script: ops/m14/gateway-gate.sh (gateway_preflight, the same function).
+# shellcheck source=gateway-gate.sh
+. "$here/gateway-gate.sh"
+
+# SỬA-7 (cheap part): the image changed but routeVersion did not. Changing the image or the graph build without changing M14_DATA_VERSION
+# leaves the version identical while the routes differ. Compares with the last checked image on this host.
+image_state="${M14_IMAGE_STATE:-/var/lib/11ship-m14/routeversion-image.state}"
+check_image_change() {
+  local img last_img last_ver
+  img="$(docker image inspect --format '{{.Id}}' "$image:current" 2>/dev/null || true)"
+  [ -n "$img" ] || return 0
+  mkdir -p "$(dirname "$image_state")" 2>/dev/null || return 0
+  if [ -f "$image_state" ]; then
+    read -r last_img last_ver < "$image_state" || true
+    if [ -n "${last_img:-}" ] && [ "$last_img" != "$img" ] && [ "${last_ver:-}" = "$1" ]; then
+      printf 'WARNING: the routing image changed but routeVersion did not (%s). Change M14_DATA_VERSION before this image serves routes (ops/runbooks/m14-valhalla-vps.md, rule SỬA-7)
+' "$1" >&2
+    fi
+  fi
+  printf '%s %s
+' "$img" "$1" > "$image_state" 2>/dev/null || true
+}
+
 connect() {
   need_root
-  curl -fsS --max-time 4 "$origin/health" | grep -q '"ready": *true' || die 'routing is not healthy: run up first'
+  gateway_preflight "$origin"
   [ -f "$env_file" ] || die "$env_file not found"
   local backup="$env_file.m14-backup.$(date -u +%Y%m%dT%H%M%SZ)"
   cp -p "$env_file" "$backup"
@@ -140,8 +170,12 @@ backend_ready() {
 
 restore_env() {
   need_root
-  local backup="${1:?backup file}"
+  local backup="${1:?backup file}" backup_origin
   [ -f "$backup" ] || die "no such backup: $backup"
+  # Gate BEFORE any change (P6-1 review round 3, SỬA-9): a restored env that points at a gateway must not reach a backend while that gateway is not ready.
+  if backup_origin="$(grep '^M14_ROUTING_ORIGIN=' "$backup" | tail -1 | cut -d= -f2-)" && [ -n "$backup_origin" ]; then
+    gateway_preflight "$backup_origin" || die 'restore refused: the gateway the backup points at is not ready; nothing was changed'
+  fi
   cp -p "$backup" "$env_file"
   systemctl restart "$service"
   backend_ready && say 'env restored, backend ready' || die 'env restored but the backend is not ready: investigate with journalctl'
@@ -164,6 +198,7 @@ case "$cmd" in
   build) build ;;
   load) load "$@" ;;
   up) up ;;
+  check) gateway_preflight "$origin" && check_image_change "$GATEWAY_ROUTE_VERSION" ;;
   connect) connect ;;
   status) status ;;
   load-test) loadtest "$@" ;;

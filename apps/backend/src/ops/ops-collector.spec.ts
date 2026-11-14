@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import { OpsCollector } from './ops-collector';
 import { DiscordBody, DiscordClient, DiscordResult } from './ops-discord';
 import { defaultSettings } from './ops-settings';
@@ -24,8 +24,9 @@ function build(o: { enabled?: boolean; url?: string | undefined; maintenance?: {
     },
   };
   const engine = {
-    observe: async (_c: unknown, r: { checkKey: string }) => {
+    observe: async (_c: unknown, r: { checkKey: string; state?: string }) => {
       observed.push(r.checkKey);
+      states.push({ checkKey: r.checkKey, state: String(r.state) });
       return { action: 'NONE' };
     },
     recordOutage: async (_c: unknown, r: Record<string, unknown>) => {
@@ -37,7 +38,9 @@ function build(o: { enabled?: boolean; url?: string | undefined; maintenance?: {
     load: async () => ({ row: {}, settings: defaultSettings(), discordEnabled: o.enabled ?? true, discordMinSeverity: 'WARNING', webhookConfigured: true }),
     webhookUrl: () => ('url' in o ? o.url : HOOK),
   };
-  const repo = { insertMetric: async () => undefined };
+  const metrics: { key: string; atMs: number; value: number }[] = [];
+  const states: { checkKey: string; state: string }[] = [];
+  const repo = { insertMetric: async () => undefined, recentMetrics: async (_c: unknown, key: string, since: number) => metrics.filter((m) => m.key === key && m.atMs >= since).map((m) => ({ atMs: m.atMs, value: m.value })) };
   const incidents = { activeMaintenance: async () => (o.maintenance ?? []).map((m) => ({ scopes: m.scopes, endsAtMs: m.endsAtMs })) };
   const discord: DiscordClient = {
     post: async (url, body): Promise<DiscordResult> => {
@@ -62,14 +65,38 @@ function build(o: { enabled?: boolean; url?: string | undefined; maintenance?: {
     { appEnv: 'production', host: '127.0.0.1', port: 1 } as never,
     { log: (_level: string, event: string) => logs.push(event) } as never,
   );
-  return { collector, state, recorded, observed, posts, logs };
+  return { collector, state, recorded, observed, posts, logs, metrics, states };
 }
+
+describe('collector: M08 stale events (P6-9) — the finance check closes on its own while the ordinary warning stays open', () => {
+  it('after the 30-minute window the CRITICAL finance check is OK and the ordinary WARNING still stands', async () => {
+    const t = build();
+    const T0 = 1_800_000_000_000;
+    const clock = jest.spyOn(Date, 'now');
+    try {
+      t.metrics.push({ key: 'm08_stale_event.delivered_late_high', atMs: T0, value: 1 }, { key: 'm08_stale_event.dropped', atMs: T0 + 10 * 60_000, value: 1 });
+      clock.mockReturnValue(T0 + 11 * 60_000);
+      await t.collector.collectOnce();
+      const first = t.states.filter((x) => x.checkKey.startsWith('m08_stale'));
+      expect(first).toEqual([{ checkKey: 'm08_stale_event', state: 'WARNING' }, { checkKey: 'm08_stale_high', state: 'CRITICAL' }]);
+
+      t.states.length = 0;
+      clock.mockReturnValue(T0 + 35 * 60_000);
+      await t.collector.collectOnce();
+      const later = t.states.filter((x) => x.checkKey.startsWith('m08_stale'));
+      expect(later).toEqual([{ checkKey: 'm08_stale_event', state: 'WARNING' }, { checkKey: 'm08_stale_high', state: 'OK' }]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
 
 describe('collector: a database outage is never shown as healthy and is recorded with its real start', () => {
   it('announces directly once after three consecutive failures, then writes one incident when the database returns', async () => {
     const t = build();
     await t.collector.collectOnce();
     expect(t.observed).toContain('database');
+    expect(t.observed).toContain('m08_stale_event');
     t.state.down = true;
     const started = Date.now();
     await t.collector.collectOnce();

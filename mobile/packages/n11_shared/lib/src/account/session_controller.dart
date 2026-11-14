@@ -51,7 +51,16 @@ class PendingAuth {
 }
 
 class SessionController extends ChangeNotifier {
-  SessionController({required this.api, required this.bridge, required this.ready});
+  SessionController({required this.api, required this.bridge, required this.ready, DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  /// The shortest time between two background identity reads ([refreshIdentityIfStale]).
+  static const Duration identityRefreshMinInterval = Duration(seconds: 30);
+
+  final DateTime Function() _now;
+  /// Bumps whenever the identity is replaced or cleared by any path, so a background read that started before drops its answer (P5-6c).
+  int _identitySeq = 0;
+  bool _identityRefreshing = false;
+  DateTime? _lastIdentityRefresh;
 
   final NativeAuthApi api;
   final DeviceBridge bridge;
@@ -161,9 +170,10 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _validate(String token, int epoch) async {
+    final int seq = _identitySeq;
     try {
       final ApiResponse response = await api.signedCall('GET', '/v1/client-auth/me', token: token);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _identitySeq) {
         return;
       }
       if (response.status == 200) {
@@ -174,8 +184,8 @@ class SessionController extends ChangeNotifier {
           _notify();
           return;
         }
-        _identity = identity;
-        _profile = identity.profile;
+        _setIdentity(identity);
+        _setProfile(identity.profile);
         _status = SessionStatus.signedIn;
         _lastFailure = null;
         _notify();
@@ -226,6 +236,7 @@ class SessionController extends ChangeNotifier {
 
   void _toGuest() {
     _identity = null;
+    _identitySeq++;
     _profile = null;
     _pending = null;
     _status = SessionStatus.guest;
@@ -365,8 +376,9 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> _send(PendingAuth pending, int epoch) async {
     _pending = pending;
+    final int seq = _identitySeq;
     final ApiResponse response = await api.authCall(pending.path, pending.body, pending.idempotencyKey);
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return false;
     }
     final bool created = response.status == 201 && pending.kind == PendingKind.register;
@@ -381,13 +393,13 @@ class SessionController extends ChangeNotifier {
       throw const AuthFailure(AuthFailureKind.badResponse);
     }
     await bridge.storeToken(token);
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return false;
     }
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
-    _identity = identity;
-    _profile = identity.profile;
+    _setIdentity(identity);
+    _setProfile(identity.profile);
     _pending = null;
     _status = SessionStatus.signedIn;
     _notify();
@@ -442,18 +454,90 @@ class SessionController extends ChangeNotifier {
   /// Reads `me` again and replaces the identity (after an onboarding step changed what the server says about the person).
   Future<void> refreshIdentity() async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final ApiResponse response = await protectedCall('GET', '/v1/client-auth/me');
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return;
     }
     final Identity? identity = response.status == 200 ? Identity.tryParse(response.data) : null;
     if (identity == null) {
       throw response.status == 200 ? const AuthFailure(AuthFailureKind.badResponse) : failureOf(response);
     }
-    _identity = identity;
-    _profile = identity.profile;
+    _setIdentity(identity);
+    _setProfile(identity.profile);
     _notify();
   }
+
+  /// Every write of the profile (a save, a reload, a refresh) goes through here: it also moves [_identitySeq], so a background identity read that
+  /// was in flight before it drops its answer and cannot write an older profile back (P5-6c, Codex MEDIUM).
+  void _setProfile(Profile profile) {
+    _profile = profile;
+    _identitySeq++;
+  }
+
+  void _setIdentity(Identity identity) {
+    _identity = identity;
+    _identitySeq++;
+  }
+
+  /// The server may change what it says about this account without the app doing anything (an Admin unlocks it, a lock is placed). So the
+  /// app reads `me` again when it comes back to the foreground and when the Account tab is opened. This is a silent, throttled read:
+  ///  - at most one every [identityRefreshMinInterval], and never two at once (a flood of resumes / tab taps costs one request);
+  ///  - only for a signed-in session; a guest or a session being started is left alone;
+  ///  - the answer is dropped when the session epoch moved (logout, other account) or the identity was replaced meanwhile (context
+  ///    change, onboarding step), so an old answer never overwrites a newer one;
+  ///  - a network or server failure keeps the identity as it is (nothing is shown, nothing is cleared); a 401 still ends the session
+  ///    like any other protected call.
+  /// Listeners are told only when something the screens show actually changed, so a refresh that learns nothing rebuilds nothing.
+  Future<void> refreshIdentityIfStale() async {
+    final Identity? before = _identity;
+    if (_status != SessionStatus.signedIn || before == null || _identityRefreshing || _disposed) {
+      return;
+    }
+    final DateTime now = _now();
+    final DateTime? last = _lastIdentityRefresh;
+    if (last != null && now.difference(last) < identityRefreshMinInterval) {
+      return;
+    }
+    _lastIdentityRefresh = now;
+    _identityRefreshing = true;
+    final int epoch = _epoch;
+    final int seq = _identitySeq;
+    try {
+      final ApiResponse response = await protectedCall('GET', '/v1/client-auth/me');
+      if (epoch != _epoch || seq != _identitySeq || _disposed || response.status != 200) {
+        return;
+      }
+      final Identity? identity = Identity.tryParse(response.data);
+      if (identity == null || identity.userId != before.userId) {
+        return;
+      }
+      _setIdentity(identity);
+      _setProfile(identity.profile);
+      if (_identityShowsDifferently(before, identity)) {
+        _notify();
+      }
+    } on Object {
+      // Offline, refused or malformed: the identity we have stays.
+    } finally {
+      _identityRefreshing = false;
+    }
+  }
+
+  static bool _identityShowsDifferently(Identity a, Identity b) =>
+      a.profile.fullName != b.profile.fullName ||
+      a.profile.version != b.profile.version ||
+      a.phoneNormalized != b.phoneNormalized ||
+      a.lockedWalletOnly != b.lockedWalletOnly ||
+      a.deletionLocked != b.deletionLocked ||
+      a.activeRole != b.activeRole ||
+      !listEquals(a.availableRoles, b.availableRoles) ||
+      a.customerAccess != b.customerAccess ||
+      a.onboardingRequired != b.onboardingRequired ||
+      a.roleSelectionRequired != b.roleSelectionRequired ||
+      a.shopOnboarding != b.shopOnboarding ||
+      a.driverOnboarding != b.driverOnboarding ||
+      a.phoneVerification != b.phoneVerification;
 
   /// POST /v1/client-auth/context: only on the person's own action; the server decides (ROLE_NOT_AVAILABLE) and answers the CURRENT
   /// identity. Never a grant.
@@ -462,6 +546,7 @@ class SessionController extends ChangeNotifier {
 
   Future<void> selectContext(String context) async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final String body = jsonEncode(<String, Object?>{'context': context});
     // A lost answer is retried with the same key and body (the person taps again); any other outcome starts a new intent.
     final String key = _contextBody == body && _contextKey != null ? _contextKey! : newIdempotencyKey();
@@ -483,15 +568,15 @@ class SessionController extends ChangeNotifier {
       _contextBody = null;
       _contextKey = null;
     }
-    if (epoch != _epoch) {
+    if (epoch != _epoch || seq != _identitySeq) {
       return;
     }
     final Identity? identity = refusal == null ? Identity.tryParse(response.data) : null;
     if (identity == null) {
       throw refusal ?? const AuthFailure(AuthFailureKind.badResponse);
     }
-    _identity = identity;
-    _profile = identity.profile;
+    _setIdentity(identity);
+    _setProfile(identity.profile);
     _notify();
   }
 
@@ -540,13 +625,14 @@ class SessionController extends ChangeNotifier {
   /// GET /v1/customer/me/profile. A 401 ends the session (token and personal values cleared).
   Future<bool> loadProfile() async {
     final int epoch = _epoch;
+    final int seq = _identitySeq;
     final String? token = await bridge.readToken();
     if (token == null) {
       return false;
     }
     try {
       final ApiResponse response = await api.signedCall('GET', '/v1/customer/me/profile', token: token);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _identitySeq) {
         return false;
       }
       if (response.status != 200) {
@@ -554,7 +640,7 @@ class SessionController extends ChangeNotifier {
       }
       final Object? data = response.data;
       if (data is Map<String, Object?> && data['version'] is int) {
-        _profile = Profile(fullName: data['full_name'] as String?, version: data['version']! as int);
+        _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
         _lastFailure = null;
         _notify();
         return true;
@@ -571,10 +657,11 @@ class SessionController extends ChangeNotifier {
 
   /// PUT with expected_version. VERSION_CONFLICT reloads the current profile and does NOT overwrite it. A lost answer keeps the
   /// same key and body for the person's own retry.
-  Future<ProfileSave> saveProfile(String fullName) async {
-    final Profile? current = _profile;
-    final int? version = current?.version;
-    if (version == null || _busy) {
+  /// [expectedVersion] is the version the editor opened on (its own snapshot), never the current one: a background identity refresh
+  /// may move the current version meanwhile, and that must surface as VERSION_CONFLICT, not as a silent overwrite (P5-6c).
+  Future<ProfileSave> saveProfile(String fullName, {required int expectedVersion}) async {
+    final int version = expectedVersion;
+    if (_busy) {
       return ProfileSave.failed;
     }
     final int epoch = _epoch;
@@ -595,7 +682,7 @@ class SessionController extends ChangeNotifier {
       if (response.status == 200) {
         final Object? data = response.data;
         if (data is Map<String, Object?> && data['version'] is int) {
-          _profile = Profile(fullName: data['full_name'] as String?, version: data['version']! as int);
+          _setProfile(Profile(fullName: data['full_name'] as String?, version: data['version']! as int));
           _profileKey = null;
           _profileBody = null;
           _lastFailure = null;
