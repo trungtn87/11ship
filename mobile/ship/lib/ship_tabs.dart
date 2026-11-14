@@ -178,12 +178,21 @@ Widget _processCard() => N11Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(children: <Widget>[const Icon(Icons.route_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Quy trình & quyền lợi tài xế', style: N11Text.h2))]),
+          Row(children: <Widget>[const Icon(Icons.route_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text(kDriverProcessTitle, style: N11Text.h2))]),
           const SizedBox(height: N11Space.gap2),
-          const Text('Đăng ký tài khoản, gửi hồ sơ shipper để được duyệt, rồi bật nhận đơn khi đủ điều kiện. Thu nhập và ví chỉ hiện sau khi bạn đăng nhập.', style: N11Text.body),
+          const Text(kDriverProcessText, style: N11Text.body),
+          const SizedBox(height: N11Space.gap2),
+          const Text(kDriverProcessSteps, key: Key('driver-process-steps'), style: N11Text.caption),
+          const SizedBox(height: N11Space.gap2),
+          const Text(kDriverRegisterNote, key: Key('driver-register-note'), style: N11Text.caption),
         ],
       ),
     );
+
+const String kDriverProcessTitle = 'Quy trình & quyền lợi tài xế 11Ship';
+const String kDriverProcessText = 'Đăng ký tài khoản, gửi hồ sơ shipper để xét duyệt. Sau khi được duyệt và đáp ứng đủ điều kiện, bạn có thể bật nhận đơn. Thông tin thu nhập và ví được hiển thị trong tài khoản khi có quyền truy cập phù hợp.';
+const String kDriverProcessSteps = 'Đăng ký · Duyệt hồ sơ · Nhận đơn';
+const String kDriverRegisterNote = 'Đăng ký tài khoản không đồng nghĩa với việc được duyệt làm tài xế.';
 
 // ---- S04: notifications (M08) ---------------------------------------------------------------------------------------------
 
@@ -250,8 +259,13 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverActivityScreen(controller: driver, walletSource: wallet))),
         ),
       // S05 guest: no "Hồ sơ shipper" row; the process & benefits entry instead.
-      if (session.status != SessionStatus.signedIn)
-        const N11ListItem(key: Key('driver-process-entry'), icon: Icons.route_outlined, title: 'Quy trình & quyền lợi tài xế', sub: 'Đăng ký, duyệt hồ sơ và nhận đơn'),
+      if (session.status != SessionStatus.signedIn) ...<Widget>[
+        N11ListItem(key: const Key('driver-process-entry'), icon: Icons.route_outlined, title: kDriverProcessTitle, sub: kDriverProcessSteps),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(N11Space.pad, 0, N11Space.pad, N11Space.gap2),
+          child: Text(kDriverRegisterNote, key: Key('driver-register-note-account'), style: N11Text.caption),
+        ),
+      ],
       if (driver == null && session.status == SessionStatus.signedIn)
         N11ListItem(
           icon: Icons.badge_outlined,

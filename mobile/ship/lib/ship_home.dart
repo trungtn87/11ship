@@ -321,7 +321,8 @@ class ShipHomeLayout extends StatelessWidget {
           children: <Widget>[
             Container(
               key: const Key('ship-home-header'),
-              decoration: const BoxDecoration(gradient: N11Colors.brandWarmGradient),
+              // Light yellow fading to white (Owner 14/11): the header band only; the content below stays on the normal background.
+              decoration: const BoxDecoration(gradient: N11Colors.headerFadeGradient),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(
                 children: <Widget>[

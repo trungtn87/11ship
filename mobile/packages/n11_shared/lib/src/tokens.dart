@@ -23,6 +23,12 @@ abstract final class N11Colors {
     end: Alignment.bottomRight,
     colors: <Color>[yellow, brandWarm],
   );
+  /// Owner 14/11 (S01): light yellow at the top fading to white in the content below. Covers a header band only, never the whole screen.
+  static const LinearGradient headerFadeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: <Color>[yellowSoft, white],
+  );
   static const Color black = Color(0xFF191919);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);

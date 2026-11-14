@@ -120,8 +120,29 @@ void main() {
     await pump(tester, healthy());
     await openTab(tester, 'account');
     expect(find.byKey(const Key('driver-process-entry')), findsOneWidget);
+    expect(find.text('Quy trình & quyền lợi tài xế 11Ship'), findsOneWidget);
+    expect(find.text('Đăng ký · Duyệt hồ sơ · Nhận đơn'), findsOneWidget);
+    expect(find.byKey(const Key('driver-register-note-account')), findsOneWidget);
     expect(find.text('Đăng ký làm shipper'), findsOneWidget);
     expect(find.text('Hồ sơ shipper'), findsNothing);
+    // The register action opens the account registration with the 11Ship brand (not a shipper approval).
+    await tester.ensureVisible(find.byKey(const Key('open-register')));
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RegisterScreen), findsOneWidget);
+  });
+
+  testWidgets('S03 guest card: exact process copy and the account-vs-approval note', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'income');
+    expect(find.text(kDriverProcessTitle), findsOneWidget);
+    expect(find.text(kDriverProcessText), findsOneWidget);
+    expect(find.text(kDriverProcessSteps), findsOneWidget);
+    expect(find.text(kDriverRegisterNote), findsOneWidget);
+    expect(find.textContaining('thu nhập', findRichText: true), findsWidgets);
+    // No income figures or commission/benefit amounts for guests.
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.textContaining('₫'), findsNothing);
   });
 
   testWidgets('S02 offline orders: "Về trang chủ" switches to the Home tab', (WidgetTester tester) async {
