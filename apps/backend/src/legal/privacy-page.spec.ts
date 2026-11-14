@@ -1,3 +1,4 @@
+import { describe, expect, it } from '@jest/globals';
 import { PRIVACY_PAGE_HTML, PRIVACY_PAGE_PATH, PRIVACY_PAGE_VERSION } from './privacy-page';
 
 describe('public privacy draft page', () => {
