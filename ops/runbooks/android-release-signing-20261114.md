@@ -19,6 +19,33 @@ Quy tắc không đổi: 11Food và 11Ship **phải cùng một app-signing key*
 
 ---
 
+## 0A. Quyết định đã chốt (Owner, 14/11/2026)
+
+- Versions: **1.0.0+1** cho cả hai app (versionName `1.0.0`, versionCode `1`). Owner xác nhận chưa từng tải APK/AAB của hai package này lên Play.
+- **Một app-signing key dùng chung** cho 11Food và 11Ship. Play App Signing dùng chính khóa đó. Giữ nguyên kiểm tra cùng signer (peer check); không đổi quy tắc.
+- **Upload key riêng**, không trùng app-signing key. Chỉ dùng để ký AAB.
+- Không tải lên Play, không rollout, không phân phối APK khi chưa có lệnh Owner.
+
+**Keystore hiện có có dùng làm app-signing key không?** Kết luận: **có, với điều kiện Owner xác minh bản sao lưu.**
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Signer hiện tại (công khai, từ artifact `android-signers.json` của run Mobile APK thành công `43470719462`) | SHA-256 `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3`, **giống nhau cho cả hai app** |
+| Loại và độ dài khóa (theo `create-test-keystore.sh`, 13/10/2026) | RSA 2048, PKCS12, hạn 10000 ngày (tới khoảng 2053). Đạt yêu cầu tối thiểu RSA 2048 của Play cho khóa ký tự cung cấp |
+| Tên chứng thư | `CN=11Ship test, O=11Ship`. Chỉ là nhãn; Play không kiểm tra, nhưng có thể đổi thành khóa mới nếu Owner muốn nhãn sạch |
+| Đã dùng cho APK `.test` | Có. Package khác nên không xung đột; vẫn là khóa bền đã được duyệt |
+| **Bản sao lưu file `.jks`** | **Chưa xác nhận.** Secret GitHub không đọc lại được. Nếu chỉ còn secret, không thể đăng ký Play App Signing bằng PEPK và không khôi phục được khi mất |
+| **Mật khẩu đã từng hiện trong terminal** | Script 13/10 in mật khẩu ra màn hình. Coi như đã lộ trên máy Owner; cân nhắc đổi mật khẩu keystore (`keytool -storepasswd`, không đổi khóa) rồi cập nhật secret |
+| Trạng thái Play App Signing | **Chưa xác nhận.** Nếu Play đã có khóa ký khác cho package, phải dừng và báo lại |
+
+**Điều kiện để dùng khóa này:** (1) file `.jks` có bản sao lưu riêng, và `keytool -list -v` trên bản sao cho đúng SHA-256 ở trên; (2) Play Console không giữ chứng thư nào khác cho hai package. Nếu một điều kiện không đạt, không dùng khóa này và báo lại trước khi tạo khóa mới.
+
+**Hệ quả với VPS:** vì signer không đổi, file allowlist VPS chỉ thay tên package `vn.eleven.*.test` → `vn.eleven.*`, giữ dấu vân tay trên.
+
+**Biến ghim (công khai):**
+- `ANDROID_APP_SIGNER_SHA256` = `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3`
+- `ANDROID_UPLOAD_CERT_SHA256` = dấu vân tay upload key mới (mục 2, sau khi tạo)
+
 ## 1. Kiểm tra trước khi tạo khóa (Owner, không ghi đè gì)
 
 1. **Keystore hiện có:** nếu Owner còn file keystore đã dùng để tạo secret `ANDROID_TEST_*` (script `mobile/tool/create-test-keystore.sh`, ngày 13/10/2026), lấy dấu vân tay của nó trên máy Owner:
