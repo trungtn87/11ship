@@ -156,7 +156,10 @@ void main() {
     tester.view.devicePixelRatio = 3;
     await tester.pump();
     await tester.pump();
-    expect(tester.getTopLeft(find.byKey(const Key('home-v5-map-panel'))).dy, lessThan(730));
+    // The map label band (top 56 px of the panel) must be above the real navigation bar, not just the panel's first pixel.
+    final double navTop = tester.getTopLeft(find.byKey(const Key('tab-home'))).dy;
+    expect(tester.getTopLeft(find.byKey(const Key('home-v5-map-panel'))).dy + 56, lessThan(navTop));
+    expect(tester.getRect(find.byKey(const Key('home-locate-cta'))).bottom, lessThan(navTop));
     expect(find.byKey(const Key('ship-home-header')), findsOneWidget);
     expect(find.text('Khu vực nhận đơn'), findsOneWidget);
   });

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
@@ -106,7 +109,62 @@ Future<void> _pumpHome(WidgetTester tester, _Home h) async {
   await tester.pump();
 }
 
+/// The app's own font, so text wraps as on a phone (the test default, Ahem, draws every glyph as a full em box and changes the line count).
+Future<void> _loadAppFonts() async {
+  final FontLoader loader = FontLoader('packages/n11_shared/PlusJakartaSans');
+  for (final String w in <String>['Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold']) {
+    final Uint8List bytes = File('../packages/n11_shared/assets/fonts/PlusJakartaSans-$w.ttf').readAsBytesSync();
+    loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  }
+  await loader.load();
+  final FontLoader icons = FontLoader('MaterialIcons');
+  icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+  await icons.load();
+}
+
 void main() {
+  testWidgets('390x844 first screen as in the Android smoke (offline alert above, navigation below): the button sits on the map and the map label band is above the navigation', (WidgetTester tester) async {
+    await tester.runAsync(_loadAppFonts);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: buildN11Theme(),
+      home: Scaffold(
+        body: Column(
+          children: <Widget>[
+            Expanded(
+              child: ShipHomeLayout(
+                reason: kOnlineReason,
+                onNotifications: () {},
+                // The CI run had the "Không có kết nối mạng" alert (about 148 px) above the receiving area; the same height is used here.
+                alert: const SizedBox(key: Key('ci-offline-alert'), width: double.infinity, height: 148),
+                // The guest footer seen in the same CI screenshot ("Đăng nhập tài khoản shipper").
+                footer: N11Link('Đăng nhập tài khoản shipper', onPressed: () {}),
+                onLocate: () {},
+              ),
+            ),
+            const SizedBox(key: Key('nav-stub'), height: 116),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+    final double navTop = tester.getTopLeft(find.byKey(const Key('nav-stub'))).dy;
+    expect(navTop, 728);
+    final Rect panel = tester.getRect(find.byKey(const Key('home-v5-map-panel')));
+    final Rect button = tester.getRect(find.byKey(const Key('home-locate-cta')));
+    expect(find.byKey(const Key('home-radius-pending')), findsOneWidget);
+    // The button is laid over the map's top-right corner: inside the map panel, above the navigation, and not moving the map.
+    expect(panel.contains(button.topLeft) && panel.contains(button.bottomRight), isTrue);
+    expect(button.center.dy, lessThan(730));
+    expect(button.bottom, lessThan(navTop));
+    // The map frame starts above the navigation and its label band (top 56 px) is on the first screen.
+    expect(panel.top + 56, lessThan(navTop), reason: 'the map label band must be visible above the navigation');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('guest cold launch without a position: the button shows and the map panel stays on the first screen', (WidgetTester tester) async {
     final _Home h = await tester.runAsync(() => _guest(tester)) as _Home;
     await _pumpHome(tester, h);

@@ -482,20 +482,6 @@ class ShipHomeLayout extends StatelessWidget {
                     runSpacing: N11Space.gap2,
                     children: <Widget>[
                       const Text('Khu vực nhận đơn', style: N11Text.h2),
-                      // Beside the title, not under the card: the first screen keeps the map at 390x844 (see the widget test).
-                      if (onLocate != null && !shipRadiusCentreUsable(position))
-                        N11Button(
-                          key: const Key('home-locate-cta'),
-                          label: locateState == ShipLocateState.busy
-                              ? 'Đang tìm vị trí…'
-                              : 'Bật định vị ngay',
-                          kind: ButtonKind.secondary,
-                          compact: true,
-                          icon: Icons.my_location,
-                          onPressed: locateState == ShipLocateState.busy
-                              ? null
-                              : onLocate,
-                        ),
                       Container(
                         key: Key(
                           !shipRadiusCentreUsable(position)
@@ -530,14 +516,37 @@ class ShipHomeLayout extends StatelessWidget {
                   ],
                   ClipRRect(
                     borderRadius: BorderRadius.circular(N11V5.inputRadius),
-                    child: locationView == null
-                        ? _HomeMap(height: mapHeight, position: position, radiusExempt: radiusExempt)
-                        : _MapWithLocation(
-                            height: mapHeight,
-                            position: position,
-                            view: locationView!,
-                            radiusExempt: radiusExempt,
+                    // The locate button is laid over the map's top-right corner, never in the text flow: the map keeps its height and its place
+                    // on the first screen (a line added above it pushed it under the bottom navigation on 390x844).
+                    child: Stack(
+                      children: <Widget>[
+                        locationView == null
+                            ? _HomeMap(height: mapHeight, position: position, radiusExempt: radiusExempt)
+                            : _MapWithLocation(
+                                height: mapHeight,
+                                position: position,
+                                view: locationView!,
+                                radiusExempt: radiusExempt,
+                              ),
+                        if (onLocate != null && !shipRadiusCentreUsable(position))
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: N11Button(
+                              key: const Key('home-locate-cta'),
+                              label: locateState == ShipLocateState.busy
+                                  ? 'Đang tìm vị trí…'
+                                  : 'Bật định vị ngay',
+                              kind: ButtonKind.secondary,
+                              compact: true,
+                              icon: Icons.my_location,
+                              onPressed: locateState == ShipLocateState.busy
+                                  ? null
+                                  : onLocate,
+                            ),
                           ),
+                      ],
+                    ),
                   ),
                 ],
               ),
