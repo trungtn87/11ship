@@ -1,0 +1,263 @@
+name: Mobile AAB release (Play)
+
+# STORE-01 PR-A (#344). Builds ONE signed Android App Bundle for Google Play from the commit that is main at dispatch time, and attaches it
+# as a workflow artifact. Nothing is uploaded to Google Play, published, deployed or tagged here: Owner downloads the artifact and uploads
+# it to the Internal testing track by hand after approving it (ops/runbooks/android-release-signing-20261114.md).
+#
+# Only manual dispatch, only from refs/heads/main, only inside the protected environment android-release (required reviewers). The
+# upload-key secrets exist ONLY in that environment and ONLY on the signing step; no other workflow may name them (tests/deploy guard).
+# The app-signing certificate pin and the upload pin are public repository variables; the signature is checked against them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Which app to build: food = 11Food (vn.eleven.food), ship = 11Ship (vn.eleven.ship)'
+        required: true
+        type: choice
+        options:
+          - food
+          - ship
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-aab-release-${{ inputs.app }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  aab:
+    name: AAB ${{ inputs.app }} (signed with the upload key, not uploaded)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: android-release
+    steps:
+      - name: Run only from main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error title=wrong ref::the release AAB is built only from main, not $GITHUB_REF"; exit 1
+          fi
+
+      - name: Require the upload-key secrets and the public app-signer pin (names only)
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          APP_SIGNER_PIN: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
+        run: |
+          missing=""
+          for name in ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=upload signing secrets missing::the android-release environment lacks:$missing. No AAB is built or signed."; exit 1
+          fi
+          if ! printf '%s' "$APP_SIGNER_PIN" | tr 'A-F' 'a-f' | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error title=app signer pin missing::repository variable ANDROID_APP_SIGNER_SHA256 must hold the 64-hex app-signing certificate SHA-256 (public)."; exit 1
+          fi
+
+      - name: Check out the exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Source matches the run commit
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$GITHUB_SHA" ]; then
+            echo "::error title=source mismatch::checked out $actual, the run is $GITHUB_SHA"; exit 1
+          fi
+          echo "SOURCE_SHA=$actual" >> "$GITHUB_ENV"
+
+      - name: App identity and version (pubspec.yaml)
+        run: |
+          set -euo pipefail
+          read -r name code label_version < <(mobile/tool/app-version.sh "${{ inputs.app }}")
+          case "${{ inputs.app }}" in
+            food) app_id=vn.eleven.food ;;
+            ship) app_id=vn.eleven.ship ;;
+          esac
+          {
+            echo "APP_VERSION_NAME=$name"
+            echo "APP_VERSION_CODE=$code"
+            echo "ARTIFACT_BASENAME=$label_version"
+            echo "APP_ID=$app_id"
+          } >> "$GITHUB_ENV"
+          echo "$app_id $name+$code -> $label_version"
+
+      - name: Central endpoints (config/endpoints.json)
+        run: |
+          set -euo pipefail
+          api="$(jq -er .api_origin config/endpoints.json)"
+          device="$(jq -er .device_environment config/endpoints.json)"
+          if ! printf '%s' "$api" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+            echo "::error title=API_BASE_URL::must be a plain https origin (no path, query or credentials)"; exit 1
+          fi
+          printf '%s' "$device" | grep -Eq '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::device_environment is not a valid identifier"; exit 1; }
+          echo "API_BASE_URL=$api" >> "$GITHUB_ENV"
+          echo "DEVICE_ENVIRONMENT=$device" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Dependencies
+        run: |
+          for d in mobile/packages/n11_shared "mobile/${{ inputs.app }}"; do
+            (cd "$d" && flutter pub get) || { echo "::error title=pub get failed in $d::see the log"; exit 1; }
+          done
+
+      - name: Prepare Android project (push must be on for a release)
+        env:
+          FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          FCM_SENDER_ID: ${{ vars.FCM_SENDER_ID }}
+          FCM_APP_ID: ${{ inputs.app == 'ship' && vars.FCM_SHIP_APP_ID || vars.FCM_FOOD_APP_ID }}
+          FCM_API_KEY: ${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}
+        run: |
+          set -euo pipefail
+          DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh "${{ inputs.app }}" | tee "$RUNNER_TEMP/prepare.log"
+          grep -q 'push=on' "$RUNNER_TEMP/prepare.log" || { echo "::error title=push off::a Play release must carry FCM; the FCM identifiers of this app are missing"; exit 1; }
+
+      # The offline map is part of both official apps. A release never ships without the verified Cao Bang package.
+      - name: Offline map package is complete (required)
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, os, sys
+          root = 'mobile/gps-test/app/src/main/assets/caobang'
+          manifest = json.load(open(os.path.join(root, 'manifest.json')))
+          files = manifest['sha256']
+          for name in ('map.geojson', 'style.json'):
+              assert name in files, name + ' missing checksum'
+          for name, digest in files.items():
+              path = os.path.join(root, name)
+              assert os.path.isfile(path), name + ' missing'
+              assert hashlib.sha256(open(path, 'rb').read()).hexdigest() == digest, name + ' differs from the manifest'
+          print('Cao Bang package verified: every file matches its SHA-256')
+          PYCODE
+
+      - name: Build the release bundle (unsigned by us; Flutter signs it with the debug key)
+        run: |
+          set -euo pipefail
+          cd "mobile/${{ inputs.app }}"
+          flutter build appbundle --release \
+            --build-name="$APP_VERSION_NAME" --build-number="$APP_VERSION_CODE" \
+            --dart-define=M14_OFFLINE_MAP=true \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=APP_ID="$APP_ID" \
+            --dart-define=APP_VERSION="$APP_VERSION_NAME" \
+            --dart-define=BUILD_NUMBER="$APP_VERSION_CODE" \
+            --dart-define=CI_RUN="${{ github.run_id }}" \
+            --dart-define=SOURCE_SHA="$SOURCE_SHA" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%MZ)" \
+            --dart-define=SIGNING_MODE="stable" \
+            --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" \
+            --dart-define=BUILD_FLUTTER="$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+          cp build/app/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/unsigned.aab"
+          unzip -l "$RUNNER_TEMP/unsigned.aab" | grep -q 'base/manifest/AndroidManifest.xml' || { echo "::error title=aab malformed::no base manifest"; exit 1; }
+
+      # The only step with the upload key. sign-aab.sh strips the debug signature, signs once with the upload key, and refuses a bundle
+      # whose signer is the app-signing certificate. The app-signing pin is the public repository variable.
+      - name: Sign the bundle with the upload key (single signer)
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_APP_SIGNER_PIN: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
+          ANDROID_UPLOAD_CERT_PIN: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          app_pin="$(printf '%s' "$ANDROID_APP_SIGNER_PIN" | tr 'A-F' 'a-f')"
+          mkdir -p "$RUNNER_TEMP/release"
+          bash mobile/tool/sign-aab.sh "$RUNNER_TEMP/unsigned.aab" "$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab" "$app_pin"
+
+      # Independent checks on the SIGNED bundle, not on what the signing step reported.
+      - name: Verify the signature (one signer) and the merged manifest
+        run: |
+          set -euo pipefail
+          aab="$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab"
+          jarsigner -verify "$aab" | grep -q 'jar verified' || { echo "::error title=aab signature::jarsigner does not verify the bundle"; exit 1; }
+          blocks="$(unzip -Z1 "$aab" | grep -cE '^META-INF/[^/]+\.(RSA|DSA|EC)$' || true)"
+          [ "$blocks" = 1 ] || { echo "::error title=aab signer count::expected one signature block, found $blocks"; exit 1; }
+
+          # bundletool CLI, pinned by version AND SHA-256 (both change together). PR-A BLOCKER: the pin is not decided yet (the download
+          # source needs Owner approval). Until it is set this step fails closed: no unverified tool is ever run.
+          bt_version="1.18.3"
+          bt_sha256=""
+          if [ -z "$bt_sha256" ]; then
+            echo "::error title=bundletool not pinned::the merged-manifest check needs a pinned bundletool $bt_version (SHA-256). No AAB is released until it is pinned."; exit 1
+          fi
+          bt="$RUNNER_TEMP/bundletool.jar"
+          curl -fsSL -o "$bt" "https://github.com/google/bundletool/releases/download/$bt_version/bundletool-all-$bt_version.jar"
+          echo "$bt_sha256  $bt" | sha256sum -c -
+          java -jar "$bt" dump manifest --bundle="$aab" > "$RUNNER_TEMP/release/manifest.xml"
+
+          python3 mobile/tool/check-aab-release.py "${{ inputs.app }}" "$RUNNER_TEMP/release/manifest.xml" "$APP_VERSION_NAME" "$APP_VERSION_CODE"
+
+          # Public upload-certificate fingerprint for the record (certificate digest only).
+          upload_fp="$(keytool -printcert -jarfile "$aab" | grep 'SHA256:' | head -n 1 | sed -E 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')"
+          echo "UPLOAD_CERT_SHA256=$upload_fp" >> "$GITHUB_ENV"
+          echo "aab sha256 $(sha256sum "$aab" | cut -d' ' -f1)"
+
+      - name: Write the release record (public values only)
+        run: |
+          python3 - "$RUNNER_TEMP/release" <<'PY'
+          import hashlib, json, os, sys, xml.etree.ElementTree as ET
+          out = sys.argv[1]
+          aab = os.path.join(out, os.environ['ARTIFACT_BASENAME'] + '.aab')
+          root = ET.parse(os.path.join(out, 'manifest.xml')).getroot()
+          android = '{http://schemas.android.com/apk/res/android}'
+          record = {
+            'app': '${{ inputs.app }}',
+            'package': root.get('package'),
+            'version_name': root.get(android + 'versionName'),
+            'version_code': int(root.get(android + 'versionCode')),
+            'target_sdk': int(root.find('uses-sdk').get(android + 'targetSdkVersion')),
+            'source_sha': os.environ['SOURCE_SHA'],
+            'artifact': os.environ['ARTIFACT_BASENAME'] + '.aab',
+            'aab_sha256': hashlib.sha256(open(aab, 'rb').read()).hexdigest(),
+            'upload_cert_sha256': os.environ['UPLOAD_CERT_SHA256'],
+            'app_signer_pin_sha256': os.environ['ANDROID_APP_SIGNER_SHA256'].lower(),
+            'ci_run': '${{ github.run_id }}',
+            'ci_attempt': '${{ github.run_attempt }}',
+            'uploaded_to_play': False,
+          }
+          with open(os.path.join(out, os.environ['ARTIFACT_BASENAME'] + '-release.json'), 'w') as f:
+              json.dump(record, f, indent=2)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as s:
+              s.write(f"### {record['artifact']}\n")
+              s.write(f"- applicationId `{record['package']}`, versionName `{record['version_name']}`, versionCode `{record['version_code']}`, targetSdk `{record['target_sdk']}`\n")
+              s.write(f"- source `{record['source_sha']}`, sha256 `{record['aab_sha256']}`\n")
+              s.write(f"- upload certificate SHA-256 (public) `{record['upload_cert_sha256']}`\n")
+              s.write('- Not uploaded to Google Play. Owner downloads this artifact and uploads it to Internal testing after approval.\n')
+          PY
+        env:
+          ANDROID_APP_SIGNER_SHA256: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
+
+      - name: Upload the signed bundle and its release record
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_BASENAME }}-aab
+          path: |
+            ${{ runner.temp }}/release/${{ env.ARTIFACT_BASENAME }}.aab
+            ${{ runner.temp }}/release/${{ env.ARTIFACT_BASENAME }}-release.json
+          if-no-files-found: error
+          retention-days: 7
