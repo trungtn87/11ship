@@ -95,15 +95,13 @@ Every subsequent test APK must install as an update over the previous build, pre
 
 Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionName and versionCode (both from the pubspec), and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
 
-### Signing for the official packages — decision still open (Owner)
-Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md).
-- Today's secrets (`ANDROID_TEST_KEYSTORE_*`) are the persistent key used so far. Nothing here creates, replaces or copies a key silently.
-- 11Food and 11Ship **must share one signing certificate**: the peer-endorsement permission between the two apps checks the signer.
-- Owner must choose one of:
-  1. **Keep the current keystore** for the official packages (it stays a non-debug, persistent key; the name `TEST` is historical). Sideload updates keep working; a Play upload must then use Play App Signing with an upload key that differs from this one, and sideloaded APKs will not update the Play-installed copy.
-  2. **Create a dedicated release keystore** (Owner-generated, private backup, GitHub Secrets) and use it for both apps. Same consequence for Play as option 1 unless the same app-signing key is used.
-  3. **Play App Signing**: Google holds the app signing key; the upload key is local. Sideloaded APKs then cannot update Play installs. Choose this only if APK distribution outside Play is no longer needed.
-- Whatever is chosen: no debug key, no throw-away key, and the key, passwords and any service-account file stay out of the repository, logs and reports.
+### Signing for the official packages — Owner decision 14/11/2026
+Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md) (section 0A).
+- **One app-signing key shared by 11Food and 11Ship.** It signs the direct-install APKs and is the key Play App Signing uses. The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
+- **A separate upload key**, never equal to the app-signing key. It signs only the AAB for Play. `mobile/tool/sign-aab.sh` removes the debug signature Flutter leaves in the bundle, signs once with the upload key, and verifies exactly one signer: the upload certificate, different from the APK's app-signing certificate.
+- Without the upload key (pull request or push builds) no `.aab` is produced; the bundle is only compiled and checked. A manual release (*Run workflow*) needs the upload secrets and both public pins `ANDROID_APP_SIGNER_SHA256` and `ANDROID_UPLOAD_CERT_SHA256`, and fails otherwise.
+- Secrets `ANDROID_TEST_KEYSTORE_*` hold the persistent app-signing key in use (the name `TEST` is historical); `ANDROID_UPLOAD_*` hold the upload key. Nothing here creates, replaces or copies a key silently.
+- No debug key, no throw-away key; the keys, passwords and any service-account file stay out of the repository, logs and reports.
 
 If an already installed first APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.
 

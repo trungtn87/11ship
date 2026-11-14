@@ -182,6 +182,7 @@ Nội dung file (`/etc/11ship/android-signers.json`, đường dẫn trong [m01-
 - [ ] **Đăng xuất:** sau đăng xuất không nhận thông báo mới; tài khoản khác đăng nhập trên cùng máy không thấy dữ liệu tài khoản trước.
 - [ ] **Chuyển tài khoản:** dữ liệu cá nhân của tài khoản cũ biến mất khỏi màn hình.
 - [ ] **Quyền và kênh:** từ chối quyền thông báo → app hướng dẫn mở cài đặt; tắt âm → vẫn hiện thông báo, không kêu.
+- [ ] **Gỡ app `.test` cũ:** chỉ sau khi các mục trên đạt và app mới đăng nhập đúng, gỡ (hoặc tắt) 11Food/11Ship `vn.eleven.*.test` còn trên máy. Lý do: app cũ vẫn có icon và cache cục bộ đến khi bị 401 hoặc làm mới lạnh, nên dễ mở nhầm; theo phân tích review, đăng nhập app mới thay binding/session cũ, nên app `.test` không còn dùng được. Ghi giờ đã gỡ.
 - [ ] **Force stop (giới hạn đã biết):** sau khi người dùng buộc dừng app, Android không giao thông báo đến khi người dùng mở app lại. Ghi kết quả, không coi là lỗi.
 
 Ghi kết quả từng mục (đạt/không, giờ). Không chụp màn hình có số điện thoại, token, địa chỉ.

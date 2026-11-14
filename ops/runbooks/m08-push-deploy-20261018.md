@@ -28,7 +28,7 @@ gh secret   set FCM_SHIP_API_KEY  --repo trungtn87/11ship      # gh hỏi giá t
 gh secret   set FCM_FOOD_API_KEY  --repo trungtn87/11ship
 ```
 Đủ 4 giá trị cho mỗi app = APK có push. Không đặt gì = APK không có push (CI cảnh báo `M08 push not in this APK`). Đặt thiếu hoặc sai định dạng = build dừng, báo tên biến.
-Rồi chạy workflow **Mobile APK** (Actions → Mobile APK → Run workflow, nhánh của PR). APK: cùng applicationId, cùng khóa ký, `versionCode` = số lần chạy → **cài đè** được, không cần gỡ.
+Rồi chạy workflow **Mobile APK** (Actions → Mobile APK → Run workflow, nhánh của PR). APK: cùng applicationId, cùng khóa ký, `versionCode` lấy từ `pubspec.yaml` (`version: X.Y.Z+N`, không phải số lần chạy) → **cài đè** được, không cần gỡ, khi N tăng cho bản phân phối mới. Cổng tự động chặn N giảm/trùng khác SHA chưa có (việc của M13.07); hiện kiểm tra bằng tay trước khi phân phối.
 
 ## C. Operator đặt cấu hình VPS (root; release đã được review; **không tự chạy trước khi Owner duyệt**)
 Tiên quyết: migration `1794182400000_create-m08-notifications` đã áp (mục 3 của [vps-production-update-20261014.md](vps-production-update-20261014.md): `db-migrate-remote.js` rồi `02-runtime-grants.sql`; kiểm tra: `sudo -u postgres psql -d ship11_staging -c "\dp app.notification_push_tokens app.notifications"`).
