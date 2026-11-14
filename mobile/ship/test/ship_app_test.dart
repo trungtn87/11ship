@@ -147,9 +147,15 @@ void main() {
     expect(find.textContaining('₫'), findsNothing);
   });
 
-  testWidgets('S01 guest: the receiving area shows no "Bật định vị ngay" (its flow needs a signed-in driver; no dead button)', (WidgetTester tester) async {
+  testWidgets('S01 guest: no "Bật định vị ngay" button (its behaviour is a separate PR); gradient header and receiving area still shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    expect(find.byKey(const Key('home-locate-cta')), findsNothing);
+    expect(find.text('Bật định vị ngay'), findsNothing);
+    // First screen at 390x844: the map panel starts above the bottom navigation (about y 730), so its label is on the first screen.
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getTopLeft(find.byKey(const Key('home-v5-map-panel'))).dy, lessThan(730));
     expect(find.byKey(const Key('ship-home-header')), findsOneWidget);
     expect(find.text('Khu vực nhận đơn'), findsOneWidget);
   });

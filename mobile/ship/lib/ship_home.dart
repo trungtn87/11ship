@@ -179,11 +179,6 @@ class _ShipHomeState extends State<ShipHome> {
             ),
       paused: online.paused,
       busy: online.busy,
-      // Existing location flow only (restores or starts location sharing); it never flips the online switch. Offered only when that flow can
-      // run (signed in with a driver profile): ShipOnline.reconcile does nothing otherwise, so a guest sees no dead button (see Open-blockers).
-      onLocate: widget.session.status == SessionStatus.signedIn && widget.driver?.profile != null
-          ? () => unawaited(online.reconcile(force: true))
-          : null,
       message: online.message,
       // One alert replaces the three separate notices (connection banner, GPS line, problem note): the alert when there is a cause, else the normal
       // connection banner, else nothing.
@@ -280,12 +275,8 @@ class ShipHomeLayout extends StatelessWidget {
     this.connection,
     this.locationView,
     this.radiusExempt = false,
-    this.onLocate,
   });
   final bool? online;
-
-  /// "Bật định vị ngay" inside the receiving-area card; shown only while the area cannot be drawn yet. Null = no button.
-  final VoidCallback? onLocate;
 
   /// True only when the server states the account is exempt from the receiving radius (PLATFORM). The app is not given the driver type today, so
   /// the home leaves it false; the label and the grey mask then never claim an exemption they cannot know.
@@ -429,14 +420,6 @@ class ShipHomeLayout extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: N11Space.gap3),
-                  if (onLocate != null && !shipRadiusCentreUsable(position)) ...<Widget>[
-                    N11Button(
-                      key: const Key('home-locate-cta'),
-                      label: 'Bật định vị ngay',
-                      onPressed: onLocate,
-                    ),
-                    const SizedBox(height: N11Space.gap3),
-                  ],
                   ClipRRect(
                     borderRadius: BorderRadius.circular(N11V5.inputRadius),
                     child: locationView == null
