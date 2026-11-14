@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# NOT WIRED: chỉ dùng từ workflow phát hành thủ công có protected environment, sẽ thêm ở PR sau. No workflow calls this script yet.
 # Signs an Android App Bundle for Google Play with the UPLOAD key only.
 # Flutter's release bundle carries the debug key's signature; that signature is removed first (signature files only, the
 # rest of META-INF stays), then the bundle is signed once with the upload key. The result is verified to carry exactly one

@@ -74,6 +74,8 @@ keytool -genkeypair -v -keystore app-signing.jks -alias app-signing -keyalg RSA 
 
 ## 3. Bốn secret `ANDROID_UPLOAD_*` (ký AAB)
 
+**Chưa có workflow ký AAB trong repo.** Workflow **Mobile APK** (chạy trên PR/push) không đọc các secret này và không ký hay upload AAB. Workflow ký sẽ được thêm ở PR sau, chạy trong **GitHub Environment có protection rules**; các secret này phải đặt **trong environment đó, KHÔNG đặt ở repository secrets**. Tên environment do Owner chọn ở PR đó. Các lệnh dưới đây là mẫu cho environment đã tạo.
+
 | Tên secret | Ý nghĩa | Nhập như thế nào |
 |---|---|---|
 | `ANDROID_UPLOAD_KEYSTORE_BASE64` | Nội dung file `upload-keystore.jks` mã hóa base64 (một dòng) | Tạo file base64 **trên máy Owner** rồi nạp bằng stdin, không dán vào chat |
@@ -87,10 +89,10 @@ Mã hóa base64 trên máy Owner (không in ra màn hình):
 
 Nạp bằng CLI (không đưa giá trị vào lệnh, `gh` đọc từ file):
 ```
-gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --repo trungtn87/11ship < D:\khoa-an-toan\upload.b64
-gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD --repo trungtn87/11ship
-gh secret set ANDROID_UPLOAD_KEY_ALIAS --repo trungtn87/11ship --body 'upload'
-gh secret set ANDROID_UPLOAD_KEY_PASSWORD --repo trungtn87/11ship
+gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env <tên environment> --repo trungtn87/11ship < D:\khoa-an-toan\upload.b64
+gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD --env <tên environment> --repo trungtn87/11ship
+gh secret set ANDROID_UPLOAD_KEY_ALIAS --env <tên environment> --repo trungtn87/11ship --body 'upload'
+gh secret set ANDROID_UPLOAD_KEY_PASSWORD --env <tên environment> --repo trungtn87/11ship
 ```
 Sau đó xóa file `upload.b64` khỏi máy.
 
@@ -109,7 +111,7 @@ Sau đó xóa file `upload.b64` khỏi máy.
 gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex>'
 gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex>'
 ```
-Khi đã đặt, CI **từ chối** APK ký bằng chứng thư khác (không đổi khóa âm thầm) và AAB ký bằng khóa trùng app-signing key.
+Khi đã đặt, CI **từ chối** APK ký bằng chứng thư khác (không đổi khóa âm thầm). `ANDROID_UPLOAD_CERT_SHA256` chưa được workflow nào đọc trong PR này; sẽ được dùng bởi workflow ký AAB ở PR sau.
 
 ## 5. Biến và secret FCM (cấu hình đã được xác định; chưa đặt)
 
@@ -159,13 +161,13 @@ Nội dung file (`/etc/11ship/android-signers.json`, đường dẫn trong [m01-
 
 ## 8. Build lại và kiểm chứng (sau khi có secret và biến)
 
-1. Chạy workflow **Mobile APK** thủ công (*Run workflow*) trên nhánh đã duyệt. Với chế độ thủ công, thiếu secret `ANDROID_UPLOAD_*` sẽ làm job **lỗi** (không tạo AAB chưa ký).
+1. Chạy workflow **Mobile APK** trên nhánh đã duyệt (PR/push hoặc *Run workflow*). APK được ký bằng app-signing key đã ghim; AAB chỉ được biên dịch và kiểm cấu trúc, **không ký, không upload** (chờ workflow ký ở PR sau).
 2. Đối chiếu trong log mỗi app:
    - `package: name='vn.eleven.food'` / `vn.eleven.ship`;
    - `versionName='1.0.0'`, `versionCode='1'` (hoặc số pubspec đã chọn);
-   - dòng `Signer pin: matches ANDROID_APP_SIGNER_SHA256`;
-   - `AAB status: signed with the upload key; upload certificate SHA-256 …` và chứng thư đó khác app-signing key.
-3. Kiểm tra cục bộ APK đã tải (trên máy Owner, không chạy trong repo): `apksigner verify --print-certs <apk>` phải cho đúng dấu vân tay; `jarsigner -verify -verbose -certs <aab>` phải báo ký hợp lệ bởi upload key.
+   - dòng `Signer pin: matches ANDROID_APP_SIGNER_SHA256` (khi biến đã đặt);
+   - dòng tóm tắt `AAB: compiled and structure-checked only; not signed, not uploaded`.
+3. Kiểm tra cục bộ APK đã tải (trên máy Owner, không chạy trong repo): `apksigner verify --print-certs <apk>` phải cho đúng dấu vân tay app-signing key.
 4. Chỉ sau các bước này mới được cài thử trên điện thoại (mục 9).
 
 ## 9. Checklist trên điện thoại (Owner; CI xanh không thay thế)

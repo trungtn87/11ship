@@ -98,9 +98,9 @@ Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first st
 ### Signing for the official packages — Owner decision 14/11/2026
 Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md) (section 0A).
 - **One app-signing key shared by 11Food and 11Ship.** It signs the direct-install APKs and is the key Play App Signing uses. The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
-- **A separate upload key**, never equal to the app-signing key. It signs only the AAB for Play. `mobile/tool/sign-aab.sh` removes the debug signature Flutter leaves in the bundle, signs once with the upload key, and verifies exactly one signer: the upload certificate, different from the APK's app-signing certificate.
-- Without the upload key (pull request or push builds) no `.aab` is produced; the bundle is only compiled and checked. A manual release (*Run workflow*) needs the upload secrets and both public pins `ANDROID_APP_SIGNER_SHA256` and `ANDROID_UPLOAD_CERT_SHA256`, and fails otherwise.
-- Secrets `ANDROID_TEST_KEYSTORE_*` hold the persistent app-signing key in use (the name `TEST` is historical); `ANDROID_UPLOAD_*` hold the upload key. Nothing here creates, replaces or copies a key silently.
+- **A separate upload key**, never equal to the app-signing key. It is meant to sign only the AAB for Play.
+- **Not in the repository yet:** the workflow that signs and uploads the AAB. The **Mobile APK** workflow (PR/push) only compiles the AAB and checks its structure, in a temporary path; it is not signed and not uploaded. `mobile/tool/sign-aab.sh` (removes Flutter's debug signature, signs with the upload key, verifies exactly one signer) is not called by any workflow yet. Both arrive in a later PR, in a release workflow that runs in a GitHub Environment with protection rules; the `ANDROID_UPLOAD_*` secrets belong to that environment, not to repository secrets.
+- Secrets `ANDROID_TEST_KEYSTORE_*` hold the persistent app-signing key in use (the name `TEST` is historical). Nothing here creates, replaces or copies a key silently.
 - No debug key, no throw-away key; the keys, passwords and any service-account file stay out of the repository, logs and reports.
 
 If an already installed first APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.

@@ -1,7 +1,6 @@
 // Regression guard for the Play bundle (AAB) signing path (Codex review, PR #345, HIGH).
 // Behaviour: mobile/tool/sign-aab.sh runs on real bundles built here and signed with throw-away test keys
-// (keytool/jarsigner from the JDK; no secret, no network). Static: the workflow never produces or uploads a .aab
-// without the upload key, and a manual release needs both public pins.
+// (keytool/jarsigner from the JDK; no secret, no network). The workflow guard lives in mobile-apk-aab-guard.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -10,7 +9,6 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const workflow = readFileSync('.github/workflows/mobile-apk.yml', 'utf8');
 const signer = 'mobile/tool/sign-aab.sh';
 const PASS = 'upldpass1';
 
@@ -137,20 +135,4 @@ test('refused without the upload key, naming the variable and never printing a v
     assert.match(r.stderr, /ANDROID_UPLOAD_KEYSTORE_BASE64 is not set/);
     assert.ok(!r.stderr.includes(f.env.ANDROID_UPLOAD_KEYSTORE_PASSWORD));
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
-});
-
-test('the workflow never publishes a .aab without the upload key, and nothing is named UNSIGNED', () => {
-  assert.ok(!/UNSIGNED/.test(workflow), 'no bundle is published as an unsigned .aab');
-  assert.ok(/name: Upload AAB\n\s+if: steps\.aab\.outputs\.signed == 'true'/.test(workflow), 'the AAB upload runs only after signing');
-  // The only place a .aab is written into the workspace is the signing call.
-  assert.equal(workflow.split('"$GITHUB_WORKSPACE/$APK_BASENAME.aab"').length - 1, 1);
-  assert.ok(workflow.includes('"$GITHUB_WORKSPACE/mobile/tool/sign-aab.sh" "$unsigned"'));
-});
-
-test('a manual release requires the upload key and both public pins, and the APK fingerprint reaches the AAB step', () => {
-  for (const name of ['ANDROID_UPLOAD_KEYSTORE_BASE64', 'ANDROID_APP_SIGNER_SHA256 (variable)', 'ANDROID_UPLOAD_CERT_SHA256 (variable)']) {
-    assert.ok(workflow.includes(name), `workflow_dispatch check names ${name}`);
-  }
-  assert.ok(workflow.includes('echo "APK_SIGNER_SHA256=$apk_fp" >> "$GITHUB_ENV"'));
-  assert.ok(workflow.includes('ANDROID_UPLOAD_CERT_PIN: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}'));
 });

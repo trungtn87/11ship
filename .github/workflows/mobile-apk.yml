@@ -66,10 +66,9 @@ jobs:
       ANDROID_TEST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_TEST_KEYSTORE_PASSWORD }}
       ANDROID_TEST_KEY_ALIAS: ${{ secrets.ANDROID_TEST_KEY_ALIAS }}
       ANDROID_TEST_KEY_PASSWORD: ${{ secrets.ANDROID_TEST_KEY_PASSWORD }}
-      # Public certificate fingerprints (SHA-256 of the DER certificate; not secrets). Repository variables set by the Owner. When set, CI refuses any
-      # signer that differs: the app-signing key (direct-install APKs, the same certificate as Play App Signing) and the upload key (AAB).
+      # Public certificate fingerprint (SHA-256 of the DER certificate; not a secret). Repository variable set by the Owner. When set, CI refuses an APK
+      # signed with a different certificate (the app-signing key, the same certificate as Play App Signing).
       ANDROID_APP_SIGNER_PIN: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
-      ANDROID_UPLOAD_CERT_PIN: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Require the persistent signing secrets
@@ -464,8 +463,6 @@ jobs:
             echo "Signer pin: ANDROID_APP_SIGNER_SHA256 is not set (signer not pinned yet)" >> "$GITHUB_STEP_SUMMARY"
           fi
           rm -f "$work/test.jks"
-          # The AAB step (same job) compares the upload certificate with this APK's app-signing certificate.
-          echo "APK_SIGNER_SHA256=$apk_fp" >> "$GITHUB_ENV"
           sha256sum "$out"
           printf '{"app":"%s","package_name":"%s","signer_sha256":"%s","version_code":%s,"source_sha":"%s"}\n' \
             "${{ matrix.server }}" "${{ matrix.app_id }}" "$apk_fp" "$APP_VERSION_CODE" "$SOURCE_SHA" > "signer-${{ matrix.app }}.json"
@@ -478,28 +475,11 @@ jobs:
             echo "- apk sha256: \`$(sha256sum "$out" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Google Play needs an Android App Bundle (AAB). It is built from the same commit and release identity, then signed by
-      # mobile/tool/sign-aab.sh with the UPLOAD key only (Flutter's debug signature is removed first; exactly one signer is verified).
-      # Without the upload key (pull request or push builds) the AAB is only compiled and structure-checked, and no .aab is produced.
-      # A manual release (workflow_dispatch) needs the upload key and both public pins, and fails otherwise. Nothing is uploaded to Google Play here.
+      # Google Play needs an Android App Bundle (AAB). This workflow only compiles it from the same commit and checks its structure, in a temporary
+      # path. It is NOT signed and NOT uploaded here: signing with the upload key belongs to a later release workflow in a protected environment.
       - name: Android App Bundle (AAB) for Play
-        id: aab
-        env:
-          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
-          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            missing=""
-            [ -n "$ANDROID_UPLOAD_KEYSTORE_BASE64" ] || missing="$missing ANDROID_UPLOAD_* secrets"
-            [ -n "$ANDROID_APP_SIGNER_PIN" ] || missing="$missing ANDROID_APP_SIGNER_SHA256 (variable)"
-            [ -n "$ANDROID_UPLOAD_CERT_PIN" ] || missing="$missing ANDROID_UPLOAD_CERT_SHA256 (variable)"
-            if [ -n "$missing" ]; then
-              echo "::error title=release identity missing::a manual Play build needs:$missing; nothing is produced"; exit 1
-            fi
-          fi
           cd mobile/${{ matrix.app }}
           flutter build appbundle --release \
             --build-name="$APP_VERSION_NAME" --build-number="$APP_VERSION_CODE" \
@@ -514,27 +494,12 @@ jobs:
             --dart-define=SIGNING_MODE="stable" \
             --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" \
             --dart-define=BUILD_FLUTTER="unknown"
-          unsigned="$RUNNER_TEMP/unsigned-$APK_BASENAME.aab"
-          cp "build/app/outputs/bundle/release/app-release.aab" "$unsigned"
+          built="build/app/outputs/bundle/release/app-release.aab"
+          tmp="$RUNNER_TEMP/compiled-$APK_BASENAME.aab"
+          cp "$built" "$tmp"
           # Structure check: a bundle must hold the base module's manifest.
-          unzip -l "$unsigned" | grep -q 'base/manifest/AndroidManifest.xml' || { echo "::error title=aab malformed::no base manifest"; exit 1; }
-          if [ -z "$ANDROID_UPLOAD_KEYSTORE_BASE64" ]; then
-            echo "AAB: compiled and structure-checked only; no .aab produced (this build has no upload key)" >> "$GITHUB_STEP_SUMMARY"
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          bash "$GITHUB_WORKSPACE/mobile/tool/sign-aab.sh" "$unsigned" "$GITHUB_WORKSPACE/$APK_BASENAME.aab" "$APK_SIGNER_SHA256"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-          echo "AAB: signed with the upload key only (one signer, different from the APK app-signing certificate)" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload AAB
-        if: steps.aab.outputs.signed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.app }}-aab
-          path: ${{ env.APK_BASENAME }}.aab
-          if-no-files-found: error
-          retention-days: 30
+          unzip -l "$tmp" | grep -q 'base/manifest/AndroidManifest.xml' || { echo "::error title=aab malformed::no base manifest"; exit 1; }
+          echo "AAB: compiled and structure-checked only; not signed, not uploaded" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
