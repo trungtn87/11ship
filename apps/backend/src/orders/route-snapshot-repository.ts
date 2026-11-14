@@ -22,6 +22,10 @@ interface RawRouteSnapshot {
   geometry: string;
 }
 
+function toRow(row: RawRouteSnapshot | undefined): RouteSnapshotRow | undefined {
+  return row === undefined ? undefined : { id: row.id, routeVersion: row.route_version, distanceM: row.distance_m, durationS: row.duration_s, geometry: row.geometry };
+}
+
 /** True when a stored snapshot is exactly the leg a fresh routing answer gives: same engine version, same metres, same time, same road. */
 export function routeSnapshotMatchesLeg(row: RouteSnapshotRow, leg: RouteLeg): boolean {
   return row.routeVersion === leg.routeVersion && row.distanceM === leg.distanceM && row.durationS === leg.seconds && row.geometry === leg.geometry;
@@ -65,8 +69,16 @@ export class RouteSnapshotRepository {
       `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid FOR KEY SHARE`,
       [id],
     );
-    const row = result.rows[0];
-    return row === undefined ? undefined : { id: row.id, routeVersion: row.route_version, distanceM: row.distance_m, durationS: row.duration_s, geometry: row.geometry };
+    return toRow(result.rows[0]);
+  }
+
+  /** P6-3: the snapshot with this id for a READ-ONLY view (no row lock); undefined when it does not exist. Nothing is stored or changed here. */
+  async read(context: TransactionContext, id: string): Promise<RouteSnapshotRow | undefined> {
+    const result = await context.query<RawRouteSnapshot>(
+      `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid`,
+      [id],
+    );
+    return toRow(result.rows[0]);
   }
 
   /** Retention (D6-3): removes at most 200 snapshots older than the interval that nothing references. Returns how many were removed. */
