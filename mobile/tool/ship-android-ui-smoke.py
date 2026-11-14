@@ -109,13 +109,15 @@ try:
     for tab, title, name in [
         ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
         ('Đơn hàng', 'Chưa có đơn hàng', '03-orders'),
-        ('Thu nhập', 'Chưa có dữ liệu thu nhập', '04-income'),
-        ('Tài khoản', 'Tạo tài khoản', '05-account'),
+        # S03 guest: the process & benefits card (Owner 14/11), no income figures.
+        ('Thu nhập', 'Quy trình & quyền lợi tài xế 11Ship', '04-income'),
+        # S05 guest: the outlined "Đăng ký làm shipper" action (registration of an account; approval is separate).
+        ('Tài khoản', 'Đăng ký làm shipper', '05-account'),
     ]:
         tap(tab)
         wait(title, scroll=tab == 'Thu nhập')
         capture(name)
-    tap('Tạo tài khoản')
+    tap('Đăng ký làm shipper')
     wait('Đăng ký shipper')
     capture('06-register-step1')
     adb('shell', 'input', 'keyevent', '4')
