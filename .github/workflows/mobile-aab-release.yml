@@ -198,16 +198,13 @@ jobs:
           blocks="$(unzip -Z1 "$aab" | grep -cE '^META-INF/[^/]+\.(RSA|DSA|EC)$' || true)"
           [ "$blocks" = 1 ] || { echo "::error title=aab signer count::expected one signature block, found $blocks"; exit 1; }
 
-          # bundletool CLI, pinned by version AND SHA-256 (both change together). PR-A BLOCKER: the pin is not decided yet (the download
-          # source needs Owner approval). Until it is set this step fails closed: no unverified tool is ever run.
-          bt_version="1.18.3"
-          bt_sha256=""
-          if [ -z "$bt_sha256" ]; then
-            echo "::error title=bundletool not pinned::the merged-manifest check needs a pinned bundletool $bt_version (SHA-256). No AAB is released until it is pinned."; exit 1
-          fi
-          bt="$RUNNER_TEMP/bundletool.jar"
-          curl -fsSL -o "$bt" "https://github.com/google/bundletool/releases/download/$bt_version/bundletool-all-$bt_version.jar"
-          echo "$bt_sha256  $bt" | sha256sum -c -
+          # bundletool CLI 1.18.3, from the fixed release tag (never "latest"). Pinned by SHA-256 of the official asset; it matches the
+          # GitHub release digest sha256:a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29 (checked 14/11/2026).
+          # Fail closed: a download error or a checksum mismatch stops the step before java runs anything.
+          set -euo pipefail
+          bt="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl -fsSL -o "$bt" https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $bt" | sha256sum -c - || { echo "::error title=bundletool checksum::the downloaded bundletool does not match the pinned SHA-256; nothing was run"; exit 1; }
           java -jar "$bt" dump manifest --bundle="$aab" > "$RUNNER_TEMP/release/manifest.xml"
 
           python3 mobile/tool/check-aab-release.py "${{ inputs.app }}" "$RUNNER_TEMP/release/manifest.xml" "$APP_VERSION_NAME" "$APP_VERSION_CODE"

@@ -159,6 +159,64 @@ function deployJobViolations(block) {
   return out;
 }
 
+// Owner-approved narrow exception (STORE-01 PR-A, #344): the manual Play AAB release may declare environment android-release.
+// Only this exact file, job id, environment and shape pass; everything else in the file is held to the strictest rules below.
+const AAB_RELEASE = { file: 'mobile-aab-release.yml', job: 'aab', environment: 'android-release', runsOn: 'ubuntu-24.04', ifRef: "github.ref == 'refs/heads/main'" };
+const AAB_JOB_KEYS = ['name', 'if', 'runs-on', 'timeout-minutes', 'environment', 'steps'];
+
+// The lines under a top-level key (up to the next line at column 0).
+function blockAfter(text, key) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex(l => new RegExp(`^${key}:\\s*(#.*)?$`).test(l));
+  if (start < 0) return null;
+  const body = [];
+  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i += 1) body.push(lines[i]);
+  return body;
+}
+
+// The keys directly under a block (indent 2). null when anything is not a plain key (flow style, list, scalar), so it fails closed.
+function childKeys(body) {
+  if (body === null) return null;
+  const keys = [];
+  for (const line of body) {
+    if (/^\s*(#.*)?$/.test(line)) continue;
+    const indent = line.match(/^ */)[0].length;
+    if (indent !== 2) continue;
+    const m = /^ {2}([A-Za-z_][A-Za-z0-9_-]*):\s*(#.*)?$/.exec(line);
+    if (!m) return null;
+    keys.push(m[1]);
+  }
+  return keys;
+}
+
+function aabReleaseViolations(text, jobs) {
+  const f = AAB_RELEASE.file;
+  const out = [];
+  const add = reason => out.push(`${f}: ${reason}`);
+  const names = Object.keys(jobs);
+  if (names.length !== 1 || names[0] !== AAB_RELEASE.job) add(`must have exactly the job ${AAB_RELEASE.job} (found ${names.join(', ')})`);
+  if (/^---/m.test(text)) add('must be a single YAML document');
+  // Anchors, aliases and merge keys can reuse or hide a value (an environment, a job, a trigger): none are allowed.
+  if (/:\s*[&*][A-Za-z0-9_-]/.test(text) || /^\s*-\s*[&*][A-Za-z0-9_-]/m.test(text) || /<<\s*:/.test(text)) add('YAML anchors, aliases and merge keys are not allowed');
+  if ((text.match(/^\s*environment\s*:/gm) ?? []).length !== 1) add('exactly one environment declaration is allowed');
+  const triggers = childKeys(blockAfter(text, 'on'));
+  if (JSON.stringify(triggers) !== JSON.stringify(['workflow_dispatch'])) add(`the only trigger is workflow_dispatch (found ${JSON.stringify(triggers)})`);
+  if (/:\s*write(-all)?\b|write-all/.test(text)) add('no write permission');
+  if (/\bgh\s+(workflow|api|run)\b|workflow_run|repository_dispatch|workflow_call|deploy-vps|diagnose-vps|ci-gate|\bself-hosted\b/i.test(text)) add('must not trigger or call another workflow, or use a self-hosted runner');
+  if (!text.includes('if [ "$GITHUB_REF" != "refs/heads/main" ]; then')) add('a step must refuse any ref other than main');
+  const job = jobs[AAB_RELEASE.job];
+  if (job !== undefined) {
+    const props = jobProps(job);
+    const extra = Object.keys(props).filter(k => !AAB_JOB_KEYS.includes(k));
+    if (extra.length) add(`job keys outside the allowlist (a reusable workflow, secrets or a second environment would show here): ${extra.join(', ')}`);
+    if ((props.environment ?? '').trim() !== AAB_RELEASE.environment) add(`environment must be exactly ${AAB_RELEASE.environment}`);
+    if ((props.if ?? '').trim() !== AAB_RELEASE.ifRef) add(`the job must be restricted to ${AAB_RELEASE.ifRef}`);
+    if ((props['runs-on'] ?? '').trim() !== AAB_RELEASE.runsOn) add(`runs-on must be ${AAB_RELEASE.runsOn} (no self-hosted runner)`);
+    out.push(...unsafeReferences(job).map(r => `${f}:${AAB_RELEASE.job} ${r}`));
+  }
+  return out;
+}
+
 function topologyViolations(file, text) {
   const { jobs, outside } = splitWorkflow(text);
   const out = [];
@@ -178,6 +236,8 @@ function topologyViolations(file, text) {
     if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['diagnose'])) out.push(`${file} must have exactly the job diagnose (found ${Object.keys(jobs).join(', ')})`);
     const allow = READ_ONLY_ALLOWLIST[file];
     if (jobs.diagnose !== undefined) { try { assertPinnedReadOnly(file, 'diagnose', jobs.diagnose, allow); } catch (error) { out.push(error.message); } }
+  } else if (file === AAB_RELEASE.file) {
+    out.push(...aabReleaseViolations(text, jobs));
   } else {
     for (const [name, block] of Object.entries(jobs)) {
       bad(name, unsafeReferences(block));
@@ -187,6 +247,112 @@ function topologyViolations(file, text) {
   }
   return out;
 }
+
+// ---- AAB release exception: the one accepted pair, and every variant that must fail ----------------
+const AAB_FILE = 'mobile-aab-release.yml';
+const aabReal = () => readFileSync(join(WORKFLOWS, AAB_FILE), 'utf8').replace(/\r\n/g, '\n');
+const aabMutate = (from, to) => {
+  const text = aabReal();
+  assert.ok(text.includes(from), `mutation anchor exists: ${JSON.stringify(from)}`);
+  return text.replace(from, to);
+};
+// A parser that refuses the text (fail-closed throw) also counts as the guard catching it.
+const failsWith = (file, text, pattern) => {
+  let v;
+  try { v = topologyViolations(file, text); } catch (error) { v = [String(error.message)]; }
+  assert.ok(v.length > 0, `expected a violation for ${file}`);
+  assert.ok(v.some(x => pattern.test(x)), `expected ${pattern} in ${JSON.stringify(v)}`);
+};
+
+test('AAB exception: the exact pair (mobile-aab-release.yml:aab, android-release, main, dispatch only) passes', () => {
+  assert.deepEqual(topologyViolations(AAB_FILE, aabReal()), []);
+});
+
+test('AAB exception: any other file name keeps the old rule (environment forbidden)', () => {
+  for (const name of ['mobile-aab-release.yaml', 'mobile-aab-release-copy.yml', 'Mobile-AAB-Release.yml', 'mobile-aab.yml']) {
+    failsWith(name, aabReal(), /declares an environment/);
+  }
+});
+
+test('AAB exception: a renamed or extra job, or a second job with the environment, fails', () => {
+  failsWith(AAB_FILE, aabMutate('\n  aab:\n', '\n  release:\n'), /must have exactly the job aab/);
+  // a second job that also declares the environment, even when the first one is correct
+  failsWith(AAB_FILE, aabReal() + '\n  second:\n    runs-on: ubuntu-24.04\n    environment: android-release\n    steps:\n      - run: echo hi\n', /must have exactly the job aab|exactly one environment/);
+});
+
+test('AAB exception: a different environment name fails, however it is spelled', () => {
+  for (const env of ['vps-production', 'android-release-x', 'Android-Release', '"android-release"', "'android-release'", 'ANDROID-RELEASE']) {
+    failsWith(AAB_FILE, aabMutate('environment: android-release', `environment: ${env}`), /environment must be exactly android-release|vps-production/);
+  }
+});
+
+test('AAB exception: any trigger besides workflow_dispatch fails (push, pull_request, schedule, flow style)', () => {
+  for (const trig of ['push', 'pull_request', 'pull_request_target', 'schedule', 'workflow_call', 'release', 'repository_dispatch']) {
+    failsWith(AAB_FILE, aabMutate('on:\n  workflow_dispatch:', `on:\n  ${trig}:\n  workflow_dispatch:`), /only trigger is workflow_dispatch/);
+  }
+  failsWith(AAB_FILE, aabMutate('on:\n  workflow_dispatch:', 'on: [push, workflow_dispatch]'), /only trigger is workflow_dispatch/);
+  failsWith(AAB_FILE, aabMutate('on:\n  workflow_dispatch:', 'on: workflow_dispatch'), /only trigger is workflow_dispatch/);
+});
+
+test('AAB exception: the main-branch restriction must be in the job itself, not only in a step', () => {
+  failsWith(AAB_FILE, aabMutate("    if: github.ref == 'refs/heads/main'\n", ''), /restricted to github\.ref == 'refs\/heads\/main'/);
+  failsWith(AAB_FILE, aabMutate("    if: github.ref == 'refs/heads/main'", "    if: github.ref != ''"), /restricted to/);
+  failsWith(AAB_FILE, aabMutate("    if: github.ref == 'refs/heads/main'", "    if: always() && github.ref == 'refs/heads/main'"), /restricted to/);
+  // the step guard is the second layer: removing it fails too
+  failsWith(AAB_FILE, aabMutate('if [ "$GITHUB_REF" != "refs/heads/main" ]; then', 'if false; then'), /refuse any ref other than main/);
+});
+
+test('AAB exception: runner must be the GitHub-hosted ubuntu image, never a self-hosted (VPS) runner', () => {
+  failsWith(AAB_FILE, aabMutate('runs-on: ubuntu-24.04', 'runs-on: [self-hosted, M00-VPS-01]'), /runs-on must be ubuntu-24\.04|self-hosted|VPS/);
+  failsWith(AAB_FILE, aabMutate('runs-on: ubuntu-24.04', 'runs-on: ${{ inputs.app }}'), /runs-on must be/);
+});
+
+test('AAB exception: a reusable workflow call or any extra job key (uses, secrets, needs, with) fails', () => {
+  failsWith(AAB_FILE, aabMutate('    environment: android-release\n', '    environment: android-release\n    uses: ./.github/workflows/deploy-vps.yml\n'), /job keys outside the allowlist.*uses|deploy-vps/);
+  failsWith(AAB_FILE, aabMutate('    environment: android-release\n', '    environment: android-release\n    secrets: inherit\n'), /job keys outside the allowlist|secrets: inherit/);
+  failsWith(AAB_FILE, aabMutate('    environment: android-release\n', '    environment: android-release\n    needs: [deploy]\n'), /job keys outside the allowlist/);
+});
+
+test('AAB exception: YAML anchors, aliases and merge keys cannot reuse or hide a value', () => {
+  failsWith(AAB_FILE, aabMutate('environment: android-release', 'environment: &e android-release'), /anchors, aliases/);
+  failsWith(AAB_FILE, aabMutate('runs-on: ubuntu-24.04', 'runs-on: *e'), /anchors, aliases/);
+  failsWith(AAB_FILE, aabMutate('    steps:\n', '    <<: {environment: vps-production}\n    steps:\n'), /anchors, aliases|vps-production/);
+});
+
+test('AAB exception: a second YAML document cannot add a job or an environment', () => {
+  failsWith(AAB_FILE, aabReal() + '\n---\njobs:\n  deploy:\n    environment: vps-production\n', /single YAML document|vps-production|jobs/);
+});
+
+test('AAB exception: no VPS, SSH, deploy-script, workflow-call or secrets-context reference anywhere in the file', () => {
+  const inserts = [
+    ['      - run: ssh deploy@host true\n', /mentions "\bssh\b"/],
+    ['      - run: scp file deploy@host:/x\n', /mentions/],
+    ['      - run: rsync -a . host:/x\n', /mentions/],
+    ['      - env:\n          X: ${{ secrets.VPS_SSH_KEY }}\n        run: true\n', /mentions "VPS_"/i],
+    ['      - run: node scripts/deploy/vps-update.mjs\n', /calls scripts\/deploy\/vps-update/],
+    ['      - run: node scripts/deploy/check-app-compat.mjs --live\n', /check-app-compat\.mjs without exactly --static/],
+    ['      - run: gh workflow run deploy-vps.yml\n', /must not trigger or call another workflow/],
+    ['      - run: gh api repos/x/y/actions/workflows\n', /must not trigger or call another workflow/],
+    ['      - uses: ./.github/actions/deploy\n', /mentions/],
+    ['      - env: ${{ toJSON(secrets) }}\n        run: true\n', /passes the whole secrets context/],
+  ];
+  for (const [line, pattern] of inserts) {
+    const text = aabReal().replace('\n    steps:\n', `\n    steps:\n${line}`);
+    assert.notEqual(text, aabReal(), 'insertion point exists');
+    failsWith(AAB_FILE, text, pattern);
+  }
+});
+
+test('AAB exception: a write permission or a workflow_run/repository_dispatch trigger cannot be added quietly', () => {
+  failsWith(AAB_FILE, aabMutate('permissions:\n  contents: read', 'permissions:\n  contents: write'), /no write permission/);
+  failsWith(AAB_FILE, aabMutate('permissions:\n  contents: read', 'permissions: write-all'), /no write permission/);
+  failsWith(AAB_FILE, aabMutate('on:\n  workflow_dispatch:', 'on:\n  workflow_run:\n    workflows: [Mobile APK]\n  workflow_dispatch:'), /only trigger is workflow_dispatch/);
+});
+
+test('AAB exception: the exception is keyed to the file; the same pair under another job id in another file never passes', () => {
+  // the same job text placed in a different workflow file is an ordinary workflow: the environment is forbidden there
+  failsWith('mobile-apk.yml', aabReal(), /declares an environment/);
+});
 
 test('closed topology: only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose reach the VPS; deploy is gated; every other workflow is clean', () => {
   const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));

@@ -69,19 +69,35 @@ test('nothing uploads to Google Play, publishes a release or creates a tag', () 
   assert.equal(/'uploaded_to_play': False/.test(workflow), true, 'the release record says it was not uploaded');
 });
 
-test('bundletool runs only when pinned: the step fails closed on an empty checksum and verifies before it runs', () => {
-  assert.match(workflow, /bt_version="1\.18\.3"/);
-  assert.match(workflow, /if \[ -z "\$bt_sha256" \]; then/, 'an unpinned tool stops the release');
-  const refuse = workflow.indexOf('if [ -z "$bt_sha256" ]; then');
+test('bundletool 1.18.3 is pinned: fixed release-tag URL, the official SHA-256, verified before java runs, fail closed', () => {
+  const url = 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar';
+  const pin = 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29';
+  assert.ok(workflow.includes(`curl -fsSL -o "$bt" ${url}`), 'download from the fixed tag');
+  assert.doesNotMatch(workflow, /releases\/latest|bundletool-all-latest/, 'never "latest"');
+  assert.ok(workflow.includes(`echo "${pin}  $bt" | sha256sum -c -`), 'the official checksum is checked on the downloaded file');
+  assert.ok(workflow.includes('set -euo pipefail'), 'the step stops on any error');
+  const download = workflow.indexOf(`curl -fsSL -o "$bt" ${url}`);
   const verify = workflow.indexOf('sha256sum -c -');
   const run = workflow.indexOf('java -jar "$bt" dump manifest');
-  assert.ok(refuse > 0 && verify > refuse && run > verify, 'refuse, then verify the checksum, then run the jar');
+  assert.ok(download > 0 && verify > download && run > verify, 'download, then verify the checksum, then run the jar');
 });
 
 test('the artifact is short-lived and named by the release version', () => {
   assert.match(workflow, /name: \$\{\{ env\.ARTIFACT_BASENAME \}\}-aab/);
   assert.match(workflow, /retention-days: 7/);
   assert.match(workflow, /python3 mobile\/tool\/check-aab-release\.py/, 'the merged manifest is checked before the artifact is uploaded');
+});
+
+test('the bundletool checksum gate really fails closed: a file that is not the official jar is refused', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bt-pin-'));
+  try {
+    const fake = join(dir, 'bundletool-all-1.18.3.jar');
+    writeFileSync(fake, 'not the official bundletool');
+    const pin = 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29';
+    const r = spawnSync('bash', ['-c', `set -euo pipefail; echo "${pin}  ${fake}" | sha256sum -c - || exit 1; echo RAN`], { encoding: 'utf8' });
+    assert.notEqual(r.status, 0);
+    assert.ok(!r.stdout.includes('RAN'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ---- the merged-manifest checker, on fixtures ----
