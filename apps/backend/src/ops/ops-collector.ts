@@ -13,13 +13,14 @@ import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactRe
 import { DiscordClient, OPS_DISCORD_CLIENT, buildDiscordBody } from './ops-discord';
 import { OpsEngine } from './ops-engine';
 import { OpsIncidentRepository } from './ops-incident-repository';
-import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateSustained } from './ops-monitors';
+import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateStaleHigh, evaluateStaleNormal, evaluateSustained } from './ops-monitors';
 import { OpsReleaseRepository } from './ops-release-repository';
 import { OpsRepository } from './ops-repository';
 import { OpsSettingsService } from './ops-settings-service';
 import { OPS_SYSTEM_PROBE, OpsSystemProbe } from './ops-system-probe';
 import { OpsTelemetryRepository } from './ops-telemetry-repository';
 import { OpsSettings, defaultSettings } from './ops-settings';
+import { STALE_METRIC } from '../notifications/notification-stale';
 import { CHECK_VPS, snapshotValue } from './ops-vps';
 
 /** Probe liveness: no report for this long (after at least one) is its own warning. The probe reports every few minutes (ops/external-probe). */
@@ -108,6 +109,7 @@ export class OpsCollector {
       await this.#step('https', () => this.#https());
       await this.#step('probe', () => this.#externalProbe());
       await this.#step('notifications', () => this.#notificationsCheck());
+      await this.#step('m08_stale_event', () => this.#staleEvents());
       await this.#step('m14', () => this.#m14());
       await this.#step('clients', () => this.#clientBursts());
     } finally {
@@ -416,6 +418,17 @@ export class OpsCollector {
         title: 'Thông báo nội bộ bị tồn',
         impact: 'Thông báo trong app (hộp thư, nhắc việc) có thể đến chậm',
       });
+    });
+  }
+
+  /** P6-9: the consumer writes one metric point per dropped / late event; Operations looks at the last 30 minutes, once per check. */
+  async #staleEvents(): Promise<void> {
+    const windowMinutes = 30;
+    await this.transactions.withTransaction(async (context) => {
+      const since = Date.now() - windowMinutes * 60_000;
+      const count = async (key: string): Promise<number> => (await this.repo.recentMetrics(context, key, since, 400)).length;
+      await this.engine.observe(context, evaluateStaleNormal({ dropped: await count(STALE_METRIC.dropped), deliveredLate: await count(STALE_METRIC.deliveredLate), windowMinutes }));
+      await this.engine.observe(context, evaluateStaleHigh({ deliveredLateHigh: await count(STALE_METRIC.deliveredLateHigh), windowMinutes }));
     });
   }
 
