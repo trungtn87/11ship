@@ -13,6 +13,17 @@ test('the Mobile APK workflow never references the upload-key secrets or pins', 
   assert.equal(workflow.includes('ANDROID_UPLOAD_CERT_SHA256'), false, 'no upload certificate variable in the PR/push workflow');
 });
 
+test('the test APK is pinned only by ANDROID_TEST_SIGNER_SHA256; the Production pin never reaches the PR/push workflow (STORE-01 PR-D)', () => {
+  // Lead decision: ANDROID_APP_SIGNER_SHA256 belongs to the AAB/Production release; the test APK has its own variable.
+  assert.equal(workflow.includes('ANDROID_APP_SIGNER_SHA256'), false, 'no Production pin variable in the Mobile APK workflow');
+  assert.equal(workflow.includes('ANDROID_APP_SIGNER_PIN'), false, 'no Production pin env name in the Mobile APK workflow');
+  assert.ok(workflow.includes('ANDROID_TEST_SIGNER_PIN: ${{ vars.ANDROID_TEST_SIGNER_SHA256 }}'), 'the test pin comes from ANDROID_TEST_SIGNER_SHA256');
+  // The pin stays optional: unset means "not pinned yet", never a failed build (current behaviour kept).
+  assert.ok(workflow.includes('if [ -n "${ANDROID_TEST_SIGNER_PIN:-}" ]; then'), 'the check runs only when the test pin is set');
+  assert.ok(workflow.includes('ANDROID_TEST_SIGNER_SHA256 is not set (test signer not pinned yet)'), 'an unset pin is reported, not failed');
+  assert.ok(workflow.includes('[ "$apk_fp" = "$ANDROID_TEST_SIGNER_PIN" ]'), 'a set pin must equal the APK signer exactly');
+});
+
 test('no upload-artifact step publishes a bundle (.aab)', () => {
   // A path: line that names an .aab file anywhere in the workflow is an artifact publication of a bundle.
   const aabPaths = lines.filter(l => /^\s*path:\s*.*\.aab\b/.test(l));

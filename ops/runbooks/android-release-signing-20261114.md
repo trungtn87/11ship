@@ -43,7 +43,8 @@ Quy tắc không đổi: 11Food và 11Ship **phải cùng một app-signing key*
 **Hệ quả với VPS:** vì signer không đổi, file allowlist VPS chỉ thay tên package `vn.eleven.*.test` → `vn.eleven.*`, giữ dấu vân tay trên.
 
 **Biến ghim (công khai):**
-- `ANDROID_APP_SIGNER_SHA256` = `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3`
+- `ANDROID_TEST_SIGNER_SHA256` = `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3` (chữ ký **TEST** của APK CI, chỉ ghim APK test; không phải chữ ký Production)
+- `ANDROID_APP_SIGNER_SHA256` = app-signing Production, đặt khi Play cấp chứng thư (mục 4); không đặt bằng giá trị TEST ở trên
 - `ANDROID_UPLOAD_CERT_SHA256` = dấu vân tay upload key mới (mục 2, sau khi tạo)
 
 ## 1. Kiểm tra trước khi tạo khóa (Owner, không ghi đè gì)
@@ -104,11 +105,15 @@ Sau đó xóa file `upload.b64` khỏi máy.
 
 | Biến | Giá trị | Lấy từ đâu |
 |---|---|---|
-| `ANDROID_APP_SIGNER_SHA256` | 64 ký tự hex của app-signing certificate | Mục 1 (keytool) hoặc log "Signer pin" sau lần build đầu |
-| `ANDROID_UPLOAD_CERT_SHA256` | 64 ký tự hex của upload certificate | `keytool -exportcert -keystore upload-keystore.jks -alias upload \| sha256sum` (Git Bash) |
+| `ANDROID_TEST_SIGNER_SHA256` | 64 ký tự hex của chữ ký TEST (APK CI). Ghim workflow **Mobile APK** | Log "Signer pin" hoặc artifact `android-signers.json` của Mobile APK |
+| `ANDROID_APP_SIGNER_SHA256` | 64 ký tự hex của app-signing Production. Bắt buộc cho workflow **AAB** release, không dùng cho APK test | Play Console *Ký ứng dụng* (Owner xác nhận trên console) |
+| `ANDROID_UPLOAD_CERT_SHA256` | 64 ký tự hex của upload certificate (tùy chọn) | `keytool -exportcert -keystore upload-keystore.jks -alias upload \| sha256sum` (Git Bash) |
+
+Hai biến chữ ký không được trùng vai trò: `ANDROID_TEST_SIGNER_SHA256` chỉ kiểm APK test; `ANDROID_APP_SIGNER_SHA256` chỉ kiểm AAB Production. Nếu chưa đặt biến TEST, Mobile APK không kiểm pin và vẫn chạy (chỉ ghi dòng "not set" vào tóm tắt).
 
 ```
-gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex>'
+gh variable set ANDROID_TEST_SIGNER_SHA256 --repo trungtn87/11ship --body '6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3'
+gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex của app-signing Production>'
 gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex>'
 ```
 Khi đã đặt, CI **từ chối** APK ký bằng chứng thư khác (không đổi khóa âm thầm). `ANDROID_UPLOAD_CERT_SHA256` chưa được workflow nào đọc trong PR này; sẽ được dùng bởi workflow ký AAB ở PR sau.
@@ -144,12 +149,12 @@ Nội dung file (`/etc/11ship/android-signers.json`, đường dẫn trong [m01-
 
 ```json
 {
-  "FOOD": { "package_name": "vn.eleven.food", "signer_sha256": "<ANDROID_APP_SIGNER_SHA256>" },
-  "SHIP": { "package_name": "vn.eleven.ship", "signer_sha256": "<ANDROID_APP_SIGNER_SHA256>" }
+  "FOOD": { "package_name": "vn.eleven.food", "signer_sha256": "<dấu vân tay APK đã ký>" },
+  "SHIP": { "package_name": "vn.eleven.ship", "signer_sha256": "<dấu vân tay APK đã ký>" }
 }
 ```
 
-- **Nguồn đúng:** artifact `android-signers.json` của lần chạy **Mobile APK** đã ký bằng khóa đã chọn. Không sửa tay dấu vân tay; lấy nguyên giá trị đã được CI xác nhận khớp `ANDROID_APP_SIGNER_SHA256`.
+- **Nguồn đúng:** artifact `android-signers.json` của lần chạy **Mobile APK** đã ký bằng khóa đã chọn. Không sửa tay dấu vân tay. Với bản test, giá trị phải khớp `ANDROID_TEST_SIGNER_SHA256`; với Production, chỉ dùng app-signing Production theo lệnh riêng của Owner (mục 7 của runbook gốc, chưa thực hiện).
 - **Không** dùng upload certificate ở đây: upload key không ký APK cài trực tiếp.
 - Các giá trị `vn.eleven.*.test` và dấu vân tay khóa `.test` cũ **phải bỏ** khỏi file này; nếu để lại, APK mới sẽ bị từ chối khi đăng nhập thiết bị.
 - Thứ tự khi Owner duyệt (không làm trước): (a) sao lưu file hiện tại; (b) thay nội dung như trên, quyền `640 root:ship11`; (c) kiểm tra JSON; (d) khởi động lại service theo quy trình VPS đã duyệt. Mục này không được tự thực hiện.
@@ -161,11 +166,11 @@ Nội dung file (`/etc/11ship/android-signers.json`, đường dẫn trong [m01-
 
 ## 8. Build lại và kiểm chứng (sau khi có secret và biến)
 
-1. Chạy workflow **Mobile APK** trên nhánh đã duyệt (PR/push hoặc *Run workflow*). APK được ký bằng app-signing key đã ghim; AAB chỉ được biên dịch và kiểm cấu trúc, **không ký, không upload** (chờ workflow ký ở PR sau).
+1. Chạy workflow **Mobile APK** trên nhánh đã duyệt (PR/push). APK test được ký bằng khóa TEST và ghim bằng `ANDROID_TEST_SIGNER_SHA256` (nếu đã đặt); AAB chỉ được biên dịch và kiểm cấu trúc, **không ký, không upload**. Bản Production do workflow **Mobile AAB release (Play)** tạo, không phải Mobile APK.
 2. Đối chiếu trong log mỗi app:
    - `package: name='vn.eleven.food'` / `vn.eleven.ship`;
    - `versionName='1.0.0'`, `versionCode='1'` (hoặc số pubspec đã chọn);
-   - dòng `Signer pin: matches ANDROID_APP_SIGNER_SHA256` (khi biến đã đặt);
+   - dòng `Signer pin: matches ANDROID_TEST_SIGNER_SHA256` (khi biến TEST đã đặt);
    - dòng tóm tắt `AAB: compiled and structure-checked only; not signed, not uploaded`.
 3. Kiểm tra cục bộ APK đã tải (trên máy Owner, không chạy trong repo): `apksigner verify --print-certs <apk>` phải cho đúng dấu vân tay app-signing key.
 4. Chỉ sau các bước này mới được cài thử trên điện thoại (mục 9).
