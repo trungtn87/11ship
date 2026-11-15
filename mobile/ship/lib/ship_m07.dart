@@ -19,7 +19,7 @@ Map<String, dynamic> _pin(double lat, double lng, String label, int color) => <S
 
 /// The M14 offline map (Cao Bằng) when this build enables it; otherwise null and the screens say there is no map.
 M07MapBuilder? shipMapBuilder() => kM14Map
-    ? (BuildContext context, List<M07MapPin> pins) => M14OfflineMap(pins: <Map<String, dynamic>>[for (final M07MapPin p in pins) _pin(p.lat, p.lng, p.label, p.color)])
+    ? (BuildContext context, List<M07MapPin> pins, [List<List<double>> route = const <List<double>>[]]) => M14OfflineMap(pins: <Map<String, dynamic>>[for (final M07MapPin p in pins) _pin(p.lat, p.lng, p.label, p.color)], route: route)
     : null;
 
 /// Lets the Shipper pin the drop-off on the M14 map; a tap outside the covered area is ignored.

@@ -1526,6 +1526,8 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
             ended: o.ended,
             who: 'shipper',
+            route: o.route,
+            legacyReferenceOnly: o.legacyReferenceOnly,
           ),
         ),
       if (_chat != null) _chatSection(_chat!),

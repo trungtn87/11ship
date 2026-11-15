@@ -9,6 +9,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+export 'src/polyline6.dart';
+
 /// True when this build carries the Cao Bằng package and the app turned the map on (`--dart-define=M14_OFFLINE_MAP=true`). The build only sets the flag
 /// when the asset is present, so a screen never opens a map that cannot load.
 const bool kM14MapEnabled = bool.fromEnvironment('M14_OFFLINE_MAP');

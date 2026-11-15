@@ -251,10 +251,16 @@ String _orderQuoteReason(String? reason) => switch (reason) {
 /// recorded — only while a Shipper holds the delivery ([location] is null otherwise and nothing live is drawn). When this build has no map, the points are
 /// said in words; a position is never faked and a route is never replaced by a straight line.
 class OrderMapCard extends StatelessWidget {
-  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who, this.framed = true});
+  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who, this.framed = true, this.route, this.legacyReferenceOnly = false});
 
   /// False inside a collapsible section, which already is the card: the map is then drawn without a second frame and title.
   final bool framed;
+
+  /// The stored road of the Order (P6-3): drawn as-is, never recomputed. Null = no line and no distance from a route.
+  final OrderRoute? route;
+
+  /// An Order created before route snapshots: says in words that there is no road to show; its old distance and fee stay as they were.
+  final bool legacyReferenceOnly;
 
   final double? pickupLat;
   final double? pickupLng;
@@ -277,7 +283,7 @@ class OrderMapCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (location != null)
-          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who)
+          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who, route: route?.points ?? const <List<double>>[])
         else
           _frame(
             Column(
@@ -288,7 +294,7 @@ class OrderMapCard extends StatelessWidget {
                 if (nothing)
                   const ReasonNote('Chưa có ghim điểm giao nên chưa vẽ được bản đồ.')
                 else if (mapBuilder != null)
-                  SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, pins)))
+                  SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, pins, route?.points ?? const <List<double>>[])))
                 else
                   for (final M07MapPin p in pins) Text('${p.label}: ${p.lat.toStringAsFixed(5)}, ${p.lng.toStringAsFixed(5)}', style: N11Text.body),
                 const SizedBox(height: N11Space.gap2),
@@ -296,8 +302,23 @@ class OrderMapCard extends StatelessWidget {
               ],
             ),
           ),
+        if (route != null)
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap2),
+            child: Text('Đường đi đã lưu: ≈ ${RouteDistance.text(route!.distanceM)}${_durationText(route!.durationS)}', key: const Key('m10-route-summary'), style: N11Text.body),
+          )
+        else if (legacyReferenceOnly)
+          const Padding(
+            padding: EdgeInsets.only(top: N11Space.gap2),
+            child: ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
+          ),
       ],
     );
+  }
+
+  static String _durationText(int? seconds) {
+    if (seconds == null || seconds <= 0) return '';
+    return ' · khoảng ${(seconds / 60).ceil()} phút';
   }
 
   Widget _frame(Widget child) => framed ? N11Card(child: child) : child;
