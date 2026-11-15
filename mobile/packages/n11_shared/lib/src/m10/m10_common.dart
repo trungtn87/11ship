@@ -283,7 +283,7 @@ class OrderMapCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (location != null)
-          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who)
+          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who, route: route?.points ?? const <List<double>>[])
         else
           _frame(
             Column(

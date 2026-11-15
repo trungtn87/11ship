@@ -100,4 +100,41 @@ void main() {
     expect(find.byKey(const Key('m10-map')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('while the Shipper shares a live position the stored road is still drawn, with the position marker', (WidgetTester tester) async {
+    List<List<double>>? road;
+    List<M07MapPin>? pins;
+    await tester.pumpWidget(MaterialApp(
+      theme: buildN11Theme(),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: OrderMapCard(
+            framed: false,
+            pickupLat: 22.66,
+            pickupLng: 106.25,
+            dropoffLat: 22.67,
+            dropoffLng: 106.26,
+            location: LocationView(lat: 22.663, lng: 106.252, recordedAt: DateTime.utc(2026, 11, 15, 6), ageSeconds: 5, freshness: Freshness.live),
+            ended: false,
+            who: 'shipper',
+            route: _route(),
+            mapBuilder: (BuildContext context, List<M07MapPin> p, [List<List<double>> r = const <List<double>>[]]) {
+              pins = p;
+              road = r;
+              return const SizedBox(height: 10);
+            },
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    // The stored road is drawn (not an empty line) while the position card is shown.
+    expect(find.byKey(const Key('m07-location-card')), findsOneWidget);
+    expect(road, isNotNull);
+    expect(road!.length, 3, reason: 'the stored road must reach the map on the live-position path');
+    // The position marker (the Shipper) is among the pins, at the shared position.
+    expect(pins!.any((M07MapPin p) => p.label == 'shipper' && (p.lat - 22.663).abs() < 1e-9 && (p.lng - 106.252).abs() < 1e-9), isTrue);
+    expect(pins!.any((M07MapPin p) => p.label == 'Điểm giao'), isTrue);
+    expect(tester.takeException(), isNull);
+  });
 }

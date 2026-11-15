@@ -584,12 +584,15 @@ typedef M07PinPickerBuilder = Widget Function(BuildContext context, {required vo
 
 /// The latest known position with the time it was recorded. Old or lost positions are labelled, never presented as live.
 class LocationCard extends StatelessWidget {
-  const LocationCard({super.key, required this.location, this.mapBuilder, this.pins = const <M07MapPin>[], this.who = 'Shipper'});
+  const LocationCard({super.key, required this.location, this.mapBuilder, this.pins = const <M07MapPin>[], this.who = 'Shipper', this.route = const <List<double>>[]});
 
   final LocationView? location;
   final M07MapBuilder? mapBuilder;
   final List<M07MapPin> pins;
   final String who;
+
+  /// The stored road to draw under the position (`[lat, lng]` points); empty = no line.
+  final List<List<double>> route;
 
   @override
   Widget build(BuildContext context) {
@@ -614,7 +617,7 @@ class LocationCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: N11Space.gap2),
-          if (mapBuilder != null) SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, all)))
+          if (mapBuilder != null) SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, all, route)))
           else Text('${loc.lat.toStringAsFixed(5)}, ${loc.lng.toStringAsFixed(5)}', style: N11Text.body),
           const SizedBox(height: N11Space.gap2),
           Text('Cập nhật lúc ${m07Hm(loc.recordedAt)} · ${m07Ago(loc.ageSeconds)}', key: const Key('m07-location-time'), style: N11Text.caption),
