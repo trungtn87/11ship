@@ -1,5 +1,5 @@
 {
-  "_about": "Golden shape of the release job (mobile-aab-release.yml:aab). Any workflow step change must change this file in the same review. Compared by ci-gate-policy.test.mjs.",
+  "_about": "Golden shape of the release job (mobile-aab-release.yml:aab). Any workflow step change must change this file in the same review. scriptPins mirrors mobile/release/script-pins.sha256 (SHA-256 of each release script, LF content). Compared by ci-gate-policy.test.mjs.",
   "steps": [
     {
       "name": "Run only from main",
@@ -22,15 +22,15 @@
     },
     {
       "name": "Source matches the run commit",
-      "run": "sha256:ff981e2376cbda8050a8eeb6d868ecf4b960e89ee83931187bf092e297f6b787"
+      "run": "sha256:66978ff09fe8da8dd3db7ff1e2ef3a4fb24be2c9978eaabb86aa8cd2b67a0129"
     },
     {
       "name": "App identity and version (pubspec.yaml)",
-      "run": "sha256:67e386d3a02d1c15e96afb4edd89556f98fe086e8527e38b9de3f6b2dea933e7"
+      "run": "sha256:8aa063377183b36be6eea702b698496e15469361c641dfb0ec55ceb5e786fd02"
     },
     {
       "name": "Central endpoints (config/endpoints.json)",
-      "run": "sha256:f33f4adad8c9fda201f47169ece35c646b373331af690dccd85614d7c406c1f4"
+      "run": "sha256:b00d0ef4f1d0c3d2f211c625c85d00758fc259ee8d5e9919bad7a778f4435d5c"
     },
     {
       "uses": "actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3",
@@ -63,7 +63,7 @@
         "FCM_APP_ID": "${{ inputs.app == 'ship' && vars.FCM_SHIP_APP_ID || vars.FCM_FOOD_APP_ID }}",
         "FCM_API_KEY": "${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}"
       },
-      "run": "sha256:0a5b46446f7692208d042ac9a4c3225f2b76da631d9c49ef9599b29f6218de2a"
+      "run": "sha256:500049b4d84aad637ad6a306dd085beeb6542241d943893d7d3f58fbfa1c5bc6"
     },
     {
       "name": "Offline map package is complete (required)",
@@ -81,15 +81,15 @@
         "ANDROID_UPLOAD_KEY_ALIAS": "${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}",
         "ANDROID_UPLOAD_KEY_PASSWORD": "${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}"
       },
-      "run": "sha256:a2a28ddf85b437412c5b7a7f14a4399c237249c3ab714b8ff8bee48f658fb409"
+      "run": "sha256:cf12ff2ca881364ec6803e66cbee6c929ca81b98a500d4ae80f849f092705db4"
     },
     {
       "name": "Verify the signature (one signer) and the merged manifest",
-      "run": "sha256:7f4daed96d909eb5d0f6a0b2596f869cb3cd928e044d0e311a49a2d0641c9652"
+      "run": "sha256:b36bd1ee6547b68824f9bb17e1fbca5ae84dc7e90d4d00b5f1a8c4d105a7d356"
     },
     {
       "name": "Write the release record (public values only)",
-      "run": "sha256:c00fee67b2dcc7c81293d9479b5d280ad42c89d836e01ecad4d8494aba280f9e"
+      "run": "sha256:87404f35777c26b097596ddce349f885deeba656cc38fd690a4eb0b0bdf4f33c"
     },
     {
       "name": "Upload the signed bundle and its release record",
@@ -102,5 +102,11 @@
       }
     }
   ],
-  "signRun": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/release\"\napp_pin='${{ vars.ANDROID_APP_SIGNER_SHA256 }}'\napp_pin=\"$(printf '%s' \"$app_pin\" | tr 'A-F' 'a-f')\"\nANDROID_APP_SIGNER_PIN=\"$app_pin\" ANDROID_UPLOAD_CERT_PIN='${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}' \\\n  bash mobile/tool/sign-aab.sh \"$RUNNER_TEMP/unsigned.aab\" \"$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab\" \"$app_pin\"\n"
+  "signRun": "set -euo pipefail\nsha256sum -c mobile/release/script-pins.sha256 || { echo \"::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change\"; exit 1; }\nmkdir -p \"$RUNNER_TEMP/release\"\napp_pin='${{ vars.ANDROID_APP_SIGNER_SHA256 }}'\napp_pin=\"$(printf '%s' \"$app_pin\" | tr 'A-F' 'a-f')\"\nANDROID_APP_SIGNER_PIN=\"$app_pin\" ANDROID_UPLOAD_CERT_PIN='${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}' \\\n  bash mobile/tool/sign-aab.sh \"$RUNNER_TEMP/unsigned.aab\" \"$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab\" \"$app_pin\"\n",
+  "scriptPins": {
+    "mobile/tool/app-version.sh": "b6c780e161cba0bbed4e41bc0f0e77ecd97498c363352975d23e180b567226bd",
+    "mobile/tool/prepare-android.sh": "97242ece8bb15661e4e5ec36b77a603cdedfbfaef6eec2bf8a9d91615774ae50",
+    "mobile/tool/sign-aab.sh": "99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc",
+    "mobile/tool/check-aab-release.py": "020b32a483e3c9f6f01286d2ac46d569b67273de52186a852e42320a8aee0e87"
+  }
 }
