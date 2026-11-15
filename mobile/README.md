@@ -83,6 +83,7 @@ Binder join rules (CI): `./gradlew :app:testDebugUnitTest`. **Not run by Claude 
 
 ## Signing (once)
 Secrets `ANDROID_TEST_KEYSTORE_BASE64`, `ANDROID_TEST_KEYSTORE_PASSWORD`, `ANDROID_TEST_KEY_ALIAS`, `ANDROID_TEST_KEY_PASSWORD`. Create them with `mobile/tool/create-test-keystore.sh` and keep a private backup of the key file.
+Optional pin of the TEST APK: repository variable `ANDROID_TEST_SIGNER_SHA256` (the TEST certificate fingerprint). When set, Mobile APK refuses a different signer. It is separate from `ANDROID_APP_SIGNER_SHA256`, which pins the Production AAB release only.
 ### Owner decision — 2026-10-12: update in place
 
 Every subsequent test APK must install as an update over the previous build, preserving application data and avoiding uninstall/reinstall. The Owner downloads the APK and taps **Update** manually; an automatic updater is not required.
