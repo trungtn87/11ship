@@ -678,7 +678,7 @@ export class AdminFeedbackService {
       reconsiderations: reconsiderations.map((r) => ({ ...reconsiderationView(r), request_id: r.requestId, requested_by: r.requestedBy })),
       order: c.orderId === null ? null : { order_id: c.orderId, code: c.relatedCode },
       // The delivery as the Administration reads it (assignments, timeline, goods custody, fee) without the recipient's contact.
-      delivery: delivery === undefined ? null : await this.deliveryViews.forAdmin(context, delivery, false, []),
+      delivery: delivery === undefined ? null : await this.deliveryViews.forAdmin(context, delivery, false, [], false),
       chain: chain.map((d) => ({ delivery_id: d.deliveryId, code: d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs) })),
       review: review === undefined ? null : { review_id: review.reviewId, source: review.kind === 'SHIPPER_BY_CUSTOMER' ? 'CUSTOMER' : 'SHOP', stars: review.stars, comment: review.comment, visibility: review.visibility, created_at: iso(review.createdAtMs) },
       adjustments: adjustments.map((a) => ({

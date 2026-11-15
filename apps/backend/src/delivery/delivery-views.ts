@@ -499,7 +499,7 @@ export class DeliveryViews {
   }
 
   /** The Admin's view. The contact is filled only when the caller was allowed to see it. */
-  async forAdmin(context: TransactionContext, d: DeliveryRow, canContact: boolean, can: readonly string[]): Promise<JsonObject> {
+  async forAdmin(context: TransactionContext, d: DeliveryRow, canContact: boolean, can: readonly string[], withRoute = false): Promise<JsonObject> {
     const nowMs = await freshClockMs(context);
     const assignments = await this.deliveries.listAssignments(context, d.deliveryId);
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
@@ -566,8 +566,9 @@ export class DeliveryViews {
         next_delivery: recall === undefined ? null : { delivery_id: recall.deliveryId, code: recall.code },
       },
       assignments: assignmentViews,
-      // P6-3: the road follows the same rule as the drop-off above (`canContact`), so the Admin scope is unchanged.
-      ...(await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, canContact, d.source !== 'DIRECT')),
+      // P6-3: only the Admin delivery detail asks for the route (withRoute). Other Admin readers, such as the complaint detail, get no route key and read no snapshot.
+      // The road follows the same rule as the drop-off above (`canContact`), so the Admin scope is unchanged.
+      ...(withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, canContact, d.source !== 'DIRECT') : {}),
       timeline: (await this.deliveries.listEvents(context, d.deliveryId, 300)).map(eventView),
       incident:
         incident === undefined
