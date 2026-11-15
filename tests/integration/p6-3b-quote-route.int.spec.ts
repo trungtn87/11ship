@@ -18,6 +18,9 @@ describe('P6-3b quote route: preview fee.route from the quote snapshot', () => {
   let addedPolicy = false;
   // The fake routing answer. `fail` makes M14 answer 500 (no route for the quote).
   let answer: { km: number; version: string; shape: string; fail: boolean } = { km: 2.5, version: 'valhalla-3.9.1/motorcycle-shortest/test-p63b-a', shape: '', fail: false };
+  // Answers handed out before `answer`, one per M14 call (empty in every test but the one that counts calls), and the number of M14 calls received.
+  let queued: Array<{ km: number; version: string; shape: string }> = [];
+  let routerCalls = 0;
   const VERSION_A = 'valhalla-3.9.1/motorcycle-shortest/test-p63b-a';
   const VERSION_B = 'valhalla-3.9.1/motorcycle-shortest/test-p63b-b';
   const SHAPE_A = encodePolyline6([{ lat: 21.0, lng: 105.82 }, { lat: 21.01, lng: 105.83 }, { lat: 21.02, lng: 105.84 }]);
@@ -28,13 +31,15 @@ describe('P6-3b quote route: preview fee.route from the quote snapshot', () => {
     answer.shape = SHAPE_A;
     router = http.createServer((request, response) => {
       request.resume();
+      routerCalls += 1;
       response.setHeader('content-type', 'application/json');
       if (answer.fail) {
         response.statusCode = 500;
         response.end('{}');
         return;
       }
-      response.end(JSON.stringify({ trip: { summary: { length: answer.km, time: 420 }, legs: [{ shape: answer.shape }] }, route_version: answer.version }));
+      const reply = queued.shift() ?? answer;
+      response.end(JSON.stringify({ trip: { summary: { length: reply.km, time: 420 }, legs: [{ shape: reply.shape }] }, route_version: reply.version }));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
@@ -107,6 +112,32 @@ describe('P6-3b quote route: preview fee.route from the quote snapshot', () => {
     expect(route).toEqual({ status: 'ROUTE', distance_m: 2500, duration_s: 420, route_version: VERSION_A, geometry: SHAPE_A });
     expect(route.distance_m).toBe(quote.distance_m);
     expect(await snapshotRow(id)).toMatchObject({ route_version: route.route_version, distance_m: route.distance_m, duration_s: route.duration_s, geometry: route.geometry });
+  });
+
+  it('one preview asks M14 once and fee.route is the stored snapshot byte for byte, never a second answer', async () => {
+    // The first M14 answer is the road the quote stores. A second answer (a route measured again) is a different road, so it can be told apart.
+    answer = { km: 2.5, version: VERSION_A, shape: SHAPE_A, fail: false };
+    queued = [
+      { km: 2.5, version: VERSION_A, shape: SHAPE_A },
+      { km: 3.9, version: VERSION_B, shape: SHAPE_B },
+    ];
+    const callsBefore = routerCalls;
+    try {
+      const fee = await preview(newAddress());
+      const quote = fee.fee as Json;
+      // Exactly one M14 call for the preview, as before P6-3b: fee.route adds no call, and the second answer is never asked for.
+      expect(routerCalls - callsBefore).toBe(1);
+      expect(queued).toHaveLength(1);
+      expect(quote).toMatchObject({ status: 'PRICED', distance_m: 2500 });
+      // The route of the preview equals the stored row the quote points to, field by field, and not the second answer.
+      const row = await snapshotRow(String(quote.route_snapshot_id));
+      expect(row).toMatchObject({ route_version: VERSION_A, distance_m: 2500, duration_s: 420, geometry: SHAPE_A });
+      expect(quote.route).toEqual({ status: 'ROUTE', distance_m: row?.distance_m, duration_s: row?.duration_s, route_version: row?.route_version, geometry: row?.geometry });
+      expect((quote.route as Json).geometry).not.toBe(SHAPE_B);
+    } finally {
+      queued = [];
+      answer = { km: 2.5, version: VERSION_A, shape: SHAPE_A, fail: false };
+    }
   });
 
   it('no snapshot (the route could not be measured) gives fee.route null and no route_snapshot_id', async () => {
