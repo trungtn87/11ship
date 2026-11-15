@@ -1,190 +1,171 @@
-# Runbook — khóa ký Android phát hành, Play App Signing và cấu hình FCM (14/11/2026)
+# Runbook — ký Android, phát hành Play và cấu hình FCM (cập nhật 15/11/2026, STORE-01 PR-C)
 
-**Trạng thái:** chuẩn bị. Chưa tạo khóa, chưa đặt secret/biến, chưa đổi VPS, chưa tải lên Google Play, chưa phân phối APK. Mọi bước ghi "Owner" chỉ được làm trên máy Owner.
-**Không đưa khóa, mật khẩu, file keystore, base64, service-account JSON vào chat, repo, PR hay log.** Chỉ dùng dấu vân tay SHA-256 (công khai) để đối chiếu.
+**Trạng thái:** tài liệu. Runbook này không tạo khóa, không đặt secret/biến, không chạy workflow ký, không upload Google Play, không deploy VPS. Mọi bước ghi "Owner" làm trên máy hoặc console của Owner.
+**Không đưa khóa, mật khẩu, file keystore, base64, service-account JSON, token hay google-services.json vào chat, repo, PR hay log.** Chỉ dùng dấu vân tay SHA-256 (công khai) để đối chiếu.
 
-Liên quan: [mobile/README.md](../../mobile/README.md) mục "Signing for the official packages", [M08 runbook](m08-push-deploy-20261018.md), [mobile-apk.yml](../../.github/workflows/mobile-apk.yml).
-
----
-
-## 0. Ba loại khóa, không được lẫn
-
-| Khóa | Dùng để | Ai giữ | Nằm ở đâu hiện nay |
-|---|---|---|---|
-| **App-signing key** (khóa ký ứng dụng) | Ký APK cài trực tiếp. Bản Play được Google ký lại bằng chính khóa này khi đăng ký Play App Signing, nên APK trực tiếp và bản Play có cùng signer và cài đè được cho nhau | Google (nếu Play App Signing giữ) hoặc Owner (nếu đã đăng ký khóa tự cung cấp) | Secret hiện tại `ANDROID_TEST_KEYSTORE_*`, `ANDROID_TEST_KEY_ALIAS`, `ANDROID_TEST_KEY_PASSWORD` (tên lịch sử, khóa này là khóa bền đang dùng) |
-| **Upload key** (khóa tải lên) | Ký **AAB** trước khi tải lên Play. Tách khỏi app-signing key; Google có thể reset nếu mất | Owner | Chưa có. Sẽ là 4 secret `ANDROID_UPLOAD_*` |
-| Service-account key (Firebase) | Backend gửi FCM | Owner → VPS | Không liên quan tới ký APK |
-
-Quy tắc không đổi: 11Food và 11Ship **phải cùng một app-signing key** (kiểm tra peer trong `N11PeerPolicy` và Binder so signer). Upload key **không bao giờ** được là app-signing key.
+Liên quan: [mobile/README.md](../../mobile/README.md) (mục Signing), [mobile/release/README.md](../../mobile/release/README.md) (hồ sơ versionCode), [mobile-apk.yml](../../.github/workflows/mobile-apk.yml) (APK test), [mobile-aab-release.yml](../../.github/workflows/mobile-aab-release.yml) (AAB Play), [release versioning](../../docs/process/release-versioning-20261019.md), [M08 runbook](m08-push-deploy-20261018.md).
 
 ---
 
-## 0A. Quyết định đã chốt (Owner, 14/11/2026)
+## 0. Ba môi trường, không được lẫn
 
-- Versions: **1.0.0+1** cho cả hai app (versionName `1.0.0`, versionCode `1`). Owner xác nhận chưa từng tải APK/AAB của hai package này lên Play.
-- **Một app-signing key dùng chung** cho 11Food và 11Ship. Play App Signing dùng chính khóa đó. Giữ nguyên kiểm tra cùng signer (peer check); không đổi quy tắc.
-- **Upload key riêng**, không trùng app-signing key. Chỉ dùng để ký AAB.
-- Không tải lên Play, không rollout, không phân phối APK khi chưa có lệnh Owner.
+| Môi trường | Ai tạo / ở đâu | Chữ ký | Package | Dùng để làm gì |
+|---|---|---|---|---|
+| **APK test CI** | Workflow **Mobile APK** (chạy trên PR/push) | Khóa **TEST** bền, secret `ANDROID_TEST_KEYSTORE_*`. **Đây là chữ ký test, KHÔNG phải chữ ký Production** | `vn.eleven.food`, `vn.eleven.ship` | Cài thử trên máy Owner. Cài đè giữa các bản test (giữ dữ liệu) |
+| **Play Production** | Workflow **Mobile AAB release (Play)** (chỉ dispatch từ `main`, environment `android-release`) tạo AAB ký bằng **upload key**. Google Play ký lại bằng **app-signing key** khi phát hành | Upload key (ký AAB gửi Play); app-signing key do Play App Signing giữ hoặc đã đăng ký | Cùng package ID như trên | Owner tải AAB từ artifact và tải lên **Internal testing** thủ công |
+| **VPS** (backend) | Không ký. Backend chỉ chấp nhận APK có chữ ký nằm trong allowlist signer | Không có khóa ký | — | Kiểm signer của APK khi đăng nhập thiết bị (allowlist `android-signers.json`) |
 
-**Keystore hiện có có dùng làm app-signing key không?** Kết luận: **có, với điều kiện Owner xác minh bản sao lưu.**
+Quy tắc:
+- Chữ ký TEST của CI **không** được ghim, đăng ký hay dùng làm chữ ký Production. Mọi tài liệu cũ coi khóa TEST là khóa Production đã bị xóa.
+- **Upload key không bao giờ trùng app-signing key.** `sign-aab.sh` và workflow đều từ chối khi trùng.
+- 11Food và 11Ship **phải cùng một app-signing key** (peer check trong `N11PeerPolicy` và Binder so signer).
+- Chữ ký Production khác chữ ký TEST. Máy đang cài APK TEST **không cài đè được** bản Production cùng package: phải gỡ bản TEST rồi cài bản Production (xem mục 9).
 
-| Kiểm tra | Kết quả |
+## 1. Điều đã kiểm chứng từ repo và điều Owner phải xác nhận
+
+| Mục | Trạng thái |
 |---|---|
-| Signer hiện tại (công khai, từ artifact `android-signers.json` của run Mobile APK thành công `43470719462`) | SHA-256 `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3`, **giống nhau cho cả hai app** |
-| Loại và độ dài khóa (theo `create-test-keystore.sh`, 13/10/2026) | RSA 2048, PKCS12, hạn 10000 ngày (tới khoảng 2053). Đạt yêu cầu tối thiểu RSA 2048 của Play cho khóa ký tự cung cấp |
-| Tên chứng thư | `CN=11Ship test, O=11Ship`. Chỉ là nhãn; Play không kiểm tra, nhưng có thể đổi thành khóa mới nếu Owner muốn nhãn sạch |
-| Đã dùng cho APK `.test` | Có. Package khác nên không xung đột; vẫn là khóa bền đã được duyệt |
-| **Bản sao lưu file `.jks`** | **Chưa xác nhận.** Secret GitHub không đọc lại được. Nếu chỉ còn secret, không thể đăng ký Play App Signing bằng PEPK và không khôi phục được khi mất |
-| **Mật khẩu đã từng hiện trong terminal** | Script 13/10 in mật khẩu ra màn hình. Coi như đã lộ trên máy Owner; cân nhắc đổi mật khẩu keystore (`keytool -storepasswd`, không đổi khóa) rồi cập nhật secret |
-| Trạng thái Play App Signing | **Chưa xác nhận.** Nếu Play đã có khóa ký khác cho package, phải dừng và báo lại |
+| Workflow AAB release có trên `main` (PR-A #351): dispatch, chỉ `main`, environment `android-release`, ký bằng `sign-aab.sh`, kiểm chữ ký và manifest, không upload Play | **Đã có trong repo** |
+| Hồ sơ versionCode đã nộp Play theo package, cổng kiểm trong `check-aab-release.py` (PR-B #357) | **Có trong PR-B**, chỉ được cập nhật theo mục 8 |
+| Environment `android-release` có required reviewers; secrets `ANDROID_UPLOAD_*` và các biến | **Owner xác nhận trên console** (repo không chứng minh được) |
+| Play Console: app đã đăng ký, chứng thư app-signing và upload, track đang dùng | **Owner xác nhận trên console** |
+| Firebase: app Android `vn.eleven.food` / `vn.eleven.ship` đã đăng ký, giá trị FCM | **Owner xác nhận trên console** |
 
-**Điều kiện để dùng khóa này:** (1) file `.jks` có bản sao lưu riêng, và `keytool -list -v` trên bản sao cho đúng SHA-256 ở trên; (2) Play Console không giữ chứng thư nào khác cho hai package. Nếu một điều kiện không đạt, không dùng khóa này và báo lại trước khi tạo khóa mới.
+## 2. Hai biến ghim (công khai) và một điểm cần quyết định trước
 
-**Hệ quả với VPS:** vì signer không đổi, file allowlist VPS chỉ thay tên package `vn.eleven.*.test` → `vn.eleven.*`, giữ dấu vân tay trên.
+Hai dấu vân tay SHA-256 của chứng thư, không phải bí mật:
 
-**Biến ghim (công khai):**
-- `ANDROID_APP_SIGNER_SHA256` = `6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3`
-- `ANDROID_UPLOAD_CERT_SHA256` = dấu vân tay upload key mới (mục 2, sau khi tạo)
+| Chứng thư | Biến | Ai dùng |
+|---|---|---|
+| **App-signing certificate** (chữ ký Production sau Play App Signing) | `ANDROID_APP_SIGNER_SHA256` (repository variable, 64 hex, bắt buộc cho AAB) | `mobile-aab-release.yml` bắt buộc có; `sign-aab.sh` từ chối AAB có signer trùng giá trị này |
+| **Upload certificate** (khóa ký AAB gửi Play) | `ANDROID_UPLOAD_CERT_SHA256` (repository variable, 64 hex, **tùy chọn**) | `sign-aab.sh` chỉ đối chiếu khi biến được đặt |
 
-## 1. Kiểm tra trước khi tạo khóa (Owner, không ghi đè gì)
+Lấy giá trị:
+- Upload certificate, trên máy Owner: `keytool -exportcert -keystore <upload.jks> -alias <alias> | sha256sum` (Git Bash). Bỏ dấu cách, dùng chữ thường.
+- App-signing certificate: **Owner xác nhận trên console** (Play Console → *Ký ứng dụng*, ghi dấu vân tay App signing key certificate). Nếu Play chưa đăng ký, không đặt biến này.
 
-1. **Keystore hiện có:** nếu Owner còn file keystore đã dùng để tạo secret `ANDROID_TEST_*` (script `mobile/tool/create-test-keystore.sh`, ngày 13/10/2026), lấy dấu vân tay của nó trên máy Owner:
-   ```
-   keytool -list -v -keystore <đường dẫn file .jks> -alias <ANDROID_TEST_KEY_ALIAS>
-   ```
-   Ghi dòng `SHA256:` (chỉ ghi chữ số/hex, bỏ dấu hai chấm, chữ thường). Đây là dấu vân tay của app-signing key hiện tại.
-2. **Trên Play Console** (chỉ cho các package đã tạo trên Play): *Thiết lập → Ký ứng dụng* (App integrity / App signing). Ghi dấu vân tay **App signing key certificate** và **Upload key certificate** nếu đã có. Nếu Play đã có chứng thư khác với khóa hiện tại, **không** dùng khóa hiện tại làm app-signing key; báo lại cho Claude Lead trước khi làm tiếp.
-3. **Ghi nhận:** package `vn.eleven.food` và `vn.eleven.ship` đã từng tải build nào lên Play chưa, và versionCode cao nhất (xem mục 6).
+**Điểm cần Claude Lead quyết định trước khi đặt `ANDROID_APP_SIGNER_SHA256` (chưa xử lý trong PR này):** cùng một tên biến đang được `mobile-apk.yml` dùng làm ghim cho APK TEST (dòng ghim: APK phải mang đúng chứng thư trong biến). APK test ký bằng khóa TEST nên sẽ **không khớp** nếu biến chứa chữ ký Production, và Mobile APK sẽ FAIL. Hai hướng để Lead chọn (cần sửa workflow ở PR riêng, không gộp vào PR-C):
+- (a) tách biến: một biến cho TEST APK, một biến cho Production (`ANDROID_APP_SIGNER_SHA256` chỉ dành cho AAB release);
+- (b) giữ một biến và chấp nhận Mobile APK chỉ ghim khi APK ký bằng đúng chữ ký đó.
+Cho đến khi quyết định, không đặt `ANDROID_APP_SIGNER_SHA256` bằng chữ ký Production.
 
-Nếu Play chưa có chứng thư nào và Owner quyết định dùng keystore hiện tại làm app-signing key, bỏ qua mục 2 và đi tới mục 3.
+## 3. Khóa upload và app-signing (Owner, trên máy Owner)
 
-## 2. Tạo khóa mới (chỉ khi Owner quyết định; trên máy Owner)
-
-Tạo **upload key** riêng (bắt buộc cho AAB) và, nếu Play chưa có khóa phù hợp, một **app-signing key** chung cho cả hai app:
+Tạo **upload key** riêng (bắt buộc cho AAB). App-signing key chỉ tạo khi Play chưa có khóa phù hợp; Owner quyết định:
 
 ```
 keytool -genkeypair -v -keystore upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
-keytool -genkeypair -v -keystore app-signing.jks -alias app-signing -keyalg RSA -keysize 4096 -validity 10000
 ```
 
-- Không dùng tên file/alias có thể đoán được từ tên app. Mật khẩu đặt mạnh, lưu trong trình quản lý mật khẩu của Owner.
-- **Sao lưu trước khi đăng ký với Play:** ít nhất hai bản ở hai nơi tách biệt (ổ ngoài đã mã hóa + bản offline), kèm mật khẩu. Sau khi Play App Signing giữ app-signing key, Owner **không tải lại được** private key từ Google; nếu mất, không có đường khôi phục cho app-signing key. Upload key có thể được Google reset nhưng cần quy trình riêng.
-- Không lưu file `.jks` trong thư mục repo; nếu cần, đặt ngoài cây thư mục `D:\11Ship`.
+- Đặt tên file và alias không đoán được từ tên app. Mật khẩu mạnh, lưu trong trình quản lý mật khẩu của Owner.
+- Sao lưu ít nhất hai nơi tách biệt (ổ ngoài đã mã hóa và bản offline) kèm mật khẩu, **trước** khi đăng ký với Play.
+- Không đặt file `.jks` trong cây thư mục `D:\11Ship`.
 - Không chạy lệnh tạo khóa trong terminal có ghi log lâu dài; xóa lịch sử lệnh có mật khẩu nếu đã gõ trực tiếp.
 
-## 3. Bốn secret `ANDROID_UPLOAD_*` (ký AAB)
+Trạng thái khóa TEST hiện có không được dùng để suy ra app-signing key Production. Nếu Owner muốn dùng lại khóa TEST làm app-signing, đó là quyết định riêng: Owner phải xác nhận bản sao lưu và chứng thư Play Console, rồi báo Lead trước khi làm.
 
-**Chưa có workflow ký AAB trong repo.** Workflow **Mobile APK** (chạy trên PR/push) không đọc các secret này và không ký hay upload AAB. Workflow ký sẽ được thêm ở PR sau, chạy trong **GitHub Environment có protection rules**; các secret này phải đặt **trong environment đó, KHÔNG đặt ở repository secrets**. Tên environment do Owner chọn ở PR đó. Các lệnh dưới đây là mẫu cho environment đã tạo.
+## 4. Environment `android-release` và bốn secret `ANDROID_UPLOAD_*` (Owner)
 
-| Tên secret | Ý nghĩa | Nhập như thế nào |
-|---|---|---|
-| `ANDROID_UPLOAD_KEYSTORE_BASE64` | Nội dung file `upload-keystore.jks` mã hóa base64 (một dòng) | Tạo file base64 **trên máy Owner** rồi nạp bằng stdin, không dán vào chat |
-| `ANDROID_UPLOAD_KEYSTORE_PASSWORD` | Mật khẩu của file keystore | Nhập khi `gh` hỏi, hoặc Settings → Secrets |
-| `ANDROID_UPLOAD_KEY_ALIAS` | Alias của upload key trong keystore (ví dụ `upload`) | Không phải bí mật, nhưng vẫn để ở secret cho đồng bộ |
-| `ANDROID_UPLOAD_KEY_PASSWORD` | Mật khẩu của chính khóa (alias) | Nhập khi `gh` hỏi, hoặc Settings → Secrets |
+Workflow `mobile-aab-release.yml` chạy trong environment `android-release`. Bốn secret upload nằm **trong environment đó**, không nằm trong repository secrets. Chỉ bước ký (`Sign the bundle with the upload key`) nhận các secret này; workflow không đọc chúng ở bước khác (có guard test).
+
+| Tên secret | Nội dung |
+|---|---|
+| `ANDROID_UPLOAD_KEYSTORE_BASE64` | File `upload-keystore.jks` mã hóa base64 một dòng |
+| `ANDROID_UPLOAD_KEYSTORE_PASSWORD` | Mật khẩu file keystore |
+| `ANDROID_UPLOAD_KEY_ALIAS` | Alias của upload key (không bí mật, vẫn để trong secret cho đồng bộ) |
+| `ANDROID_UPLOAD_KEY_PASSWORD` | Mật khẩu của khóa |
+
+Tạo environment và required reviewers: **Owner xác nhận trên console** (GitHub → repo → *Settings → Environments* → `android-release` → bật *Required reviewers*). Repo không ghi chi tiết giao diện.
 
 Mã hóa base64 trên máy Owner (không in ra màn hình):
 - PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("D:\khoa-an-toan\upload-keystore.jks")) | Set-Content -NoNewline D:\khoa-an-toan\upload.b64`
-- Git Bash/Linux: `base64 -w0 upload-keystore.jks > upload.b64`
+- Git Bash: `base64 -w0 upload-keystore.jks > upload.b64`
 
-Nạp bằng CLI (không đưa giá trị vào lệnh, `gh` đọc từ file):
+Nạp bằng CLI (`gh` đọc từ file, không đưa giá trị vào lệnh):
 ```
-gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env <tên environment> --repo trungtn87/11ship < D:\khoa-an-toan\upload.b64
-gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD --env <tên environment> --repo trungtn87/11ship
-gh secret set ANDROID_UPLOAD_KEY_ALIAS --env <tên environment> --repo trungtn87/11ship --body 'upload'
-gh secret set ANDROID_UPLOAD_KEY_PASSWORD --env <tên environment> --repo trungtn87/11ship
+gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env android-release --repo trungtn87/11ship < D:\khoa-an-toan\upload.b64
+gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD --env android-release --repo trungtn87/11ship
+gh secret set ANDROID_UPLOAD_KEY_ALIAS --env android-release --repo trungtn87/11ship --body 'upload'
+gh secret set ANDROID_UPLOAD_KEY_PASSWORD --env android-release --repo trungtn87/11ship
 ```
-Sau đó xóa file `upload.b64` khỏi máy.
+Sau đó xóa `upload.b64` khỏi máy.
 
-**Phân biệt khi làm việc:** `ANDROID_TEST_*` = khóa ký APK cài trực tiếp (phải là app-signing key nếu chọn phương án chung). `ANDROID_UPLOAD_*` = chỉ để ký AAB gửi Play. Hai thứ không thay thế nhau.
-
-## 4. Hai biến công khai (ghim signer)
-
-Đây là dấu vân tay SHA-256 của chứng thư DER (không phải bí mật), đặt làm **repository variables**:
-
-| Biến | Giá trị | Lấy từ đâu |
-|---|---|---|
-| `ANDROID_APP_SIGNER_SHA256` | 64 ký tự hex của app-signing certificate | Mục 1 (keytool) hoặc log "Signer pin" sau lần build đầu |
-| `ANDROID_UPLOAD_CERT_SHA256` | 64 ký tự hex của upload certificate | `keytool -exportcert -keystore upload-keystore.jks -alias upload \| sha256sum` (Git Bash) |
-
+Đặt hai biến (repository variables):
 ```
-gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex>'
+gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex, chỉ sau mục 2>'
 gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex>'
 ```
-Khi đã đặt, CI **từ chối** APK ký bằng chứng thư khác (không đổi khóa âm thầm). `ANDROID_UPLOAD_CERT_SHA256` chưa được workflow nào đọc trong PR này; sẽ được dùng bởi workflow ký AAB ở PR sau.
 
-## 5. Biến và secret FCM (cấu hình đã được xác định; chưa đặt)
+## 5. Firebase Cloud Messaging (FCM)
 
-Giá trị lấy từ file client Firebase Owner gửi, khớp theo `package_name`. Không có khóa nào trong bảng này là khóa ký APK.
+`mobile-aab-release.yml` yêu cầu FCM bật (`push=on`), nếu thiếu thì workflow FAIL. Giá trị lấy từ `google-services.json` của **từng app** Owner đăng ký trên Firebase (khớp `package_name`). Giá trị đã ghi trong các runbook trước; Owner đối chiếu lại trên Firebase console.
 
 ```
 gh variable set FCM_PROJECT_ID --repo trungtn87/11ship --body 'local-f6a32'
 gh variable set FCM_SENDER_ID --repo trungtn87/11ship --body '985944443790'
 gh variable set FCM_SHIP_APP_ID --repo trungtn87/11ship --body '1:985944443790:android:c56a5a3b88f35acce6f2df'
 gh variable set FCM_FOOD_APP_ID --repo trungtn87/11ship --body '1:985944443790:android:bb386bb34f2c0b71e6f2df'
-gh secret set FCM_SHIP_API_KEY --repo trungtn87/11ship     # gh hỏi giá trị; dán API key Android, không qua chat
+gh secret set FCM_SHIP_API_KEY --repo trungtn87/11ship     # gh hỏi giá trị: dán API key Android, không qua chat
 gh secret set FCM_FOOD_API_KEY --repo trungtn87/11ship
 ```
 
-Ghi chú: API key Android nằm trong `google-services.json` của Owner. Không đưa file đó vào repo (`.gitignore` đã chặn).
+API key nằm trong `google-services.json`. File đó không đưa vào repo (`.gitignore` đã chặn).
 
-**Trạng thái thao tác:** phiên làm việc của Claude đã thử đặt các biến/secret này và thao tác bị hệ thống từ chối (lý do: thay đổi cấu hình repository dùng chung, không nằm trong lệnh trực tiếp của Owner). Owner chạy các lệnh trên từ máy Owner.
+## 6. Chạy workflow AAB (thủ công, từ `main`)
 
-Cách thay thế qua giao diện: GitHub → repo `trungtn87/11ship` → *Settings → Secrets and variables → Actions* → tab *Variables* (giá trị không bí mật) hoặc *Secrets* (API key, mật khẩu keystore).
+1. Đảm bảo `main` đã có commit cần phát hành. Kiểm tra `mobile/<app>/pubspec.yaml` (`version: X.Y.Z+N`) và đã tăng `N` so với hồ sơ mục 8.
+2. GitHub → *Actions* → **Mobile AAB release (Play)** → *Run workflow*, nhánh `main`, chọn `app` = `food` hoặc `ship`.
+3. Duyệt environment `android-release` (required reviewer của Owner).
+4. Workflow tự kiểm: ref là `main`, ghim signer app-signing, checkout đúng SHA, endpoints, bản đồ offline Cao Bằng đủ checksum, build AAB, ký bằng upload key đúng một signer, kiểm chữ ký và manifest (package, versionName/versionCode khớp pubspec, targetSdk ≥ 36, quyền, dịch vụ vị trí), cổng versionCode (mục 8).
+5. Lấy artifact `<11Food|11Ship>-v<version>-aab` (ví dụ `11Food-v1.0.0-aab`): gồm `<tên>.aab` và `<tên>-release.json`. Artifact giữ 7 ngày. Trong `-release.json`, `uploaded_to_play` là `false`, `source_sha` là SHA đã build.
 
-## 6. versionCode trên Play (Owner xác minh)
+Workflow không upload Play, không tạo tag, không tạo release. Build thành công **không** có nghĩa là đã nộp.
 
-- Vào Play Console, với từng package `vn.eleven.food` và `vn.eleven.ship`: xem *Phiên bản ứng dụng → bản phát hành* và lịch sử. Nếu **chưa có build nào**, giữ `1.0.0+1` (versionCode 1).
-- Nếu đã có build: ghi versionCode cao nhất và đặt `version: X.Y.Z+N` trong `mobile/<app>/pubspec.yaml` với N **lớn hơn** số đó. Báo Claude Lead trước khi đổi.
-- Không tính từ số build `.test` hay từ `run_number`.
+## 7. Tải lên Internal testing và đối chiếu chứng chỉ (Owner, thủ công)
 
-## 7. Allowlist signer trên VPS (chuẩn bị; chưa áp dụng)
+1. Owner tải AAB từ artifact và tải lên track **Internal testing** trên Play Console. **Owner xác nhận trên console** các bước giao diện.
+2. Sau khi Play ký lại bằng app-signing key, đối chiếu: dấu vân tay app-signing trên Play Console phải bằng `ANDROID_APP_SIGNER_SHA256`; dấu vân tay upload khớp `ANDROID_UPLOAD_CERT_SHA256` (nếu đã đặt). Nếu không khớp, dừng và báo Lead.
+3. Chỉ sau khi Owner xác nhận Play **nhận** AAB, cập nhật hồ sơ versionCode theo mục 8.
 
-Nội dung file (`/etc/11ship/android-signers.json`, đường dẫn trong [m01-vps-android-sms-connect.md](m01-vps-android-sms-connect.md)). Hai app dùng **cùng một** app-signing certificate:
+## 8. Cập nhật hồ sơ versionCode sau khi Owner xác nhận Play nhận AAB
 
-```json
-{
-  "FOOD": { "package_name": "vn.eleven.food", "signer_sha256": "<ANDROID_APP_SIGNER_SHA256>" },
-  "SHIP": { "package_name": "vn.eleven.ship", "signer_sha256": "<ANDROID_APP_SIGNER_SHA256>" }
-}
-```
+Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.md). Tóm tắt:
+- Chỉ mở **PR riêng** sau khi Owner xác nhận Play đã nhận AAB của đúng package và versionCode. Build, artifact và file tải xuống **không** tính là đã nộp.
+- Sửa `mobile/release/play-submitted-versioncode.json` cho đúng package: `highest_submitted_version_code`, `highest_submitted_version_name` (MAJOR.MINOR.PATCH), `owner_confirmed_on` (YYYY-MM-DD, ngày Owner xác nhận).
+- Không bao giờ giảm giá trị; CI kiểm việc này so với `origin/main`.
+- Kiểm cục bộ: `python mobile/tool/play_versioncode_gate.py validate` (Windows) hoặc `python3 mobile/tool/play_versioncode_gate.py validate`.
 
-- **Nguồn đúng:** artifact `android-signers.json` của lần chạy **Mobile APK** đã ký bằng khóa đã chọn. Không sửa tay dấu vân tay; lấy nguyên giá trị đã được CI xác nhận khớp `ANDROID_APP_SIGNER_SHA256`.
-- **Không** dùng upload certificate ở đây: upload key không ký APK cài trực tiếp.
-- Các giá trị `vn.eleven.*.test` và dấu vân tay khóa `.test` cũ **phải bỏ** khỏi file này; nếu để lại, APK mới sẽ bị từ chối khi đăng nhập thiết bị.
-- Thứ tự khi Owner duyệt (không làm trước): (a) sao lưu file hiện tại; (b) thay nội dung như trên, quyền `640 root:ship11`; (c) kiểm tra JSON; (d) khởi động lại service theo quy trình VPS đã duyệt. Mục này không được tự thực hiện.
+## 9. Chuyển từ APK ký TEST sang bản Production (cùng package ID)
 
-**Service-account Firebase:** chuyển trực tiếp từ máy Owner lên VPS, không qua repo/chat:
-- Đích: `/etc/11ship/fcm/service-account.json`, thư mục `/etc/11ship/fcm` quyền `750 root:ship11`, file `640 root:ship11`. Đã kiểm tra: service `11ship-staging` chạy `User=ship11 Group=ship11` (`ops/vinahost/11ship-staging.service`).
-- Đặt `PUSH_FCM_PROJECT_ID=local-f6a32` và `PUSH_FCM_SERVICE_ACCOUNT_FILE=/etc/11ship/fcm/service-account.json` trong env của service (chi tiết: [M08 runbook](m08-push-deploy-20261018.md) mục C).
-- Lệnh `npm run push:check` trên VPS là kiểm tra không gửi gì tới ai.
+- Chữ ký Production khác chữ ký TEST. Android **không cài đè** được: người dùng phải **gỡ bản TEST** rồi cài bản Production.
+- Dữ liệu cục bộ trên máy (phiên đăng nhập, cache) mất theo; dữ liệu tài khoản vẫn ở backend. Người dùng đăng nhập lại.
+- Thứ tự: (a) quyết định mục 2 đã xong; (b) cài bản Production từ Internal testing; (c) chạy checklist mục 10; (d) chỉ sau khi đạt, gỡ bản TEST còn trên máy và ghi giờ gỡ.
+- Không dùng bản TEST để kiểm chứng Production, và không dùng bản Production để kiểm chứng logic test.
 
-## 8. Build lại và kiểm chứng (sau khi có secret và biến)
+## 10. Checklist nghiệm thu trên máy thật (Owner; CI xanh không thay thế)
 
-1. Chạy workflow **Mobile APK** trên nhánh đã duyệt (PR/push hoặc *Run workflow*). APK được ký bằng app-signing key đã ghim; AAB chỉ được biên dịch và kiểm cấu trúc, **không ký, không upload** (chờ workflow ký ở PR sau).
-2. Đối chiếu trong log mỗi app:
-   - `package: name='vn.eleven.food'` / `vn.eleven.ship`;
-   - `versionName='1.0.0'`, `versionCode='1'` (hoặc số pubspec đã chọn);
-   - dòng `Signer pin: matches ANDROID_APP_SIGNER_SHA256` (khi biến đã đặt);
-   - dòng tóm tắt `AAB: compiled and structure-checked only; not signed, not uploaded`.
-3. Kiểm tra cục bộ APK đã tải (trên máy Owner, không chạy trong repo): `apksigner verify --print-certs <apk>` phải cho đúng dấu vân tay app-signing key.
-4. Chỉ sau các bước này mới được cài thử trên điện thoại (mục 9).
+Điều kiện: đã có bản cài từ Internal testing; VPS đã ở trạng thái đã duyệt (mục 11). Mỗi mục ghi đạt/không/giờ. Không chụp màn hình có số điện thoại, token hay địa chỉ.
 
-## 9. Checklist trên điện thoại (Owner; CI xanh không thay thế)
+- [ ] **Binder (peer):** cài cả 11Food và 11Ship, thử hai thứ tự cài. Hai app nhận diện nhau cùng signer, không báo lỗi xác thực peer.
+- [ ] **OTP:** nhập số, nhận mã OTP qua SMS Gateway (#101/#103, kênh OTP duy nhất). Khi Gateway chưa sẵn sàng, app phải báo lỗi rõ, không tự chấp nhận mã.
+- [ ] **FCM:** cấp quyền thông báo, đăng nhập, token đăng ký đúng app và đúng tài khoản (Owner xác nhận trên DB, không in token). Thông báo đến khi app ở nền và khi đóng hẳn.
+- [ ] **Đúng người, đúng app:** sự kiện của shipper chỉ đến thiết bị shipper đó; 11Food không nhận thông báo của 11Ship.
+- [ ] **Vị trí:** Ship cấp vị trí rồi từ chối, và tắt GPS. 11Food không xin vị trí nền; Ship chạy dịch vụ vị trí khi đang làm việc (foreground service).
+- [ ] **Bản đồ offline:** bản đồ Cao Bằng hiển thị khi tắt mạng (build có `M14_OFFLINE_MAP=true`).
+- [ ] **M13 (phiên bản):** màn hình phiên bản hiển thị đúng versionName/versionCode của bản đã cài. Phần cảnh báo cập nhật và trạng thái phát hành thuộc M13.07/M13.08 theo [quy ước phát hành](../../docs/process/release-versioning-20261019.md); nếu chưa triển khai, ghi "chưa triển khai", không ghi đạt.
+- [ ] **Đăng xuất / chuyển tài khoản:** dữ liệu tài khoản cũ không còn trên màn hình.
+- [ ] **Từ chối quyền thông báo:** app hướng dẫn mở cài đặt, không treo.
+- [ ] **Buộc dừng (giới hạn đã biết):** sau khi người dùng buộc dừng app, Android không giao thông báo đến khi mở lại app. Ghi nhận, không coi là lỗi.
 
-Điều kiện: VPS đã được cập nhật allowlist và service-account (mục 7); APK cài mới, không cài đè `.test`.
+## 11. Allowlist signer trên VPS (chưa áp dụng; cần lệnh riêng của Owner)
 
-- [ ] **Cài mới** 11Food và 11Ship từ artifact `food-apk` / `ship-apk`. Mở *Tài khoản → Chẩn đoán kết nối*: đúng applicationId, versionName, versionCode.
-- [ ] **Nhận diện nhau:** đăng nhập 11Food rồi 11Ship (cả hai thứ tự cài). Hai app phải thừa nhận cùng signer; không báo lỗi xác thực peer.
-- [ ] **Đăng nhập thiết bị:** đăng nhập thành công; đăng nhập từ máy khác thay thế phiên như đã thiết kế.
-- [ ] **FCM đăng ký:** sau đăng nhập và cấp quyền thông báo, Owner xác nhận bản ghi token của thiết bị xuất hiện đúng app và đúng tài khoản (truy vấn DB của Owner, không in token).
-- [ ] **Đúng người, đúng app:** tạo sự kiện cho shipper → chỉ thiết bị shipper đó nhận; shop/khách không nhận thông báo của shipper; 11Food không nhận thông báo của 11Ship.
-- [ ] **Chạy nền:** đưa app xuống nền hoặc đóng hẳn → thông báo hiện qua hệ thống.
-- [ ] **Bấm thông báo:** mở đúng màn hình/đơn; khi chưa đăng nhập hoặc đơn không còn khả dụng thì báo đúng, không lộ dữ liệu.
-- [ ] **Đăng xuất:** sau đăng xuất không nhận thông báo mới; tài khoản khác đăng nhập trên cùng máy không thấy dữ liệu tài khoản trước.
-- [ ] **Chuyển tài khoản:** dữ liệu cá nhân của tài khoản cũ biến mất khỏi màn hình.
-- [ ] **Quyền và kênh:** từ chối quyền thông báo → app hướng dẫn mở cài đặt; tắt âm → vẫn hiện thông báo, không kêu.
-- [ ] **Gỡ app `.test` cũ:** chỉ sau khi các mục trên đạt và app mới đăng nhập đúng, gỡ (hoặc tắt) 11Food/11Ship `vn.eleven.*.test` còn trên máy. Lý do: app cũ vẫn có icon và cache cục bộ đến khi bị 401 hoặc làm mới lạnh, nên dễ mở nhầm; theo phân tích review, đăng nhập app mới thay binding/session cũ, nên app `.test` không còn dùng được. Ghi giờ đã gỡ.
-- [ ] **Force stop (giới hạn đã biết):** sau khi người dùng buộc dừng app, Android không giao thông báo đến khi người dùng mở app lại. Ghi kết quả, không coi là lỗi.
+- Hiện allowlist (`/etc/11ship/android-signers.json`, xem [m01-vps-android-sms-connect.md](m01-vps-android-sms-connect.md)) lấy từ artifact `android-signers.json` của workflow Mobile APK, tức chữ ký APK test.
+- **Cần thêm** dấu vân tay app-signing Production (cùng cho hai app) để thiết bị cài từ Play đăng nhập được. Đây là bước backend cần **lệnh riêng của Owner**; PR này và runbook này **không** thực hiện, không sửa file trên VPS, không deploy.
+- Không dùng upload certificate trong allowlist: upload key không ký APK cài trực tiếp.
+- Trước khi Owner ra lệnh: sao lưu file hiện tại; giữ JSON hợp lệ; quyền file theo quy trình VPS đã duyệt; khởi động lại service theo quy trình đã duyệt.
 
-Ghi kết quả từng mục (đạt/không, giờ). Không chụp màn hình có số điện thoại, token, địa chỉ.
+## 12. Giới hạn
+
+- Repo không chứng minh được giao diện Play Console, environment reviewers, secrets/biến trên GitHub, hay Firebase: các mục đó ghi "Owner xác nhận trên console".
+- Workflow AAB chưa chạy thật trên repo (cần environment, secrets, biến của mục 4–5).
+- Điểm mục 2 (biến ghim dùng chung giữa APK TEST và AAB Production) cần quyết định trước khi đặt biến.
