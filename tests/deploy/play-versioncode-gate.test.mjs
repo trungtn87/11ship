@@ -142,6 +142,19 @@ test('a versionCode above the submitted one passes; equal fails; lower fails (pe
   assert.equal(gate(['check', 'ship', '10'], rec).status, 0);
 });
 
+test('the bundle versionCode must stay within 1..2100000000 (Android ceiling)', () => {
+  const rec = submittedRecord(5, 9);
+  const over = gate(['check', 'food', '2100000001'], rec);
+  assert.equal(over.status, 1, over.out);
+  assert.match(over.out, /must be an integer from 1 to 2100000000/);
+  const top = gate(['check', 'food', '2100000000'], rec);
+  assert.equal(top.status, 0, top.out);
+  assert.match(top.out, /play versionCode gate ok \(food\): 2100000000 > submitted 5/);
+  assert.equal(gate(['check', 'ship', '2100000000'], rec).status, 0);
+  assert.equal(gate(['check', 'ship', '2100000001'], rec).status, 1);
+  assert.equal(gate(['check', 'food', '0'], rec).status, 1, 'zero is still refused');
+});
+
 test('a missing record file fails the gate', () => {
   const missing = spawnSync(PY, [GATE, 'check', 'food', '1', '--record', join(tmpdir(), 'no-such-play-record-xyz.json')], { encoding: 'utf8' });
   assert.equal(missing.status, 1);
@@ -186,6 +199,15 @@ test('a submitted record needs a version name and an owner-confirmed date', () =
   const badDate = submittedRecord(3, 3);
   badDate.apps.food.owner_confirmed_on = '2026-02-30';
   assert.equal(gate(['check', 'food', '4'], badDate).status, 1);
+
+  // Python 3.11+ fromisoformat would accept the compact form; the YYYY-MM-DD regex must refuse it first.
+  for (const bad of ['20261120', '2026-11-20T00:00', '2026-11-20\n', ' 2026-11-20', '２０２６-11-20']) {
+    const compact = submittedRecord(3, 3);
+    compact.apps.food.owner_confirmed_on = bad;
+    const r = gate(['check', 'food', '4'], compact);
+    assert.equal(r.status, 1, `owner_confirmed_on ${JSON.stringify(bad)} must be refused: ${r.out}`);
+    assert.match(r.out, /owner_confirmed_on \(YYYY-MM-DD\) is required/);
+  }
 
   const emptyWithDate = emptyRecord();
   emptyWithDate.apps.food.owner_confirmed_on = '2026-11-20';
