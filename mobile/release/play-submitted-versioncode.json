@@ -1,0 +1,18 @@
+{
+  "schema": "11ship.play-submitted-versioncode.v1",
+  "rule": "Chi Owner xac nhan Google Play da nhan AAB moi duoc cap nhat, bang PR rieng. Build thanh cong, tai artifact hay tai xuong may KHONG tinh la submitted. Xem mobile/release/README.md.",
+  "apps": {
+    "food": {
+      "package": "vn.eleven.food",
+      "highest_submitted_version_code": 0,
+      "highest_submitted_version_name": null,
+      "owner_confirmed_on": null
+    },
+    "ship": {
+      "package": "vn.eleven.ship",
+      "highest_submitted_version_code": 0,
+      "highest_submitted_version_name": null,
+      "owner_confirmed_on": null
+    }
+  }
+}

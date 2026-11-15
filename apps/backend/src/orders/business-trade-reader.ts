@@ -3,10 +3,12 @@ import { TransactionContext } from '../transaction/transaction-context';
 import { Period } from '../admin-m12/vietnam-time';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { TechnicalError } from '../common/app-errors';
+import { complaintScopeSql } from '../feedback/complaint-repository';
 const safe=(v:string):number=>{const n=Number(v);if(!Number.isSafeInteger(n))throw new TechnicalError('internal','Aggregate exceeds safe integer');return n;};
 @Injectable()
 export class BusinessTradeReader {
-  async summary(c:TransactionContext,p:Period,money:boolean):Promise<JsonObject> {
+  /** `complaintScope` is the caller's complaint view (issue #261): complaint counts and resolution time cover only the files inside it; no unscoped total. */
+  async summary(c:TransactionContext,p:Period,money:boolean,complaintScope:{readonly shop:boolean;readonly driver:boolean}):Promise<JsonObject> {
     // Each customer Order and each root DIRECT call is one transaction. Recalls never add a transaction or duplicate its goods.
     const rows=(await c.query<Record<string,string>>(`WITH trades AS (
       SELECT o.order_id AS id,o.shop_id,o.items_total_vnd AS goods FROM app.orders o
@@ -24,8 +26,8 @@ export class BusinessTradeReader {
     const quality=(await c.query<{reviews:string;stars:string|null;complaints:string;seconds:string|null}>(`SELECT
       (SELECT count(*) FROM app.reviews WHERE created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))::text AS reviews,
       (SELECT round(avg(stars),2) FROM app.reviews WHERE created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))::text AS stars,
-      (SELECT count(*) FROM app.complaints WHERE created_at>=to_timestamp($1::bigint/1000.0) AND created_at<to_timestamp($2::bigint/1000.0))::text AS complaints,
-      (SELECT round(avg(extract(epoch FROM(closed_at-created_at)))) FROM app.complaints WHERE closed_at>=to_timestamp($1::bigint/1000.0) AND closed_at<to_timestamp($2::bigint/1000.0))::text AS seconds`,[p.fromMs,p.toMs])).rows[0]!;
+      (SELECT count(*) FROM app.complaints c WHERE c.created_at>=to_timestamp($1::bigint/1000.0) AND c.created_at<to_timestamp($2::bigint/1000.0) AND ${complaintScopeSql('c',3,4)})::text AS complaints,
+      (SELECT round(avg(extract(epoch FROM(c.closed_at-c.created_at)))) FROM app.complaints c WHERE c.closed_at>=to_timestamp($1::bigint/1000.0) AND c.closed_at<to_timestamp($2::bigint/1000.0) AND ${complaintScopeSql('c',3,4)})::text AS seconds`,[p.fromMs,p.toMs,complaintScope.shop,complaintScope.driver])).rows[0]!;
     let shopPayments:JsonObject={status:'FORBIDDEN'};
     if(money){
       const r=(await c.query<{total:string;count:string}>(`SELECT COALESCE(sum(actual_amount_vnd),0)::text AS total,count(*)::text AS count FROM app.business_finance_requests
