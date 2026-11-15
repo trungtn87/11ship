@@ -26,7 +26,7 @@
     },
     {
       "name": "App identity and version (pubspec.yaml)",
-      "run": "sha256:4081cbc16527f6b979458b58a880b6450d268860d5f4bb767a3528f355215517"
+      "run": "sha256:67e386d3a02d1c15e96afb4edd89556f98fe086e8527e38b9de3f6b2dea933e7"
     },
     {
       "name": "Central endpoints (config/endpoints.json)",
@@ -63,7 +63,7 @@
         "FCM_APP_ID": "${{ inputs.app == 'ship' && vars.FCM_SHIP_APP_ID || vars.FCM_FOOD_APP_ID }}",
         "FCM_API_KEY": "${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}"
       },
-      "run": "sha256:53e364990fed96e48c4398ce582e1bb73bc1d797fbe53ce5beebe88245c40a6b"
+      "run": "sha256:0a5b46446f7692208d042ac9a4c3225f2b76da631d9c49ef9599b29f6218de2a"
     },
     {
       "name": "Offline map package is complete (required)",
@@ -89,7 +89,7 @@
     },
     {
       "name": "Write the release record (public values only)",
-      "run": "sha256:fc7e694b77fee494e6c14ba9fd1c68458950c7d2ba6d8693d43997c103f2bcb2"
+      "run": "sha256:c00fee67b2dcc7c81293d9479b5d280ad42c89d836e01ecad4d8494aba280f9e"
     },
     {
       "name": "Upload the signed bundle and its release record",

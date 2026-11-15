@@ -26,28 +26,26 @@ Quy tắc:
 | Mục | Trạng thái |
 |---|---|
 | Workflow AAB release có trên `main` (PR-A #351): dispatch, chỉ `main`, environment `android-release`, ký bằng `sign-aab.sh`, kiểm chữ ký và manifest, không upload Play | **Đã có trong repo** |
-| Hồ sơ versionCode đã nộp Play theo package, cổng kiểm trong `check-aab-release.py` (PR-B #357) | **Có trong PR-B**, chỉ được cập nhật theo mục 8 |
+| Hồ sơ versionCode đã nộp Play theo package, cổng kiểm trong `check-aab-release.py` (PR-B #357) | **Đã có trên `main`**, chỉ được cập nhật theo mục 8 |
 | Environment `android-release` có required reviewers; secrets `ANDROID_UPLOAD_*` và các biến | **Owner xác nhận trên console** (repo không chứng minh được) |
 | Play Console: app đã đăng ký, chứng thư app-signing và upload, track đang dùng | **Owner xác nhận trên console** |
 | Firebase: app Android `vn.eleven.food` / `vn.eleven.ship` đã đăng ký, giá trị FCM | **Owner xác nhận trên console** |
 
-## 2. Hai biến ghim (công khai) và một điểm cần quyết định trước
+## 2. Ba biến ghim (công khai)
 
-Hai dấu vân tay SHA-256 của chứng thư, không phải bí mật:
+Các dấu vân tay SHA-256 của chứng thư, không phải bí mật. Mỗi biến có một vai trò riêng:
 
-| Chứng thư | Biến | Ai dùng |
-|---|---|---|
-| **App-signing certificate** (chữ ký Production sau Play App Signing) | `ANDROID_APP_SIGNER_SHA256` (repository variable, 64 hex, bắt buộc cho AAB) | `mobile-aab-release.yml` bắt buộc có; `sign-aab.sh` từ chối AAB có signer trùng giá trị này |
-| **Upload certificate** (khóa ký AAB gửi Play) | `ANDROID_UPLOAD_CERT_SHA256` (repository variable, 64 hex, **tùy chọn**) | `sign-aab.sh` chỉ đối chiếu khi biến được đặt |
+| Biến (repository variable) | Chứng thư | Ai dùng | Trạng thái |
+|---|---|---|---|
+| `ANDROID_TEST_SIGNER_SHA256` (**tùy chọn**) | Chữ ký **TEST** của APK CI, dấu vân tay `6aa5…` (64 hex). Chỉ ghim APK test, **không** phải chữ ký Production | `mobile-apk.yml`: khi đã đặt, APK test phải mang đúng chứng thư này; khi chưa đặt, không kiểm pin | Tùy chọn |
+| `ANDROID_APP_SIGNER_SHA256` (**bắt buộc cho AAB**) | App-signing certificate của Play App Signing, dấu vân tay bắt đầu `fa87…` | `mobile-aab-release.yml` bắt buộc có; `sign-aab.sh` từ chối AAB có signer trùng giá trị này. Không dùng cho APK test | **Owner đã đặt** bằng chứng chỉ Play. Repo không ghi giá trị đầy đủ |
+| `ANDROID_UPLOAD_CERT_SHA256` (**tùy chọn**) | Upload certificate (khóa ký AAB gửi Play). Dấu vân tay Upload Key đã biết: `a42afa94…879f1330` | `sign-aab.sh` chỉ đối chiếu khi biến được đặt | Tùy chọn. Đây là Upload Key, **không** phải app-signing |
+
+Ba biến không được trùng vai trò: `ANDROID_TEST_SIGNER_SHA256` chỉ kiểm APK test; `ANDROID_APP_SIGNER_SHA256` chỉ kiểm AAB Production; `ANDROID_UPLOAD_CERT_SHA256` chỉ đối chiếu upload key. Nếu chưa đặt biến TEST, Mobile APK không kiểm pin và vẫn chạy, chỉ ghi dòng `Signer pin: ... is not set` vào tóm tắt. Khi đã đặt, tóm tắt ghi `Signer pin: matches ANDROID_TEST_SIGNER_SHA256`.
 
 Lấy giá trị:
 - Upload certificate, trên máy Owner: `keytool -exportcert -keystore <upload.jks> -alias <alias> | sha256sum` (Git Bash). Bỏ dấu cách, dùng chữ thường.
-- App-signing certificate: **Owner xác nhận trên console** (Play Console → *Ký ứng dụng*, ghi dấu vân tay App signing key certificate). Nếu Play chưa đăng ký, không đặt biến này.
-
-**Điểm cần Claude Lead quyết định trước khi đặt `ANDROID_APP_SIGNER_SHA256` (chưa xử lý trong PR này):** cùng một tên biến đang được `mobile-apk.yml` dùng làm ghim cho APK TEST (dòng ghim: APK phải mang đúng chứng thư trong biến). APK test ký bằng khóa TEST nên sẽ **không khớp** nếu biến chứa chữ ký Production, và Mobile APK sẽ FAIL. Hai hướng để Lead chọn (cần sửa workflow ở PR riêng, không gộp vào PR-C):
-- (a) tách biến: một biến cho TEST APK, một biến cho Production (`ANDROID_APP_SIGNER_SHA256` chỉ dành cho AAB release);
-- (b) giữ một biến và chấp nhận Mobile APK chỉ ghim khi APK ký bằng đúng chữ ký đó.
-Cho đến khi quyết định, không đặt `ANDROID_APP_SIGNER_SHA256` bằng chữ ký Production.
+- App-signing certificate: lấy từ Play Console (*Ký ứng dụng*, dấu vân tay App signing key certificate). Biến này đã được Owner đặt; chỉ đặt lại nếu Owner yêu cầu. Không đặt bằng giá trị TEST.
 
 ## 3. Khóa upload và app-signing (Owner, trên máy Owner)
 
@@ -90,10 +88,11 @@ gh secret set ANDROID_UPLOAD_KEY_PASSWORD --env android-release --repo trungtn87
 ```
 Sau đó xóa `upload.b64` khỏi máy.
 
-Đặt hai biến (repository variables):
+Đặt các biến (repository variables), theo bảng mục 2:
 ```
-gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex, chỉ sau mục 2>'
-gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex>'
+gh variable set ANDROID_TEST_SIGNER_SHA256 --repo trungtn87/11ship --body '6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3'   # tùy chọn, chỉ ghim APK test
+gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex của app-signing Play>'   # đã đặt; chỉ đặt lại khi Owner yêu cầu
+gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex của upload key>'   # tùy chọn
 ```
 
 ## 5. Firebase Cloud Messaging (FCM)
@@ -129,7 +128,7 @@ Workflow không upload Play, không tạo tag, không tạo release. Build thàn
 
 ## 8. Cập nhật hồ sơ versionCode sau khi Owner xác nhận Play nhận AAB
 
-Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.md). Tóm tắt:
+Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.md). Trạng thái hiện tại: `mobile/release/play-submitted-versioncode.json` ghi `highest_submitted_version_code` = 0 cho cả hai app (chưa có xác nhận Play đã nhận AAB). Tóm tắt:
 - Chỉ mở **PR riêng** sau khi Owner xác nhận Play đã nhận AAB của đúng package và versionCode. Build, artifact và file tải xuống **không** tính là đã nộp.
 - Sửa `mobile/release/play-submitted-versioncode.json` cho đúng package: `highest_submitted_version_code`, `highest_submitted_version_name` (MAJOR.MINOR.PATCH), `owner_confirmed_on` (YYYY-MM-DD, ngày Owner xác nhận).
 - Không bao giờ giảm giá trị; CI kiểm việc này so với `origin/main`.
@@ -139,7 +138,7 @@ Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.
 
 - Chữ ký Production khác chữ ký TEST. Android **không cài đè** được: người dùng phải **gỡ bản TEST** rồi cài bản Production.
 - Dữ liệu cục bộ trên máy (phiên đăng nhập, cache) mất theo; dữ liệu tài khoản vẫn ở backend. Người dùng đăng nhập lại.
-- Thứ tự: (a) quyết định mục 2 đã xong; (b) cài bản Production từ Internal testing; (c) chạy checklist mục 10; (d) chỉ sau khi đạt, gỡ bản TEST còn trên máy và ghi giờ gỡ.
+- Thứ tự: (a) biến `ANDROID_APP_SIGNER_SHA256` đã đặt đúng (mục 2); (b) cài bản Production từ Internal testing; (c) chạy checklist mục 10; (d) chỉ sau khi đạt, gỡ bản TEST còn trên máy và ghi giờ gỡ.
 - Không dùng bản TEST để kiểm chứng Production, và không dùng bản Production để kiểm chứng logic test.
 
 ## 10. Checklist nghiệm thu trên máy thật (Owner; CI xanh không thay thế)
@@ -160,7 +159,7 @@ Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.
 ## 11. Allowlist signer trên VPS (chưa áp dụng; cần lệnh riêng của Owner)
 
 - Hiện allowlist (`/etc/11ship/android-signers.json`, xem [m01-vps-android-sms-connect.md](m01-vps-android-sms-connect.md)) lấy từ artifact `android-signers.json` của workflow Mobile APK, tức chữ ký APK test.
-- **Cần thêm** dấu vân tay app-signing Production (cùng cho hai app) để thiết bị cài từ Play đăng nhập được. Đây là bước backend cần **lệnh riêng của Owner**; PR này và runbook này **không** thực hiện, không sửa file trên VPS, không deploy.
+- **Cần thêm** dấu vân tay app-signing Production, tức giá trị của biến `ANDROID_APP_SIGNER_SHA256` (mục 2; cùng cho hai app), để thiết bị cài từ Play đăng nhập được. Allowlist hiện chỉ có chữ ký TEST của APK CI. Đây là bước backend cần **lệnh riêng của Owner**; PR này và runbook này **không** thực hiện, không sửa file trên VPS, không deploy.
 - Không dùng upload certificate trong allowlist: upload key không ký APK cài trực tiếp.
 - Trước khi Owner ra lệnh: sao lưu file hiện tại; giữ JSON hợp lệ; quyền file theo quy trình VPS đã duyệt; khởi động lại service theo quy trình đã duyệt.
 
@@ -168,4 +167,4 @@ Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.
 
 - Repo không chứng minh được giao diện Play Console, environment reviewers, secrets/biến trên GitHub, hay Firebase: các mục đó ghi "Owner xác nhận trên console".
 - Workflow AAB chưa chạy thật trên repo (cần environment, secrets, biến của mục 4–5).
-- Điểm mục 2 (biến ghim dùng chung giữa APK TEST và AAB Production) cần quyết định trước khi đặt biến.
+- Biến TEST và biến Production tách riêng (mục 2). Các việc Owner làm trên console và trên VPS (mục 1, mục 11) chưa được repo chứng minh.

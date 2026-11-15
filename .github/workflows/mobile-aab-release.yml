@@ -70,7 +70,10 @@ jobs:
       - name: App identity and version (pubspec.yaml)
         run: |
           set -euo pipefail
-          read -r name code label_version < <(mobile/tool/app-version.sh "${{ inputs.app }}")
+          # Through bash, never directly: the script is not executable in git (mode 644), so a direct call fails with Permission denied.
+          # Captured first so a failing script stops this step (a process substitution would hide its exit status).
+          identity="$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"
+          read -r name code label_version <<< "$identity"
           case "${{ inputs.app }}" in
             food) app_id=vn.eleven.food ;;
             ship) app_id=vn.eleven.ship ;;
@@ -123,7 +126,7 @@ jobs:
           FCM_API_KEY: ${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}
         run: |
           set -euo pipefail
-          DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" mobile/tool/prepare-android.sh "${{ inputs.app }}" | tee "$RUNNER_TEMP/prepare.log"
+          DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" bash mobile/tool/prepare-android.sh "${{ inputs.app }}" | tee "$RUNNER_TEMP/prepare.log"
           grep -q 'push=on' "$RUNNER_TEMP/prepare.log" || { echo "::error title=push off::a Play release must carry FCM; the FCM identifiers of this app are missing"; exit 1; }
 
       # The offline map is part of both official apps. A release never ships without the verified Cao Bang package.
@@ -203,7 +206,8 @@ jobs:
       - name: Write the release record (public values only)
         run: |
           set -euo pipefail
-          read -r name code label < <(mobile/tool/app-version.sh "${{ inputs.app }}")
+          identity="$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"
+          read -r name code label <<< "$identity"
           out="$RUNNER_TEMP/release"
           aab="$out/$label.aab"
           upload_fp="$(keytool -printcert -jarfile "$aab" | grep 'SHA256:' | head -n 1 | sed -E 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')"

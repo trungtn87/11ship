@@ -233,6 +233,24 @@ function walkYaml(node, visit) {
   }
 }
 
+// Every token that names a shell script (ends in .sh) in a run step must be the argument right after `bash`, and `bash` must be the
+// command word of its segment (only NAME=value assignments may precede it). Anything else is a violation (fail closed).
+export function shellScriptViolations(script) {
+  const out = [];
+  // Command separators: newline ; & | ( ) < > ` { } — so `$(`, `${`, subshells and pipelines start a new command.
+  for (const segment of script.split(/[\n;&|()<>`{}]/)) {
+    const tokens = segment.split(/\s+/).map(t => t.replace(/["'\\]/g, '')).filter(Boolean);
+    let head = 0;
+    while (head < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[head])) head++;
+    tokens.forEach((token, j) => {
+      if (!token.endsWith('.sh')) return;
+      const ok = tokens[head] === 'bash' && j === head + 1;
+      if (!ok) out.push(`a shell script must be started by bash (found "${token}")`);
+    });
+  }
+  return out;
+}
+
 // STRUCTURAL guard for the AAB workflow (Antigravity, PR #351): the file is parsed with js-yaml and the parsed tree is checked, so a
 // flow-style step, a quoted key, or a `uses` at any depth cannot hide from a line-based regex. Anything unusual fails closed.
 function aabParsedViolations(text) {
@@ -300,6 +318,11 @@ function aabParsedViolations(text) {
     for (const found of value.matchAll(/\b(mobile\/tool\/[A-Za-z0-9_.-]+|scripts\/[A-Za-z0-9_./-]+|tests\/[A-Za-z0-9_./-]+)/g)) {
       if (!AAB_SCRIPTS_OK.includes(found[1])) add(`a run step calls an unapproved script: ${found[1]}`);
     }
+    // Shell scripts run through bash only (hotfix after PR #351: mobile/tool/app-version.sh is mode 644 in git, so a direct call fails
+    // with "Permission denied"). Fail closed: every token that names a .sh file must be the argument right after the word bash, and bash
+    // must be the command word of its own segment (after optional NAME=value assignments). Quotes, path prefixes, $( ), and `${ }` are
+    // all covered because the token is judged after stripping quotes and splitting on command separators.
+    for (const bad of shellScriptViolations(value)) add(bad);
   });
   // Shell and environment: only the runner's bash, and no variable that makes an interpreter load code from elsewhere.
   walkYaml(doc, (key, value) => {
@@ -558,6 +581,46 @@ test('AAB guard (structural): run steps cannot reach the VPS, call another workf
     ['      - name: x\n        run: ssh deploy@host true\n', /forbidden command|mentions/],
   ];
   for (const [step, pattern] of runs) failsWith(AAB_FILE, withSteps(step), pattern);
+});
+
+test('AAB guard (structural): every shell script in a run step is started by bash (hotfix: Permission denied on the runner)', () => {
+  // Block scalars keep quoted and $( ) probes literal. Each probe must produce the "started by bash" violation.
+  const block = line => `      - name: x\n        run: |\n          ${line}\n`;
+  const probes = [
+    // the three direct forms that broke the first real AAB run
+    'mobile/tool/app-version.sh food',
+    'read -r a b < <(mobile/tool/app-version.sh "${{ inputs.app }}")',
+    './mobile/tool/prepare-android.sh food | tee log',
+    'DEVICE_ENVIRONMENT="$X" mobile/tool/prepare-android.sh food',
+    // evasions found in review (PR #359)
+    '"./mobile/tool/app-version.sh" food',
+    '/home/runner/work/11ship/11ship/mobile/tool/app-version.sh food',
+    '${GITHUB_WORKSPACE}/mobile/tool/prepare-android.sh food',
+    'identity="$(\\"./mobile/tool/app-version.sh\\" food)"',
+    // other interpreters or loaders
+    'sh mobile/tool/app-version.sh food',
+    'source mobile/tool/app-version.sh food',
+    'exec mobile/tool/app-version.sh food',
+    './mobile/tool/app-version.sh food',
+    // a bash word that is not the command word, or not directly before the script
+    'echo bash mobile/tool/app-version.sh food',
+    'echo bash; ./mobile/tool/app-version.sh food',
+    'bash -x mobile/tool/app-version.sh food',
+    'bash echo mobile/tool/app-version.sh food',
+  ];
+  for (const probe of probes) failsWith(AAB_FILE, withSteps(block(probe)), /must be started by bash/);
+  // Accepted forms: bash as the command word (optionally after NAME=value), with the script as its first argument.
+  const accepted = [
+    'bash mobile/tool/app-version.sh food',
+    'DEVICE_ENVIRONMENT="$X" bash mobile/tool/prepare-android.sh food | tee log',
+    'identity="$(bash mobile/tool/app-version.sh food)"',
+    'read -r a <<< "$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"',
+  ];
+  for (const line of accepted) {
+    const found = topologyViolations(AAB_FILE, withSteps(block(line))).filter(v => /started by bash/.test(v));
+    assert.deepEqual(found, [], `accepted form must pass: ${line}`);
+  }
+  assert.deepEqual(topologyViolations(AAB_FILE, aabReal()).filter(v => /started by bash/.test(v)), [], 'the real workflow passes');
 });
 
 test('AAB guard (structural): secrets stay where they belong (upload keys only in the signing step; no other secret)', () => {
