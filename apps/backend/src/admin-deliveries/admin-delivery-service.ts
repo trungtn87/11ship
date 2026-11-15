@@ -330,7 +330,7 @@ export class AdminDeliveryService {
     if (auth.lock && delivery.pickedUpAtMs !== null) {
       can.push('adjust-after-pickup');
     }
-    const view = await this.views.forAdmin(context, delivery, auth.review, can);
+    const view = await this.views.forAdmin(context, delivery, auth.review, can, true);
     if (!auth.walletRead) {
       return { ...view, money: { status: 'FORBIDDEN' } };
     }

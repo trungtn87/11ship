@@ -123,7 +123,8 @@ export class DeliveryShipperService {
       for (const assignment of assignments) {
         const delivery = await this.deliveries.findById(context, assignment.deliveryId);
         if (delivery !== undefined) {
-          out.push(await this.views.forShipper(context, delivery, assignment, nowMs));
+          // P6-3: a list carries no route; the detail view does.
+          out.push(await this.views.forShipper(context, delivery, assignment, nowMs, false));
         }
       }
       return { deliveries: out };
