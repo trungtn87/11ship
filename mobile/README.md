@@ -81,7 +81,8 @@ All three reuse the session above and the backend that already exists; nothing i
 Backend (CI, real PostgreSQL, fixture attestation chains - they prove the server logic, **not a real phone**): `tests/integration/native-device-binding.int.spec.ts` and `native-remaining-flows.int.spec.ts` (shop/context/driver with the proof, binding recheck, public reset). Dart controller/screens (CI): `flutter test`.
 Binder join rules (CI): `./gradlew :app:testDebugUnitTest`. **Not run by Claude and required from the Owner:** real-hardware attestation, real GPS at a shop (grant / deny / location off), both apps on one phone (both install orders), update-over-install keeping key and token, two phones replacing each other, background/offline recovery.
 
-## Signing (once)
+## Signing (test APK, CI)
+These secrets sign the **test** APKs only. Production signing (Play App Signing, upload key, environment `android-release`) is in [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md); the TEST key is not that key.
 Secrets `ANDROID_TEST_KEYSTORE_BASE64`, `ANDROID_TEST_KEYSTORE_PASSWORD`, `ANDROID_TEST_KEY_ALIAS`, `ANDROID_TEST_KEY_PASSWORD`. Create them with `mobile/tool/create-test-keystore.sh` and keep a private backup of the key file.
 Optional pin of the TEST APK: repository variable `ANDROID_TEST_SIGNER_SHA256` (the TEST certificate fingerprint). When set, Mobile APK refuses a different signer. It is separate from `ANDROID_APP_SIGNER_SHA256`, which pins the Production AAB release only.
 ### Owner decision — 2026-10-12: update in place
@@ -97,14 +98,17 @@ Every subsequent test APK must install as an update over the previous build, pre
 Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionName and versionCode (both from the pubspec), and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
 
 ### Signing for the official packages — Owner decision 14/11/2026
-Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md) (section 0A).
-- **One app-signing key shared by 11Food and 11Ship.** It signs the direct-install APKs and is the key Play App Signing uses. The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
+Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md).
+- **Cùng Play app-signing certificate cho hai APK do Play phân phối; private app-signing key không nằm trong GitHub/pipeline test.** The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
 - **A separate upload key**, never equal to the app-signing key. It is meant to sign only the AAB for Play.
-- **Not in the repository yet:** the workflow that signs and uploads the AAB. The **Mobile APK** workflow (PR/push) only compiles the AAB and checks its structure, in a temporary path; it is not signed and not uploaded. `mobile/tool/sign-aab.sh` (removes Flutter's debug signature, signs with the upload key, verifies exactly one signer) is not called by any workflow yet. Both arrive in a later PR, in a release workflow that runs in a GitHub Environment with protection rules; the `ANDROID_UPLOAD_*` secrets belong to that environment, not to repository secrets.
-- Secrets `ANDROID_TEST_KEYSTORE_*` hold the persistent app-signing key in use (the name `TEST` is historical). Nothing here creates, replaces or copies a key silently.
+- **Workflow AAB for Play:** `mobile-aab-release.yml` (manual dispatch from `main`, GitHub Environment `android-release` with required reviewers). It signs the bundle with the upload key via `mobile/tool/sign-aab.sh`, checks the signature and merged manifest, and attaches the AAB as an artifact. It never uploads to Google Play. The `ANDROID_UPLOAD_*` secrets live only in that environment. Steps: [runbook sections 4–7](../ops/runbooks/android-release-signing-20261114.md).
+- **Mobile APK (PR và `workflow_dispatch`; không có trigger push)** still compiles the AAB and checks its structure only, in a temporary path; it does not sign or upload a bundle.
+- Secrets `ANDROID_TEST_KEYSTORE_*` sign the **test** APKs built by CI. They are not the Production app-signing key. Nothing here creates, replaces or copies a key silently.
+- Release versionCode: the Play submitted-versionCode gate and its record are in [mobile/release/README.md](release/README.md) (record: `mobile/release/play-submitted-versioncode.json`).
 - No debug key, no throw-away key; the keys, passwords and any service-account file stay out of the repository, logs and reports.
 
-If an already installed first APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent key can require a **single initial uninstall**. Thereafter test builds must update in place.
+If an already installed APK was signed with an older throw-away key (no longer produced by any workflow), switching to the persistent test key can require a **single initial uninstall**. Thereafter test builds must update in place.
+Switching from a TEST-signed install to the Production (Play) signature is a different signer: Android does not install it over the TEST build. Uninstall the TEST build first, then install the Production build (runbook section 9).
 
 ## Local
 `flutter pub get && flutter analyze && flutter test` in `packages/n11_shared`, `food`, `ship`. To run on a phone: `DEVICE_ENVIRONMENT=local-test tool/prepare-android.sh food`, then in `food/`
