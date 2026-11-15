@@ -142,7 +142,9 @@ Lý do: chữ ký Play khác chữ ký TEST, Android **không cài đè** đư�
 2. **Dispatch từ `main`:** chạy **Mobile AAB release (Play)** với `app=food`, rồi `app=ship` (mục 6); duyệt environment `android-release`; tải artifact `-aab` của từng app.
 3. **Internal testing:** Owner tải AAB lên Internal testing và đối chiếu dấu vân tay app-signing (mục 7). Không khớp thì dừng và báo Lead.
 4. **Hồ sơ versionCode:** sau khi Owner xác nhận Play nhận AAB, mở PR riêng cập nhật `mobile/release/play-submitted-versioncode.json` (mục 8).
-5. **Allowlist VPS:** chỉ khi Owner ra lệnh riêng, thực hiện cutover nguyên tử ở mục 11, kèm health check và rollback sẵn sàng. Từ bước này APK TEST không còn được server chấp nhận.
+5. **Allowlist VPS:** chỉ khi Owner ra lệnh riêng.
+   - **Checkpoint bắt buộc trước khi đổi allowlist:** Owner xác nhận **CẢ HAI** bản (`food` và `ship`) đã **publish** trên Internal testing (không chỉ đã upload), và tester cài được cả hai app từ Play. Thiếu một trong các điều kiện này thì **không** đổi allowlist: sau cutover APK TEST bị từ chối, nên phải đã có bản Play cài được trước đó.
+   - Sau checkpoint, thực hiện cutover nguyên tử ở mục 11, kèm health check và rollback sẵn sàng. Từ bước này APK TEST không còn được server chấp nhận.
 6. **Gỡ TEST:** cảnh báo trước: phiên đăng nhập và cache cục bộ sẽ mất; dữ liệu tài khoản vẫn ở backend. Gỡ **cả hai** app TEST (`vn.eleven.food`, `vn.eleven.ship`) và ghi giờ gỡ.
 7. **Cài từ Play:** cài cả hai app từ Internal testing, rồi đăng nhập lại.
 8. **Nghiệm thu:** chạy checklist mục 10 (Binder, OTP, FCM, ...).
@@ -174,12 +176,71 @@ Không dùng bản TEST để kiểm chứng Production, và không dùng bản 
 {"FOOD":{"package_name":"vn.eleven.food","signer_sha256":"<64 hex của ANDROID_APP_SIGNER_SHA256>"},"SHIP":{"package_name":"vn.eleven.ship","signer_sha256":"<cùng 64 hex>"}}
 ```
 
-Các bước (Owner ra lệnh; thao tác trên VPS theo tên service production `11ship-staging` trong [vps-production-update-20261014.md](vps-production-update-20261014.md)):
-1. **Sao lưu** file hiện tại, giữ quyền và chủ sở hữu: `cp -p /etc/11ship/trust/android-signers.json /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD>`.
-2. **Ghi file mới ra tệp tạm** trong cùng thư mục, không sửa tại chỗ: `install -m 640 -o root -g ship11 <file-mới>.json /etc/11ship/trust/android-signers.json.new`. **Validate trước khi thay:** `python3 -m json.tool` đọc được, đủ đúng hai khóa `FOOD`/`SHIP`, hai `signer_sha256` bằng nhau và đủ 64 hex.
-3. **Thay nguyên tử:** `mv -f /etc/11ship/trust/android-signers.json.new /etc/11ship/trust/android-signers.json` (cùng thư mục nên là một thao tác đổi tên).
-4. **Khởi động lại và kiểm tra:** `systemctl restart 11ship-staging && sleep 3`; `journalctl -u 11ship-staging -n 40 --no-pager` phải có dòng khởi động, không có lỗi cấu hình; `curl -fsS http://127.0.0.1:3000/v1/health/ready` phải đạt; sau đó kiểm `https://<domain production>/v1/health/ready`.
-5. **Rollback sẵn sàng trước khi test thiết bị:** nếu bước 4 không đạt: `mv -f /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> /etc/11ship/trust/android-signers.json`, khởi động lại, kiểm health, rồi báo Lead kèm nguyên nhân. **Chỉ test thiết bị (mục 10) khi bước 4 đạt.**
+Các bước (Owner ra lệnh, chạy bằng root trên VPS). Tên unit production là `11ship-staging` (`/etc/systemd/system/11ship-staging.service`, đọc env từ `/etc/11ship/staging.env`; đường dẫn allowlist trong env là `CLIENT_DEVICE_ALLOWED_SIGNERS_FILE=/etc/11ship/trust/android-signers.json`, khớp [production.env.example](../vinahost/production.env.example)). Thư mục `/etc/11ship/trust` là `750 root:ship11`, file là `640 root:ship11`; service chạy User=`ship11` nên cần quyền đọc của nhóm `ship11`. Cutover **không** sửa `staging.env` hay unit.
+
+1. **Sao lưu** (không ghi đè bản cũ), giữ quyền và chủ sở hữu, rồi kiểm bản sao khớp:
+   ```
+   test ! -e /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> && cp -p /etc/11ship/trust/android-signers.json /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD>
+   cmp /etc/11ship/trust/android-signers.json /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> && echo backup-ok
+   ```
+   Nếu bản `.bak-<YYYYMMDD>` đã tồn tại, dừng và báo Lead (không ghi đè bản sao lưu cũ).
+
+2. **Ghi file mới ra tệp tạm** trong cùng thư mục, không sửa tại chỗ. `<file-mới>.json` là file đúng hai entry theo schema, do operator chuẩn bị trước (chỉ chứa dấu vân tay công khai):
+   ```
+   install -m 640 -o root -g ship11 <file-mới>.json /etc/11ship/trust/android-signers.json.new
+   ```
+   **Validate file `.new` trước khi thay** (đọc theo đường dẫn, không đọc stdin; cùng quy tắc với parser [client-device-config.ts](../../apps/backend/src/config/client-device-config.ts): đúng khóa `FOOD`/`SHIP`, đúng `package_name`, `signer_sha256` sau khi bỏ `:` và chuyển chữ thường đủ 64 hex, hai giá trị bằng nhau, không quá 16 KiB). Lệnh chỉ in tên trường lỗi, không in giá trị:
+   ```
+   node -e '
+   const fs = require("fs");
+   const f = process.argv[1];
+   if (fs.statSync(f).size > 16384) throw new Error("file larger than 16 KiB");
+   const v = JSON.parse(fs.readFileSync(f, "utf8"));
+   const plain = (o, ks) => o !== null && typeof o === "object" && !Array.isArray(o) && Object.keys(o).sort().join() === [...ks].sort().join();
+   const pkg = { FOOD: "vn.eleven.food", SHIP: "vn.eleven.ship" };
+   const norm = (s) => String(s).replace(/:/g, "").toLowerCase();
+   if (!plain(v, ["FOOD", "SHIP"])) throw new Error("top level: keys must be exactly FOOD and SHIP");
+   for (const k of ["FOOD", "SHIP"]) {
+     if (!plain(v[k], ["package_name", "signer_sha256"])) throw new Error(k + ": keys must be exactly package_name and signer_sha256");
+     if (v[k].package_name !== pkg[k]) throw new Error(k + ": package_name mismatch");
+     if (!/^[0-9a-f]{64}$/.test(norm(v[k].signer_sha256))) throw new Error(k + ": signer_sha256 must be 64 hex");
+   }
+   if (norm(v.FOOD.signer_sha256) !== norm(v.SHIP.signer_sha256)) throw new Error("FOOD and SHIP signer_sha256 differ");
+   console.log("allowlist OK");
+   ' /etc/11ship/trust/android-signers.json.new
+   sudo -u ship11 test -r /etc/11ship/trust/android-signers.json.new && echo readable-by-ship11
+   ```
+   Nếu validate lỗi: `rm -f /etc/11ship/trust/android-signers.json.new`, dừng, báo Lead. File đang chạy không bị đụng tới nên dịch vụ không bị ảnh hưởng.
+
+3. **Thay nguyên tử** (cùng thư mục, nên là một thao tác đổi tên):
+   ```
+   mv -f /etc/11ship/trust/android-signers.json.new /etc/11ship/trust/android-signers.json
+   ```
+
+4. **Khởi động lại và kiểm tra.** `reset-failed` chạy luôn trước `restart`: nếu lần thử trước đã chạm giới hạn khởi động (`StartLimitBurst=5` trong 300 s của unit), systemd sẽ từ chối restart với "Start request repeated too quickly" cho đến khi được reset.
+   ```
+   systemctl reset-failed 11ship-staging
+   systemctl restart 11ship-staging
+   for i in $(seq 1 60); do curl -fsS --max-time 2 http://127.0.0.1:3000/v1/health/ready >/dev/null 2>&1 && break; sleep 1; done
+   curl -fsS --max-time 5 http://127.0.0.1:3000/v1/health/ready && [ "$(systemctl is-active 11ship-staging)" = active ]
+   curl -fsS --max-time 10 https://<domain production>/v1/health/ready
+   journalctl -u 11ship-staging -n 40 --no-pager
+   ```
+   Đạt khi: health local và public trả về thành công, `is-active` là `active`, nhật ký có dòng khởi động và **không** có lỗi cấu hình hay `Start request repeated too quickly`. `<domain production>` là host của `ADMIN_ACTIVATION_ORIGIN` trong `staging.env` (không ghi giá trị thật vào PR).
+
+5. **Rollback** nếu bước 4 không đạt. Thứ tự bắt buộc:
+   a. Dừng vòng restart nếu còn chạy (hủy auto-restart, không đụng dữ liệu): `systemctl stop 11ship-staging`.
+   b. Khôi phục bản sao lưu **nguyên tử**: copy ra tệp tạm cùng thư mục rồi đổi tên, không ghi đè tại chỗ:
+   ```
+   cp -p /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> /etc/11ship/trust/android-signers.json.rollback
+   mv -f /etc/11ship/trust/android-signers.json.rollback /etc/11ship/trust/android-signers.json
+   cmp /etc/11ship/trust/android-signers.json /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> && echo restored
+   ```
+   c. Reset trạng thái lỗi: `systemctl reset-failed 11ship-staging`.
+   d. Khởi động lại: `systemctl restart 11ship-staging`.
+   e. Poll health local có timeout (như bước 4), rồi kiểm `https://<domain production>/v1/health/ready`.
+   f. **Nếu health sau rollback vẫn lỗi:** ghi rõ **Production NOT READY** trong báo cáo, **dừng test thiết bị** (mục 10), không thử thêm cách đổi file trên VPS, và báo Lead kèm đầu ra `journalctl` đã lọc (không kèm nội dung file hay secret).
+   g. Nếu rollback đạt: báo Lead kèm nguyên nhân bước 4 không đạt. Test thiết bị (mục 10) **chỉ** được làm khi bước 4 đạt.
 
 Sau cutover, chữ ký TEST của APK CI **không còn được allowlist**; không dùng artifact `android-signers.json` của Mobile APK để cutover. Chấp nhận đồng thời TEST và Play cần PR backend/schema riêng có review. PR này và runbook này **không** nới `N11PeerPolicy`, **không** bỏ allowlist, **không** sửa file trên VPS và không deploy.
 - Không dùng upload certificate trong allowlist: upload key không ký APK cài trực tiếp.
