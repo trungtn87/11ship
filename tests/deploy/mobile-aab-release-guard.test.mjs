@@ -71,8 +71,7 @@ test('nothing uploads to Google Play, publishes a release or creates a tag', () 
   for (const term of ['r0adkll', 'upload-google-play', 'google-play', 'androidpublisher', 'fastlane', 'play-publish', 'gh release', 'git tag', 'git push', 'softprops/action-gh-release']) {
     assert.equal(workflow.includes(term), false, `no ${term}`);
   }
-  assert.equal(/Not uploaded to Google Play/.test(workflow), true, 'the summary states the real status');
-  assert.equal(/'uploaded_to_play': False/.test(workflow), true, 'the release record says it was not uploaded');
+  assert.match(workflow, /'uploaded_to_play': False/, 'the release record says it was not uploaded');
 });
 
 test('bundletool 1.18.3 is pinned: fixed release-tag URL, the official SHA-256, verified before java runs, fail closed', () => {

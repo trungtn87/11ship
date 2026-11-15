@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
+import { isDeepStrictEqual } from 'node:util';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import yaml from 'js-yaml';
@@ -199,7 +200,24 @@ function childKeys(body) {
   return keys;
 }
 
-const AAB_STEP_KEYS = ['name', 'id', 'if', 'uses', 'with', 'run', 'env', 'shell', 'working-directory', 'continue-on-error', 'timeout-minutes'];
+// A step may have ONLY these keys. No id, if, continue-on-error, working-directory or timeout in any step of the release job.
+const AAB_STEP_KEYS = ['name', 'uses', 'with', 'run', 'env', 'shell'];
+// The approved shape of the release job (Codex, PR #351). Every change to the steps must change this golden file in the same review.
+const AAB_GOLDEN = JSON.parse(readFileSync(join(ROOT, 'tests/deploy/fixtures/mobile-aab-release.golden.json'), 'utf8'));
+// Steps allowed to write a value into the job environment for later steps. Only public values; none of them touches a secret.
+const AAB_SETUP_ENV_STEPS = ['Source matches the run commit', 'App identity and version (pubspec.yaml)', 'Central endpoints (config/endpoints.json)'];
+
+// The step as the golden stores it: only the keys present, run replaced by the SHA-256 of its script.
+function canonicalSteps(steps) {
+  return steps.map(s => {
+    const o = {};
+    if (s.name !== undefined) o.name = s.name;
+    for (const key of ['uses', 'with', 'env', 'shell']) if (s[key] !== undefined) o[key] = s[key];
+    // A run that is not a string (a YAML boolean, a number, a mapping) can never match the golden: it is kept visibly invalid.
+    if (s.run !== undefined) o.run = typeof s.run === 'string' ? 'sha256:' + createHash('sha256').update(s.run).digest('hex') : 'INVALID-RUN';
+    return o;
+  });
+}
 const AAB_SIGN_STEP = 'Sign the bundle with the upload key (single signer)';
 const AAB_UPLOAD_SECRETS = ['ANDROID_UPLOAD_KEYSTORE_BASE64', 'ANDROID_UPLOAD_KEYSTORE_PASSWORD', 'ANDROID_UPLOAD_KEY_ALIAS', 'ANDROID_UPLOAD_KEY_PASSWORD'];
 const AAB_SECRETS_OK = [...AAB_UPLOAD_SECRETS, 'FCM_SHIP_API_KEY', 'FCM_FOOD_API_KEY'];
@@ -244,6 +262,23 @@ function aabParsedViolations(text) {
     if (!step || typeof step !== 'object' || Array.isArray(step)) { add(`step ${index} is not a mapping`); return; }
     for (const key of Object.keys(step)) if (!AAB_STEP_KEYS.includes(key)) add(`step ${index} key outside the allowlist: ${key}`);
   });
+  // PRIMARY CHECK (Codex, PR #351): the whole shape of the job, compared to the approved golden: list, order, names, uses, with, env,
+  // shell and the SHA-256 of every run script. Any change must update tests/deploy/fixtures/mobile-aab-release.golden.json in the same review.
+  if (Array.isArray(job.steps) && !isDeepStrictEqual(canonicalSteps(job.steps), AAB_GOLDEN.steps)) {
+    const actual = canonicalSteps(job.steps);
+    const names = actual.map(s => s.name ?? '(unnamed)');
+    const expected = AAB_GOLDEN.steps.map(s => s.name ?? '(unnamed)');
+    add(`the job steps differ from the approved golden (update tests/deploy/fixtures/mobile-aab-release.golden.json in the same change). `
+      + `actual [${names.join(' | ')}]; golden [${expected.join(' | ')}]`);
+  }
+  // Job-wide rules, independent of the golden: the four GITHUB_* channels that can carry a value out of a step are closed, except the
+  // environment file for the three public setup steps; the record and signing steps read no environment variable and write none.
+  if (Array.isArray(job.steps)) for (const step of job.steps) {
+    const script = typeof step?.run === 'string' ? step.run : '';
+    if (/GITHUB_(OUTPUT|PATH|STEP_SUMMARY)\b/.test(script)) add(`step "${step.name}" writes a GITHUB_OUTPUT, GITHUB_PATH or GITHUB_STEP_SUMMARY channel (closed)`);
+    if (/GITHUB_ENV\b/.test(script) && !AAB_SETUP_ENV_STEPS.includes(step.name)) add(`step "${step.name}" writes GITHUB_ENV (only the public setup steps may)`);
+    if (/\b(os\.environ|getenv\(|process\.env|\$\{?ENV)/.test(script)) add(`step "${step.name}" reads an environment variable from code (indirect reading closed)`);
+  }
   // Every uses key at ANY depth (steps, job, with, quoted keys, nested mappings): an allowed action pinned by its full SHA, or FAIL.
   walkYaml(doc, (key, value) => {
     if (key !== 'uses') return;
@@ -540,7 +575,73 @@ test('AAB guard (structural): a custom shell, an injected interpreter variable o
   failsWith(AAB_FILE, withSteps(`      - name: x\n        run: echo "NODE_OPTIONS=--require /tmp/x" >> "$GITHUB_ENV"\n`), /interpreter or loader variable/);
 });
 
-test('AAB guard (structural): the valid workflow still passes every structural check', () => {
+// ---- golden shape (Codex, PR #351): every listed change must fail ----
+const SIGN_LINE = 'bash mobile/tool/sign-aab.sh "$RUNNER_TEMP/unsigned.aab"';
+const RECORD_IMPORT = 'import hashlib, json, sys, xml.etree.ElementTree as ET';
+const VERIFY_HEAD = '      - name: Verify the signature (one signer) and the merged manifest\n';
+const SIGN_HEAD = '      - name: Sign the bundle with the upload key (single signer)\n';
+const RECORD_HEAD = '      - name: Write the release record (public values only)\n';
+const UPLOAD_HEAD = '      - name: Upload the signed bundle and its release record\n';
+const GOLDEN_VIOLATION = /approved golden|GITHUB_ENV|continue-on-error|key outside the allowlist|reads an environment variable|GITHUB_OUTPUT|GITHUB_STEP_SUMMARY/;
+
+test('golden: the golden signing text hashes to the golden run hash, so the reviewed text and the compared hash cannot drift apart', () => {
+  const signGolden = AAB_GOLDEN.steps.find(s => s.name === AAB_SIGN_STEP);
+  assert.ok(signGolden, 'the golden has the signing step');
+  assert.equal(signGolden.run, 'sha256:' + createHash('sha256').update(AAB_GOLDEN.signRun).digest('hex'));
+  assert.deepEqual(canonicalSteps(yaml.load(aabReal()).jobs.aab.steps), AAB_GOLDEN.steps, 'the workflow matches the golden');
+});
+
+test('golden (a): the signing step writes a secret into GITHUB_ENV -> FAIL', () => {
+  failsWith(AAB_FILE, aabMutate(SIGN_LINE, `echo "LEAK=$ANDROID_UPLOAD_KEYSTORE_BASE64" >> "$GITHUB_ENV"\n          ${SIGN_LINE}`), GOLDEN_VIOLATION);
+});
+
+test('golden (b): the record step reads an environment variable indirectly -> FAIL', () => {
+  failsWith(AAB_FILE, aabMutate(RECORD_IMPORT, `${RECORD_IMPORT}\n          import os; _k = os.environ.get('ANDROID_UPLOAD_KEYSTORE_PASSWORD')`), GOLDEN_VIOLATION);
+});
+
+test('golden (c): continue-on-error or if on the verify, sign, record or upload step -> FAIL', () => {
+  for (const head of [VERIFY_HEAD, SIGN_HEAD, RECORD_HEAD, UPLOAD_HEAD]) {
+    failsWith(AAB_FILE, aabMutate(head, `${head}        continue-on-error: true\n`), GOLDEN_VIOLATION);
+    failsWith(AAB_FILE, aabMutate(head, `${head}        if: always()\n`), GOLDEN_VIOLATION);
+  }
+  failsWith(AAB_FILE, aabMutate(SIGN_HEAD, `${SIGN_HEAD}        id: sign\n`), GOLDEN_VIOLATION);
+});
+
+test('golden (d): any change to the signing script fails', () => {
+  failsWith(AAB_FILE, aabMutate(SIGN_LINE, `${SIGN_LINE} --verbose`), GOLDEN_VIOLATION);
+  failsWith(AAB_FILE, aabMutate('mkdir -p "$RUNNER_TEMP/release"', 'mkdir -p "$RUNNER_TEMP/release" && echo hi'), GOLDEN_VIOLATION);
+});
+
+test('golden (e): adding, deleting or reordering a step fails', () => {
+  const dump = d => yaml.dump(d, { lineWidth: -1 });
+  // added
+  const added = yaml.load(aabReal());
+  added.jobs.aab.steps.push({ name: 'Extra', run: 'echo extra' });
+  failsWith(AAB_FILE, dump(added), GOLDEN_VIOLATION);
+  // deleted
+  const deleted = yaml.load(aabReal());
+  deleted.jobs.aab.steps.splice(9, 1);
+  failsWith(AAB_FILE, dump(deleted), GOLDEN_VIOLATION);
+  // reordered (verify and record swapped)
+  const reordered = yaml.load(aabReal());
+  const [a, b] = [reordered.jobs.aab.steps[14], reordered.jobs.aab.steps[15]];
+  reordered.jobs.aab.steps[14] = b; reordered.jobs.aab.steps[15] = a;
+  failsWith(AAB_FILE, dump(reordered), GOLDEN_VIOLATION);
+});
+
+test('golden (f): changing the upload path fails', () => {
+  failsWith(AAB_FILE, aabMutate('${{ runner.temp }}/release/${{ env.ARTIFACT_BASENAME }}-release.json', '${{ runner.temp }}/release/other.json'), GOLDEN_VIOLATION);
+  failsWith(AAB_FILE, aabMutate('          name: ${{ env.ARTIFACT_BASENAME }}-aab', '          name: ${{ env.ARTIFACT_BASENAME }}-aab-2'), GOLDEN_VIOLATION);
+});
+
+test('golden (extra): the step summary, the output channel, a path channel, or an injected os.environ in any step fails', () => {
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo x >> "$GITHUB_STEP_SUMMARY"\n'), GOLDEN_VIOLATION);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo x=1 >> "$GITHUB_OUTPUT"\n'), GOLDEN_VIOLATION);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: echo /x >> "$GITHUB_PATH"\n'), GOLDEN_VIOLATION);
+  failsWith(AAB_FILE, withSteps('      - name: other\n        run: python3 -c "import os; print(os.environ)"\n'), GOLDEN_VIOLATION);
+});
+
+test('the valid workflow still passes every structural check', () => {
   assert.deepEqual(topologyViolations(AAB_FILE, aabReal()), []);
 });
 

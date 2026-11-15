@@ -171,13 +171,13 @@ jobs:
           ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
-          ANDROID_APP_SIGNER_PIN: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
-          ANDROID_UPLOAD_CERT_PIN: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          app_pin="$(printf '%s' "$ANDROID_APP_SIGNER_PIN" | tr 'A-F' 'a-f')"
           mkdir -p "$RUNNER_TEMP/release"
-          bash mobile/tool/sign-aab.sh "$RUNNER_TEMP/unsigned.aab" "$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab" "$app_pin"
+          app_pin='${{ vars.ANDROID_APP_SIGNER_SHA256 }}'
+          app_pin="$(printf '%s' "$app_pin" | tr 'A-F' 'a-f')"
+          ANDROID_APP_SIGNER_PIN="$app_pin" ANDROID_UPLOAD_CERT_PIN='${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}' \
+            bash mobile/tool/sign-aab.sh "$RUNNER_TEMP/unsigned.aab" "$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab" "$app_pin"
 
       # Independent checks on the SIGNED bundle, not on what the signing step reported.
       - name: Verify the signature (one signer) and the merged manifest
@@ -199,45 +199,37 @@ jobs:
 
           python3 mobile/tool/check-aab-release.py "${{ inputs.app }}" "$RUNNER_TEMP/release/manifest.xml" "$APP_VERSION_NAME" "$APP_VERSION_CODE"
 
-          # Public upload-certificate fingerprint for the record (certificate digest only).
-          upload_fp="$(keytool -printcert -jarfile "$aab" | grep 'SHA256:' | head -n 1 | sed -E 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')"
-          echo "UPLOAD_CERT_SHA256=$upload_fp" >> "$GITHUB_ENV"
-          echo "aab sha256 $(sha256sum "$aab" | cut -d' ' -f1)"
-
+      # The record uses NO environment variables and NO secrets: every value is an argument (public), read from the signed file or the run.
       - name: Write the release record (public values only)
         run: |
-          python3 - "$RUNNER_TEMP/release" <<'PY'
-          import hashlib, json, os, sys, xml.etree.ElementTree as ET
-          out = sys.argv[1]
-          aab = os.path.join(out, os.environ['ARTIFACT_BASENAME'] + '.aab')
-          root = ET.parse(os.path.join(out, 'manifest.xml')).getroot()
+          set -euo pipefail
+          read -r name code label < <(mobile/tool/app-version.sh "${{ inputs.app }}")
+          out="$RUNNER_TEMP/release"
+          aab="$out/$label.aab"
+          upload_fp="$(keytool -printcert -jarfile "$aab" | grep 'SHA256:' | head -n 1 | sed -E 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')"
+          python3 - "$out" "$label" "${{ inputs.app }}" "${{ github.sha }}" "${{ github.run_id }}" "${{ github.run_attempt }}" "$upload_fp" <<'PY'
+          import hashlib, json, sys, xml.etree.ElementTree as ET
+          out, label, app, sha, run_id, attempt, upload_fp = sys.argv[1:8]
+          root = ET.parse(out + '/manifest.xml').getroot()
           android = '{http://schemas.android.com/apk/res/android}'
+          aab = out + '/' + label + '.aab'
           record = {
-            'app': '${{ inputs.app }}',
+            'app': app,
             'package': root.get('package'),
             'version_name': root.get(android + 'versionName'),
             'version_code': int(root.get(android + 'versionCode')),
             'target_sdk': int(root.find('uses-sdk').get(android + 'targetSdkVersion')),
-            'source_sha': os.environ['SOURCE_SHA'],
-            'artifact': os.environ['ARTIFACT_BASENAME'] + '.aab',
+            'source_sha': sha,
+            'artifact': label + '.aab',
             'aab_sha256': hashlib.sha256(open(aab, 'rb').read()).hexdigest(),
-            'upload_cert_sha256': os.environ['UPLOAD_CERT_SHA256'],
-            'app_signer_pin_sha256': os.environ['ANDROID_APP_SIGNER_SHA256'].lower(),
-            'ci_run': '${{ github.run_id }}',
-            'ci_attempt': '${{ github.run_attempt }}',
+            'upload_cert_sha256': upload_fp,
+            'ci_run': run_id,
+            'ci_attempt': attempt,
             'uploaded_to_play': False,
           }
-          with open(os.path.join(out, os.environ['ARTIFACT_BASENAME'] + '-release.json'), 'w') as f:
+          with open(out + '/' + label + '-release.json', 'w') as f:
               json.dump(record, f, indent=2)
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as s:
-              s.write(f"### {record['artifact']}\n")
-              s.write(f"- applicationId `{record['package']}`, versionName `{record['version_name']}`, versionCode `{record['version_code']}`, targetSdk `{record['target_sdk']}`\n")
-              s.write(f"- source `{record['source_sha']}`, sha256 `{record['aab_sha256']}`\n")
-              s.write(f"- upload certificate SHA-256 (public) `{record['upload_cert_sha256']}`\n")
-              s.write('- Not uploaded to Google Play. Owner downloads this artifact and uploads it to Internal testing after approval.\n')
           PY
-        env:
-          ANDROID_APP_SIGNER_SHA256: ${{ vars.ANDROID_APP_SIGNER_SHA256 }}
 
       - name: Upload the signed bundle and its release record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
