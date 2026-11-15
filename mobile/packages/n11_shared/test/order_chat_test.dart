@@ -313,7 +313,7 @@ void main() {
     testWidgets('no order code, the total and the status are always drawn, the dishes are text only, and the closed map builds nothing', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
       final List<List<String>> drawn = <List<String>>[];
-      final OrderRuntime runtime = runtimeOf(store, map: (BuildContext context, List<M07MapPin> pins) {
+      final OrderRuntime runtime = runtimeOf(store, map: (BuildContext context, List<M07MapPin> pins, [List<List<double>> route = const <List<double>>[]]) {
         drawn.add(<String>[for (final M07MapPin p in pins) p.label]);
         return const SizedBox(key: Key('fake-map'));
       });

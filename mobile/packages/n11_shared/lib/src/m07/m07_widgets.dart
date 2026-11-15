@@ -569,8 +569,9 @@ class M07MapPin {
   final int color;
 }
 
-/// How an app draws a map (11Ship supplies the M14 map; an app without one gets the coordinate fallback).
-typedef M07MapBuilder = Widget Function(BuildContext context, List<M07MapPin> pins);
+/// How an app draws a map (11Ship supplies the M14 map; an app without one gets the coordinate fallback). [route] is the stored road as
+/// `[latitude, longitude]` points (empty = draw no line); an app that cannot draw a road may ignore it.
+typedef M07MapBuilder = Widget Function(BuildContext context, List<M07MapPin> pins, [List<List<double>> route]);
 
 /// How an app lets a person pin a point: calls [onPick] with the chosen position. Null builder = no map in this app.
 typedef M07PinPickerBuilder = Widget Function(BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label});

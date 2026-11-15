@@ -11,7 +11,7 @@ Map<String, dynamic> _pin(double lat, double lng, String label, int color) => <S
 
 /// Pickup, drop-off and the latest Shipper position (only what the screen was given, so an ended order draws no live position).
 M07MapBuilder? foodMapBuilder() => kM14MapEnabled
-    ? (BuildContext context, List<M07MapPin> pins) => M14OfflineMap(pins: <Map<String, dynamic>>[for (final M07MapPin p in pins) _pin(p.lat, p.lng, p.label, p.color)])
+    ? (BuildContext context, List<M07MapPin> pins, [List<List<double>> route = const <List<double>>[]]) => M14OfflineMap(pins: <Map<String, dynamic>>[for (final M07MapPin p in pins) _pin(p.lat, p.lng, p.label, p.color)], route: route)
     : null;
 
 /// Embedded picker (checkout address screen): a tap inside the covered area picks the point; a tap outside is ignored. "Gọi ship" uses [foodPinPickScreen].
