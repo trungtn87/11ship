@@ -11,6 +11,9 @@
 import sys
 import xml.etree.ElementTree as ET
 
+# Same directory as this script: the Play submitted-versionCode gate (STORE-01 PR-B, M13.07).
+import play_versioncode_gate as play_gate
+
 ANDROID = '{http://schemas.android.com/apk/res/android}'
 MIN_TARGET_SDK = 36
 
@@ -68,6 +71,14 @@ def main(argv):
         fail('version mismatch', f"bundle {root.get(ANDROID + 'versionName')}/{root.get(ANDROID + 'versionCode')} "
                                  f'but pubspec says {want_name}/{want_code}')
 
+    # The versionCode must be above the highest versionCode Google Play has accepted for THIS package (per-package record).
+    if not want_code.isdigit():
+        fail('version mismatch', f'pubspec versionCode must be a positive integer, got {want_code!r}')
+    try:
+        submitted = play_gate.check_gate(app_name, int(want_code), play_gate.load_record())
+    except play_gate.GateError as error:
+        fail('play versionCode gate', str(error))
+
     target = root.find('uses-sdk')
     target_sdk = target.get(ANDROID + 'targetSdkVersion') if target is not None else None
     if target_sdk is None or not target_sdk.isdigit() or int(target_sdk) < MIN_TARGET_SDK:
@@ -119,6 +130,7 @@ def main(argv):
 
     print(f'aab ok ({app_name}): {package} {want_name}+{want_code}, targetSdk {target_sdk}, '
           f'permissions {", ".join(sorted(permissions))}')
+    print(f'play versionCode gate ok ({app_name}): {want_code} > highest submitted {submitted}')
     return 0
 
 
