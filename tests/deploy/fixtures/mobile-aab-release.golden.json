@@ -1,0 +1,106 @@
+{
+  "_about": "Golden shape of the release job (mobile-aab-release.yml:aab). Any workflow step change must change this file in the same review. Compared by ci-gate-policy.test.mjs.",
+  "steps": [
+    {
+      "name": "Run only from main",
+      "run": "sha256:0f8fc5a126b6dd4cfaf6a8db1154d0679b826bed7de91a0d8cd13f15abbd6f89"
+    },
+    {
+      "name": "Require the public app-signer pin (no upload secret here)",
+      "env": {
+        "APP_SIGNER_PIN": "${{ vars.ANDROID_APP_SIGNER_SHA256 }}"
+      },
+      "run": "sha256:9d4a24dccf6573288951a99864af7be6420f774be4ccb7ab50f30cf97a3b39c2"
+    },
+    {
+      "name": "Check out the exact source commit",
+      "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+      "with": {
+        "ref": "${{ github.sha }}",
+        "persist-credentials": false
+      }
+    },
+    {
+      "name": "Source matches the run commit",
+      "run": "sha256:ff981e2376cbda8050a8eeb6d868ecf4b960e89ee83931187bf092e297f6b787"
+    },
+    {
+      "name": "App identity and version (pubspec.yaml)",
+      "run": "sha256:4081cbc16527f6b979458b58a880b6450d268860d5f4bb767a3528f355215517"
+    },
+    {
+      "name": "Central endpoints (config/endpoints.json)",
+      "run": "sha256:f33f4adad8c9fda201f47169ece35c646b373331af690dccd85614d7c406c1f4"
+    },
+    {
+      "uses": "actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3",
+      "with": {
+        "distribution": "temurin",
+        "java-version": "17"
+      }
+    },
+    {
+      "uses": "subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2",
+      "with": {
+        "flutter-version": "3.47.9",
+        "channel": "stable",
+        "cache": true
+      }
+    },
+    {
+      "name": "Flutter version",
+      "run": "sha256:e396d994147f05838798b98ecd2d8b402f89385b0fca5d5f30134c2c71e25f5a"
+    },
+    {
+      "name": "Dependencies",
+      "run": "sha256:207a573c49c8a4726e7a33bf0d686373fe4ae4ae38a6258c4133493157910bca"
+    },
+    {
+      "name": "Prepare Android project (push must be on for a release)",
+      "env": {
+        "FCM_PROJECT_ID": "${{ vars.FCM_PROJECT_ID }}",
+        "FCM_SENDER_ID": "${{ vars.FCM_SENDER_ID }}",
+        "FCM_APP_ID": "${{ inputs.app == 'ship' && vars.FCM_SHIP_APP_ID || vars.FCM_FOOD_APP_ID }}",
+        "FCM_API_KEY": "${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}"
+      },
+      "run": "sha256:53e364990fed96e48c4398ce582e1bb73bc1d797fbe53ce5beebe88245c40a6b"
+    },
+    {
+      "name": "Offline map package is complete (required)",
+      "run": "sha256:5db0839ba29677637742d6607e3d991c1cc6913b616aba9877b0cf7ff0da2bca"
+    },
+    {
+      "name": "Build the release bundle (unsigned by us; Flutter signs it with the debug key)",
+      "run": "sha256:88fae98f6fb48f8a1214009bd796bc12c8be5478cd287481ef2cd944c6b99aa8"
+    },
+    {
+      "name": "Sign the bundle with the upload key (single signer)",
+      "env": {
+        "ANDROID_UPLOAD_KEYSTORE_BASE64": "${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}",
+        "ANDROID_UPLOAD_KEYSTORE_PASSWORD": "${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}",
+        "ANDROID_UPLOAD_KEY_ALIAS": "${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}",
+        "ANDROID_UPLOAD_KEY_PASSWORD": "${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}"
+      },
+      "run": "sha256:a2a28ddf85b437412c5b7a7f14a4399c237249c3ab714b8ff8bee48f658fb409"
+    },
+    {
+      "name": "Verify the signature (one signer) and the merged manifest",
+      "run": "sha256:7f4daed96d909eb5d0f6a0b2596f869cb3cd928e044d0e311a49a2d0641c9652"
+    },
+    {
+      "name": "Write the release record (public values only)",
+      "run": "sha256:fc7e694b77fee494e6c14ba9fd1c68458950c7d2ba6d8693d43997c103f2bcb2"
+    },
+    {
+      "name": "Upload the signed bundle and its release record",
+      "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "with": {
+        "name": "${{ env.ARTIFACT_BASENAME }}-aab",
+        "path": "${{ runner.temp }}/release/${{ env.ARTIFACT_BASENAME }}.aab\n${{ runner.temp }}/release/${{ env.ARTIFACT_BASENAME }}-release.json\n",
+        "if-no-files-found": "error",
+        "retention-days": 7
+      }
+    }
+  ],
+  "signRun": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/release\"\napp_pin='${{ vars.ANDROID_APP_SIGNER_SHA256 }}'\napp_pin=\"$(printf '%s' \"$app_pin\" | tr 'A-F' 'a-f')\"\nANDROID_APP_SIGNER_PIN=\"$app_pin\" ANDROID_UPLOAD_CERT_PIN='${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}' \\\n  bash mobile/tool/sign-aab.sh \"$RUNNER_TEMP/unsigned.aab\" \"$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab\" \"$app_pin\"\n"
+}
