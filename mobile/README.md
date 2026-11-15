@@ -98,11 +98,11 @@ Every subsequent test APK must install as an update over the previous build, pre
 Implemented in M01-ANDROID: the workflow has no ephemeral fallback. Its first step (before checkout) fails with a clear error naming the missing secret(s), so nothing is built, signed or uploaded; the Owner has set all four Secrets. The workflow checks the APK's applicationId, versionName and versionCode (both from the pubspec), and that the APK is signed with the keystore's certificate, and builds exactly the commit it reports (`SOURCE_SHA`).
 
 ### Signing for the official packages — Owner decision 14/11/2026
-Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md) (section 0A).
-- **One app-signing key shared by 11Food and 11Ship.** It signs the direct-install APKs and is the key Play App Signing uses. The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
+Operational steps, secret names and checks: [ops/runbooks/android-release-signing-20261114.md](../ops/runbooks/android-release-signing-20261114.md).
+- **Cùng Play app-signing certificate cho hai APK do Play phân phối; private app-signing key không nằm trong GitHub/pipeline test.** The peer check (`N11PeerPolicy`, Binder) requires both apps to carry the same certificate.
 - **A separate upload key**, never equal to the app-signing key. It is meant to sign only the AAB for Play.
 - **Workflow AAB for Play:** `mobile-aab-release.yml` (manual dispatch from `main`, GitHub Environment `android-release` with required reviewers). It signs the bundle with the upload key via `mobile/tool/sign-aab.sh`, checks the signature and merged manifest, and attaches the AAB as an artifact. It never uploads to Google Play. The `ANDROID_UPLOAD_*` secrets live only in that environment. Steps: [runbook sections 4–7](../ops/runbooks/android-release-signing-20261114.md).
-- **Mobile APK (PR/push)** still compiles the AAB and checks its structure only, in a temporary path; it does not sign or upload a bundle.
+- **Mobile APK (PR và `workflow_dispatch`; không có trigger push)** still compiles the AAB and checks its structure only, in a temporary path; it does not sign or upload a bundle.
 - Secrets `ANDROID_TEST_KEYSTORE_*` sign the **test** APKs built by CI. They are not the Production app-signing key. Nothing here creates, replaces or copies a key silently.
 - Release versionCode: the Play submitted-versionCode gate and its record are in [mobile/release/README.md](release/README.md) (record: `mobile/release/play-submitted-versioncode.json`).
 - No debug key, no throw-away key; the keys, passwords and any service-account file stay out of the repository, logs and reports.

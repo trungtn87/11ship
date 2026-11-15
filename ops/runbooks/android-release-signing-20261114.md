@@ -11,12 +11,12 @@ Liên quan: [mobile/README.md](../../mobile/README.md) (mục Signing), [mobile/
 
 | Môi trường | Ai tạo / ở đâu | Chữ ký | Package | Dùng để làm gì |
 |---|---|---|---|---|
-| **APK test CI** | Workflow **Mobile APK** (chạy trên PR/push) | Khóa **TEST** bền, secret `ANDROID_TEST_KEYSTORE_*`. **Đây là chữ ký test, KHÔNG phải chữ ký Production** | `vn.eleven.food`, `vn.eleven.ship` | Cài thử trên máy Owner. Cài đè giữa các bản test (giữ dữ liệu) |
+| **APK test CI** | Workflow **Mobile APK** (chạy khi mở/cập nhật PR hoặc dispatch thủ công; không có trigger push) | Khóa **TEST** bền, secret `ANDROID_TEST_KEYSTORE_*`. **Đây là chữ ký test, KHÔNG phải chữ ký Production** | `vn.eleven.food`, `vn.eleven.ship` | Cài thử trên máy Owner. Cài đè giữa các bản test (giữ dữ liệu) |
 | **Play Production** | Workflow **Mobile AAB release (Play)** (chỉ dispatch từ `main`, environment `android-release`) tạo AAB ký bằng **upload key**. Google Play ký lại bằng **app-signing key** khi phát hành | Upload key (ký AAB gửi Play); app-signing key do Play App Signing giữ hoặc đã đăng ký | Cùng package ID như trên | Owner tải AAB từ artifact và tải lên **Internal testing** thủ công |
 | **VPS** (backend) | Không ký. Backend chỉ chấp nhận APK có chữ ký nằm trong allowlist signer | Không có khóa ký | — | Kiểm signer của APK khi đăng nhập thiết bị (allowlist `android-signers.json`) |
 
 Quy tắc:
-- Chữ ký TEST của CI **không** được ghim, đăng ký hay dùng làm chữ ký Production. Mọi tài liệu cũ coi khóa TEST là khóa Production đã bị xóa.
+- Khóa TEST **không phải** app-signing key và **không bao giờ** được dùng làm chữ ký Production, không có ngoại lệ. Chữ ký TEST của CI không được ghim, đăng ký hay đưa vào chuỗi phát hành Production.
 - **Upload key không bao giờ trùng app-signing key.** `sign-aab.sh` và workflow đều từ chối khi trùng.
 - 11Food và 11Ship **phải cùng một app-signing key** (peer check trong `N11PeerPolicy` và Binder so signer).
 - Chữ ký Production khác chữ ký TEST. Máy đang cài APK TEST **không cài đè được** bản Production cùng package: phải gỡ bản TEST rồi cài bản Production (xem mục 9).
@@ -60,7 +60,7 @@ keytool -genkeypair -v -keystore upload-keystore.jks -alias upload -keyalg RSA -
 - Không đặt file `.jks` trong cây thư mục `D:\11Ship`.
 - Không chạy lệnh tạo khóa trong terminal có ghi log lâu dài; xóa lịch sử lệnh có mật khẩu nếu đã gõ trực tiếp.
 
-Trạng thái khóa TEST hiện có không được dùng để suy ra app-signing key Production. Nếu Owner muốn dùng lại khóa TEST làm app-signing, đó là quyết định riêng: Owner phải xác nhận bản sao lưu và chứng thư Play Console, rồi báo Lead trước khi làm.
+App-signing key Production do Play App Signing giữ hoặc đã đăng ký với Play; không suy ra từ khóa TEST hiện có.
 
 ## 4. Environment `android-release` và bốn secret `ANDROID_UPLOAD_*` (Owner)
 
@@ -90,7 +90,7 @@ Sau đó xóa `upload.b64` khỏi máy.
 
 Đặt các biến (repository variables), theo bảng mục 2:
 ```
-gh variable set ANDROID_TEST_SIGNER_SHA256 --repo trungtn87/11ship --body '6aa5abfcace6e1b55f6cede5e1aea0dc449fdd3f67b50ebf5a92a62f38dbd0a3'   # tùy chọn, chỉ ghim APK test
+gh variable set ANDROID_TEST_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex của chứng chỉ TEST>'   # tùy chọn, chỉ ghim APK test
 gh variable set ANDROID_APP_SIGNER_SHA256 --repo trungtn87/11ship --body '<64 hex của app-signing Play>'   # đã đặt; chỉ đặt lại khi Owner yêu cầu
 gh variable set ANDROID_UPLOAD_CERT_SHA256 --repo trungtn87/11ship --body '<64 hex của upload key>'   # tùy chọn
 ```
@@ -134,16 +134,24 @@ Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.
 - Không bao giờ giảm giá trị; CI kiểm việc này so với `origin/main`.
 - Kiểm cục bộ: `python mobile/tool/play_versioncode_gate.py validate` (Windows) hoặc `python3 mobile/tool/play_versioncode_gate.py validate`.
 
-## 9. Chuyển từ APK ký TEST sang bản Production (cùng package ID)
+## 9. Thứ tự chuyển TEST → Play (một luồng tuyến tính, hai app cùng lúc)
 
-- Chữ ký Production khác chữ ký TEST. Android **không cài đè** được: người dùng phải **gỡ bản TEST** rồi cài bản Production.
-- Dữ liệu cục bộ trên máy (phiên đăng nhập, cache) mất theo; dữ liệu tài khoản vẫn ở backend. Người dùng đăng nhập lại.
-- Thứ tự: (a) biến `ANDROID_APP_SIGNER_SHA256` đã đặt đúng (mục 2); (b) cài bản Production từ Internal testing; (c) chạy checklist mục 10; (d) chỉ sau khi đạt, gỡ bản TEST còn trên máy và ghi giờ gỡ.
-- Không dùng bản TEST để kiểm chứng Production, và không dùng bản Production để kiểm chứng logic test.
+Lý do: chữ ký Play khác chữ ký TEST, Android **không cài đè** được (phải gỡ TEST trước), và Binder yêu cầu 11Food và 11Ship cùng signer. Vì vậy hai app chuyển cùng nhau theo đúng thứ tự dưới đây. **Không chạy checklist mục 10 khi một app còn signer TEST và app kia là signer Play.**
+
+1. **Secret/biến:** Owner xác nhận `ANDROID_APP_SIGNER_SHA256` đã đặt đúng (mục 2), bốn secret `ANDROID_UPLOAD_*` trong `android-release` (mục 4) và FCM (mục 5).
+2. **Dispatch từ `main`:** chạy **Mobile AAB release (Play)** với `app=food`, rồi `app=ship` (mục 6); duyệt environment `android-release`; tải artifact `-aab` của từng app.
+3. **Internal testing:** Owner tải AAB lên Internal testing và đối chiếu dấu vân tay app-signing (mục 7). Không khớp thì dừng và báo Lead.
+4. **Hồ sơ versionCode:** sau khi Owner xác nhận Play nhận AAB, mở PR riêng cập nhật `mobile/release/play-submitted-versioncode.json` (mục 8).
+5. **Allowlist VPS:** chỉ khi Owner ra lệnh riêng, thực hiện cutover nguyên tử ở mục 11, kèm health check và rollback sẵn sàng. Từ bước này APK TEST không còn được server chấp nhận.
+6. **Gỡ TEST:** cảnh báo trước: phiên đăng nhập và cache cục bộ sẽ mất; dữ liệu tài khoản vẫn ở backend. Gỡ **cả hai** app TEST (`vn.eleven.food`, `vn.eleven.ship`) và ghi giờ gỡ.
+7. **Cài từ Play:** cài cả hai app từ Internal testing, rồi đăng nhập lại.
+8. **Nghiệm thu:** chạy checklist mục 10 (Binder, OTP, FCM, ...).
+
+Không dùng bản TEST để kiểm chứng Production, và không dùng bản Production để kiểm chứng logic test.
 
 ## 10. Checklist nghiệm thu trên máy thật (Owner; CI xanh không thay thế)
 
-Điều kiện: đã có bản cài từ Internal testing; VPS đã ở trạng thái đã duyệt (mục 11). Mỗi mục ghi đạt/không/giờ. Không chụp màn hình có số điện thoại, token hay địa chỉ.
+Điều kiện: cả hai app đã là bản cài từ Play (mục 9, bước 7); cutover allowlist mục 11 đã xong và health đạt (mục 11, bước 4). Mỗi mục ghi đạt/không/giờ. Không chụp màn hình có số điện thoại, token hay địa chỉ.
 
 - [ ] **Binder (peer):** cài cả 11Food và 11Ship, thử hai thứ tự cài. Hai app nhận diện nhau cùng signer, không báo lỗi xác thực peer.
 - [ ] **OTP:** nhập số, nhận mã OTP qua SMS Gateway (#101/#103, kênh OTP duy nhất). Khi Gateway chưa sẵn sàng, app phải báo lỗi rõ, không tự chấp nhận mã.
@@ -156,12 +164,25 @@ Quy tắc chi tiết ở [mobile/release/README.md](../../mobile/release/README.
 - [ ] **Từ chối quyền thông báo:** app hướng dẫn mở cài đặt, không treo.
 - [ ] **Buộc dừng (giới hạn đã biết):** sau khi người dùng buộc dừng app, Android không giao thông báo đến khi mở lại app. Ghi nhận, không coi là lỗi.
 
-## 11. Allowlist signer trên VPS (chưa áp dụng; cần lệnh riêng của Owner)
+## 11. Allowlist signer trên VPS (cutover nguyên tử; cần lệnh riêng của Owner)
 
-- Hiện allowlist (`/etc/11ship/android-signers.json`, xem [m01-vps-android-sms-connect.md](m01-vps-android-sms-connect.md)) lấy từ artifact `android-signers.json` của workflow Mobile APK, tức chữ ký APK test.
-- **Cần thêm** dấu vân tay app-signing Production, tức giá trị của biến `ANDROID_APP_SIGNER_SHA256` (mục 2; cùng cho hai app), để thiết bị cài từ Play đăng nhập được. Allowlist hiện chỉ có chữ ký TEST của APK CI. Đây là bước backend cần **lệnh riêng của Owner**; PR này và runbook này **không** thực hiện, không sửa file trên VPS, không deploy.
+- File allowlist Production là `/etc/11ship/trust/android-signers.json` (`CLIENT_DEVICE_ALLOWED_SIGNERS_FILE` trong [ops/vinahost/production.env.example](../vinahost/production.env.example); quy trình trong [vps-production-update-20261014.md](vps-production-update-20261014.md) mục 4). Nội dung hiện tại lấy từ artifact `android-signers.json` của **Mobile APK**, tức chữ ký TEST.
+- **Schema bắt buộc** ([apps/backend/src/config/client-device-config.ts](../../apps/backend/src/config/client-device-config.ts)): đúng hai khóa `FOOD` và `SHIP`; mỗi khóa đúng hai trường `package_name` (`vn.eleven.food` / `vn.eleven.ship`) và `signer_sha256` (64 hex); hai `signer_sha256` phải bằng nhau. Mỗi app đúng một signer.
+- **Cutover = THAY cả hai entry** bằng cùng một chứng chỉ Play app-signing (giá trị `ANDROID_APP_SIGNER_SHA256`, mục 2). **Không thêm** signer thứ hai: file có thêm khóa hay hai giá trị khác nhau bị từ chối và dịch vụ không khởi động.
+
+```json
+{"FOOD":{"package_name":"vn.eleven.food","signer_sha256":"<64 hex của ANDROID_APP_SIGNER_SHA256>"},"SHIP":{"package_name":"vn.eleven.ship","signer_sha256":"<cùng 64 hex>"}}
+```
+
+Các bước (Owner ra lệnh; thao tác trên VPS theo tên service production `11ship-staging` trong [vps-production-update-20261014.md](vps-production-update-20261014.md)):
+1. **Sao lưu** file hiện tại, giữ quyền và chủ sở hữu: `cp -p /etc/11ship/trust/android-signers.json /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD>`.
+2. **Ghi file mới ra tệp tạm** trong cùng thư mục, không sửa tại chỗ: `install -m 640 -o root -g ship11 <file-mới>.json /etc/11ship/trust/android-signers.json.new`. **Validate trước khi thay:** `python3 -m json.tool` đọc được, đủ đúng hai khóa `FOOD`/`SHIP`, hai `signer_sha256` bằng nhau và đủ 64 hex.
+3. **Thay nguyên tử:** `mv -f /etc/11ship/trust/android-signers.json.new /etc/11ship/trust/android-signers.json` (cùng thư mục nên là một thao tác đổi tên).
+4. **Khởi động lại và kiểm tra:** `systemctl restart 11ship-staging && sleep 3`; `journalctl -u 11ship-staging -n 40 --no-pager` phải có dòng khởi động, không có lỗi cấu hình; `curl -fsS http://127.0.0.1:3000/v1/health/ready` phải đạt; sau đó kiểm `https://<domain production>/v1/health/ready`.
+5. **Rollback sẵn sàng trước khi test thiết bị:** nếu bước 4 không đạt: `mv -f /etc/11ship/trust/android-signers.json.bak-<YYYYMMDD> /etc/11ship/trust/android-signers.json`, khởi động lại, kiểm health, rồi báo Lead kèm nguyên nhân. **Chỉ test thiết bị (mục 10) khi bước 4 đạt.**
+
+Sau cutover, chữ ký TEST của APK CI **không còn được allowlist**; không dùng artifact `android-signers.json` của Mobile APK để cutover. Chấp nhận đồng thời TEST và Play cần PR backend/schema riêng có review. PR này và runbook này **không** nới `N11PeerPolicy`, **không** bỏ allowlist, **không** sửa file trên VPS và không deploy.
 - Không dùng upload certificate trong allowlist: upload key không ký APK cài trực tiếp.
-- Trước khi Owner ra lệnh: sao lưu file hiện tại; giữ JSON hợp lệ; quyền file theo quy trình VPS đã duyệt; khởi động lại service theo quy trình đã duyệt.
 
 ## 12. Giới hạn
 
