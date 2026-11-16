@@ -62,3 +62,13 @@ Mọi bước gọi script đều chạy `sha256sum -c mobile/release/script-pin
 - Tính lại digest: `tr -d '\r' < mobile/tool/<tên> | sha256sum`.
 - Thêm `import` cục bộ mới vào script đã ghim thì phải ghim module đó; test closure trong `ci-gate-policy.test.mjs` sẽ FAIL nếu quên.
 - Pin chỉ chặn việc đổi file lặng lẽ ngoài diff được duyệt. Pin nằm trong cùng repo nên không chống được commit độc hại đã được merge.
+
+## Vì sao KHÔNG ghim dữ liệu đầu vào của script
+
+Pin chỉ áp dụng cho **mã** của script trong closure ở trên. Các **dữ liệu** mà script đọc khi chạy thì không ghim, vì chúng thay đổi hợp lệ theo từng bản phát hành hoặc từng thay đổi Android, và việc ghim chúng sẽ làm mọi lần phát hành FAIL mà không tăng độ an toàn:
+
+- **`version:` trong `mobile/<app>/pubspec.yaml`** (đọc bởi `app-version.sh`): đổi ở mỗi bản phát hành (`X.Y.Z+N`, `N` luôn tăng). `app-version.sh` đã kiểm tra định dạng bằng regex, và `versionCode` được đối chiếu với hồ sơ Play bên dưới.
+- **Hồ sơ `play-submitted-versioncode.json`** (đọc qua `play_versioncode_gate.py`): cập nhật bằng PR riêng sau khi Owner xác nhận Google Play đã nhận bản đó. Tính đơn điệu được kiểm tra bằng `play-versioncode-gate` test so với `origin/main`, không cần digest.
+- **Template trong `mobile/tool/android-templates/`** (được `prepare-android.sh` sao chép vào project Android khi build): nội dung đổi khi Android thay đổi (manifest, Kotlin, cấu hình mạng, style). Mọi thay đổi này đã đi qua review PR và qua build APK/AAB; ghim chúng sẽ bắt buộc cập nhật digest ở mọi thay đổi Android mà không bảo vệ thêm được gì, vì pin nằm trong cùng repo (xem ghi chú ở trên).
+
+Quy tắc: `prepare-android.sh`, `app-version.sh` và `play_versioncode_gate.py` vẫn được ghim như mã; chỉ dữ liệu chúng đọc là không ghim. Nếu một thay đổi dữ liệu làm đổi cách script hiểu nó (ví dụ đổi định dạng `version:`), thay đổi đó phải đi kèm sửa script và test tương ứng trong cùng PR.
