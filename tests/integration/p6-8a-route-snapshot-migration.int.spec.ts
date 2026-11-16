@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { Client } from "pg";
@@ -145,15 +146,44 @@ describe("P6-8a — route snapshot migrations on a database with older data", ()
     ).toEqual({ n: 2 });
   });
 
-  it("retention function: EXECUTE is not granted to PUBLIC, so only the granted runtime role can call it (the grant itself is in ops/selfhosted)", async () => {
-    const result = await client.query<{
-      public_exec: boolean;
-      owner_exec: boolean;
-    }>(
-      `SELECT has_function_privilege('public', '${PURGE}', 'EXECUTE') AS public_exec,
-              has_function_privilege(current_user, '${PURGE}', 'EXECUTE') AS owner_exec`,
-    );
-    expect(result.rows[0]).toEqual({ public_exec: false, owner_exec: true });
+  it("runtime grants: a disposable role built from ops/selfhosted 02 + 03 can EXECUTE the purge, cannot DELETE route_snapshots, and PUBLIC cannot EXECUTE", async () => {
+    // The real runtime role (ship11_app) is not created here. Its grants come from the same two files the operator runs, applied to a
+    // throw-away NOLOGIN role; the role is dropped afterwards. Removing the GRANT EXECUTE line for the purge from 03 makes this fail.
+    const probe = `p68a_probe_${randomBytes(6).toString("hex")}`;
+    const grantScripts = [
+      "02-runtime-grants.sql",
+      "03-runtime-function-grants.sql",
+    ]
+      .map((file) =>
+        readFileSync(path.join(REPO_ROOT, "ops", "selfhosted", file), "utf8"),
+      )
+      .join("\n")
+      .replace(/\bship11_app\b/g, probe);
+    await client.query(`CREATE ROLE ${probe} NOLOGIN`);
+    try {
+      await client.query(grantScripts);
+      const result = await client.query<{
+        exec: boolean;
+        insert: boolean;
+        del: boolean;
+        public_exec: boolean;
+      }>(
+        `SELECT has_function_privilege($1, '${PURGE}', 'EXECUTE') AS exec,
+                has_table_privilege($1, 'app.route_snapshots', 'INSERT') AS insert,
+                has_table_privilege($1, 'app.route_snapshots', 'DELETE') AS del,
+                has_function_privilege('public', '${PURGE}', 'EXECUTE') AS public_exec`,
+        [probe],
+      );
+      expect(result.rows[0]).toEqual({
+        exec: true,
+        insert: true,
+        del: false,
+        public_exec: false,
+      });
+    } finally {
+      await client.query(`DROP OWNED BY ${probe}`);
+      await client.query(`DROP ROLE ${probe}`);
+    }
   }, 180_000);
 
   it("a database that already holds DUPLICATE round-1 content: round 2 refuses, rolls back as a whole, and round 1 stays exactly as it was", async () => {
