@@ -982,7 +982,8 @@ function scriptPinViolations(pinText, contents) {
 
 test('script pins: the real release scripts match the pin file, and the golden mirrors the pin file', () => {
   assert.deepEqual(scriptPinViolations(pinReal(), realScripts()), []);
-  const pinned = Object.fromEntries(pinReal().trim().split('\n').map(line => { const [digest, path] = line.split('  '); return [path, digest]; }));
+  // CRLF-tolerant like the digest check above: a Windows checkout may hold CRLF; the committed file is LF.
+  const pinned = Object.fromEntries(pinReal().replace(/\r\n/g, '\n').trim().split('\n').map(line => { const [digest, path] = line.split('  '); return [path, digest]; }));
   assert.deepEqual(AAB_GOLDEN.scriptPins, pinned, 'golden.scriptPins equals the pin file');
 });
 

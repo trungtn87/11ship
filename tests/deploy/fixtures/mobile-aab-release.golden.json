@@ -108,6 +108,6 @@
     "mobile/tool/prepare-android.sh": "97242ece8bb15661e4e5ec36b77a603cdedfbfaef6eec2bf8a9d91615774ae50",
     "mobile/tool/sign-aab.sh": "99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc",
     "mobile/tool/check-aab-release.py": "020b32a483e3c9f6f01286d2ac46d569b67273de52186a852e42320a8aee0e87",
-    "mobile/tool/play_versioncode_gate.py": "198abee898da270f2bc371df7db065e8e39658ea98fc6f986ebcc1ff4f220830"
+    "mobile/tool/play_versioncode_gate.py": "e1d731538fb037a46537d9881f0870d727d3db66419f44fc2be8c2d5fea35b5b"
   }
 }
