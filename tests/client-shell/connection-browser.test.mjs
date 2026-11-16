@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -165,7 +165,8 @@ let cdp;
 async function launchBrowser() {
   profileDir = mkdtempSync(join(tmpdir(), 'client-browser-profile-'));
   const args = ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profileDir}`, '--force-color-profile=srgb', 'about:blank'];
-  chrome = spawn(findChrome(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  // Own process group on POSIX, so that stopBrowser can kill Chrome's helper processes with it.
+  chrome = spawn(findChrome(), args, { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
   const endpoint = await new Promise((resolve, reject) => {
     let text = '';
     const timer = setTimeout(() => reject(new Error(`Chrome did not start: ${text.slice(-400)}`)), 20_000);
@@ -325,14 +326,72 @@ before(async () => {
 
 after(async () => {
   cdp?.close();
-  chrome?.kill('SIGKILL');
-  await food?.close();
-  await ship?.close();
-  rmSync(out, { recursive: true, force: true });
-  if (profileDir !== undefined) {
-    rmSync(profileDir, { recursive: true, force: true });
+  try {
+    // Servers first, always: a failed browser teardown must not leave the test process alive.
+    await food?.close();
+    await ship?.close();
+    // Kill the whole browser tree (renderer, GPU and storage helpers keep files in the profile directory).
+    await stopBrowser();
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+    if (profileDir !== undefined) {
+      // Temporary profile cleanup only: a busy directory is reported, it does not fail the suite.
+      try {
+        rmSync(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      } catch (error) {
+        console.warn(`client browser profile not removed (${error.code ?? error.message}): ${profileDir}`);
+      }
+    }
   }
 });
+
+/** Kills Chrome and waits until the main process has exited, so it stops writing into the profile directory. */
+async function stopBrowser() {
+  const proc = chrome;
+  if (proc === undefined) {
+    return;
+  }
+  const mainExited = proc.exitCode !== null || proc.signalCode !== null;
+  const exited = mainExited ? Promise.resolve() : new Promise((resolve) => proc.once('exit', resolve));
+  // Always sweep the whole browser, even when the main process already exited on its own: its helpers (renderer, GPU,
+  // storage service) can outlive it and keep files open in the profile directory.
+  killBrowserProcesses(proc.pid, profileDir);
+  let timer;
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`Chrome did not exit after SIGKILL (exitCode=${proc.exitCode}, signal=${proc.signalCode})`)), 10_000);
+  });
+  try {
+    await Promise.race([exited, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Windows: every chrome.exe that was started with this profile (orphaned helpers have no living parent, so a tree kill
+ * from the main pid misses them). POSIX: the process group created at spawn time (detached: true).
+ */
+function killBrowserProcesses(pid, profile) {
+  if (process.platform === 'win32') {
+    if (profile !== undefined) {
+      spawnSync(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command',
+          "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like ('*' + $env:CHROME_PROFILE_SWEEP + '*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+        { stdio: 'ignore', env: { ...process.env, CHROME_PROFILE_SWEEP: profile } },
+      );
+    }
+    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch (error) {
+    if (error.code !== 'ESRCH') {
+      throw error;
+    }
+  }
+}
 
 async function withPage(width, run) {
   const page = await newPage();
