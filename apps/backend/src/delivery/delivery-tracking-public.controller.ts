@@ -47,8 +47,9 @@ export class DeliveryTrackingPublicController {
   ) {}
 
   private checkRateLimit(identity: string): void {
-    if (!this.limiter.allow(identity)) {
-      throw new PublicRateLimitedError(this.limiter.retryAfterSeconds(identity));
+    const decision = this.limiter.take(identity);
+    if (!decision.allowed) {
+      throw new PublicRateLimitedError(decision.retryAfterSeconds);
     }
   }
 

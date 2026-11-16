@@ -30,9 +30,9 @@ export class DiscoveryRouteController {
   @Post('route-distances')
   @HttpCode(200)
   async distances(@Body() body: unknown, @Req() req: OtpIpRequest, @Res({ passthrough: true }) response: { setHeader(name: string, value: string): unknown }) {
-    const identity = this.clientIp.identity(req);
-    if (!this.limiter.allow(identity)) {
-      throw new PublicRateLimitedError(this.limiter.retryAfterSeconds(identity));
+    const decision = this.limiter.take(this.clientIp.identity(req));
+    if (!decision.allowed) {
+      throw new PublicRateLimitedError(decision.retryAfterSeconds);
     }
     const input = parseRouteDistancesBody(body);
     response.setHeader('Cache-Control', 'no-store');
