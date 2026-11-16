@@ -155,3 +155,38 @@ describe('routes and numbers match the backend', () => {
     assert.match(backendSource('health/health.controller.ts'), /@Controller\('health'\)/);
   });
 });
+
+describe('429 answer has the backend error envelope (JSON)', () => {
+  const block = nginx.slice(nginx.indexOf('location @ship11_rate_limited'));
+  const body = /return 429 '([^']+)';/.exec(block)?.[1] ?? '';
+
+  test('nginx-made 429s are intercepted by a named JSON location in the HTTPS server', () => {
+    assert.match(nginx, /^    error_page 429 = @ship11_rate_limited;$/m);
+    assert.match(block, /default_type application\/json;/);
+    assert.ok(body, 'the named location must return 429 with a body');
+  });
+
+  test('the body is valid JSON with the envelope keys, and the code and message are the backend ones for 429', () => {
+    const json = JSON.parse(body.replaceAll('$ship11_request_uuid', '00000000-0000-0000-0000-000000000000'));
+    assert.deepEqual(Object.keys(json), ['error']);
+    assert.deepEqual(Object.keys(json.error).sort(), ['code', 'details', 'message', 'request_id']);
+    assert.deepEqual(json.error.details, {});
+    const envelope = backendSource('http/error-envelope.ts');
+    const known = /429: \{ code: '([A-Z_]+)', message: '([^']+)' \}/.exec(envelope);
+    assert.ok(known, 'backend KNOWN[429] must exist');
+    assert.equal(json.error.code, known[1]);
+    assert.equal(json.error.message, known[2]);
+  });
+
+  test('the request id is the same value in the body and the X-Request-ID header, shaped as a UUID', () => {
+    assert.match(block, /add_header X-Request-ID \$ship11_request_uuid always;/);
+    assert.match(body, /"request_id":"\$ship11_request_uuid"/);
+    // Quoted on purpose: an unquoted `{8}` is read as a block opener and nginx -t fails.
+    assert.ok(nginx.includes('"~^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$" "$1-$2-$3-$4-$5";'));
+  });
+
+  test('the JSON answer is only in the HTTPS server, and the HTTP redirect site is unchanged', () => {
+    const httpBlock = nginx.split('server {').filter((b) => /listen 80;/.test(b)).join('');
+    assert.doesNotMatch(httpBlock, /error_page|ship11_rate_limited/);
+  });
+});

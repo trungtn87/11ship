@@ -91,7 +91,8 @@ Quy tắc:
 - Mọi location giới hạn lặp đủ bộ header của 3.1. `proxy_set_header` ở cấp location thay thế toàn bộ cấp cha nên thiếu một dòng là mất ghi đè.
 - **Không** giới hạn: verify OTP (`.../{id}/verify`; backend đã có `max_wrong_attempts`), TOTP admin, các route khác. Mở rộng cần quyết định riêng.
 - Giới hạn đã biết: IPv6 được tính theo từng địa chỉ ở nginx, còn backend gom `/64`. Nhiều người sau cùng một IPv4 (CGNAT) chung một zone, nên đăng nhập/OTP theo IP có thể bị 429 khi một mạng đông người. Sau triển khai, theo dõi log nginx dòng `limiting requests`.
-- Trang 429 của nginx là mặc định, **không phải** JSON của ứng dụng. Ứng dụng phải coi 429 không-JSON là "thử lại sau". **NOT TESTED trên máy.**
+- 429 do nginx trả có **envelope JSON giống backend** (`apps/backend/src/http/error-envelope.ts`): `{"error":{"code":"TOO_MANY_REQUESTS","message":"Too many requests","request_id":…,"details":{}}}`, `Content-Type: application/json`, cùng `X-Request-ID`. `request_id` do nginx tạo (dạng UUID từ `$request_id`), nên nó không xuất hiện trong log của backend. 429 do backend trả đi qua nguyên vẹn. Ứng dụng coi `TOO_MANY_REQUESTS` là "thử lại sau". **NOT TESTED trên máy.**
+- Hai backstop **khách 30/phút** và **OTP 10/phút** là số **chỉnh được**. Nếu nhiều người dùng chung một IP (mạng văn phòng, CGNAT), tăng `rate` và `burst` của zone tương ứng trong mẫu, áp lại theo mục 5, và dựa vào dòng `limiting requests` trong log nginx để quyết định.
 
 ## 4. Kiểm tra trạng thái VPS **trước** khi đổi (chỉ đọc; do operator được ủy quyền chạy, kết quả ghi vào hồ sơ vận hành)
 
@@ -123,7 +124,15 @@ Nếu không xác định chắc được N hoặc T, **coi là S1** (đường 
 
 ## 5. Deploy từng bước (CHỈ khi Owner cho phép; chưa thực hiện)
 
-Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` trả `ready` trước khi sang bước sau. Đường dẫn này theo mã nguồn là `GLOBAL_PREFIX = 'v1'` + `@Controller('health')`, **chưa xác nhận trên VPS**: đây là mục backlog #329. Nếu VPS trả 404 thì dừng và đối chiếu build đang chạy, không đoán đường dẫn khác. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
+Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` trả `ready` trước khi sang bước sau. Đường dẫn này theo mã nguồn là `GLOBAL_PREFIX = 'v1'` + `@Controller('health')`, **chưa xác nhận trên VPS**: giữ là **backlog #329**. Xác nhận bằng curl chỉ-đọc lúc deploy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/v1/health/ready` (kỳ vọng 200). Nếu VPS trả 404 thì dừng và đối chiếu build đang chạy, không đoán đường dẫn khác.
+
+**Thứ tự bắt buộc khi áp P5-7d (quyết định Claude Lead):** bật `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` **cùng lúc hoặc trước** khi áp zone giới hạn của mục 3.3, trong cùng một cửa sổ bảo trì. Nếu trust chưa bật thì mọi khách dùng chung một bucket tracking 60/phút ở backend: một khách vượt là mọi khách bị 429. Điều kiện an toàn của mục 4–5 vẫn giữ: **trust chỉ được bật sau khi 6A đã PASS** (nginx ghi đè `X-Forwarded-For`). Trình tự:
+
+1. Áp mẫu (ghi đè + zone + 429 JSON), `nginx -t`, reload. Chứng minh 6A trên các location.
+2. Nếu 6A PASS: bật trust trong cùng cửa sổ, restart, kiểm `ready`, rồi 6B và 6E.
+3. Nếu 6A FAIL: **không** bật trust (giữ `[]`). Zone không phụ thuộc trust nên có thể giữ, rồi báo.
+
+Không được để zone đã áp mà trust vẫn tắt sau khi cửa sổ kết thúc. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
 
 **Sao lưu trước khi đổi bất cứ thứ gì** (cho rollback tái lập được):
 
@@ -177,7 +186,7 @@ Kỳ vọng: **không** có `400` do header (nginx đã ghi đè thành một gi
 for i in $(seq 1 12); do curl -sk -o /dev/null -w "%{http_code} " -X POST -H 'Content-Type: application/json' -d '{}' https://103.9.78.67.sslip.io/v1/admin-auth/login; done; echo
 ```
 
-Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429`. Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend, không phải 429 trong 60 yêu cầu đầu. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
+Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429` với body JSON `TOO_MANY_REQUESTS` và header `X-Request-ID` (`curl -sk -i …` để xem). Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend, không phải 429 trong 60 yêu cầu đầu. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
 
 ## 7. Rollback
 
@@ -201,10 +210,10 @@ Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **t
 | Danh sách tin cậy sai dạng | Backend không khởi động (cấu hình không hợp lệ) | Chỉ IP literal chuẩn; thử cấu hình ở staging/local trước |
 | Thêm CDN/LB phía trước nginx | IP thật bị thay bằng IP lớp đó, tất cả dùng chung một bucket | Không có trong phạm vi; cần thiết kế riêng |
 | Restart backend khi deploy | Gián đoạn ngắn | Làm ngoài giờ cao điểm, theo runbook cập nhật |
-| Tracking khi backend CHƯA tin proxy (S0/S2) | Mọi khách dùng chung bucket 60/phút ở backend; khi vượt thì mọi khách bị 429 cùng lúc | Ưu tiên bật T theo mục 5 sau khi 6A PASS. Zone nginx 3.3 không sửa bucket backend. Claude Lead quyết định có cần sửa thêm ở backend không |
+| Tracking khi backend CHƯA tin proxy (S0/S2) | Mọi khách dùng chung bucket 60/phút ở backend; khi vượt thì mọi khách bị 429 cùng lúc | Bật T cùng cửa sổ với zone, sau khi 6A PASS (mục 5, thứ tự bắt buộc). Zone nginx 3.3 không sửa bucket backend. Không làm PR backend riêng (quyết định Lead) |
 | Zone nginx quá chặt với CGNAT/nhiều người sau một IP | Người dùng hợp lệ bị 429 khi đăng nhập hoặc gửi OTP | Các backstop mới (client login 30/phút, OTP 10/phút) cần Claude Lead xác nhận trước khi áp; theo dõi `limiting requests` trong log nginx |
 | Mốc nginx lệch cấu hình backend (`ip_per_hour`, `ACCOUNT_DELETE_*`) | Hai nơi cho hai con số | Mục 3.3; đổi cấu hình thì đổi zone tương ứng |
-| Trang 429 của nginx không phải JSON | Ứng dụng có thể hiện lỗi chung thay vì "thử lại sau" | Kiểm trên máy trước khi áp (NOT TESTED) |
+| 429 của nginx lệch envelope backend | App không nhận ra `TOO_MANY_REQUESTS` | Envelope khớp backend (test tĩnh đối chiếu `error-envelope.ts`, kiểm bằng echo upstream); app chưa kiểm trên máy (NOT TESTED) |
 | IPv6 | Gom `/64` ở backend; nginx tính từng địa chỉ | Hành vi thiết kế; ghi rõ ở 3.3 |
 | NAT nhà mạng (CGNAT) | Nhiều người dùng chung một IPv4 | Lớp theo số điện thoại là lớp chính (xem P5-6a); mục 3.3 ghi rõ giới hạn |
 
