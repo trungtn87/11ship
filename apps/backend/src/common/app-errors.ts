@@ -2,6 +2,8 @@
 // message defined here. Nothing from a thrown exception (message, details, extra "code" fields) is
 // ever copied into a response: classification looks at the class of the exception, not its content.
 
+import { HttpException, HttpStatus } from '@nestjs/common';
+
 export const APP_ERROR_DEFINITIONS = {
   BUSINESS_CHAT_RATE_LIMITED: { status: 429, message: 'Gửi tin nhắn quá nhanh. Vui lòng chờ một phút.' },
   MENU_VISIBLE_LIMIT_REACHED: { status: 409, message: 'Đã đạt giới hạn món hiển thị. Ẩn bớt món hoặc liên hệ quản trị để mở rộng thực đơn.' },
@@ -420,6 +422,21 @@ export class DeviceRateLimitedError extends AppError {
   constructor(retryAfterSeconds: number) {
     super('DEVICE_RATE_LIMITED');
     this.name = 'DeviceRateLimitedError';
+    this.retryAfterSeconds =
+      Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
+  }
+}
+
+/**
+ * A public-route refusal (tracking page, route distances) over the per-address limit. It is an HttpException with the same
+ * 429 status and message as before, plus the typed Retry-After value computed by the limiter (a finite integer >= 1).
+ */
+export class PublicRateLimitedError extends HttpException {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
+    this.name = 'PublicRateLimitedError';
     this.retryAfterSeconds =
       Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds >= 1 ? retryAfterSeconds : 1;
   }

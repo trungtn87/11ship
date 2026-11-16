@@ -23,7 +23,7 @@ interface Bucket {
  *    a heavy source can get extra requests. That fails open on the quota only; it cannot lock anyone out, and one source can only
  *    ever occupy one slot, so evicting others needs more than MAX distinct addresses.
  */
-export class PublicTrackingRateLimiter {
+export class PublicRateLimiter {
   readonly #buckets = new Map<string, Bucket>();
 
   constructor(
@@ -58,6 +58,18 @@ export class PublicTrackingRateLimiter {
     }
     this.#buckets.set(identity, { count: 1, resetAt: now + this.windowMs });
     return true;
+  }
+
+  /**
+   * Whole seconds (>= 1) until the identity's current window ends: the Retry-After value after allow() refused it.
+   * Computed from the same clock as allow(), so it is never longer than the window.
+   */
+  retryAfterSeconds(identity: string): number {
+    const bucket = this.#buckets.get(identity);
+    if (bucket === undefined) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil((bucket.resetAt - this.now()) / 1000));
   }
 
   #purgeExpired(now: number): void {

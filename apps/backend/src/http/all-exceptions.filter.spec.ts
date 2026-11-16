@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import {
   ArgumentsHost,
   BadRequestException,
+  HttpException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import {
   APP_ERROR_DEFINITIONS,
   AppError,
   AppErrorCode,
+  PublicRateLimitedError,
   TechnicalError,
 } from '../common/app-errors';
 import { CryptoError } from '../crypto/crypto-error';
@@ -84,6 +86,24 @@ describe('AllExceptionsFilter — Retry-After (administration rate limit)', () =
     const impostor = Object.assign(new Error('x'), { status: 429, retryAfterSeconds: 99, headers: { 'Retry-After': '99' } });
     const { reply, headers } = run(impostor);
     expect(reply.status).toBe(429);
+    expect(headers).toEqual([]);
+  });
+});
+
+describe('AllExceptionsFilter — Retry-After (public per-address limit)', () => {
+  it('sends Retry-After with the typed integer seconds and keeps the standard 429 envelope', () => {
+    const { reply, headers } = run(new PublicRateLimitedError(17));
+    expect(reply.status).toBe(429);
+    expect(reply.body).toEqual({
+      error: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests', request_id: REQUEST_ID, details: {} },
+    });
+    expect(headers).toEqual([['Retry-After', '17']]);
+  });
+
+  it('a plain 429 HttpException (not the typed class) still has the same envelope and no Retry-After', () => {
+    const { reply, headers } = run(new HttpException('Too Many Requests', 429));
+    expect(reply.status).toBe(429);
+    expect(reply.body.error.code).toBe('TOO_MANY_REQUESTS');
     expect(headers).toEqual([]);
   });
 });

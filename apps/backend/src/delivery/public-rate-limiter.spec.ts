@@ -4,12 +4,12 @@ import {
   PUBLIC_TRACKING_MAX_IDENTITIES,
   PUBLIC_TRACKING_PURGE_BATCH,
   PUBLIC_TRACKING_WINDOW_MS,
-  PublicTrackingRateLimiter,
-} from './public-tracking-rate-limiter';
+  PublicRateLimiter,
+} from './public-rate-limiter';
 
-function make(overrides: { max?: number; batch?: number } = {}): { limiter: PublicTrackingRateLimiter; clock: { t: number } } {
+function make(overrides: { max?: number; batch?: number } = {}): { limiter: PublicRateLimiter; clock: { t: number } } {
   const clock = { t: 1_000_000 };
-  const limiter = new PublicTrackingRateLimiter(
+  const limiter = new PublicRateLimiter(
     () => clock.t,
     PUBLIC_TRACKING_LIMIT,
     PUBLIC_TRACKING_WINDOW_MS,
@@ -19,7 +19,25 @@ function make(overrides: { max?: number; batch?: number } = {}): { limiter: Publ
   return { limiter, clock };
 }
 
-describe('PublicTrackingRateLimiter (P5-7b bounded store)', () => {
+describe('PublicRateLimiter Retry-After (whole seconds until the window ends)', () => {
+  it('reports the seconds left in the window, rounded up, and at least 1', () => {
+    const { limiter, clock } = make();
+    for (let i = 0; i <= PUBLIC_TRACKING_LIMIT; i += 1) limiter.allow('a');
+    expect(limiter.retryAfterSeconds('a')).toBe(60);
+    clock.t += 59_500;
+    expect(limiter.retryAfterSeconds('a')).toBe(1); // 500 ms left rounds up to 1 s
+    clock.t += 500; // exactly at the window edge (allow() still refuses when now == resetAt)
+    expect(limiter.allow('a')).toBe(false);
+    expect(limiter.retryAfterSeconds('a')).toBe(1);
+  });
+
+  it('an identity the limiter never saw gets 1, never 0 or NaN', () => {
+    const { limiter } = make();
+    expect(limiter.retryAfterSeconds('unknown')).toBe(1);
+  });
+});
+
+describe('PublicRateLimiter (P5-7b bounded store)', () => {
   it('still allows 60 requests per minute per identity and refuses the 61st', () => {
     const { limiter } = make();
     for (let i = 0; i < PUBLIC_TRACKING_LIMIT; i += 1) {

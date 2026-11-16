@@ -1,6 +1,7 @@
-import { Body, Controller, HttpCode, HttpException, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
-import { PublicTrackingRateLimiter } from '../delivery/public-tracking-rate-limiter';
+import { PublicRateLimitedError } from '../common/app-errors';
+import { PublicRateLimiter } from '../delivery/public-rate-limiter';
 import { DiscoveryRouteService } from './discovery-route-service';
 import { parseRouteDistancesBody } from './discovery-route-validation';
 
@@ -19,7 +20,7 @@ export const ROUTE_DISTANCES_LIMIT_PER_MINUTE = 120;
 @Controller('discovery')
 export class DiscoveryRouteController {
   /** The same bounded limiter as public tracking (fixed window, hard cap on identities), with this route's limit. */
-  private readonly limiter = new PublicTrackingRateLimiter(Date.now, ROUTE_DISTANCES_LIMIT_PER_MINUTE);
+  private readonly limiter = new PublicRateLimiter(Date.now, ROUTE_DISTANCES_LIMIT_PER_MINUTE);
 
   constructor(
     private readonly routes: DiscoveryRouteService,
@@ -29,8 +30,9 @@ export class DiscoveryRouteController {
   @Post('route-distances')
   @HttpCode(200)
   async distances(@Body() body: unknown, @Req() req: OtpIpRequest, @Res({ passthrough: true }) response: { setHeader(name: string, value: string): unknown }) {
-    if (!this.limiter.allow(this.clientIp.identity(req))) {
-      throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
+    const identity = this.clientIp.identity(req);
+    if (!this.limiter.allow(identity)) {
+      throw new PublicRateLimitedError(this.limiter.retryAfterSeconds(identity));
     }
     const input = parseRouteDistancesBody(body);
     response.setHeader('Cache-Control', 'no-store');

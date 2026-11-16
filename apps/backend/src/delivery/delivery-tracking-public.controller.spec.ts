@@ -1,6 +1,7 @@
-import { describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { HttpException } from '@nestjs/common';
 import { OtpClientIp } from '../auth/otp-client-ip';
+import { PublicRateLimitedError } from '../common/app-errors';
 import { AppConfig } from '../config/app-config';
 import { DeliveryCustomerService } from './delivery-customer-service';
 import { DeliveryTrackingPublicController } from './delivery-tracking-public.controller';
@@ -75,5 +76,26 @@ describe('public tracking limiter memory bound (P5-7b)', () => {
       expect(await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`))).toBe(200);
     }
     await exhaust(c, () => request('198.51.100.200'));
+  });
+});
+
+describe('public tracking 429 carries Retry-After seconds (P5-7b)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: 0 });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('the refusal is a PublicRateLimitedError (still an HttpException 429) with the seconds left in the window', async () => {
+    const c = controller();
+    for (let i = 0; i < LIMIT; i += 1) expect(await hit(c, request('198.51.100.60'))).toBe(200);
+    jest.setSystemTime(10_000); // 10 s into the window: 50 s left
+    const error = await c.getStatus(TOKEN, request('198.51.100.60'), res).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PublicRateLimitedError);
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(429);
+    expect((error as PublicRateLimitedError).retryAfterSeconds).toBe(50);
   });
 });
