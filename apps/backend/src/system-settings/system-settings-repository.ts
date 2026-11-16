@@ -45,6 +45,14 @@ export class SystemSettingsRepository {
     return withDefaults(result.rows);
   }
 
+  /**
+   * Serializes every writer of one settings group, and it must run BEFORE lockAll: FOR UPDATE locks only rows that exist, so
+   * while a group has no row yet (its default state) two writers would both read version 0 and both succeed.
+   */
+  async lockGroup(context: TransactionContext, group: string): Promise<void> {
+    await context.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`system_settings.${group}`]);
+  }
+
   /** Same as readAll, rows locked FOR UPDATE (the writer). Keys are always taken in the fixed SYSTEM_SETTING_KEYS order. */
   async lockAll(context: TransactionContext): Promise<SettingState[]> {
     const result = await context.query<RawSetting>(

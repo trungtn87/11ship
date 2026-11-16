@@ -18,3 +18,5 @@ export const SYSTEM_SETTING_AUDIT_ACTION = 'admin.system_setting.update.v1';
 export const SYSTEM_SETTING_OPERATION_ID = 'admin.system_setting.update.v1';
 export const SYSTEM_SETTING_RESOURCE = 'system_setting';
 export const SYSTEM_SETTING_HISTORY_LIMIT = 20;
+/** Lock name of the "Xác thực số điện thoại" group: the one write path takes it before reading the group's rows. */
+export const PHONE_VERIFICATION_SETTINGS_GROUP = 'phone_verification';
