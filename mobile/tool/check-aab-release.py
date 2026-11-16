@@ -6,8 +6,10 @@
 # Checked: package id, versionName/versionCode (equal to mobile/<app>/pubspec.yaml via app-version.sh), targetSdkVersion >= 36,
 # the permission allowlist (the same list as mobile/tool/check-apk-permissions.sh, so an AAB and an APK cannot disagree), no
 # REQUEST_INSTALL_PACKAGES anywhere, no background location anywhere, and the location service only where the app allows it:
-# Food: no GPS service of any kind; Ship: ShipLocationService with foregroundServiceType "location" and FOREGROUND_SERVICE_LOCATION.
+# Food: no GPS service of any kind; Ship: ShipLocationService with the location foreground type (name "location" or flag 0x8, see
+# has_location_fgs) and FOREGROUND_SERVICE_LOCATION.
 # Usage: check-aab-release.py <food|ship> <manifest.xml> <expected versionName> <expected versionCode>
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -49,6 +51,27 @@ NEVER = {'android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.ACCE
 def fail(title, message):
     print(f'::error title={title}::{message}')
     sys.exit(1)
+
+
+# foregroundServiceType is a set of flags. bundletool may print it as the name ("location"), a '|' list ("location|dataSync"), or the
+# numeric/hex flag value (location = 0x8, so "8", "0x8", "9" = dataSync|location). Location is present when the name is listed or bit 0x8
+# is set. "dataSync" (1), "0" and a missing attribute are NOT location.
+LOCATION_FGS_BIT = 0x8
+
+
+def has_location_fgs(value):
+    if not value:
+        return False
+    for token in value.split('|'):
+        token = token.strip()
+        if token == 'location':
+            return True
+        if token.startswith(('0x', '0X')) and re.fullmatch(r'[0-9a-fA-F]+', token[2:] or ''):
+            if int(token[2:], 16) & LOCATION_FGS_BIT:
+                return True
+        elif re.fullmatch(r'[0-9]+', token) and int(token, 10) & LOCATION_FGS_BIT:
+            return True
+    return False
 
 
 def main(argv):
@@ -119,14 +142,15 @@ def main(argv):
     for name, fg_type in services.items():
         if any(marker in name for marker in spec['forbidden_services']):
             fail('forbidden service', f'{app_name} must not declare the GPS service {name}')
-        if 'location' in (fg_type or '') and not spec['may_have_fgs_location']:
-            fail('foreground service type', f'{app_name} must not declare a location foreground service ({name})')
+        if has_location_fgs(fg_type) and not spec['may_have_fgs_location']:
+            fail('foreground service type', f'{app_name} must not declare a location foreground service ({name}, foregroundServiceType={fg_type!r})')
     if spec['may_have_fgs_location']:
         ship_service = [s for s in services if s.endswith('ShipLocationService')]
         if not ship_service:
             fail('service missing', 'ship must declare ShipLocationService')
-        if services[ship_service[0]] != 'location':
-            fail('foreground service type', 'ShipLocationService must declare foregroundServiceType="location"')
+        actual = services[ship_service[0]]
+        if not has_location_fgs(actual):
+            fail('foreground service type', f'ShipLocationService must declare foregroundServiceType with location (name "location" or flag 0x8); the bundle says foregroundServiceType={actual!r}')
 
     print(f'aab ok ({app_name}): {package} {want_name}+{want_code}, targetSdk {target_sdk}, '
           f'permissions {", ".join(sorted(permissions))}')

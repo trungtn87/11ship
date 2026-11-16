@@ -1,5 +1,5 @@
 b6c780e161cba0bbed4e41bc0f0e77ecd97498c363352975d23e180b567226bd  mobile/tool/app-version.sh
 97242ece8bb15661e4e5ec36b77a603cdedfbfaef6eec2bf8a9d91615774ae50  mobile/tool/prepare-android.sh
 99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc  mobile/tool/sign-aab.sh
-020b32a483e3c9f6f01286d2ac46d569b67273de52186a852e42320a8aee0e87  mobile/tool/check-aab-release.py
+1fb28c82a2efa23d457bc4593a00187cd8bcb27100fc5ad2a2e9d91a572b7ad2  mobile/tool/check-aab-release.py
 e1d731538fb037a46537d9881f0870d727d3db66419f44fc2be8c2d5fea35b5b  mobile/tool/play_versioncode_gate.py
