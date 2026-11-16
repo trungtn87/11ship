@@ -41,7 +41,7 @@ class GatedSystemSettingsRepository extends SystemSettingsRepository {
   }
 }
 const gatedSettings = new GatedSystemSettingsRepository();
-const sleep = (ms: number): Promise<'timeout'> => new Promise((resolve) => setTimeout(() => resolve('timeout'), ms));
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('M12-D — central configuration', () => {
   let admin: AdminApp;
@@ -76,6 +76,25 @@ describe('M12-D — central configuration', () => {
   const groupOf = async (key: string, who = systemLoginOf(system)): Promise<Json> => ((await groups(who)).groups as Json[]).find((g) => g.key === key) as Json;
   const valueOf = (group: Json, key: string): number | boolean => (group.values as Json[]).find((v) => v.key === key)?.value;
   const history = async (group: string): Promise<Json[]> => ((adminData(await getAs(admin, systemLoginOf(system), `/config/history?group=${group}&limit=100`)) as Json).items as Json[]).filter((i) => i.metadata && Date.parse(i.at) >= startedAt);
+
+  /**
+   * Polls PostgreSQL until a writer is WAITING on the advisory lock of a settings group ('waiting'), or until the writer has already
+   * finished ('finished', checked first on every round). The poll interval and the bound only pace and stop a hang: a pass or a fail
+   * never depends on how long the runner takes.
+   */
+  const waitForSecondWriter = async (secondDone: () => boolean, boundMs = 20000): Promise<'waiting' | 'finished' | 'timeout'> => {
+    const deadline = Date.now() + boundMs;
+    while (Date.now() < deadline) {
+      if (secondDone()) return 'finished';
+      const blocked = await countRows(
+        admin.pool,
+        `SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND wait_event = 'advisory' AND query LIKE '%pg_advisory_xact_lock%'`,
+      );
+      if (blocked > 0) return 'waiting';
+      await pause(20);
+    }
+    return 'timeout';
+  };
 
   it('every administrator reads the seven groups from the owners; fixed rules are listed apart and have no edit; only SYSTEM is marked editable', async () => {
     const asAdmin = await groups(viewer.login);
@@ -199,6 +218,7 @@ describe('M12-D — central configuration', () => {
 
   // Deterministic lost-update check (no timing luck): the first writer is held between reading the group (version 0, no row yet) and
   // writing it. A second writer with the same expected version must WAIT for the first and then be refused, never succeed beside it.
+  // The hold is not a sleep: the test waits until the second writer is observed blocked on the group's advisory lock.
   it('a second writer on an empty group waits for the first and is refused (the first is held between its read and its write)', async () => {
     await admin.pool.query(`DELETE FROM app.system_setting_changes`);
     await admin.pool.query(`DELETE FROM app.system_settings`);
@@ -208,12 +228,16 @@ describe('M12-D — central configuration', () => {
     const hold = gatedSettings.holdNextWriter();
     const first = postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi A' });
     let second: Promise<AdminResponse> | undefined;
+    let secondDone = false;
     try {
       await hold.reached;
-      second = postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi B' });
-      const secondFinishedWhileFirstHeld = (await Promise.race([second.then(() => 'finished' as const), sleep(1500)])) === 'finished';
-      // Red on the old code: the second writer reads version 0 too (nothing is locked) and finishes while the first is still open.
-      expect(secondFinishedWhileFirstHeld).toBe(false);
+      second = postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi B' }).then((response) => {
+        secondDone = true;
+        return response;
+      });
+      // Red on the old code: nothing is locked, so the second writer reads version 0 too and finishes while the first is still held,
+      // and the outcome is 'finished' at once, never by elapsed time.
+      expect(await waitForSecondWriter(() => secondDone)).toBe('waiting');
     } finally {
       hold.release();
     }
