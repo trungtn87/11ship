@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
@@ -146,10 +145,11 @@ describe("P6-8a — route snapshot migrations on a database with older data", ()
     ).toEqual({ n: 2 });
   });
 
-  it("runtime grants: a disposable role built from ops/selfhosted 02 + 03 can EXECUTE the purge, cannot DELETE route_snapshots, and PUBLIC cannot EXECUTE", async () => {
-    // The real runtime role (ship11_app) is not created here. Its grants come from the same two files the operator runs, applied to a
-    // throw-away NOLOGIN role; the role is dropped afterwards. Removing the GRANT EXECUTE line for the purge from 03 makes this fail.
-    const probe = `p68a_probe_${randomBytes(6).toString("hex")}`;
+  it("runtime grants: the ops/selfhosted 02 + 03 scripts give the runtime role EXECUTE on the purge, no DELETE on route_snapshots, and PUBLIC no EXECUTE", async () => {
+    // The CI database user cannot CREATE ROLE, so the real ship11_app is not created here. The same two scripts are applied with ship11_app
+    // replaced by the predefined role pg_monitor (no application privileges of its own) inside a transaction that is ROLLED BACK: grants are
+    // transactional, so nothing remains. Removing the GRANT EXECUTE line for the purge from 03 makes this fail.
+    const stand_in = "pg_monitor";
     const grantScripts = [
       "02-runtime-grants.sql",
       "03-runtime-function-grants.sql",
@@ -158,8 +158,8 @@ describe("P6-8a — route snapshot migrations on a database with older data", ()
         readFileSync(path.join(REPO_ROOT, "ops", "selfhosted", file), "utf8"),
       )
       .join("\n")
-      .replace(/\bship11_app\b/g, probe);
-    await client.query(`CREATE ROLE ${probe} NOLOGIN`);
+      .replace(/\bship11_app\b/g, stand_in);
+    await client.query("BEGIN");
     try {
       await client.query(grantScripts);
       const result = await client.query<{
@@ -172,7 +172,7 @@ describe("P6-8a — route snapshot migrations on a database with older data", ()
                 has_table_privilege($1, 'app.route_snapshots', 'INSERT') AS insert,
                 has_table_privilege($1, 'app.route_snapshots', 'DELETE') AS del,
                 has_function_privilege('public', '${PURGE}', 'EXECUTE') AS public_exec`,
-        [probe],
+        [stand_in],
       );
       expect(result.rows[0]).toEqual({
         exec: true,
@@ -181,8 +181,7 @@ describe("P6-8a — route snapshot migrations on a database with older data", ()
         public_exec: false,
       });
     } finally {
-      await client.query(`DROP OWNED BY ${probe}`);
-      await client.query(`DROP ROLE ${probe}`);
+      await client.query("ROLLBACK");
     }
   }, 180_000);
 
