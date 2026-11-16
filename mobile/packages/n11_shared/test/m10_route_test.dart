@@ -195,5 +195,31 @@ void main() {
       expect(p.routeSnapshotId, isNull);
       expect(p.expectedQuoteJson.containsKey('route_snapshot_id'), isFalse);
     });
+
+    test('the quote parses its own road (fee.route) and draws its points; the distance is the quote\'s', () {
+      final CheckoutPreview p = preview(<String, Object?>{
+        'status': 'PRICED',
+        'distance_m': 3200,
+        'fee_vnd': 15000,
+        'snapshot': 'pickup>dropoff',
+        'route_snapshot_id': '11111111-2222-4333-8444-555555555555',
+        'route': _route(geometry: _road),
+      });
+      expect(p.route, isNotNull);
+      expect(p.route!.distanceM, p.feeDistanceM);
+      expect(p.route!.durationS, 720);
+      expect(p.route!.points.length, 3);
+    });
+
+    test('a quote without fee.route, or with a broken one, has no road and never throws', () {
+      expect(preview(<String, Object?>{'status': 'PRICED', 'distance_m': 3200, 'fee_vnd': 15000, 'snapshot': 's'}).route, isNull);
+      expect(preview(<String, Object?>{'status': 'PRICED', 'distance_m': 3200, 'fee_vnd': 15000, 'snapshot': 's', 'route': null}).route, isNull);
+      expect(preview(<String, Object?>{'status': 'PRICED', 'distance_m': 3200, 'fee_vnd': 15000, 'snapshot': 's', 'route': 'road'}).route, isNull);
+      expect(preview(<String, Object?>{'status': 'PRICED', 'distance_m': 3200, 'fee_vnd': 15000, 'snapshot': 's', 'route': _route(status: 'NONE')}).route, isNull);
+      // A damaged geometry keeps the stored numbers but draws nothing.
+      final CheckoutPreview damaged = preview(<String, Object?>{'status': 'PRICED', 'distance_m': 3200, 'fee_vnd': 15000, 'snapshot': 's', 'route': _route(geometry: '!!bad!!')});
+      expect(damaged.route, isNotNull);
+      expect(damaged.route!.points, isEmpty);
+    });
   });
 }

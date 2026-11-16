@@ -741,10 +741,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       } else {
         _sendingDraft = null;
         _sendingPreview = null;
+        final bool quoteChanged = failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED';
         setState(() {
           _attempt = _Attempt.none;
           _failure = failure;
-          _changed = failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED';
+          _changed = quoteChanged;
+          // The quote the server refused is no longer valid: its amounts and its road go now; the re-check below draws the new quote's road.
+          if (quoteChanged) _previewFresh = false;
         });
         if (failure.code == 'ORDER_SHOP_NOT_OPEN') {
           await _freshness.reload();
@@ -845,6 +848,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final int? estimateFee = confirmed?.feeEstimateVnd;
     final int? expectedTotal = confirmed?.expectedTotalVnd;
     final bool canTip = _baseFee != null;
+    // The road of the CURRENT confirmed quote only (P6-5c): while a quote is being re-priced `confirmed` is null, so an old road is never kept.
+    final OrderRoute? road = confirmed?.route;
+    final List<List<double>> roadPoints = road?.points ?? const <List<double>>[];
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -953,6 +959,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ]),
         ),
+        if (road != null && roadPoints.isNotEmpty && widget.runtime.mapBuilder != null)
+          N11Card(
+            key: const Key('checkout-route'),
+            child: SizedBox(
+              height: 200,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(kRadiusControl),
+                // A new quote is a new road: its map is built again, so the camera fits the new route instead of keeping the old one.
+                child: KeyedSubtree(key: ValueKey<Object>(confirmed?.routeSnapshotId ?? road.geometry ?? ''), child: widget.runtime.mapBuilder!(context, const <M07MapPin>[], roadPoints)),
+              ),
+            ),
+          ),
         N11Card(
           key: const Key('checkout-summary'),
           child: Column(
@@ -963,6 +981,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ('Tiền món', m10Money(items)),
                 ('Điểm giao', _draft()?.address.text ?? 'Chưa chọn'),
                 ('Quãng đường', confirmed?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(confirmed!.feeDistanceM!)} · đường đi'),
+                if (road != null && (road.durationS ?? 0) > 0) ('Thời gian đi dự kiến', '≈ ${(road.durationS! / 60).ceil()} phút'),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa xác định được phí giao' : m10Money(estimateFee)),
                 if (_tipVnd > 0) ('Tiền cảm ơn', m10Money(_tipVnd)),
                 if (_tipVnd > 0 && estimateFee != null) ('Tổng phí giao đề xuất', m10Money(estimateFee + _tipVnd)),
