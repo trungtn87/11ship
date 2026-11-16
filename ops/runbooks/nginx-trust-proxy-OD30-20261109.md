@@ -76,18 +76,20 @@ Các zone nằm trong mẫu `ops/vinahost/nginx-11ship-staging.conf` (cấp http
 
 | Zone | Location | Rate nginx | Burst | Mốc backend | Ghi chú |
 | --- | --- | --- | --- | --- | --- |
-| `ship11_tracking` | `~ ^/v1/(public/tracking\|track)/` | 60 r/phút | 20 | `PUBLIC_TRACKING_LIMIT` = 60/phút | khớp |
-| `ship11_route_dist` | `= /v1/discovery/route-distances` | 120 r/phút | 40 | `ROUTE_DISTANCES_LIMIT_PER_MINUTE` = 120 | khớp |
-| `ship11_admin_login` | `= /v1/admin-auth/login` | 10 r/phút | 5 | `LOGIN_REQUEST_LIMIT` = 10 trong 60 s theo IP | khớp |
-| `ship11_client_login` | `= /v1/client-auth/login` | 30 r/phút | 10 | 30/phút **theo số điện thoại**, backend không có mốc IP | **backstop mới** — cần Claude Lead xác nhận |
-| `ship11_otp_send` | `~ ^/v1/(auth/phone-verifications\|account-recovery/(locked/)?otp\|admin-recovery/otp)$` | 10 r/phút | 5 | `ip_per_hour` mặc định 10/giờ, **lưu trong DB, admin chỉnh được** | **backstop**, không khớp chính xác |
-| `ship11_deletion` | `= /v1/account-deletion/confirm` | 2 r/phút | 20 | `ACCOUNT_DELETE_IP_LIMIT` 20 / `ACCOUNT_DELETE_IP_WINDOW_SECONDS` 600 | xấp xỉ; hai biến môi trường có thể đổi |
+| `ship11_tracking` | `~* ^/(v1/(public/tracking\|track)\|public/tracking\|track)/` | 60 r/phút | 20 | `PUBLIC_TRACKING_LIMIT` = 60/phút | khớp; gồm cả alias gốc `/track/`, `/public/tracking/` |
+| `ship11_route_dist` | `~* ^/v1/discovery/route-distances/?$` | 120 r/phút | 40 | `ROUTE_DISTANCES_LIMIT_PER_MINUTE` = 120 | khớp |
+| `ship11_admin_login` | `~* ^/v1/admin-auth/login/?$` | 10 r/phút | 5 | `LOGIN_REQUEST_LIMIT` = 10 trong 60 s theo IP | khớp |
+| `ship11_client_login` | `~* ^/v1/client-auth/login/?$` | 30 r/phút | 10 | 30/phút **theo số điện thoại**, backend không có mốc IP | **backstop mới** — cần Claude Lead xác nhận |
+| `ship11_otp_send` | `~* ^/v1/(auth/phone-verifications\|account-recovery/(locked/)?otp\|admin-recovery/otp)/?$` | 10 r/phút | 5 | `ip_per_hour` mặc định 10/giờ, **lưu trong DB, admin chỉnh được** | **backstop**, không khớp chính xác |
+| `ship11_deletion` | `~* ^/v1/account-deletion/confirm/?$` | 2 r/phút | 20 | `ACCOUNT_DELETE_IP_LIMIT` 20 / `ACCOUNT_DELETE_IP_WINDOW_SECONDS` 600 | xấp xỉ; hai biến môi trường có thể đổi |
+| `ship11_app_download` | `~* ^/v1/app-updates/download/[^/]+/?$` (+ `limit_conn` 4 luồng/IP, zone `ship11_app_download_conn`) | 30 r/phút | 10 | backend **không có mốc** | **backstop mới** — chỉnh được; tải APK giữ kết nối suốt file |
+| `ship11_ops_ingest` | `~* ^/v1/ops/ingest/` | 60 r/phút | 20 | backend **không có mốc** (ba route máy: probe, backup, deploy) | **backstop mới** — chỉnh được |
 
 Quy tắc:
 
 - Zone khóa theo `$binary_remote_addr`, tức địa chỉ socket của nginx = địa chỉ khách thật vì nginx là edge. Zone vì thế **không** phụ thuộc `ADMIN_AUTH_TRUSTED_PROXY_IPS`: đúng ở S0 lẫn T và không thể bị giả mạo bằng header.
 - `limit_req … burst=N nodelay` và `limit_req_status 429`: vượt burst thì trả 429 ngay, không xếp hàng.
-- **Backend vẫn là thẩm quyền.** nginx không thay thế các giới hạn của backend (theo số điện thoại, theo IP cấu hình được, khóa đăng nhập…). Nếu đổi `ip_per_hour`, `ACCOUNT_DELETE_IP_LIMIT` hoặc `ACCOUNT_DELETE_IP_WINDOW_SECONDS`, phải đổi zone tương ứng trong mẫu; test tĩnh `tests/deploy/nginx-rate-limits.test.mjs` kiểm các mốc tĩnh (tracking, route-distances, admin login, deletion).
+- **Backend vẫn là thẩm quyền.** nginx không thay thế các giới hạn của backend (theo số điện thoại, theo IP cấu hình được, khóa đăng nhập…). Nếu đổi `ip_per_hour`, `ACCOUNT_DELETE_IP_LIMIT` hoặc `ACCOUNT_DELETE_IP_WINDOW_SECONDS`, phải đổi zone tương ứng trong mẫu; test tĩnh `tests/deploy/nginx-rate-limits.test.mjs` kiểm các mốc tĩnh (tracking, route-distances, admin login, deletion), các alias và biến thể hoa/thường/dấu `/` cuối, và đủ sáu header chuyển tiếp.
 - Mọi location giới hạn lặp đủ bộ header của 3.1. `proxy_set_header` ở cấp location thay thế toàn bộ cấp cha nên thiếu một dòng là mất ghi đè.
 - **Không** giới hạn: verify OTP (`.../{id}/verify`; backend đã có `max_wrong_attempts`), TOTP admin, các route khác. Mở rộng cần quyết định riêng.
 - Giới hạn đã biết: IPv6 được tính theo từng địa chỉ ở nginx, còn backend gom `/64`. Nhiều người sau cùng một IPv4 (CGNAT) chung một zone, nên đăng nhập/OTP theo IP có thể bị 429 khi một mạng đông người. Sau triển khai, theo dõi log nginx dòng `limiting requests`.
@@ -186,6 +188,8 @@ Kỳ vọng: **không** có `400` do header (nginx đã ghi đè thành một gi
 for i in $(seq 1 12); do curl -sk -o /dev/null -w "%{http_code} " -X POST -H 'Content-Type: application/json' -d '{}' https://103.9.78.67.sslip.io/v1/admin-auth/login; done; echo
 ```
 
+Đường dẫn tải APK và ingest (không SMS, chỉ đọc hoặc không tác động): `for i in $(seq 1 40); do curl -sk -o /dev/null -w "%{http_code} " https://103.9.78.67.sslip.io/v1/app-updates/download/<release-id-giả>; done` (kỳ vọng: khoảng 11 yêu cầu đầu không phải 429 với burst 10, sau đó 429; bản "release-id giả" có thể trả 404 của backend, vẫn tính vào giới hạn). Ingest: `curl -sk -o /dev/null -w "%{http_code} " -X POST https://103.9.78.67.sslip.io/v1/ops/ingest/probe` lặp 30 lần, kỳ vọng khoảng 21 yêu cầu đầu không phải 429 (burst 20), sau đó 429; backend trả 401 cho khóa giả là bình thường. Không dùng khóa máy thật để kiểm.
+
 Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429` với body JSON `TOO_MANY_REQUESTS` và header `X-Request-ID` (`curl -sk -i …` để xem). Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend; khoảng 21 yêu cầu đầu (1 + burst 20) không phải 429, các yêu cầu sau là 429. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
 
 ## 7. Rollback
@@ -220,6 +224,6 @@ Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **t
 ## 9. Phạm vi và giới hạn của PR
 
 - Không đổi mã backend, env, tên miền hay VPS; không APK; không merge/deploy.
-- Đổi duy nhất `ops/vinahost/nginx-11ship-staging.conf` (P5-7d: zone và 6 location giới hạn, mục 3.3) và thêm `tests/deploy/nginx-rate-limits.test.mjs` (tĩnh, chạy trong `npm run deploy:test` của CI).
+- Đổi duy nhất `ops/vinahost/nginx-11ship-staging.conf` (P5-7d: 8 zone và 8 location giới hạn, mục 3.3) và thêm `tests/deploy/nginx-rate-limits.test.mjs` (tĩnh, chạy trong `npm run deploy:test` của CI).
 - Kiểm chứng P5-7d: `nginx -t` trên nginx 1.24 (phiên bản Ubuntu 24.04) trong container Docker với chứng chỉ tự ký thử, cộng kiểm hành vi trên một upstream giả; **chưa chạy trên VPS**.
 - Việc VPS thật khớp mẫu hay chưa: **CHƯA XÁC MINH**.
