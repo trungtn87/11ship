@@ -126,13 +126,13 @@ Nếu không xác định chắc được N hoặc T, **coi là S1** (đường 
 
 Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` trả `ready` trước khi sang bước sau. Đường dẫn này theo mã nguồn là `GLOBAL_PREFIX = 'v1'` + `@Controller('health')`, **chưa xác nhận trên VPS**: giữ là **backlog #329**. Xác nhận bằng curl chỉ-đọc lúc deploy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/v1/health/ready` (kỳ vọng 200). Nếu VPS trả 404 thì dừng và đối chiếu build đang chạy, không đoán đường dẫn khác.
 
-**Thứ tự bắt buộc khi áp P5-7d (quyết định Claude Lead):** bật `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` **cùng lúc hoặc trước** khi áp zone giới hạn của mục 3.3, trong cùng một cửa sổ bảo trì. Nếu trust chưa bật thì mọi khách dùng chung một bucket tracking 60/phút ở backend: một khách vượt là mọi khách bị 429. Điều kiện an toàn của mục 4–5 vẫn giữ: **trust chỉ được bật sau khi 6A đã PASS** (nginx ghi đè `X-Forwarded-For`). Trình tự:
+**Thứ tự bắt buộc khi áp P5-7d (quyết định Claude Lead):** bật `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` **trước hoặc cùng lúc** khi áp zone giới hạn của mục 3.3, trong cùng một cửa sổ bảo trì. Không bao giờ áp zone khi trust còn tắt: khi đó mọi khách dùng chung một bucket tracking 60/phút ở backend, một khách vượt là mọi khách bị 429. Điều kiện an toàn của mục 4–5 vẫn giữ: **trust chỉ được bật sau khi 6A đã PASS** (nginx ghi đè `X-Forwarded-For`), và 6A được chứng minh trên cấu hình **chỉ có ghi đè (mục 3.1), chưa có khối zone**. Trình tự:
 
-1. Áp mẫu (ghi đè + zone + 429 JSON), `nginx -t`, reload. Chứng minh 6A trên các location.
-2. Nếu 6A PASS: bật trust trong cùng cửa sổ, restart, kiểm `ready`, rồi 6B và 6E.
-3. Nếu 6A FAIL: **không** bật trust (giữ `[]`). Zone không phụ thuộc trust nên có thể giữ, rồi báo.
+1. Áp cấu hình nginx chỉ có ghi đè (mục 3.1, không có khối zone, `limit_req` hay 429 JSON của P5-7d), `nginx -t`, reload, rồi chứng minh 6A trên các location. Nếu 6A FAIL: **dừng**, không bật trust, không áp zone, báo.
+2. Nếu 6A PASS: bật trust (5.A bước 5 hoặc 5.B bước 4), restart, kiểm `ready`, rồi 6B–6D.
+3. Chỉ sau đó áp khối zone, location giới hạn và 429 JSON của mục 3.3 (bản mẫu `ops/vinahost/nginx-11ship-staging.conf`), `nginx -t`, reload, rồi 6E.
 
-Không được để zone đã áp mà trust vẫn tắt sau khi cửa sổ kết thúc. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
+Bước 2 và 3 nằm trong cùng cửa sổ bảo trì. Không được kết thúc cửa sổ với zone đã áp mà trust vẫn tắt. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
 
 **Sao lưu trước khi đổi bất cứ thứ gì** (cho rollback tái lập được):
 
@@ -145,7 +145,7 @@ Ghi lại: đường dẫn hai bản sao, thời điểm, và trạng thái đ�
 
 ### 5.A — S0 / S2 (backend chưa tin proxy)
 
-1. nginx: đưa các dòng 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu lệch chỉ ở phần này). Nếu áp P5-7d, thêm zone và location giới hạn của mục 3.3 (có sẵn trong mẫu; khi sửa tay thì mọi location có `limit_req` phải lặp đủ bốn dòng 3.1). Giữ nguyên SSL, `server_name`, `client_max_body_size`.
+1. nginx: đưa các dòng 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu lệch chỉ ở phần này). Giữ nguyên SSL, `server_name`, `client_max_body_size`. **Không cài lại toàn bộ mẫu repo ở bước này**: mẫu có khối zone P5-7d, phải áp ở bước 3 của đầu mục 5, sau khi trust đã bật.
 2. `sudo nginx -t` phải `syntax is ok` + `test is successful`; lỗi → khôi phục bản sao nginx (bản sao đạt invariant vì backend chưa tin), dừng, báo.
 3. `sudo systemctl reload nginx` (reload, không restart).
 4. **Chứng minh ghi đè (6A)** — phải PASS trước khi sang bước 5.
@@ -186,7 +186,7 @@ Kỳ vọng: **không** có `400` do header (nginx đã ghi đè thành một gi
 for i in $(seq 1 12); do curl -sk -o /dev/null -w "%{http_code} " -X POST -H 'Content-Type: application/json' -d '{}' https://103.9.78.67.sslip.io/v1/admin-auth/login; done; echo
 ```
 
-Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429` với body JSON `TOO_MANY_REQUESTS` và header `X-Request-ID` (`curl -sk -i …` để xem). Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend, không phải 429 trong 60 yêu cầu đầu. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
+Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429` với body JSON `TOO_MANY_REQUESTS` và header `X-Request-ID` (`curl -sk -i …` để xem). Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend; khoảng 21 yêu cầu đầu (1 + burst 20) không phải 429, các yêu cầu sau là 429. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
 
 ## 7. Rollback
 
