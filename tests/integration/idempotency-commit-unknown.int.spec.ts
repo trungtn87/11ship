@@ -215,7 +215,15 @@ describe('M00-C1A1 — COMMIT outcome unknown and HTTP error mapping', () => {
       const holder = await LockHolder.begin(h.pool);
       try {
         await holder.advisory(lockPairOf(h.scopeType, scope, 'harness.create.v1', key));
-        expectEnvelope(await post('normal', scope, key), 409, 'IDEMPOTENCY_BUSY');
+        const result = await post('normal', scope, key);
+        // Diagnostics for a failure: the response code and this request's own server log line (no SQL, no secret).
+        // A 503 SERVICE_UNAVAILABLE here means the request failed BEFORE the advisory lock was reached.
+        expect({
+          status: result.status,
+          code: result.json.error?.code,
+          serverLog: logs.filter((line) => line.includes(String(result.header))),
+        }).toMatchObject({ status: 409, code: 'IDEMPOTENCY_BUSY' });
+        expectEnvelope(result, 409, 'IDEMPOTENCY_BUSY');
       } finally {
         await holder.rollback();
       }
