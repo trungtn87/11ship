@@ -5,18 +5,35 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const workflow = readFileSync('.github/workflows/mobile-apk.yml', 'utf8');
+const workflow = readFileSync('.github/workflows/mobile-apk.yml', 'utf8').replace(/\r\n/g, '\n');
 const lines = workflow.split('\n');
 
+// STORE-01 PR-G: comments never count as references. A full-line `#` comment is dropped, and so is a trailing `#` comment that
+// sits outside quotes. A `#` inside quotes is kept, so a real secret reference after it is still seen.
+function stripComments(text) {
+  return text.split('\n').map(line => {
+    let quote = null;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quote) { if (c === quote) quote = null; continue; }
+      if (c === '"' || c === "'") { quote = c; continue; }
+      if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+    }
+    return line;
+  }).join('\n');
+}
+const code = stripComments(workflow);
+
 test('the Mobile APK workflow never references the upload-key secrets or pins', () => {
-  assert.equal(workflow.includes('ANDROID_UPLOAD_'), false, 'no ANDROID_UPLOAD_* reference in the PR/push workflow');
-  assert.equal(workflow.includes('ANDROID_UPLOAD_CERT_SHA256'), false, 'no upload certificate variable in the PR/push workflow');
+  // Case-insensitive on purpose: GitHub names are not case-sensitive in expressions.
+  assert.equal(/ANDROID_UPLOAD_/i.test(code), false, 'no ANDROID_UPLOAD_* reference in the PR/push workflow');
+  assert.equal(/ANDROID_UPLOAD_CERT_SHA256/i.test(code), false, 'no upload certificate variable in the PR/push workflow');
 });
 
 test('the test APK is pinned only by ANDROID_TEST_SIGNER_SHA256; the Production pin never reaches the PR/push workflow (STORE-01 PR-D)', () => {
   // Lead decision: ANDROID_APP_SIGNER_SHA256 belongs to the AAB/Production release; the test APK has its own variable.
-  assert.equal(workflow.includes('ANDROID_APP_SIGNER_SHA256'), false, 'no Production pin variable in the Mobile APK workflow');
-  assert.equal(workflow.includes('ANDROID_APP_SIGNER_PIN'), false, 'no Production pin env name in the Mobile APK workflow');
+  assert.equal(/ANDROID_APP_SIGNER_SHA256/i.test(code), false, 'no Production pin variable in the Mobile APK workflow');
+  assert.equal(/ANDROID_APP_SIGNER_PIN/i.test(code), false, 'no Production pin env name in the Mobile APK workflow');
   assert.ok(workflow.includes('ANDROID_TEST_SIGNER_PIN: ${{ vars.ANDROID_TEST_SIGNER_SHA256 }}'), 'the test pin comes from ANDROID_TEST_SIGNER_SHA256');
   // The pin stays optional: unset means "not pinned yet", never a failed build (current behaviour kept).
   assert.ok(workflow.includes('if [ -n "${ANDROID_TEST_SIGNER_PIN:-}" ]; then'), 'the check runs only when the test pin is set');
@@ -35,13 +52,14 @@ const TEST_PIN_VALUE = '${{ vars.ANDROID_TEST_SIGNER_SHA256 }}';
 
 function pinProblems(text) {
   const problems = [];
-  if (PRODUCTION_NAME.test(text)) problems.push('a Production signer variable name appears');
-  for (const m of text.matchAll(VARS_REFERENCE)) {
-    if (!VARS_ALLOWED_ACCESS.test(text.slice(m.index + m[0].length))) {
+  const body = stripComments(text);
+  if (PRODUCTION_NAME.test(body)) problems.push('a Production signer variable name appears');
+  for (const m of body.matchAll(VARS_REFERENCE)) {
+    if (!VARS_ALLOWED_ACCESS.test(body.slice(m.index + m[0].length))) {
       problems.push(`vars is used in a dynamic or whole-object form at offset ${m.index}`);
     }
   }
-  const assigned = [...text.matchAll(TEST_PIN_ASSIGNMENT)].map(m => m[1].trim());
+  const assigned = [...body.matchAll(TEST_PIN_ASSIGNMENT)].map(m => m[1].trim());
   if (assigned.length !== 1) problems.push(`ANDROID_TEST_SIGNER_PIN must be assigned exactly once (found ${assigned.length})`);
   else if (assigned[0] !== TEST_PIN_VALUE) problems.push(`ANDROID_TEST_SIGNER_PIN must come from ANDROID_TEST_SIGNER_SHA256 (found ${assigned[0]})`);
   return problems;
@@ -78,6 +96,47 @@ test('the detector refuses each Production-pin access form and each step-level o
     const mutated = workflow.replace(pinLine, replacement);
     assert.notEqual(mutated, workflow, `mutation applied: ${name}`);
     assert.notDeepEqual(pinProblems(mutated), [], `the detector must refuse: ${name}`);
+  }
+});
+
+// STORE-01 PR-G: the PR/push workflow must not hand its secrets to another workflow, and an upload-key or Production name is refused
+// in any letter case. Works on comment-free text (see stripComments), so a note that names a secret does not fail the guard.
+function guardProblems(text) {
+  const body = stripComments(text);
+  const problems = [...pinProblems(text)];
+  if (/ANDROID_UPLOAD_/i.test(body)) problems.push('an ANDROID_UPLOAD_* secret or variable name appears (any case)');
+  if (/^\s*secrets\s*:/im.test(body)) problems.push('a `secrets:` key passes secrets to another workflow (`secrets: inherit` or an explicit map)');
+  if (/uses\s*:\s*['"]?[^\s'"]*\.github\/workflows\//i.test(body)) problems.push('a reusable workflow under .github/workflows is called');
+  return problems;
+}
+
+test('the Mobile APK workflow passes the secret-name and reusable-workflow guard (positive: the real workflow)', () => {
+  assert.deepEqual(guardProblems(workflow), []);
+});
+
+test('names and calls that appear only in YAML or shell comments do not fail the guard (positive)', () => {
+  const sample = [
+    '# ANDROID_UPLOAD_KEYSTORE_BASE64, vars.ANDROID_APP_SIGNER_SHA256, secrets: inherit and uses: ./.github/workflows/x.yml are not used here',
+    `          ANDROID_TEST_SIGNER_PIN: ${TEST_PIN_VALUE} # ANDROID_UPLOAD_KEY_ALIAS was removed; vars.ANDROID_APP_SIGNER_SHA256 is not read`,
+    "          run: echo ok # vars['ANDROID_APP_SIGNER_SHA256'] and secrets: inherit are comments",
+  ].join('\n');
+  assert.deepEqual(guardProblems(sample), []);
+});
+
+test('the guard refuses each upload-key or Production name in any letter case, and each secret hand-off (negative cases)', () => {
+  const cases = {
+    'lower-case upload secret reference': '          K: ${{ secrets.android_upload_keystore_base64 }}',
+    'mixed-case upload secret reference': '          K: ${{ secrets.Android_Upload_Key_Alias }}',
+    'lower-case Production variable reference': '          K: ${{ vars.android_app_signer_sha256 }}',
+    'job passes every secret with secrets: inherit': '  call:\n    uses: vn/x\n    secrets: inherit',
+    'explicit secrets map on a job': '  call:\n    secrets:\n      K: ${{ secrets.N11_SOMETHING }}',
+    'local reusable workflow call': '  call:\n    uses: ./.github/workflows/mobile-aab-release.yml',
+    'reusable workflow call with a repo path and ref': '  call:\n    uses: owner/repo/.github/workflows/release.yml@main',
+    'upload secret hidden after a # inside quotes (a real reference, not a comment)': '          run: echo " #" ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}',
+  };
+  for (const [name, extra] of Object.entries(cases)) {
+    const mutated = `${workflow}\n${extra}\n`;
+    assert.notDeepEqual(guardProblems(mutated), [], `the guard must refuse: ${name}`);
   }
 });
 
