@@ -496,6 +496,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _previewEpoch = 0;
   // True while the cart is reloaded after a changed-cart refusal: no preview may publish then (it would price the old cart).
   bool _cartReloading = false;
+  // A reload after a changed-cart refusal did not read the new cart: send stays locked and only a retry of that reload may follow.
+  bool _cartReloadFailed = false;
+  int _cartSeen = -1;
   late final AvailabilityRefresh _freshness = AvailabilityRefresh(
       refresh: _check,
       invalidate: () {
@@ -524,6 +527,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     _freshness.observe();
+    _cartSeen = cart.generation;
+    cart.addListener(_onCartChanged);
     final Identity? who = widget.session?.identity;
     _name.text = who?.profile.fullName ?? '';
     _phone.text = who == null ? '' : '0${who.phoneNormalized.replaceFirst('+84', '')}';
@@ -540,6 +545,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void dispose() {
     _tipDebounce?.cancel();
+    cart.removeListener(_onCartChanged);
     _name.dispose();
     _phone.dispose();
     _note.dispose();
@@ -605,7 +611,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _check() async {
-    if (_previewing || _locked) return;
+    // A failed cart reload prices nothing: the cart on screen is not confirmed, so no quote of it may open send.
+    if (!mounted || _previewing || _locked || _cartReloadFailed) return;
     final CheckoutDraft? draft = _draft();
     if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null || textError(draft.deliveryNote ?? '', 'hướng dẫn tìm đường', 200, optional: true) != null) {
       setState(() {
@@ -650,6 +657,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       unawaited(_check());
     }
     return true;
+  }
+
+  /// Any change of the saved cart (the freshness timer, a read from another screen, the recovery below) makes every preview priced before it stale.
+  void _onCartChanged() {
+    if (!mounted || cart.generation == _cartSeen) return;
+    _cartSeen = cart.generation;
+    _previewEpoch++;
+    // The recovery prices the new cart itself once its reload is applied; nothing here may publish or start a preview meanwhile.
+    if (_cartReloading) return;
+    // Only a successful reload (the recovery) clears a failed one: a save that merely started also changes the generation, and must not open send.
+    setState(() => _previewFresh = false);
+    if (!_locked) unawaited(_check());
+  }
+
+  /// After a changed-cart refusal: the saved cart is read again and only the NEW cart may be priced and sent. The reload waits for a read that was
+  /// already pending (it may predate the change) and then reads once more. A failed reload keeps send locked and offers a retry; the old cart is
+  /// never quoted again.
+  Future<void> _recoverCart() async {
+    setState(() {
+      _cartReloading = true;
+      _cartReloadFailed = false;
+    });
+    bool reloaded = false;
+    try {
+      reloaded = await cart.reloadAfterRefusal();
+    } finally {
+      // Every preview started before this point (it may still be in flight) is stale now.
+      if (mounted) {
+        setState(() {
+          _cartReloading = false;
+          _previewEpoch++;
+          _previewFresh = false;
+        });
+      }
+    }
+    if (!mounted) return;
+    if (!reloaded) {
+      setState(() => _cartReloadFailed = true);
+      return;
+    }
+    _clientRef = newIdempotencyKey();
+    _key = newIdempotencyKey();
+    await _check();
   }
 
   Future<void> _pickAddress() async {
@@ -758,22 +808,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
         if (failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED') {
           // The cart is read again: new prices, dishes that are gone. The person checks and sends again (a new attempt).
-          setState(() => _cartReloading = true);
-          try {
-            await cart.load();
-          } finally {
-            // Every preview started before this point (it may still be in flight) is stale now; the check below prices the new cart.
-            if (mounted) {
-              setState(() {
-                _cartReloading = false;
-                _previewEpoch++;
-                _previewFresh = false;
-              });
-            }
-          }
-          _clientRef = newIdempotencyKey();
-          _key = newIdempotencyKey();
-          await _check();
+          await _recoverCart();
         }
       }
     }
@@ -880,6 +915,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         if (_changed) N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
+        if (_cartReloadFailed) N11Banner(key: const Key('checkout-cart-failed'), kind: BannerKind.error, title: 'Chưa tải lại được giỏ hàng', text: 'Đơn chưa được gửi. Hãy tải lại giỏ hàng; giá cũ không được dùng để gửi.'),
+        if (_cartReloadFailed) TextButton(key: const Key('checkout-cart-retry'), onPressed: _cartReloading ? null : () => unawaited(_recoverCart()), child: const Text('Tải lại giỏ hàng')),
         if (confirmed != null && confirmed.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: confirmed.blockers.map(_blockerText).join('\n')),
         const Text('Người nhận', style: N11Text.h2),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, enabled: !_locked, onChanged: _touch),

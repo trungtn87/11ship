@@ -91,8 +91,12 @@ class _QuoteSource extends SampleCustomerOrders {
   /// The saved cart as the store holds it now (not held).
   Future<CartView?> currentCart() => super.cart();
 
+  /// While [failCart] is on, every cart read fails as offline (the GET of the saved cart is refused).
+  bool failCart = false;
+
   @override
   Future<CartView?> cart() {
+    if (failCart) return Future<CartView?>.error(M07Failure(M07FailureKind.offline));
     if (!holdCart) return super.cart();
     final Completer<CartView?> waiting = Completer<CartView?>();
     cartPending.add(waiting);
@@ -121,6 +125,9 @@ class _QuoteSource extends SampleCustomerOrders {
     return super.place(draft, preview: preview, clientRef: clientRef, key: key);
   }
 }
+
+/// The runtime of the last mounted checkout (the tests drive its cart directly, e.g. a read that is pending before a refusal).
+OrderRuntime? _mountedRuntime;
 
 Future<void> settle(WidgetTester tester) async {
   for (int i = 0; i < 8; i++) {
@@ -183,6 +190,7 @@ void main() {
             }
           : null,
     );
+    _mountedRuntime = runtime;
     await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán Phở Minh họa', itemId: pho.id, name: pho.name, priceVnd: 45000);
     final AddressBookController book = AddressBookController(api: _StaticAddressApi(const <DeliveryAddress>[_pinned]));
     addTearDown(book.dispose);
@@ -344,5 +352,139 @@ void main() {
     expect(source.places, 2);
     expect(source.placedWith?.routeSnapshotId, 'route-b', reason: 'place receives the preview of the new cart, never the old one');
     expect(source.placedWith?.feeDistanceM, 900);
+  });
+
+  // Codex (PR #367, HIGH, re-review): a cart read that was ALREADY pending when the refusal came may be answered before the server changed the cart.
+  // Recovery must not trust it nor return early on it: it waits for that read, reads the cart once more, and only then prices the NEW cart. The
+  // preview A of the old cart returns BEFORE the new cart is applied: it must not show, and send must stay locked until B (of the new cart) lands.
+  testWidgets('ORDER_CART_CHANGED with a cart read already pending: the old quote never shows, and send waits for B of the new cart', (WidgetTester tester) async {
+    final CheckoutPreview p0 = _quote(_feeWithRoute(snapshotId: 'route-0', geometry: _roadAGeometry));
+    final CheckoutPreview a = _quote(_feeWithRoute(snapshotId: 'route-a', geometry: _roadAGeometry, distance: 4100));
+    final CheckoutPreview b = _quote(_feeWithRoute(snapshotId: 'route-b', geometry: _roadBGeometry, distance: 900, duration: 300), tip: 5000);
+    final (_QuoteSource source, List<List<List<double>>> drawn) = await mountCheckout(tester, <CheckoutPreview>[p0, a, b]);
+    final CartView newCart = (await source.currentCart())!;
+
+    // A cart read starts BEFORE the refusal and stays pending.
+    source.holdCart = true;
+    unawaited(_mountedRuntime!.cart.load());
+    await settle(tester);
+    expect(source.cartPending, hasLength(1));
+
+    // The place is refused: recovery waits for the pending read and does not start its own read yet.
+    source.refusal = 'ORDER_CART_CHANGED';
+    source.refuseFirstPlace = true;
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1);
+    expect(source.pending, isEmpty, reason: 'no preview of the old cart may start while recovery waits for the pending read');
+    expect(source.cartPending, hasLength(1), reason: 'recovery waits for the pending read; it neither returns early nor starts a read it does not own yet');
+    expect(key('checkout-changed'), findsOneWidget);
+
+    // While recovery waits, the tip changes: preview A (of the old cart) is in flight.
+    final int drawnBeforeTip = drawn.length;
+    await tester.ensureVisible(key('checkout-tip-5000'));
+    await tester.tap(key('checkout-tip-5000'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await settle(tester);
+    expect(source.pending, hasLength(1), reason: 'preview A of the old cart is in flight');
+
+    // Preview A returns BEFORE the new cart is applied: it must not publish, and send stays locked.
+    source.pending[0].complete(a);
+    await settle(tester);
+    expect(find.textContaining('4,1 km'), findsNothing, reason: 'the old cart\'s quote must never show, even before the new cart is applied');
+    expect(drawn.skip(drawnBeforeTip).where((List<List<double>> road) => road.length == 3), isEmpty, reason: 'the old cart\'s road must never be drawn');
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1, reason: 'send is locked: no quote of the new cart exists yet');
+
+    // The pending read completes with the NEW cart; recovery then reads once more and that read is answered with the new cart.
+    source.cartPending[0].complete(newCart);
+    await settle(tester);
+    expect(source.cartPending, hasLength(2), reason: 'after the pending read, recovery reads the cart once more');
+    expect(source.pending, hasLength(1), reason: 'no preview starts until the fresh read is applied');
+    source.cartPending[1].complete(newCart);
+    await settle(tester);
+    expect(source.pending, hasLength(2), reason: 'the new cart is priced by a new preview B');
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1, reason: 'send stays locked until B lands');
+
+    // B lands: its road and numbers show, and send places exactly B.
+    source.pending[1].complete(b);
+    await settle(tester);
+    expect(key('checkout-route'), findsOneWidget);
+    expect(find.textContaining('0,9 km'), findsOneWidget);
+    expect(find.textContaining('4,1 km'), findsNothing);
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 2);
+    expect(source.placedWith?.routeSnapshotId, 'route-b', reason: 'place receives the preview of the new cart, never the old one');
+    expect(source.placedWith?.feeDistanceM, 900);
+    expect(tester.takeException(), isNull);
+  });
+
+  // Codex (PR #367, HIGH, re-review): when the reload itself fails (the cart GET is refused), nothing of the unconfirmed cart may publish or open
+  // send. The person gets a retry of the reload; a successful retry prices the new cart and only then sends.
+  testWidgets('ORDER_CART_CHANGED and the cart GET fails: nothing publishes, send stays locked, a retry reloads and prices the new cart', (WidgetTester tester) async {
+    final CheckoutPreview p0 = _quote(_feeWithRoute(snapshotId: 'route-0', geometry: _roadAGeometry));
+    final CheckoutPreview b = _quote(_feeWithRoute(snapshotId: 'route-b', geometry: _roadBGeometry, distance: 900, duration: 300));
+    final (_QuoteSource source, List<List<List<double>>> drawn) = await mountCheckout(tester, <CheckoutPreview>[p0, b]);
+    expect(source.previews, 1);
+
+    source.refusal = 'ORDER_CART_CHANGED';
+    source.refuseFirstPlace = true;
+    source.failCart = true;
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1);
+    expect(source.previews, 1, reason: 'no preview of the unconfirmed cart is started');
+    expect(key('checkout-cart-failed'), findsOneWidget);
+    expect(key('checkout-cart-retry'), findsOneWidget);
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1, reason: 'send stays locked after a failed reload');
+
+    // Retry: the cart reads again and the new cart is priced (B), then send places B.
+    source.failCart = false;
+    source.hold = false;
+    await tester.ensureVisible(key('checkout-cart-retry'));
+    await tester.tap(key('checkout-cart-retry'));
+    await settle(tester);
+    expect(key('checkout-cart-retry'), findsNothing);
+    expect(key('checkout-cart-failed'), findsNothing);
+    expect(source.previews, 2, reason: 'the retry prices the new cart');
+    expect(find.textContaining('0,9 km'), findsOneWidget);
+    expect(drawn.last.length, 2);
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 2);
+    expect(source.placedWith?.routeSnapshotId, 'route-b');
+    expect(tester.takeException(), isNull);
+  });
+
+  // LOW (Codex): disposing the checkout while the reload is pending must not call setState after dispose.
+  testWidgets('leaving the checkout while the reload is pending: no setState after dispose', (WidgetTester tester) async {
+    final CheckoutPreview p0 = _quote(_feeWithRoute(snapshotId: 'route-0', geometry: _roadAGeometry));
+    final (_QuoteSource source, _) = await mountCheckout(tester, <CheckoutPreview>[p0, p0]);
+    source.refusal = 'ORDER_CART_CHANGED';
+    source.refuseFirstPlace = true;
+    source.holdCart = true;
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.cartPending, hasLength(1));
+
+    // The person leaves the screen; the reload then completes.
+    await tester.pumpWidget(const SizedBox.shrink());
+    source.cartPending[0].complete((await source.currentCart())!);
+    await settle(tester);
+    expect(tester.takeException(), isNull);
   });
 }

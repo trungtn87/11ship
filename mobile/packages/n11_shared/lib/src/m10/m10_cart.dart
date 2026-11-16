@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../m02/availability_refresh.dart';
 
@@ -30,6 +32,10 @@ class CartController extends ChangeNotifier {
   bool get availabilityStale => _availabilityStale;
   bool _reading = false;
   int _mutationEpoch = 0;
+  // Counts every change of what the cart holds (a save of an edit, a read applied, an adoption). A screen that priced an earlier generation must price again.
+  int _generation = 0;
+  int get generation => _generation;
+  Future<void>? _inFlight;
   final CustomerOrderSource source;
 
   String? _shopId;
@@ -64,34 +70,60 @@ class CartController extends ChangeNotifier {
 
   /// Reads the saved cart (prices and availability as the server has them NOW).
   Future<void> load() async {
-    if (_reading) return;
+    await _loadApplied();
+  }
+
+  /// Reads the saved cart AGAIN after a changed-cart refusal and says whether the NEW cart is now applied. A read that was already pending may have
+  /// been answered before the server changed the cart, so it is waited for and never trusted: a fresh read follows it. Only that fresh read counts.
+  Future<bool> reloadAfterRefusal() async {
+    while (_inFlight != null) {
+      await _inFlight;
+    }
+    return _loadApplied();
+  }
+
+  /// Like [load] but reports whether the cart read was applied. False: nothing new was applied (a read or a save is busy, the save failed, the
+  /// read failed, or the cart changed meanwhile).
+  Future<bool> _loadApplied() async {
+    if (_reading) return false;
     if (_syncing) {
       freshness.failed();
-      return;
+      return false;
     }
     if (_dirty) {
       // Retry the same cart contents before reading, so reconnect never discards edits
       // and the explicit Retry button can recover a previously failed save.
       await _save();
-      if (_dirty || _disposed) return;
+      if (_dirty || _disposed) return false;
     }
+    return _readOnce();
+  }
+
+  Future<bool> _readOnce() async {
+    final Completer<void> done = Completer<void>();
+    _inFlight = done.future;
     _reading = true;
     final int epoch = _mutationEpoch;
+    bool applied = false;
     try {
       final CartView? view = await source.cart();
-      if (_disposed || epoch != _mutationEpoch) return;
+      if (_disposed || epoch != _mutationEpoch) return false;
       _apply(view);
       _loaded = true;
       _failure = null;
       _dirty = false;
+      applied = true;
     } on M07Failure catch (failure) {
       _failure = failure;
       _availabilityStale = true;
       freshness.failed();
     } finally {
       _reading = false;
+      _inFlight = null;
+      done.complete();
     }
     _notify();
+    return applied;
   }
 
   void _availability(CartView? view) {
@@ -101,6 +133,7 @@ class CartController extends ChangeNotifier {
   }
 
   void _apply(CartView? view) {
+    _generation++;
     _availability(view);
     if (view == null) {
       _shopId = null;
@@ -206,6 +239,7 @@ class CartController extends ChangeNotifier {
 
   Future<void> _save() async {
     _mutationEpoch++;
+    _generation++;
     _dirty = true;
     _notify();
     if (_syncing) {
