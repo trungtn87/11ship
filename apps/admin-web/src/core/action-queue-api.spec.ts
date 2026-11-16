@@ -48,6 +48,26 @@ describe('Việc cần xử lý - parser', () => {
     expect(parsed?.items[0]).toMatchObject({ kind: 'SHOP_PAYMENT_AWAITING_GRANT', status: 'CONFIRMED', action: 'VIEW', overdue: null, ageSeconds: 11100, link: { area: 'business-finance', query: { request: ID } } });
   });
 
+  it('keeps a waiting adjustment whose code the server hides (null: outside the caller complaint scope) with the same count, and never turns the whole queue into an error', () => {
+    const hidden = item({
+      key: `ADJUSTMENT_PENDING_FINANCE|adjustment:${ID}`,
+      kind: 'ADJUSTMENT_PENDING_FINANCE',
+      code: null,
+      status: 'PENDING_FINANCE',
+      reason: 'Điều chỉnh đang chờ tài chính',
+      waiting_on: 'FINANCE',
+      action: 'VIEW',
+      link: { area: 'business-finance', query: {} },
+      detail: { delivery_code: null, direction: 'DEBIT', amount_vnd: 50000 },
+    });
+    const parsed = parseActionQueue(body({ items: [item(), hidden], total: 2 }));
+    expect(parsed).toBeDefined();
+    expect(parsed?.total).toBe(2);
+    expect(parsed?.items).toHaveLength(2);
+    expect(parsed?.items[1]).toMatchObject({ kind: 'ADJUSTMENT_PENDING_FINANCE', code: null, status: 'PENDING_FINANCE', detail: { delivery_code: null, amount_vnd: 50000 } });
+    expect(parsed?.items[0]?.code).toBe('Quán Hoa');
+  });
+
   it('a source the administrator may not see, or that failed, stays FORBIDDEN / ERROR and is never an empty list or 0', () => {
     const parsed = parseActionQueue(body({ items: [], total: 0, sources: sources({ TOPUP_PENDING: { kind: 'TOPUP_PENDING', status: 'FORBIDDEN' }, GOODS_OPEN: { kind: 'GOODS_OPEN', status: 'ERROR' } }) }));
     const byKind = new Map(parsed?.sources.map((source) => [source.kind, source]));

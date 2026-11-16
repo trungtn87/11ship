@@ -62,7 +62,8 @@ export interface QueueLink {
 export interface QueueItem {
   readonly key: string;
   readonly kind: QueueKind;
-  readonly code: string;
+  /** null = the server hides the code of this row (outside the caller's scope); shown as a dash, the row stays. */
+  readonly code: string | null;
   readonly status: string;
   readonly reason: string;
   /** ISO instant the file began to wait. */

@@ -143,14 +143,14 @@ export class ActionQueuePanel {
 
   #row(item: QueueItem): HTMLElement {
     const handle = item.action === 'HANDLE';
-    const open = h('button', { type: 'button', class: `table-link table-action`, 'aria-label': `${handle ? 'Xử lý' : 'Xem chi tiết'} ${item.code}` }, handle ? 'Xử lý' : 'Xem chi tiết');
+    const open = h('button', { type: 'button', class: `table-link table-action`, 'aria-label': `${handle ? 'Xử lý' : 'Xem chi tiết'} ${item.code ?? 'mục không hiện mã'}` }, handle ? 'Xử lý' : 'Xem chi tiết');
     open.addEventListener('click', () => this.host.open(queueTarget(item.link)));
     const age = h('span', {}, ageText(item.ageSeconds));
     return h(
       'tr',
       {},
       h('td', { 'data-label': 'Loại việc', class: 'cell-name' }, QUEUE_KIND_LABEL[item.kind]),
-      h('td', { 'data-label': 'Mã' }, item.code),
+      h('td', { 'data-label': 'Mã' }, item.code ?? '—'),
       h('td', { 'data-label': 'Trạng thái' }, QUEUE_STATUS_LABEL[item.status] ?? item.status),
       h('td', { 'data-label': 'Lý do chờ' }, item.reason),
       h('td', { 'data-label': 'Chờ từ' }, formatDateTime(item.waitingSince)),

@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 
 import '../account/account_views.dart';
 import '../m06/m06_models.dart';
+import '../m02/route_distance.dart';
 import '../m06/m06_views.dart' show parseAgreedFee;
+import '../m10/m10_models.dart' show OrderRoute;
 import '../tokens.dart';
 import '../widgets/components.dart';
 import '../m10/order_chat_models.dart';
@@ -482,6 +484,13 @@ class _MineCard extends StatelessWidget {
 
 // ---- S03 / S06 / S08: detail -----------------------------------------------------------------------------------------
 
+/// "Đường đi đã lưu: ≈ 3,2 km · khoảng 12 phút" for the stored road; the minutes only when the server gave a positive duration.
+String _shipRouteText(OrderRoute route) {
+  final int? seconds = route.durationS;
+  final String minutes = seconds == null || seconds <= 0 ? '' : ' · khoảng ${(seconds / 60).ceil()} phút';
+  return 'Đường đi đã lưu: ≈ ${RouteDistance.text(route.distanceM)}$minutes';
+}
+
 class ShipperDeliveryDetailScreen extends StatefulWidget {
   const ShipperDeliveryDetailScreen({super.key, required this.source, required this.deliveryId, this.mapBuilder, this.pinPicker, this.locationSlot, this.feedbackSlot});
 
@@ -610,6 +619,9 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (d.pickup.lat != null && d.pickup.lng != null) M07MapPin(lat: d.pickup.lat!, lng: d.pickup.lng!, label: 'Quán'),
       if (d.recipient.hasPoint) M07MapPin(lat: d.recipient.lat!, lng: d.recipient.lng!, label: 'Giao', color: 0xFFC0392B),
     ];
+    // The stored road is drawn as it was saved (never recomputed), and only while this Shipper holds the delivery: the server sends its geometry only then.
+    // Otherwise the road is empty and nothing is drawn.
+    final List<List<double>> road = active ? (d.route?.points ?? const <List<double>>[]) : const <List<double>>[];
     final List<Widget> body = <Widget>[
       Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
@@ -635,7 +647,12 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
-        OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins)))),
+        OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
+      // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
+      // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
+      if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
+      if (active && d.legacyReferenceOnly)
+        const ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
       if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),

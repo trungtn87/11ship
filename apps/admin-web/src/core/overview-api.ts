@@ -164,7 +164,7 @@ function parseQueueItem(value: unknown): QueueItem | undefined {
   }
   const waitingSince = iso(raw.waiting_since);
   const ok =
-    typeof raw.key === 'string' && typeof raw.kind === 'string' && KINDS.includes(raw.kind) && typeof raw.code === 'string' && typeof raw.status === 'string' && typeof raw.reason === 'string' &&
+    typeof raw.key === 'string' && typeof raw.kind === 'string' && KINDS.includes(raw.kind) && (raw.code === null || typeof raw.code === 'string') && typeof raw.status === 'string' && typeof raw.reason === 'string' &&
     waitingSince !== undefined && safeInt(raw.age_seconds) && raw.age_seconds >= 0 && (raw.overdue === null || typeof raw.overdue === 'boolean') && (raw.waiting_on === null || typeof raw.waiting_on === 'string') && (raw.action === 'HANDLE' || raw.action === 'VIEW');
   if (!ok || waitingSince === undefined) {
     return undefined;
@@ -179,7 +179,7 @@ function parseQueueItem(value: unknown): QueueItem | undefined {
   return {
     key: raw.key as string,
     kind: raw.kind as QueueKind,
-    code: raw.code as string,
+    code: raw.code as string | null,
     status: raw.status as string,
     reason: raw.reason as string,
     waitingSince,
