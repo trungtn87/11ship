@@ -23,6 +23,8 @@ TOP_KEYS = {'schema', 'rule', 'apps'}
 APP_KEYS = {'package', 'highest_submitted_version_code', 'highest_submitted_version_name', 'owner_confirmed_on'}
 MAX_VERSION_CODE = 2100000000  # Android's versionCode ceiling
 NAME_RE = re.compile(r'\d+\.\d+\.\d+')
+# ASCII-only and anchored before parsing: datetime.fromisoformat accepts forms such as 20261120 on Python 3.11+.
+DATE_RE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}')
 
 
 class GateError(Exception):
@@ -78,7 +80,7 @@ def validate_record(record):
         else:
             if not isinstance(name, str) or not NAME_RE.fullmatch(name):
                 raise GateError(f'{app}: highest_submitted_version_name must be MAJOR.MINOR.PATCH when a build was submitted')
-            if not isinstance(confirmed, str):
+            if not isinstance(confirmed, str) or not DATE_RE.fullmatch(confirmed):
                 raise GateError(f'{app}: owner_confirmed_on (YYYY-MM-DD) is required when a build was submitted')
             try:
                 datetime.date.fromisoformat(confirmed)
@@ -92,8 +94,8 @@ def check_gate(app, version_code, record):
     """The bundle versionCode must be strictly greater than the highest Play-submitted versionCode of the same package."""
     if app not in PACKAGES:
         raise GateError('app must be food or ship')
-    if type(version_code) is not int or version_code < 1:
-        raise GateError('the bundle versionCode must be a positive integer')
+    if type(version_code) is not int or not 1 <= version_code <= MAX_VERSION_CODE:
+        raise GateError(f'the bundle versionCode must be an integer from 1 to {MAX_VERSION_CODE}')
     submitted = validate_record(record)[app]
     if version_code <= submitted:
         raise GateError(f'{PACKAGES[app]} versionCode {version_code} must be greater than the highest Play-submitted versionCode {submitted} '

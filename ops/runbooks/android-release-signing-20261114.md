@@ -203,6 +203,7 @@ Các bước (Owner ra lệnh, chạy bằng root trên VPS). Tên unit producti
    for (const k of ["FOOD", "SHIP"]) {
      if (!plain(v[k], ["package_name", "signer_sha256"])) throw new Error(k + ": keys must be exactly package_name and signer_sha256");
      if (v[k].package_name !== pkg[k]) throw new Error(k + ": package_name mismatch");
+     if (typeof v[k].signer_sha256 !== "string") throw new Error(k + ": signer_sha256 must be a string");
      if (!/^[0-9a-f]{64}$/.test(norm(v[k].signer_sha256))) throw new Error(k + ": signer_sha256 must be 64 hex");
    }
    if (norm(v.FOOD.signer_sha256) !== norm(v.SHIP.signer_sha256)) throw new Error("FOOD and SHIP signer_sha256 differ");
