@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
@@ -948,4 +948,133 @@ test('multiple runs on one SHA: ANY success on the immutable SHA suffices, even 
   // Only non-success attempts: still refused.
   const none = await evaluateGate(sha('a'), { listCiRuns: async () => [{ ...ciRun(sha('a')), conclusion: 'failure' }, { ...ciRun(sha('a')), conclusion: 'cancelled' }], subject: async () => 'feat', parent: async () => null, changedFiles: async () => [] });
   assert.equal(none.ok, false);
+});
+
+// ---- STORE-01 PR-F: pinned release scripts and no control characters in GITHUB_ENV values ----------------
+// The four repo scripts the release job runs are pinned by SHA-256 of their LF content (git stores LF; a Windows checkout may hold CRLF).
+// Every release step that runs one checks the pin file FIRST, so a script changed without its pin fails that step (and this guard).
+const PIN_FILE = 'mobile/release/script-pins.sha256';
+// check-aab-release.py imports play_versioncode_gate.py, which runs inside the verify step, so it is pinned too (closure = direct scripts + imports).
+const PINNED_SCRIPTS = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py', 'mobile/tool/play_versioncode_gate.py'];
+const PIN_CHECK = `sha256sum -c ${PIN_FILE}`;
+const lfDigest = text => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
+const pinReal = () => readFileSync(join(ROOT, PIN_FILE), 'utf8');
+const realScripts = () => Object.fromEntries(PINNED_SCRIPTS.map(p => [p, readFileSync(join(ROOT, p), 'utf8')]));
+
+// Pure: the violations of the pin file against the given script contents (path -> text).
+function scriptPinViolations(pinText, contents) {
+  const out = [];
+  const pins = new Map();
+  for (const line of pinText.replace(/\r\n/g, '\n').split('\n')) {
+    if (line === '') continue;
+    const m = /^([0-9a-f]{64})  (\S+)$/.exec(line);
+    if (!m) { out.push(`malformed pin line: ${line}`); continue; }
+    pins.set(m[2], m[1]);
+  }
+  for (const path of PINNED_SCRIPTS) {
+    if (!pins.has(path)) out.push(`${path} is not pinned`);
+    else if (contents[path] === undefined) out.push(`${path} is missing`);
+    else if (lfDigest(contents[path]) !== pins.get(path)) out.push(`${path} changed without its pin: update ${PIN_FILE} and the golden in the same change`);
+  }
+  for (const path of pins.keys()) if (!PINNED_SCRIPTS.includes(path)) out.push(`${path} is pinned but is not a release script`);
+  return out;
+}
+
+test('script pins: the real release scripts match the pin file, and the golden mirrors the pin file', () => {
+  assert.deepEqual(scriptPinViolations(pinReal(), realScripts()), []);
+  // CRLF-tolerant like the digest check above: a Windows checkout may hold CRLF; the committed file is LF.
+  const pinned = Object.fromEntries(pinReal().replace(/\r\n/g, '\n').trim().split('\n').map(line => { const [digest, path] = line.split('  '); return [path, digest]; }));
+  assert.deepEqual(AAB_GOLDEN.scriptPins, pinned, 'golden.scriptPins equals the pin file');
+});
+
+test('script pins (negative): a script changed without its digest FAILS; the same bytes with CRLF are not a change', () => {
+  const scripts = realScripts();
+  const silent = { ...scripts, 'mobile/tool/sign-aab.sh': scripts['mobile/tool/sign-aab.sh'] + '\n# silent change\n' };
+  const v = scriptPinViolations(pinReal(), silent);
+  assert.equal(v.length, 1, JSON.stringify(v));
+  assert.match(v[0], /mobile\/tool\/sign-aab\.sh changed without its pin/);
+  assert.deepEqual(scriptPinViolations(pinReal(), { ...scripts, 'mobile/tool/sign-aab.sh': scripts['mobile/tool/sign-aab.sh'].replace(/\r?\n/g, '\r\n') }), []);
+  assert.match(scriptPinViolations(pinReal(), { ...scripts, 'mobile/tool/check-aab-release.py': undefined }).join('\n'), /check-aab-release\.py is missing/);
+  // a pin for a file that is not a release script is refused too
+  assert.match(scriptPinViolations(pinReal() + 'a'.repeat(64) + '  mobile/tool/extra.sh\n', scripts).join('\n'), /extra\.sh is pinned but is not a release script/);
+});
+
+test('script pins (negative, import closure): a silent change to play_versioncode_gate.py (imported by check-aab-release.py) FAILS', () => {
+  const scripts = realScripts();
+  const v = scriptPinViolations(pinReal(), { ...scripts, 'mobile/tool/play_versioncode_gate.py': scripts['mobile/tool/play_versioncode_gate.py'] + '\n# silent change\n' });
+  assert.equal(v.length, 1, JSON.stringify(v));
+  assert.match(v[0], /mobile\/tool\/play_versioncode_gate\.py changed without its pin/);
+});
+
+test('script pins (closure): every local module that a pinned Python script imports is itself pinned', () => {
+  const pinned = new Set(PINNED_SCRIPTS);
+  for (const path of PINNED_SCRIPTS.filter(p => p.endsWith('.py'))) {
+    const src = readFileSync(join(ROOT, path), 'utf8');
+    for (const m of src.matchAll(/^(?:import|from) ([A-Za-z_][A-Za-z0-9_]*)/gm)) {
+      const module = `mobile/tool/${m[1]}.py`;
+      if (existsSync(join(ROOT, module))) assert.ok(pinned.has(module), `${path} imports ${module}, which is not pinned`);
+    }
+  }
+});
+
+test('script pins (workflow): each of the five steps that runs a pinned script checks the pin file before the script runs', () => {
+  const steps = yaml.load(aabReal()).jobs.aab.steps;
+  const callers = steps.filter(s => typeof s.run === 'string' && PINNED_SCRIPTS.some(p => s.run.includes(p)));
+  assert.equal(callers.length, 5, callers.map(s => s.name).join(' | '));
+  for (const step of callers) {
+    const at = step.run.indexOf(PIN_CHECK);
+    assert.ok(at >= 0, `${step.name}: pin check present`);
+    const firstCall = Math.min(...PINNED_SCRIPTS.map(p => step.run.indexOf(p)).filter(i => i >= 0));
+    assert.ok(at < firstCall, `${step.name}: the pin check comes before the script`);
+  }
+});
+
+test('script pins (golden): removing the pin check from any step FAILS the golden', () => {
+  const pinLine = aabReal().match(/^ +sha256sum -c mobile\/release\/script-pins\.sha256 \|\|.*$/m)[0];
+  const without = aabReal().split(pinLine + '\n').join('');
+  assert.ok(without.length < aabReal().length, 'the pin line exists');
+  failsWith(AAB_FILE, without, GOLDEN_VIOLATION);
+});
+
+// Executes the REAL reject_ctl helper from the workflow (not a copy) on a value.
+const rejectHelper = () => {
+  const line = aabReal().split('\n').find(l => /^ +reject_ctl\(\) \{/.test(l));
+  assert.ok(line, 'the workflow defines reject_ctl');
+  return line.trim();
+};
+const runReject = value => spawnSync('bash', ['-c', `${rejectHelper()}\nreject_ctl VALUE "$VAL"`], { encoding: 'utf8', env: { ...process.env, VAL: value } });
+
+test('GITHUB_ENV values: CR, LF and TAB are refused by the workflow helper; a clean value passes (executed, not copied)', () => {
+  for (const bad of ['1.0.0\r', 'x\ny', 'a\rb', 'a\tb', 'https://api.example.com\nevil.example', '\n']) {
+    const r = runReject(bad);
+    assert.notEqual(r.status, 0, `refused: ${JSON.stringify(bad)}`);
+    assert.match(r.stdout + r.stderr, /control character/);
+  }
+  const ok = runReject('https://api.example.com');
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+});
+
+test('GITHUB_ENV values: every value written in the three public setup steps is checked BEFORE it is written', () => {
+  const steps = yaml.load(aabReal()).jobs.aab.steps.filter(s => AAB_SETUP_ENV_STEPS.includes(s.name));
+  assert.equal(steps.length, 3, 'the three public setup steps exist');
+  let writes = 0;
+  for (const step of steps) {
+    const lines = step.run.split('\n');
+    lines.forEach((line, i) => {
+      const m = /echo "([A-Z_]+)=\$\{?([A-Za-z_]+)/.exec(line);
+      if (!m) return;
+      writes += 1;
+      const [, envName, source] = m;
+      const check = lines.findIndex(l => l.trim() === `reject_ctl ${envName} "$${source}"`);
+      assert.ok(check >= 0 && check < i, `${step.name}: ${envName} is checked before it is written`);
+    });
+  }
+  assert.equal(writes, 7, 'seven GITHUB_ENV values are scanned (source 1, identity 4, endpoints 2)');
+});
+
+test('GITHUB_ENV values (regression): the old endpoint regex alone accepted a value with an embedded newline (why reject_ctl exists)', () => {
+  const re = /^https:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?\/?$/m;
+  // grep -E matches per line, so a second line smuggled into the value passed the old check.
+  assert.ok(re.test('https://api.example.com\nevil.example'), 'the old check passes a value with a newline');
+  assert.equal(runReject('https://api.example.com\nevil.example').status, 1, 'the new check refuses it');
 });

@@ -7,6 +7,8 @@ name: Mobile AAB release (Play)
 # Only manual dispatch, only from refs/heads/main, only inside the protected environment android-release (required reviewers). The
 # upload-key secrets exist ONLY in that environment and ONLY on the signing step; no other workflow may name them (tests/deploy guard).
 # The app-signing certificate pin and the upload pin are public repository variables; the signature is checked against them.
+# Release scripts are pinned by SHA-256 in mobile/release/script-pins.sha256. Every step that runs one checks the pin file first; a changed
+# script fails the step until its pin is updated in the same change (the golden and the guard change with it).
 
 on:
   workflow_dispatch:
@@ -61,15 +63,19 @@ jobs:
 
       - name: Source matches the run commit
         run: |
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
           actual="$(git rev-parse HEAD)"
           if [ "$actual" != "$GITHUB_SHA" ]; then
             echo "::error title=source mismatch::checked out $actual, the run is $GITHUB_SHA"; exit 1
           fi
+          reject_ctl SOURCE_SHA "$actual"
           echo "SOURCE_SHA=$actual" >> "$GITHUB_ENV"
 
       - name: App identity and version (pubspec.yaml)
         run: |
           set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
           # Through bash, never directly: the script is not executable in git (mode 644), so a direct call fails with Permission denied.
           # Captured first so a failing script stops this step (a process substitution would hide its exit status).
           identity="$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"
@@ -78,6 +84,10 @@ jobs:
             food) app_id=vn.eleven.food ;;
             ship) app_id=vn.eleven.ship ;;
           esac
+          reject_ctl APP_VERSION_NAME "$name"
+          reject_ctl APP_VERSION_CODE "$code"
+          reject_ctl ARTIFACT_BASENAME "$label_version"
+          reject_ctl APP_ID "$app_id"
           {
             echo "APP_VERSION_NAME=$name"
             echo "APP_VERSION_CODE=$code"
@@ -91,6 +101,9 @@ jobs:
           set -euo pipefail
           api="$(jq -er .api_origin config/endpoints.json)"
           device="$(jq -er .device_environment config/endpoints.json)"
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
+          reject_ctl API_BASE_URL "$api"
+          reject_ctl DEVICE_ENVIRONMENT "$device"
           if ! printf '%s' "$api" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
             echo "::error title=API_BASE_URL::must be a plain https origin (no path, query or credentials)"; exit 1
           fi
@@ -126,6 +139,7 @@ jobs:
           FCM_API_KEY: ${{ inputs.app == 'ship' && secrets.FCM_SHIP_API_KEY || secrets.FCM_FOOD_API_KEY }}
         run: |
           set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
           DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT" bash mobile/tool/prepare-android.sh "${{ inputs.app }}" | tee "$RUNNER_TEMP/prepare.log"
           grep -q 'push=on' "$RUNNER_TEMP/prepare.log" || { echo "::error title=push off::a Play release must carry FCM; the FCM identifiers of this app are missing"; exit 1; }
 
@@ -176,6 +190,7 @@ jobs:
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
           mkdir -p "$RUNNER_TEMP/release"
           app_pin='${{ vars.ANDROID_APP_SIGNER_SHA256 }}'
           app_pin="$(printf '%s' "$app_pin" | tr 'A-F' 'a-f')"
@@ -186,6 +201,7 @@ jobs:
       - name: Verify the signature (one signer) and the merged manifest
         run: |
           set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
           aab="$RUNNER_TEMP/release/$ARTIFACT_BASENAME.aab"
           jarsigner -verify "$aab" | grep -q 'jar verified' || { echo "::error title=aab signature::jarsigner does not verify the bundle"; exit 1; }
           blocks="$(unzip -Z1 "$aab" | grep -cE '^META-INF/[^/]+\.(RSA|DSA|EC)$' || true)"
@@ -206,6 +222,7 @@ jobs:
       - name: Write the release record (public values only)
         run: |
           set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
           identity="$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"
           read -r name code label <<< "$identity"
           out="$RUNNER_TEMP/release"
