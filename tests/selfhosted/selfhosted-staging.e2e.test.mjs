@@ -478,6 +478,11 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
         await assert.rejects(client.query(`TRUNCATE app.${table}`), { code: '42501' });
       }
       await assert.rejects(client.query('UPDATE app.delivery_events SET note = note'), { code: '42501' });
+      // #261: the orphan-picture janitor deletes unattached pictures older than 24 h (the row guard decides which rows). The runtime role has DELETE on
+      // complaint_attachments and nothing more: TRUNCATE stays refused. (Row-level behaviour is covered by the janitor's integration test.)
+      await client.query('SELECT 1 FROM app.complaint_attachments LIMIT 1');
+      await client.query('DELETE FROM app.complaint_attachments WHERE false');
+      await assert.rejects(client.query('TRUNCATE app.complaint_attachments'), { code: '42501' });
       // M04-B2.2b: the runtime role may move a balance and append a TOPUP ledger row (the Admin confirmation), and nothing beyond that.
       await client.query('SELECT 1 FROM app.wallet_ledger_entries LIMIT 1');
       await client.query('SELECT 1 FROM app.driver_wallets LIMIT 1');

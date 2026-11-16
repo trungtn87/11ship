@@ -5,8 +5,10 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { DEFAULT_OPS_CONFIG } from '../config/ops-config';
 import { JsonLogger } from '../logging/json-logger';
 import { APP_LOGGER } from '../logging/logging.module';
+import { orphanRetentionSeconds } from '../shared/orphan-retention';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ComplaintRepository } from './complaint-repository';
+import { UNLINKED_ATTACHMENT_TTL_HOURS } from './feedback-constants';
 import { FeedbackRecorder } from './feedback-recorder';
 
 const BATCH = 200;
@@ -14,9 +16,13 @@ const MAX_BATCHES_PER_RUN = 25;
 const EVERY_MS = 60 * 60_000;
 
 /**
- * Issue #261: removes complaint pictures that were uploaded and never attached, 24 hours after the upload (Owner 2026-10-31). Only rows with `complaint_id IS NULL`
- * can go; the database guard refuses anything linked or younger, and the SQL skips rows another transaction is attaching. Batches, each its own transaction, with one
- * audit row (counts and bytes only) per batch that removed something.
+ * Issue #261: removes complaint pictures that were uploaded and never attached, 24 hours after the upload (Owner 2026-10-31), or after the replay window of the
+ * upload when that is longer (#316: a retry inside the replay window is answered with the stored picture, so that picture must still exist). Only rows with
+ * `complaint_id IS NULL` can go; the database guard refuses anything linked or younger than 24 hours, and the SQL skips rows another transaction is attaching.
+ * Batches, each its own transaction, with one audit row (counts and bytes only) per batch that removed something.
+ *
+ * Why this janitor and the menu picture janitor (menu/menu-image-janitor.ts) run as two timers: they delete rows of two different tables (app.complaint_attachments
+ * and app.menu_images) and share no state, so neither can remove the other's pictures. They are separate because each one's guard and audit are its own.
  */
 @Injectable()
 export class AttachmentJanitor {
@@ -24,15 +30,17 @@ export class AttachmentJanitor {
     private readonly transactions: TransactionManager,
     private readonly complaints: ComplaintRepository,
     private readonly recorder: FeedbackRecorder,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async runOnce(): Promise<{ count: number; bytes: number }> {
     const total = { count: 0, bytes: 0 };
+    const retentionSeconds = orphanRetentionSeconds(this.config.idempotency.replayTtlSeconds, UNLINKED_ATTACHMENT_TTL_HOURS * 3600);
     for (let batch = 0; batch < MAX_BATCHES_PER_RUN; batch += 1) {
       const removed = await this.transactions.withTransaction(async (context) => {
-        const done = await this.complaints.purgeOrphanAttachments(context, BATCH);
+        const done = await this.complaints.purgeOrphanAttachments(context, BATCH, retentionSeconds);
         if (done.count > 0) {
-          await this.recorder.orphanPicturesPurged(context, randomUUID(), done);
+          await this.recorder.orphanPicturesPurged(context, randomUUID(), done, retentionSeconds);
         }
         return done;
       });

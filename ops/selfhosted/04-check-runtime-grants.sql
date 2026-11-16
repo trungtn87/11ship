@@ -129,7 +129,7 @@ WITH expected(table_name, privileges) AS (
     ('review_reply_history', ARRAY['SELECT', 'INSERT']::text[]),
     ('complaints', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_messages', ARRAY['SELECT', 'INSERT']::text[]),
-    ('complaint_attachments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('complaint_attachments', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
     ('complaint_reconsiderations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_adjustments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[]),

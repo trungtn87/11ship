@@ -5,22 +5,15 @@ import { DEFAULT_OPS_CONFIG } from '../config/ops-config';
 import { JsonLogger } from '../logging/json-logger';
 import { APP_LOGGER } from '../logging/logging.module';
 import { TransactionManager } from '../transaction/transaction-manager';
+import { orphanRetentionSeconds } from '../shared/orphan-retention';
 import { MenuRepository } from './menu-repository';
 
 const BATCH = 200;
 const MAX_BATCHES_PER_RUN = 25;
 const EVERY_MS = 60 * 60_000;
-const MIN_ORPHAN_RETENTION_SECONDS = 24 * 3600;
-const REPLAY_MARGIN_SECONDS = 3600;
 
-/**
- * How long an unattached picture is kept. Never shorter than the replay window of its upload (IDEMPOTENCY_REPLAY_TTL_SECONDS, up to 7
- * days): a retry inside that window must not be answered with the metadata of a picture the janitor already deleted. One hour of margin
- * covers the gap between the picture row and its idempotency record.
- */
-export function orphanRetentionSeconds(replayTtlSeconds: number): number {
-  return Math.max(MIN_ORPHAN_RETENTION_SECONDS, replayTtlSeconds + REPLAY_MARGIN_SECONDS);
-}
+// Retention rule shared with the complaint picture janitor (shared/orphan-retention.ts); re-exported for existing callers.
+export { orphanRetentionSeconds };
 
 /**
  * OD-2 item 4: removes dish pictures that were uploaded and never attached to a dish, 24 hours after the upload, or after the replay window of the upload when that is longer. Without it an upload whose dish save never happened would hold one of the 400 places of the shop for ever. Each

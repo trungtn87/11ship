@@ -195,7 +195,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | review_reply_history | SELECT, INSERT (M11: earlier reply texts; append-only) |
 | complaints | SELECT, INSERT, UPDATE (M11: one file per issue; status moves by the Administration; never deleted) |
 | complaint_messages | SELECT, INSERT (M11: the thread (submitter, parties, support, internal notes); append-only) |
-| complaint_attachments | SELECT, INSERT, UPDATE (M11: evidence pictures; attached to a file once; never deleted) |
+| complaint_attachments | SELECT, INSERT, UPDATE, DELETE (M11: evidence pictures; attached to a file once; #261: DELETE only by the orphan-picture janitor for an unattached picture older than 24 h, the row guard refuses any other) |
 | complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
 | complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
 | wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |
