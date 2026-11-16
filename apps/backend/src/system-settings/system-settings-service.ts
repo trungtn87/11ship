@@ -15,6 +15,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import {
   OTP_PASSWORD_RESET_ENABLED,
   OTP_REGISTRATION_ENABLED,
+  PHONE_VERIFICATION_SETTINGS_GROUP,
   SYSTEM_SETTING_AUDIT_ACTION,
   SYSTEM_SETTING_HISTORY_LIMIT,
   SYSTEM_SETTING_OPERATION_ID,
@@ -87,6 +88,7 @@ export class SystemSettingsService {
       },
       async (context) => {
         const locked = await this.#lockSystem(context, known);
+        await this.settings.lockGroup(context, PHONE_VERIFICATION_SETTINGS_GROUP);
         const states = await this.settings.lockAll(context);
         if (groupVersion(states) !== body.expectedVersion) {
           throw new AppError('SYSTEM_SETTING_VERSION_CONFLICT');
