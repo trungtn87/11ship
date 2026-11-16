@@ -9,6 +9,7 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { CustomersService } from '../customers/customers-service';
 import { M14RouteClient, RouteLeg, RouteResult } from '../delivery/m14-route-client';
 import { RouteSnapshotRepository, routeSnapshotMatchesLeg } from './route-snapshot-repository';
+import { routeView } from './route-snapshot-view';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -223,6 +224,8 @@ export class OrderCustomerService {
       const estimate = await this.#estimate(context, checked.shop, checked.address, prepared, leg);
       // P6-2: the quote owns a new immutable snapshot of its route; a later place() must match it.
       const routeSnapshotId = estimate.leg === null ? null : await this.snapshots.create(context, estimate.leg);
+      // P6-3b (#294): the road the quote shows is read back from the snapshot the quote points to (never the leg just computed), so it is the road a later Order gets.
+      const quoteRoute = routeSnapshotId === null ? null : routeView(await this.snapshots.read(context, routeSnapshotId), true);
       const lines = checked.lines.map((l) => ({ item_id: l.itemId, name: l.name, note: l.note, quantity: l.quantity, unit_price_vnd: l.priceVnd, issue: l.issue }));
       const total = totalOf(checked.lines.filter((l) => l.priceVnd !== null).map((l) => ({ unitPriceVnd: l.priceVnd as number, quantity: l.quantity })));
       const proposedFee = this.#proposedFee(estimate.feeVnd, input.tipVnd);
@@ -233,7 +236,7 @@ export class OrderCustomerService {
         shop: { shop_id: input.shopId, name: checked.shop?.name ?? null, online: checked.shop?.status === 'ACTIVE' && checked.shop.availability.online },
         lines,
         items_total_vnd: total,
-        fee: this.#quoteView(estimate, routeSnapshotId),
+        fee: this.#quoteView(estimate, routeSnapshotId, { withRoute: true, route: quoteRoute }),
         tip_vnd: input.tipVnd,
         expected_total_vnd: proposedFee === null ? null : total + proposedFee,
         server_now: iso(await freshClockMs(context)),
@@ -279,8 +282,13 @@ export class OrderCustomerService {
     return left !== null && right !== null && left.lat === right.lat && left.lng === right.lng;
   }
 
-  #quoteView(q: CheckoutQuote, routeSnapshotId: string | null = null): JsonObject {
-    return { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, route_snapshot_id: routeSnapshotId, quoted_at: iso(q.quotedAtMs) };
+  /**
+   * The fee block of a checkout. `route` (P6-3b) is added ONLY when the caller passes `withRoute: true` (the preview of the customer who owns the quote);
+   * any other reader of this view gets no `route` key, so a road can never reach an unrelated response by accident (lesson #353).
+   */
+  #quoteView(q: CheckoutQuote, routeSnapshotId: string | null, road: { readonly withRoute: boolean; readonly route: JsonObject | null }): JsonObject {
+    const base: JsonObject = { status: q.status, distance_m: q.distanceM, fee_vnd: q.feeVnd, estimate_vnd: q.feeVnd, reason: q.reason, version: q.policyVersion, policy_version: q.policyVersion, snapshot: q.snapshot, route_snapshot_id: routeSnapshotId, quoted_at: iso(q.quotedAtMs) };
+    return road.withRoute ? { ...base, route: road.route } : base;
   }
 
   #proposedFee(baseFeeVnd: number | null, tipVnd: number): number | null {
