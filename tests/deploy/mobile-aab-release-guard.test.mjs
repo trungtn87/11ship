@@ -123,7 +123,7 @@ const SHIP_OK = {
 
 function manifestXml(spec) {
   const perms = spec.permissions.map(n => `  <uses-permission android:name="${n}"/>`).join('\n');
-  const services = spec.services.map(s => `  <application><service android:name="${s.name}" android:exported="false" android:foregroundServiceType="${s.fgs}"/></application>`).join('\n');
+  const services = spec.services.map(s => `  <application><service android:name="${s.name}" android:exported="false"${s.fgs === undefined ? '' : ` android:foregroundServiceType="${s.fgs}"`}/></application>`).join('\n');
   return `<?xml version="1.0" encoding="utf-8"?>
 <manifest ${ANDROID} package="${spec.pkg}" android:versionCode="${spec.code}" android:versionName="${spec.name}">
 ${perms}
@@ -180,7 +180,7 @@ test('ship must declare ShipLocationService with the location foreground type', 
   assert.match(missing.out, /ShipLocationService/);
   const wrongType = check('ship', { ...SHIP_OK, services: [{ name: 'vn.eleven.m14.flutter.ShipLocationService', fgs: 'dataSync' }] });
   assert.equal(wrongType.status, 1);
-  assert.match(wrongType.out, /foregroundServiceType="location"/);
+  assert.match(wrongType.out, /location \(name "location" or flag 0x8\); the bundle says foregroundServiceType='dataSync'/);
 });
 
 test('targetSdk below 36 is refused', () => {
@@ -240,4 +240,54 @@ test('an unlisted permission is refused (the allowlist is exact)', () => {
   const r = check('food', { ...FOOD_OK, permissions: [...FOOD_OK.permissions, 'android.permission.CAMERA'] });
   assert.equal(r.status, 1);
   assert.match(r.out, /CAMERA/);
+});
+
+// ---- foregroundServiceType as bundletool may print it: name, '|' list, or the numeric/hex flag value (location = 0x8) ----
+
+const shipWithFgs = fgs => check('ship', { ...SHIP_OK, services: [{ name: 'vn.eleven.m14.flutter.ShipLocationService', fgs }] });
+
+test('ship accepts every printed form of the location flag: name, list, decimal and hex values with bit 0x8 set', () => {
+  for (const fgs of ['location', '8', '0x8', '0X8', 'location|dataSync', 'dataSync|location', '9', '0x9', '10', '0x0A', '12']) {
+    const r = shipWithFgs(fgs);
+    assert.equal(r.status, 0, `${fgs}: ${r.out}`);
+  }
+});
+
+test('ship refuses a service without the location flag and prints the real value it saw', () => {
+  for (const fgs of ['dataSync', '1', '0', '0x0', '0x1', '2', 'dataSync|connectedDevice', '7']) {
+    const r = shipWithFgs(fgs);
+    assert.equal(r.status, 1, `${fgs} must fail`);
+    assert.match(r.out, /foreground service type/, fgs);
+    assert.ok(r.out.includes(`foregroundServiceType='${fgs}'`), `${fgs} printed: ${r.out}`);
+  }
+});
+
+test('ship refuses a service with no foregroundServiceType attribute at all', () => {
+  const r = check('ship', { ...SHIP_OK, services: [{ name: 'vn.eleven.m14.flutter.ShipLocationService', fgs: undefined }] });
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /foregroundServiceType=None/);
+});
+
+test('food refuses the location flag in any printed form, not only the name', () => {
+  for (const fgs of ['location', '8', '0x8', 'dataSync|location', '9']) {
+    const r = check('food', { ...FOOD_OK, services: [{ name: 'vn.eleven.n11.SyncService', fgs }] });
+    assert.equal(r.status, 1, `${fgs}: ${r.out}`);
+    assert.match(r.out, /location foreground service/, fgs);
+  }
+});
+
+test('food accepts a non-location service type (dataSync, numeric 1)', () => {
+  for (const fgs of ['dataSync', '1']) {
+    const r = check('food', { ...FOOD_OK, services: [{ name: 'vn.eleven.n11.SyncService', fgs }] });
+    assert.equal(r.status, 0, `${fgs}: ${r.out}`);
+  }
+});
+
+// The form bundletool 1.18.3 really prints (checked on a ship bundle built 16/11/2026): 0x00000008 = location.
+test('ship accepts the 8-digit hex form bundletool prints (0x00000008), and refuses 0x00000001 (dataSync)', () => {
+  assert.equal(shipWithFgs('0x00000008').status, 0, 'location flag set');
+  assert.equal(shipWithFgs('0x00000009').status, 0, 'dataSync|location');
+  const r = shipWithFgs('0x00000001');
+  assert.equal(r.status, 1);
+  assert.ok(r.out.includes("foregroundServiceType='0x00000001'"), r.out);
 });
