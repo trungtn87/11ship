@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
@@ -954,7 +954,8 @@ test('multiple runs on one SHA: ANY success on the immutable SHA suffices, even 
 // The four repo scripts the release job runs are pinned by SHA-256 of their LF content (git stores LF; a Windows checkout may hold CRLF).
 // Every release step that runs one checks the pin file FIRST, so a script changed without its pin fails that step (and this guard).
 const PIN_FILE = 'mobile/release/script-pins.sha256';
-const PINNED_SCRIPTS = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py'];
+// check-aab-release.py imports play_versioncode_gate.py, which runs inside the verify step, so it is pinned too (closure = direct scripts + imports).
+const PINNED_SCRIPTS = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py', 'mobile/tool/play_versioncode_gate.py'];
 const PIN_CHECK = `sha256sum -c ${PIN_FILE}`;
 const lfDigest = text => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
 const pinReal = () => readFileSync(join(ROOT, PIN_FILE), 'utf8');
@@ -995,6 +996,24 @@ test('script pins (negative): a script changed without its digest FAILS; the sam
   assert.match(scriptPinViolations(pinReal(), { ...scripts, 'mobile/tool/check-aab-release.py': undefined }).join('\n'), /check-aab-release\.py is missing/);
   // a pin for a file that is not a release script is refused too
   assert.match(scriptPinViolations(pinReal() + 'a'.repeat(64) + '  mobile/tool/extra.sh\n', scripts).join('\n'), /extra\.sh is pinned but is not a release script/);
+});
+
+test('script pins (negative, import closure): a silent change to play_versioncode_gate.py (imported by check-aab-release.py) FAILS', () => {
+  const scripts = realScripts();
+  const v = scriptPinViolations(pinReal(), { ...scripts, 'mobile/tool/play_versioncode_gate.py': scripts['mobile/tool/play_versioncode_gate.py'] + '\n# silent change\n' });
+  assert.equal(v.length, 1, JSON.stringify(v));
+  assert.match(v[0], /mobile\/tool\/play_versioncode_gate\.py changed without its pin/);
+});
+
+test('script pins (closure): every local module that a pinned Python script imports is itself pinned', () => {
+  const pinned = new Set(PINNED_SCRIPTS);
+  for (const path of PINNED_SCRIPTS.filter(p => p.endsWith('.py'))) {
+    const src = readFileSync(join(ROOT, path), 'utf8');
+    for (const m of src.matchAll(/^(?:import|from) ([A-Za-z_][A-Za-z0-9_]*)/gm)) {
+      const module = `mobile/tool/${m[1]}.py`;
+      if (existsSync(join(ROOT, module))) assert.ok(pinned.has(module), `${path} imports ${module}, which is not pinned`);
+    }
+  }
 });
 
 test('script pins (workflow): each of the five steps that runs a pinned script checks the pin file before the script runs', () => {

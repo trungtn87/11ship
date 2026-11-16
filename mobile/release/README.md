@@ -48,3 +48,17 @@ Lệnh `check` không cần secret và không truy cập Google Play.
 ## Phạm vi
 
 Hồ sơ này không phải nguồn của `versionCode` (nguồn là `version:` trong `mobile/<app>/pubspec.yaml`, đọc qua `mobile/tool/app-version.sh`). Hồ sơ cũng không thay thế Play Console: Owner vẫn là người xác nhận việc nộp bài và cấu hình track.
+
+## Ghim script của job AAB
+
+File ghim: [script-pins.sha256](script-pins.sha256). Mỗi dòng là SHA-256 của nội dung LF một file trong **closure thực thi** của job AAB, gồm:
+
+- file được gọi trực tiếp: `app-version.sh`, `prepare-android.sh`, `sign-aab.sh`, `check-aab-release.py`;
+- module mà file được gọi import khi chạy: `play_versioncode_gate.py` (do `check-aab-release.py` import ở bước verify).
+
+Mọi bước gọi script đều chạy `sha256sum -c mobile/release/script-pins.sha256` trước; file lệch digest thì bước FAIL.
+
+- Sửa một file trong closure phải cập nhật **cùng PR** ba chỗ: file, dòng digest trong `script-pins.sha256`, và `scriptPins` trong `tests/deploy/fixtures/mobile-aab-release.golden.json`. Thiếu một chỗ thì `tests/deploy/ci-gate-policy.test.mjs` FAIL.
+- Tính lại digest: `tr -d '\r' < mobile/tool/<tên> | sha256sum`.
+- Thêm `import` cục bộ mới vào script đã ghim thì phải ghim module đó; test closure trong `ci-gate-policy.test.mjs` sẽ FAIL nếu quên.
+- Pin chỉ chặn việc đổi file lặng lẽ ngoài diff được duyệt. Pin nằm trong cùng repo nên không chống được commit độc hại đã được merge.
