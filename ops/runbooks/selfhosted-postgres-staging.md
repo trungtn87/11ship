@@ -257,6 +257,10 @@ Chế độ fixture đã bị gỡ ngày 2026-11-07 (quyết định Owner, PR #
 3. Schema lỗi sau khi áp → **sửa tiến bằng migration mới**; không tự rollback/`down`. Rollback ứng dụng chỉ khi schema tương thích.
 4. Phục hồi: restore vào một database **riêng** (`createdb` + `pg_restore`), kiểm tra, rồi quyết định; không `pg_restore --clean`
    lên `ship11_staging`. Phục hồi từ bản sao chưa từng được thử trên máy này; hồ sơ vận hành phải ghi lần thử đầu tiên.
+5. Health path sau deploy/restart (backlog **#329**): đường dẫn `/v1/health/ready` mới được xác nhận theo mã nguồn
+   (`GLOBAL_PREFIX = 'v1'` + `@Controller('health')`), **chưa xác nhận trên VPS**. Xác nhận bằng curl chỉ-đọc lúc deploy:
+   `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/v1/health/ready` (kỳ vọng `200`). Nếu trả `404`: dừng và đối chiếu
+   build đang chạy, không đoán đường dẫn khác.
 
 ## 10. Những gì CI đã và chưa chứng minh
 
