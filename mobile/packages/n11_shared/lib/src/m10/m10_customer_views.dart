@@ -494,6 +494,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _previewing = false;
   bool _previewFresh = false;
   int _previewEpoch = 0;
+  // True while the cart is reloaded after a changed-cart refusal: no preview may publish then (it would price the old cart).
+  bool _cartReloading = false;
   late final AvailabilityRefresh _freshness = AvailabilityRefresh(
       refresh: _check,
       invalidate: () {
@@ -641,9 +643,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// Release that request without publishing any of its data, then preview only
   /// the latest draft (multiple edits while it was pending are coalesced).
   bool _restartStalePreview(int epoch) {
-    if (!mounted || epoch == _previewEpoch) return false;
+    if (!mounted || (epoch == _previewEpoch && !_cartReloading)) return false;
     setState(() => _previewing = false);
-    if (_tipDebounce == null || !_tipDebounce!.isActive) {
+    // While the cart reloads, the check that follows the reload prices the new cart; no restart here.
+    if (!_cartReloading && (_tipDebounce == null || !_tipDebounce!.isActive)) {
       unawaited(_check());
     }
     return true;
@@ -755,7 +758,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
         if (failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED') {
           // The cart is read again: new prices, dishes that are gone. The person checks and sends again (a new attempt).
-          await cart.load();
+          setState(() => _cartReloading = true);
+          try {
+            await cart.load();
+          } finally {
+            // Every preview started before this point (it may still be in flight) is stale now; the check below prices the new cart.
+            if (mounted) {
+              setState(() {
+                _cartReloading = false;
+                _previewEpoch++;
+                _previewFresh = false;
+              });
+            }
+          }
           _clientRef = newIdempotencyKey();
           _key = newIdempotencyKey();
           await _check();

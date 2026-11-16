@@ -55,10 +55,11 @@ Map<String, Object?> _feeWithRoute({required String snapshotId, required String?
         'route': <String, Object?>{'status': 'ROUTE', 'distance_m': distance, 'duration_s': duration, 'route_version': 'm14-1', 'geometry': geometry},
     };
 
-CheckoutPreview _quote(Map<String, Object?> fee) => CheckoutPreview.fromJson(<String, Object?>{
+CheckoutPreview _quote(Map<String, Object?> fee, {int tip = 0}) => CheckoutPreview.fromJson(<String, Object?>{
       'ok': true,
       'blockers': <Object?>[],
       'lines': <Object?>[],
+      'tip_vnd': tip,
       'items_total_vnd': 45000,
       'expected_total_vnd': 60000,
       'fee': fee,
@@ -77,6 +78,27 @@ class _QuoteSource extends SampleCustomerOrders {
   /// The first place call is refused as a changed quote (the server has a newer one); the screen then re-quotes.
   bool refuseFirstPlace = false;
 
+  /// The code of that refusal: ORDER_QUOTE_CHANGED, or ORDER_CART_CHANGED (the screen then reloads the cart).
+  String refusal = 'ORDER_QUOTE_CHANGED';
+
+  /// While [holdCart] is on, cart reads (cart.load) wait in [cartPending] until the test answers them.
+  bool holdCart = false;
+  final List<Completer<CartView?>> cartPending = <Completer<CartView?>>[];
+
+  /// The preview the last place call was sent with.
+  CheckoutPreview? placedWith;
+
+  /// The saved cart as the store holds it now (not held).
+  Future<CartView?> currentCart() => super.cart();
+
+  @override
+  Future<CartView?> cart() {
+    if (!holdCart) return super.cart();
+    final Completer<CartView?> waiting = Completer<CartView?>();
+    cartPending.add(waiting);
+    return waiting.future;
+  }
+
   @override
   Future<CheckoutPreview> preview(CheckoutDraft draft) {
     final CheckoutPreview answer = quotes[previews < quotes.length ? previews : quotes.length - 1];
@@ -90,10 +112,11 @@ class _QuoteSource extends SampleCustomerOrders {
   @override
   Future<OrderView> place(CheckoutDraft draft, {required CheckoutPreview preview, required String clientRef, required String key}) {
     places++;
+    placedWith = preview;
     if (refuseFirstPlace) {
       refuseFirstPlace = false;
       hold = true;
-      return Future<OrderView>.error(const M07Failure(M07FailureKind.refused, code: 'ORDER_QUOTE_CHANGED'));
+      return Future<OrderView>.error(M07Failure(M07FailureKind.refused, code: refusal));
     }
     return super.place(draft, preview: preview, clientRef: clientRef, key: key);
   }
@@ -261,5 +284,65 @@ void main() {
     expect(drawn.last.length, 2);
     expect(drawn.last.first[0], closeTo(22.7, 1e-6));
     expect(tester.takeException(), isNull);
+  });
+
+  // Codex (PR #367, HIGH): after ORDER_CART_CHANGED the cart reload is still pending when the person changes the tip. The preview A of the OLD cart
+  // is then in flight; the new cart lands first and A returns afterwards. A must never show, send must stay locked until the preview of the NEW
+  // cart (B) lands, and place must receive B with B's route_snapshot_id.
+  testWidgets('ORDER_CART_CHANGED: a preview of the old cart that returns after the reload never shows; send waits for the new cart\'s quote B', (WidgetTester tester) async {
+    final CheckoutPreview p0 = _quote(_feeWithRoute(snapshotId: 'route-0', geometry: _roadAGeometry));
+    final CheckoutPreview a = _quote(_feeWithRoute(snapshotId: 'route-a', geometry: _roadAGeometry, distance: 4100));
+    final CheckoutPreview b = _quote(_feeWithRoute(snapshotId: 'route-b', geometry: _roadBGeometry, distance: 900, duration: 300), tip: 5000);
+    final (_QuoteSource source, List<List<List<double>>> drawn) = await mountCheckout(tester, <CheckoutPreview>[p0, a, b]);
+    expect(drawn.last.length, 3);
+
+    // The send is refused as a changed cart; the screen starts reloading the cart and the reload stays pending.
+    source.refusal = 'ORDER_CART_CHANGED';
+    source.refuseFirstPlace = true;
+    source.holdCart = true;
+    final CartView newCart = (await source.currentCart())!;
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1);
+    expect(source.cartPending, hasLength(1), reason: 'the cart reload has started and is still pending');
+    expect(key('checkout-changed'), findsOneWidget);
+
+    // While the reload is pending the tip changes: preview A (of the old cart) is now in flight.
+    final int drawnBeforeTip = drawn.length;
+    await tester.ensureVisible(key('checkout-tip-5000'));
+    await tester.tap(key('checkout-tip-5000'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await settle(tester);
+    expect(source.pending, hasLength(1), reason: 'preview A of the old cart is in flight');
+
+    // The new cart completes first.
+    source.cartPending.single.complete(newCart);
+    await settle(tester);
+    expect(source.places, 1);
+
+    // Preview A returns late: it must not show, and send must stay locked until the new cart is priced.
+    source.pending[0].complete(a);
+    await settle(tester);
+    expect(find.textContaining('4,1 km'), findsNothing, reason: 'the distance of the old cart\'s quote must never show');
+    expect(drawn.skip(drawnBeforeTip).where((List<List<double>> road) => road.length == 3), isEmpty, reason: 'the road of the old cart\'s quote must never be drawn');
+    expect(source.pending, hasLength(2), reason: 'the new cart is priced by a new preview B');
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 1, reason: 'send is locked while only the old quote exists');
+
+    // The preview of the new cart lands: its road and its numbers show, and send places exactly B.
+    source.pending[1].complete(b);
+    await settle(tester);
+    expect(key('checkout-route'), findsOneWidget);
+    expect(find.textContaining('0,9 km'), findsOneWidget);
+    expect(find.textContaining('4,1 km'), findsNothing);
+    await tester.ensureVisible(key('checkout-send'));
+    await tester.tap(key('checkout-send'));
+    await settle(tester);
+    expect(source.places, 2);
+    expect(source.placedWith?.routeSnapshotId, 'route-b', reason: 'place receives the preview of the new cart, never the old one');
+    expect(source.placedWith?.feeDistanceM, 900);
   });
 }
