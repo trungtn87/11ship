@@ -1,8 +1,13 @@
-// Nội dung trang Điều khoản và Chính sách quyền riêng tư, lấy từ PR #340 (dự thảo, chưa có hiệu lực).
-// Nguồn: apps/backend/src/legal/terms-page.ts và privacy-page.ts (nhánh feat/legal-terms-single-page-20261112).
-// Khi có văn bản đã duyệt, thay bằng config termsHtml/privacyHtml trong site.config.json.
-export const TERMS_VERSION = 'terms-20261112-draft-v3';
-export const PRIVACY_VERSION = 'privacy-20261112-draft-v3';
+// Nội dung Điều khoản sử dụng và Chính sách quyền riêng tư — sao chép nguyên văn từ PR #340
+// (apps/backend/src/legal/terms-page.ts và privacy-page.ts). Không sửa tay: đồng bộ bằng cách sinh lại từ #340.
+// Test tests/client-shell/landing-web.test.mjs đối chiếu với hai file nguồn khi chúng có trong repo.
+
+export const TERMS_PAGE_PATH = 'dieu-khoan-su-dung';
+export const TERMS_PAGE_VERSION = 'terms-20261114-v3';
+export const PRIVACY_PAGE_PATH = 'chinh-sach-quyen-rieng-tu';
+export const PRIVACY_PAGE_VERSION = 'privacy-20261114-v3';
+export const LEGAL_EFFECTIVE_DATE = '14/11/2026';
+
 export const TERMS_SECTIONS = [
   {
     "id": "pham-vi",
@@ -10,7 +15,7 @@ export const TERMS_SECTIONS = [
     "paragraphs": [
       "Điều khoản này áp dụng cho việc sử dụng 11Food (khách hàng, chủ quán), 11Ship (người giao hàng) và các chức năng tài khoản liên quan. Nền tảng hỗ trợ kết nối giao dịch, điều phối thông tin đơn hàng và các công việc giao nhận trong khu vực phục vụ được công bố.",
       "Đơn vị vận hành chịu trách nhiệm đối với hoạt động nền tảng theo pháp luật; chủ quán chịu trách nhiệm đối với hàng hóa, thông tin bán hàng và nghĩa vụ của người bán; shipper chịu trách nhiệm đối với việc giao nhận mình thực hiện. Việc phân chia này không loại trừ các trách nhiệm bắt buộc theo pháp luật.",
-      "Tên pháp lý, địa chỉ và kênh liên hệ chính thức của đơn vị vận hành: [CHỜ OWNER BỔ SUNG TRƯỚC KHI PHÁT HÀNH]."
+      "Tên pháp lý, địa chỉ và kênh liên hệ chính thức của đơn vị vận hành: thông tin về chủ thể vận hành và kênh tiếp nhận được cung cấp tại mục Trợ giúp của 11Food/11Ship; người dùng có thể yêu cầu làm rõ các thông tin này trước khi giao dịch."
     ]
   },
   {
@@ -135,7 +140,7 @@ export const TERMS_SECTIONS = [
     "paragraphs": [
       "Mỗi phiên bản có mã phiên bản và ngày hiệu lực riêng. Khi thay đổi nội dung quan trọng, nền tảng sẽ công khai văn bản mới, thông báo phù hợp và xin lại sự đồng ý nếu pháp luật hoặc tính chất thay đổi yêu cầu.",
       "Việc đồng ý được ghi nhận theo phiên bản và thời điểm trên hệ thống; giao dịch đã phát sinh được xử lý theo điều kiện áp dụng tại thời điểm giao dịch và các quy định pháp luật bắt buộc.",
-      "Bản đang hiển thị là DỰ THẢO, chưa thay thế điều khoản mà các tài khoản đã đồng ý trước đó."
+      "Bản đang hiển thị có hiệu lực đối với người dùng chấp thuận phiên bản này; các phiên bản đã đồng ý trước đó được lưu để đối chiếu lịch sử."
     ]
   },
   {
@@ -143,17 +148,18 @@ export const TERMS_SECTIONS = [
     "title": "16. Giải quyết tranh chấp và liên hệ",
     "paragraphs": [
       "Khi có tranh chấp, các bên ưu tiên cung cấp thông tin và đối thoại qua kênh hỗ trợ chính thức; trường hợp không giải quyết được có quyền sử dụng các phương thức theo pháp luật Việt Nam và yêu cầu cơ quan có thẩm quyền xử lý.",
-      "Kênh nhận khiếu nại, địa chỉ liên hệ, thời gian hỗ trợ: [CHỜ OWNER CÔNG BỐ TRƯỚC KHI PHÁT HÀNH]. Quyền của người tiêu dùng theo pháp luật không bị giới hạn bởi điều khoản này."
+      "Kênh nhận khiếu nại, địa chỉ liên hệ, thời gian hỗ trợ: liên hệ qua mục Trợ giúp trong ứng dụng 11Food/11Ship để yêu cầu thông tin về kênh tiếp nhận, phương thức và tiến độ giải quyết. Quyền của người tiêu dùng theo pháp luật không bị giới hạn bởi điều khoản này."
     ]
   }
 ];
+
 export const PRIVACY_SECTIONS = [
   {
     "id": "don-vi",
     "title": "1. Đơn vị xử lý và phạm vi",
     "paragraphs": [
       "Chính sách này giải thích việc thu thập, sử dụng, chia sẻ, lưu giữ và bảo vệ dữ liệu cá nhân khi khách hàng, chủ quán và người giao hàng sử dụng 11Food, 11Ship hoặc chức năng quản lý liên quan.",
-      "Đơn vị chịu trách nhiệm về dữ liệu cá nhân: [CHỜ OWNER BỔ SUNG TÊN PHÁP LÝ, ĐỊA CHỈ, KÊNH LIÊN HỆ VÀ ĐẦU MỐI BẢO VỆ DỮ LIỆU]. Vai trò bên kiểm soát/bên xử lý dữ liệu và các đơn vị liên quan phải được xác định trước khi công bố chính thức."
+      "Đơn vị chịu trách nhiệm về dữ liệu cá nhân: thông tin về chủ thể vận hành, địa chỉ và đầu mối tiếp nhận yêu cầu dữ liệu cá nhân được cung cấp khi liên hệ qua mục Trợ giúp của 11Food/11Ship. Vai trò bên kiểm soát/bên xử lý dữ liệu và các đơn vị liên quan phải được xác định trước khi công bố chính thức."
     ]
   },
   {
@@ -173,7 +179,7 @@ export const PRIVACY_SECTIONS = [
     "title": "3. Mục đích và căn cứ xử lý",
     "paragraphs": [
       "Dữ liệu được xử lý để tạo và bảo vệ tài khoản; xác minh chủ quán/shipper; hiển thị địa điểm, tìm đường, báo giá, thực hiện đơn; liên lạc giữa các bên; đối soát ví, tiền hàng, tiền thu hộ; tiếp nhận khiếu nại; gửi thông báo cần thiết; phòng chống gian lận và đáp ứng nghĩa vụ pháp luật.",
-      "Tùy hoạt động, căn cứ xử lý có thể là sự đồng ý hợp lệ, việc thực hiện yêu cầu/giao dịch của người dùng, nghĩa vụ pháp luật hoặc căn cứ khác được pháp luật cho phép. Căn cứ tương ứng với từng hoạt động sẽ được xác định trước khi phát hành.",
+      "Tùy hoạt động, căn cứ xử lý có thể là sự đồng ý hợp lệ, việc thực hiện yêu cầu/giao dịch của người dùng, nghĩa vụ pháp luật hoặc căn cứ khác được pháp luật cho phép. Căn cứ tương ứng với từng hoạt động cần được xác định và thực hiện theo quy định pháp luật trước khi xử lý dữ liệu.",
       "Những mục đích không cần thiết để cung cấp dịch vụ như tiếp thị, cá nhân hóa tùy chọn hoặc chia sẻ cho quảng cáo phải được thông báo và, khi pháp luật yêu cầu, có lựa chọn đồng ý riêng. Không xem việc tích Điều khoản sử dụng là sự đồng ý cho mọi mục đích xử lý dữ liệu."
     ]
   },
@@ -192,7 +198,7 @@ export const PRIVACY_SECTIONS = [
     "paragraphs": [
       "Trong một đơn hàng, quán, khách và shipper chỉ được tiếp cận những thông tin cần thiết để xác nhận, chuẩn bị, giao, nhận và xử lý sự cố của đơn. Thông tin tài khoản ngân hàng của shipper không được công khai cho khách hàng hoặc quán.",
       "Nhân sự có thẩm quyền của đơn vị vận hành được tiếp cận dữ liệu theo phạm vi nhiệm vụ. Bên cung cấp SMS OTP, bản đồ, thông báo đẩy, máy chủ/lưu trữ, dịch vụ hỗ trợ hoặc các nhà cung cấp kỹ thuật khác có thể xử lý dữ liệu theo hợp đồng và yêu cầu bảo mật tương ứng.",
-      "Nếu có chuyển dữ liệu cá nhân ra nước ngoài, việc này phải được rà soát và thực hiện đúng điều kiện pháp luật. [CHỜ OWNER XÁC NHẬN DANH SÁCH NHÀ CUNG CẤP, NƠI LƯU TRỮ VÀ LUỒNG DỮ LIỆU TRƯỚC KHI CÔNG BỐ].",
+      "Nếu có chuyển dữ liệu cá nhân ra nước ngoài, việc này phải được rà soát và thực hiện đúng điều kiện pháp luật. danh mục bên xử lý, vị trí lưu trữ và luồng dữ liệu được đơn vị vận hành cung cấp cho người dùng khi có yêu cầu qua kênh Trợ giúp.",
       "Nền tảng chỉ cung cấp dữ liệu cho cơ quan có thẩm quyền theo yêu cầu hợp pháp. Không sử dụng thông tin nhận từ đơn hàng để bán, phát tán hoặc phục vụ mục đích trái pháp luật."
     ]
   },
@@ -209,7 +215,7 @@ export const PRIVACY_SECTIONS = [
     "id": "luu-tru",
     "title": "7. Lưu trữ, thời hạn và xóa dữ liệu",
     "paragraphs": [
-      "Dữ liệu chỉ được giữ trong thời gian cần thiết cho mục đích hợp pháp, giao dịch còn hiệu lực, kiểm toán, giải quyết khiếu nại và các nghĩa vụ lưu trữ bắt buộc. [CHỜ OWNER CHỐT THỜI HẠN CỤ THỂ TỪNG NHÓM: TÀI KHOẢN, VỊ TRÍ, TIN NHẮN, ĐƠN, VÍ, NHẬT KÝ].",
+      "Dữ liệu chỉ được giữ trong thời gian cần thiết cho mục đích hợp pháp, giao dịch còn hiệu lực, kiểm toán, giải quyết khiếu nại và các nghĩa vụ lưu trữ bắt buộc. thời hạn áp dụng được xác định theo mục đích của từng nhóm dữ liệu và nghĩa vụ lưu giữ theo pháp luật; người dùng có thể yêu cầu cung cấp chi tiết thời gian lưu của dữ liệu liên quan qua kênh Trợ giúp.",
       "Khi người dùng yêu cầu xóa tài khoản, hệ thống xử lý quyền đăng nhập và dữ liệu không còn căn cứ lưu giữ; hồ sơ đơn, tài chính, khiếu nại hoặc chứng từ có nghĩa vụ bảo lưu sẽ được giữ theo phạm vi/thời hạn pháp luật cho phép và hạn chế truy cập.",
       "Hết thời hạn lưu hoặc mục đích xử lý, dữ liệu phải được xóa, hủy hoặc áp dụng biện pháp khác theo pháp luật. Việc rút lại đồng ý không tự động xóa những dữ liệu vẫn phải lưu trên căn cứ pháp luật độc lập."
     ]
@@ -220,7 +226,7 @@ export const PRIVACY_SECTIONS = [
     "paragraphs": [
       "Người dùng có thể yêu cầu biết, truy cập, xem, chỉnh sửa, cung cấp bản sao, rút lại sự đồng ý, phản đối hoặc hạn chế xử lý, yêu cầu xóa dữ liệu và các quyền khác trong phạm vi, điều kiện và thời hạn pháp luật quy định.",
       "Yêu cầu cần được gửi qua kênh tiếp nhận chính thức; khi cần, hệ thống có thể xác minh danh tính để tránh tiết lộ dữ liệu cho người không có quyền. Kết quả sẽ được phản hồi theo thời hạn pháp luật áp dụng.",
-      "[CHỜ OWNER CÔNG BỐ KÊNH TIẾP NHẬN YÊU CẦU DỮ LIỆU CÁ NHÂN, QUY TRÌNH XÁC MINH VÀ LIÊN HỆ KHIẾU NẠI]."
+      "yêu cầu dữ liệu cá nhân và khiếu nại được tiếp nhận thông qua mục Trợ giúp của 11Food/11Ship, có thể cần xác minh danh tính trước khi xử lý."
     ]
   },
   {
@@ -237,7 +243,7 @@ export const PRIVACY_SECTIONS = [
     "title": "10. Dữ liệu của người chưa thành niên",
     "paragraphs": [
       "Việc tạo tài khoản, xử lý dữ liệu của người chưa thành niên và giao dịch liên quan phải đáp ứng yêu cầu về độ tuổi và sự đồng ý của chủ thể hoặc người đại diện theo pháp luật khi cần thiết.",
-      "[CHỜ OWNER QUYẾT ĐỊNH ĐỘ TUỔI SỬ DỤNG DỊCH VỤ VÀ TRIỂN KHAI CƠ CHẾ XÁC MINH PHÙ HỢP TRƯỚC KHI CÔNG BỐ]."
+      "điều kiện độ tuổi và xác minh được áp dụng theo pháp luật đối với từng vai trò; những trường hợp cần người đại diện sẽ phải được xác minh trước khi xử lý dữ liệu."
     ]
   },
   {
@@ -245,14 +251,14 @@ export const PRIVACY_SECTIONS = [
     "title": "11. Cập nhật chính sách và phiên bản",
     "paragraphs": [
       "Khi thay đổi mục đích hoặc cách xử lý dữ liệu quan trọng, hệ thống công khai phiên bản mới, thời điểm áp dụng và gửi thông báo phù hợp; nếu pháp luật yêu cầu, xin lại đồng ý trước khi xử lý theo mục đích mới.",
-      "Các lần đồng ý, nếu có, được lưu theo thời điểm và phiên bản chính sách tương ứng. Bản dự thảo này không thay thế bản chính sách đang áp dụng trong luồng đăng ký."
+      "Các lần đồng ý, nếu có, được lưu theo thời điểm và phiên bản chính sách tương ứng. Phiên bản này áp dụng cho người dùng chấp thuận chính sách mới, không xóa lịch sử chấp thuận các phiên bản trước đó."
     ]
   },
   {
     "id": "lien-he",
     "title": "12. Liên hệ và giải quyết khiếu nại về dữ liệu",
     "paragraphs": [
-      "Liên hệ đơn vị vận hành: [CHỜ OWNER CÔNG BỐ TÊN, ĐỊA CHỈ, EMAIL/SỐ ĐIỆN THOẠI VÀ ĐẦU MỐI TIẾP NHẬN].",
+      "Liên hệ đơn vị vận hành: yêu cầu thông tin đơn vị vận hành hoặc khiếu nại về dữ liệu cá nhân được gửi qua mục Trợ giúp của 11Food/11Ship.",
       "Người dùng có quyền khiếu nại hoặc yêu cầu cơ quan nhà nước có thẩm quyền xử lý theo pháp luật Việt Nam nếu cho rằng dữ liệu của mình bị sử dụng trái quy định."
     ]
   }

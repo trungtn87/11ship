@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import * as legal from '../../apps/landing-web/src/legal.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const out = mkdtempSync(join(tmpdir(), 'landing-'));
-const ROUTES = ['/', '/food', '/ship', '/ho-tro', '/chinh-sach-quyen-rieng-tu', '/dieu-khoan', '/xoa-tai-khoan'];
+const ROUTES = ['/', '/food', '/ship', '/ho-tro', '/chinh-sach-quyen-rieng-tu', '/dieu-khoan-su-dung', '/xoa-tai-khoan'];
 const html = (route) => readFileSync(join(out, route === '/' ? '' : route, 'index.html'), 'utf8');
 
 before(() => {
@@ -99,5 +100,58 @@ describe('landing-web', () => {
 
   it('account deletion page links the backend page only when a URL is configured', () => {
     assert.doesNotMatch(html('/xoa-tai-khoan'), /href="[^"]*delete-account/);
+  });
+
+  it('legal pages use the PR #340 paths, versions and cross-links', () => {
+    assert.match(html('/dieu-khoan-su-dung'), /Mã phiên bản: terms-20261114-v3/);
+    assert.match(html('/chinh-sach-quyen-rieng-tu'), /Mã phiên bản: privacy-20261114-v3/);
+    assert.match(html('/chinh-sach-quyen-rieng-tu'), /href="\/dieu-khoan-su-dung"/);
+    assert.match(html('/dieu-khoan-su-dung'), /href="\/chinh-sach-quyen-rieng-tu"/);
+    assert.match(html('/'), /href="\/dieu-khoan-su-dung"/);
+    assert.doesNotMatch(html('/'), /href="\/dieu-khoan"/);
+    assert.equal(existsSync(join(out, 'dieu-khoan')), false, 'old /dieu-khoan path must not be built');
+  });
+});
+
+// Drift guard: legal.mjs must equal the PR #340 sources. The sources exist in the repo only after #340 is merged
+// and this branch is rebased on main; until then the comparison is skipped with that reason (not silently passed).
+describe('legal text matches PR #340 sources', () => {
+  const termsSrc = join(root, 'apps', 'backend', 'src', 'legal', 'terms-page.ts');
+  const privacySrc = join(root, 'apps', 'backend', 'src', 'legal', 'privacy-page.ts');
+  const haveSources = existsSync(termsSrc) && existsSync(privacySrc);
+  const skip = haveSources ? false : 'PR #340 chưa có trong repo (cần merge và rebase nhánh này lên main)';
+
+  // Flatten [id, title, ...paragraphs] per section so the comparison is exact and order-sensitive.
+  const flat = (sections) => sections.flatMap((s) => [s.id, s.title, ...s.paragraphs]);
+
+  it('versions, paths and section counts are correct (always checked)', () => {
+    assert.equal(legal.TERMS_PAGE_VERSION, 'terms-20261114-v3');
+    assert.equal(legal.PRIVACY_PAGE_VERSION, 'privacy-20261114-v3');
+    assert.equal(legal.TERMS_PAGE_PATH, 'dieu-khoan-su-dung');
+    assert.equal(legal.PRIVACY_PAGE_PATH, 'chinh-sach-quyen-rieng-tu');
+    assert.equal(legal.TERMS_SECTIONS.length, 16);
+    assert.equal(legal.PRIVACY_SECTIONS.length, 12);
+  });
+
+  it('no draft placeholders or draft labels remain in legal.mjs (always checked)', () => {
+    const text = readFileSync(join(root, 'apps', 'landing-web', 'src', 'legal.mjs'), 'utf8');
+    assert.doesNotMatch(text, /CHỜ|DỰ THẢO|dự thảo|chưa có hiệu lực|\[[A-ZĐ ]{8,}\]/);
+  });
+
+  it('terms text equals terms-page.ts from PR #340', { skip }, () => {
+    const src = readFileSync(termsSrc, 'utf8');
+    const block = src.match(/const sections: readonly TermsSection\[\] = (\[[\s\S]*?\n\]);/)[1];
+    assert.equal(src.match(/export const TERMS_PAGE_VERSION = '([^']+)'/)[1], legal.TERMS_PAGE_VERSION);
+    assert.deepEqual(flat(JSON.parse(block)), flat(legal.TERMS_SECTIONS));
+  });
+
+  it('privacy text equals privacy-page.ts from PR #340', { skip }, () => {
+    const src = readFileSync(privacySrc, 'utf8');
+    const decode = (t) => t.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    const sections = [...src.matchAll(/<section id="([^"]+)"><h2>([^<]*)<\/h2>([\s\S]*?)<\/section>/g)].map(([, id, title, inner]) => ({
+      id, title: decode(title), paragraphs: [...inner.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((m) => decode(m[1])),
+    }));
+    assert.equal(src.match(/export const PRIVACY_PAGE_VERSION = '([^']+)'/)[1], legal.PRIVACY_PAGE_VERSION);
+    assert.deepEqual(flat(sections), flat(legal.PRIVACY_SECTIONS));
   });
 });

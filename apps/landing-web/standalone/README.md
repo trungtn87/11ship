@@ -5,7 +5,7 @@ Website tĩnh độc lập, không dính repo 11ship, backend hay API. Chỉ c�
 ## Xem thử trên máy
 Bấm đúp `chay-thu.cmd` (hoặc `node build.mjs` rồi `node serve.mjs`), mở http://localhost:4173
 
-Các trang: `/`, `/food`, `/ship`, `/ho-tro`, `/chinh-sach-quyen-rieng-tu`, `/dieu-khoan`, `/xoa-tai-khoan`.
+Các trang: `/`, `/food`, `/ship`, `/ho-tro`, `/chinh-sach-quyen-rieng-tu`, `/dieu-khoan-su-dung`, `/xoa-tai-khoan`.
 
 ## Đổi link và thông tin (không cần sửa code): `site.config.json`
 

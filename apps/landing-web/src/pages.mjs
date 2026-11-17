@@ -2,7 +2,7 @@
 // Copy states only what the apps do today. Undecided facts (contact channel, legal text, store URL) are never invented.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { TERMS_SECTIONS, PRIVACY_SECTIONS, TERMS_VERSION, PRIVACY_VERSION } from './legal.mjs';
+import { TERMS_SECTIONS, PRIVACY_SECTIONS, TERMS_PAGE_VERSION, PRIVACY_PAGE_VERSION, LEGAL_EFFECTIVE_DATE } from './legal.mjs';
 
 // Settings come from site.config.json (next to src/), overridden by LANDING_* environment variables.
 const CONFIG_PATH = new URL('../site.config.json', import.meta.url);
@@ -92,7 +92,7 @@ function layout({ path, title, desc, current, body, dark = false }) {
 <div><div class="fbrand"><span class="logo-chip"><img src="/brand/logo-11-ui.png" alt="11" width="54" height="36"></span><b>Cần là có.</b></div><p>Đặt món và giao hàng tại Cao Bằng.</p></div>
 <div><h3>Ứng dụng</h3><ul><li><a href="/food">11Food — Thèm là có</a></li><li><a href="/ship">11Ship — Gọi là có</a></li></ul></div>
 <div><h3>Hỗ trợ</h3><ul><li><a href="/ho-tro">Trung tâm hỗ trợ</a></li><li><a href="/ho-tro#faq">Câu hỏi thường gặp</a></li><li><a href="/ho-tro#lien-he">Liên hệ</a></li></ul></div>
-<div><h3>Pháp lý</h3><ul><li><a href="/chinh-sach-quyen-rieng-tu">Chính sách quyền riêng tư</a></li><li><a href="/dieu-khoan">Điều khoản sử dụng</a></li><li><a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a></li></ul></div>
+<div><h3>Pháp lý</h3><ul><li><a href="/chinh-sach-quyen-rieng-tu">Chính sách quyền riêng tư</a></li><li><a href="/dieu-khoan-su-dung">Điều khoản sử dụng</a></li><li><a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a></li></ul></div>
 </div><p class="legal">© 11 — Cần là có.</p></div></footer></body></html>`;
 }
 
@@ -107,17 +107,17 @@ const FAQ_COMMON = [
   ['Làm sao xóa tài khoản?', 'Xem trang <a href="/xoa-tai-khoan">Yêu cầu xóa tài khoản</a>.'],
 ];
 
-/** Placeholders from the draft become neutral text on public pages (no internal notes). */
-const neutral = (t) => t.replace(/\[CHỜ OWNER[^\]]*\]/g, (m) => (/EMAIL|KÊNH/.test(m) && CONTACT_TEXT !== '' ? CONTACT_TEXT : '[Thông tin đang được hoàn thiện]'));
 const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Full legal page. approvedHtml (Owner-approved text from site.config.json) replaces the draft when set. */
-const legalPage = (title, lead, sections, version, slug, approvedHtml) => {
+/** Full legal page. Text is the Owner-approved PR #340 text (legal.mjs); approvedHtml, when set in site.config.json, overrides it. */
+const legalPage = ({ title, sections, version, slug, approvedHtml, crossHref, crossLabel }) => {
   if (approvedHtml !== '') return `<section class="doc"><div class="wrap narrow"><h1>${title}</h1>${approvedHtml}</div></section>`;
   const toc = sections.map((x) => `<a href="#${slug}-${x.id}">${esc(x.title)}</a>`).join('');
-  const body = sections.map((x) => `<article class="legal-sec" id="${slug}-${x.id}"><h2>${esc(x.title)}</h2>${x.paragraphs.map((p) => `<p>${esc(neutral(p))}</p>`).join('')}</article>`).join('');
+  const body = sections.map((x) => `<article class="legal-sec" id="${slug}-${x.id}"><h2>${esc(x.title)}</h2>${x.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('')}</article>`).join('');
   return `<section class="doc legal-page"><div class="wrap">
 <h1>${title}</h1>
+<p class="meta">Ngày hiệu lực: ${LEGAL_EFFECTIVE_DATE} · Mã phiên bản: ${version}</p>
+<p class="meta"><a href="${crossHref}">${crossLabel}</a></p>
 <div class="legal-grid"><nav class="toc" aria-label="Mục lục"><strong>Nội dung</strong>${toc}</nav><div class="legal-body">${body}</div></div>
 </div></section>`;
 };
@@ -232,13 +232,13 @@ ${faq([
   '/chinh-sach-quyen-rieng-tu': layout({
     path: '/chinh-sach-quyen-rieng-tu', current: '',
     title: 'Chính sách quyền riêng tư — 11Food và 11Ship', desc: 'Chính sách quyền riêng tư của 11Food và 11Ship: dữ liệu nào được xử lý, vì sao, và quyền của bạn.',
-    body: legalPage('Chính sách quyền riêng tư', 'Áp dụng cho khách hàng, chủ quán và shipper khi dùng 11Food và 11Ship.', PRIVACY_SECTIONS, PRIVACY_VERSION, 'privacy', PRIVACY_HTML),
+    body: legalPage({ title: 'Chính sách quyền riêng tư', sections: PRIVACY_SECTIONS, version: PRIVACY_PAGE_VERSION, slug: 'privacy', approvedHtml: PRIVACY_HTML, crossHref: '/dieu-khoan-su-dung', crossLabel: 'Xem Điều khoản sử dụng' }),
   }),
 
-  '/dieu-khoan': layout({
-    path: '/dieu-khoan', current: '',
+  '/dieu-khoan-su-dung': layout({
+    path: '/dieu-khoan-su-dung', current: '',
     title: 'Điều khoản sử dụng — 11Food và 11Ship', desc: 'Điều khoản sử dụng 11Food và 11Ship cho khách hàng, chủ quán và shipper.',
-    body: legalPage('Điều khoản sử dụng', 'Áp dụng cho khách hàng, chủ quán và shipper trong hệ sinh thái 11Food và 11Ship.', TERMS_SECTIONS, TERMS_VERSION, 'terms', TERMS_HTML),
+    body: legalPage({ title: 'Điều khoản sử dụng', sections: TERMS_SECTIONS, version: TERMS_PAGE_VERSION, slug: 'terms', approvedHtml: TERMS_HTML, crossHref: '/chinh-sach-quyen-rieng-tu', crossLabel: 'Xem Chính sách quyền riêng tư' }),
   }),
 
   '/xoa-tai-khoan': layout({
