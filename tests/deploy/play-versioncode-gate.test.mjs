@@ -64,15 +64,27 @@ function gateRaw(args) {
 
 // ---- 1. the committed record ----
 
-test('the committed record is valid, starts with nothing submitted, and says what counts as submitted', () => {
+// Checks the shape of the REAL record only. It does not pin the submitted values: those move forward as Owner confirms uploads.
+test('the committed record is valid: schema, rule, package, integer values, and date/name once something is submitted', () => {
   const real = JSON.parse(readFileSync(RECORD, 'utf8'));
   assert.equal(real.schema, SCHEMA);
   assert.match(real.rule, /Owner/);
   assert.match(real.rule, /KHONG|không/, 'the rule says a build or download is not a submission');
   const v = gateRaw(['validate']);
   assert.equal(v.status, 0, v.out);
-  assert.equal(real.apps.food.highest_submitted_version_code, 0, 'initial value: nothing submitted yet');
-  assert.equal(real.apps.ship.highest_submitted_version_code, 0, 'initial value: nothing submitted yet');
+  for (const app of ['food', 'ship']) {
+    const entry = real.apps[app];
+    assert.equal(entry.package, `vn.eleven.${app}`);
+    const code = entry.highest_submitted_version_code;
+    assert.ok(Number.isInteger(code) && code >= 0, `${app}: highest_submitted_version_code is an integer >= 0`);
+    if (code > 0) {
+      assert.match(entry.highest_submitted_version_name, /^\d+\.\d+\.\d+$/, `${app}: name is MAJOR.MINOR.PATCH`);
+      assert.match(entry.owner_confirmed_on, /^\d{4}-\d{2}-\d{2}$/, `${app}: owner_confirmed_on is YYYY-MM-DD`);
+    } else {
+      assert.equal(entry.highest_submitted_version_name, null, `${app}: nothing submitted, no name`);
+      assert.equal(entry.owner_confirmed_on, null, `${app}: nothing submitted, no confirmation date`);
+    }
+  }
 });
 
 test('the committed record and the README tell the same update rule (a separate PR after Owner confirmation)', () => {
@@ -140,6 +152,15 @@ test('a versionCode above the submitted one passes; equal fails; lower fails (pe
   // ship is gated by its own record: 6 is above food's 5 but below ship's 9
   assert.equal(gate(['check', 'ship', '6'], rec).status, 1, 'ship is not gated by the food value');
   assert.equal(gate(['check', 'ship', '10'], rec).status, 0);
+});
+
+test('on a fixture, 1 > 1 is refused: a versionCode equal to the submitted one never passes', () => {
+  const rec = submittedRecord(1, 1);
+  const r = gate(['check', 'food', '1'], rec);
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /must be greater than the highest Play-submitted versionCode 1/);
+  assert.equal(gate(['check', 'ship', '1'], rec).status, 1);
+  assert.equal(gate(['check', 'food', '2'], rec).status, 0);
 });
 
 test('the bundle versionCode must stay within 1..2100000000 (Android ceiling)', () => {
@@ -259,10 +280,22 @@ function runChecker(code) {
   });
 }
 
-test('check-aab-release.py passes 1.0.0+1 with the committed record and prints the gate line', () => {
-  const r = runChecker('1');
+// The checker has no record override (it is pinned), so these read the committed food value and test the boundary
+// relative to it: value+1 passes, value fails. The numbers stay correct as Owner records new uploads.
+const committedFood = () => JSON.parse(readFileSync(RECORD, 'utf8')).apps.food.highest_submitted_version_code;
+
+test('check-aab-release.py passes a versionCode one above the committed record and prints the gate line', () => {
+  const submitted = committedFood();
+  const r = runChecker(String(submitted + 1));
   assert.equal(r.status, 0, r.out);
-  assert.match(r.out, /play versionCode gate ok \(food\): 1 > highest submitted 0/);
+  assert.match(r.out, new RegExp(`play versionCode gate ok \\(food\\): ${submitted + 1} > highest submitted ${submitted}`));
+});
+
+test('check-aab-release.py fails a versionCode equal to the committed record', () => {
+  const submitted = committedFood();
+  const r = runChecker(String(submitted));
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /must be greater than the highest Play-submitted versionCode/);
 });
 
 test('check-aab-release.py rejects a non-integer versionCode before anything else', () => {
