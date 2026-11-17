@@ -12,8 +12,8 @@ set -euo pipefail
 
 app="${1:-}"
 case "$app" in
-  food) label="11Food"; app_id="vn.eleven.food.test"; peer_id="vn.eleven.ship.test" ;;
-  ship) label="11Ship"; app_id="vn.eleven.ship.test"; peer_id="vn.eleven.food.test" ;;
+  food) label="11Food"; app_id="vn.eleven.food"; peer_id="vn.eleven.ship" ;;
+  ship) label="11Ship"; app_id="vn.eleven.ship"; peer_id="vn.eleven.food" ;;
   *) echo "usage: $0 <food|ship>" >&2; exit 2 ;;
 esac
 environment="${DEVICE_ENVIRONMENT:-}"

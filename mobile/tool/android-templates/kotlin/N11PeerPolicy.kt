@@ -14,8 +14,8 @@ import java.security.MessageDigest
  * token, a password or a private key.
  */
 object N11PeerPolicy {
-    const val FOOD_PACKAGE = "vn.eleven.food.test"
-    const val SHIP_PACKAGE = "vn.eleven.ship.test"
+    const val FOOD_PACKAGE = "vn.eleven.food"
+    const val SHIP_PACKAGE = "vn.eleven.ship"
     const val JOIN_PREFIX = "11SHIP-JOIN-KEY-V1"
 
     private val UUID_RE = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")

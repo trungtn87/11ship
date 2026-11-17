@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './m14-fake-route';
 import { newDish } from './m10-fixtures';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -97,7 +98,7 @@ export class M11World {
     const router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(2.5, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;

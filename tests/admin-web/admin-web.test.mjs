@@ -59,6 +59,20 @@ describe('menu by permission', () => {
       ['Tổng quan', 'Điều hành', 'Báo cáo', 'Người dùng', 'Quản trị viên', 'Phân quyền', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Đánh giá', 'Phản ánh', 'Danh mục', 'Tài chính', 'Vận hành hệ thống', 'Cài đặt hệ thống', 'Cấu hình tập trung', 'Thời hạn xử lý đơn', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Sao lưu và phục hồi', 'Giám sát'],
     );
   });
+  it('sidebar sections ĐIỀU HÀNH / QUẢN LÝ / HỆ THỐNG: presentation only; group ids, routes and per-role visibility are unchanged', async () => {
+    const m = await load(real, 'core/menu.js');
+    const sectionOf = (id) => m.MENU.find((group) => group.id === id).section;
+    assert.deepEqual(
+      m.MENU.map((group) => group.id),
+      ['overview', 'accounts', 'operations', 'catalog', 'finance', 'sysops', 'system'],
+    );
+    assert.equal(sectionOf('overview'), 'ĐIỀU HÀNH');
+    assert.equal(sectionOf('operations'), 'ĐIỀU HÀNH');
+    for (const id of ['accounts', 'catalog', 'finance']) assert.equal(sectionOf(id), 'QUẢN LÝ', id);
+    for (const id of ['sysops', 'system']) assert.equal(sectionOf(id), 'HỆ THỐNG', id);
+    // The regrouping adds no right: an ADMIN without grants still does not see the user list.
+    assert.ok(!ids(m.visibleMenu('ADMIN', new Set())).includes('users'));
+  });
   it('M04 "Tài chính": six ready entries in the approved order and the SYSTEM-only receiving accounts (B3a); SYSTEM sees them, an ADMIN only with the matching grant; parameters sit under the system group', async () => {
     const m = await load(real, 'core/menu.js');
     const finance = m.MENU.find((group) => group.id === 'finance').items[0];

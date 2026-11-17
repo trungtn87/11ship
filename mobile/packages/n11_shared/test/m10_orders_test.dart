@@ -869,7 +869,7 @@ void main() {
         customer: SampleCustomerOrders(store),
         shop: SampleShopOrders(store),
         cart: CartController(source: SampleCustomerOrders(store)),
-        mapBuilder: (BuildContext context, List<M07MapPin> pins) {
+        mapBuilder: (BuildContext context, List<M07MapPin> pins, [List<List<double>> route = const <List<double>>[]]) {
           drawn.add(<String>[for (final M07MapPin p in pins) p.label]);
           return const SizedBox(key: Key('fake-map'));
         },

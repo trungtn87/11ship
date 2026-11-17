@@ -18,5 +18,5 @@ void main() {
   final OpsClient? ops = createOpsClient(ClientApp.ship, session, config);
   ops?.installCrashHooks();
   ops?.start();
-  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, updates: ops?.updates, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));
+  runApp(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: shipBrand, tabs: buildShipTabs(session, flows: flows), config: config, updates: ops?.updates, session: session, notifications: NotificationShell(controller: flows.notifications!, router: shipNotificationRouter(session, flows), push: flows.push))));
 }

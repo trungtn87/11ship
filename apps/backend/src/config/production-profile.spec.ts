@@ -25,8 +25,8 @@ describe('production profile (APP_ENV=production, loopback bind)', () => {
     writeFileSync(
       path.join(dir, 'signers.json'),
       JSON.stringify({
-        FOOD: { package_name: 'vn.eleven.food.test', signer_sha256: SIGNER },
-        SHIP: { package_name: 'vn.eleven.ship.test', signer_sha256: SIGNER },
+        FOOD: { package_name: 'vn.eleven.food', signer_sha256: SIGNER },
+        SHIP: { package_name: 'vn.eleven.ship', signer_sha256: SIGNER },
       }),
     );
     writeFileSync(path.join(dir, 'revocation.json'), JSON.stringify({ fetched_at: '2026-10-14T00:00:00Z', entries: {} }));

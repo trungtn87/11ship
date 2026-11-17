@@ -103,6 +103,7 @@ Future<void> home(
   WidgetTester tester,
   DiscoveryController c, {
   PublicShopApi? publicApi,
+  VoidCallback? onNotifyWhenShops,
 }) async {
   await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
@@ -112,6 +113,7 @@ Future<void> home(
         body: DiscoveryHome(
           controller: c,
           publicApi: publicApi ?? FakePublicShopApi(menuOf('Zeta Ốc Hương')),
+          onNotifyWhenShops: onNotifyWhenShops,
         ),
       ),
     ),
@@ -293,7 +295,7 @@ void main() {
         ),
       );
       expect(find.text('4.5 (12 đánh giá)'), findsOneWidget);
-      expect(find.text('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -322,7 +324,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('≈ 3,4 km · đường đi'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: ≈ 3,4 km'), findsOneWidget);
       expect(find.textContaining('chim bay'), findsNothing);
       await tester.pumpWidget(
         MaterialApp(
@@ -336,7 +338,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Đang tính quãng đường…'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: đang tính…'), findsOneWidget);
       // Road unknown: it says so and does not expose a straight-line substitute.
       await tester.pumpWidget(
         MaterialApp(
@@ -350,7 +352,7 @@ void main() {
           ),
         ),
       );
-      expect(find.textContaining('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.textContaining('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       expect(find.textContaining('đường chim bay'), findsNothing);
       expect(find.textContaining('đường đi'), findsNothing);
       final FakeLocationProvider gps = FakeLocationProvider()
@@ -396,7 +398,7 @@ void main() {
         ),
       );
       expect(find.text('4.8 (120 đánh giá)'), findsOneWidget);
-      expect(find.text('Chưa xác định quãng đường'), findsOneWidget);
+      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: chưa xác định'), findsOneWidget);
       expect(find.text('Đang mở cửa'), findsOneWidget);
       await tester.tap(find.byType(InkWell).first);
       expect(opened, isTrue);
@@ -827,13 +829,37 @@ void main() {
         );
         addTearDown(empty.dispose);
         await home(tester, empty);
-        expect(find.text('Chưa có quán phù hợp'), findsOneWidget);
-        expect(
-          find.text('Khu vực này chưa có quán nào có món để hiển thị.'),
-          findsOneWidget,
-        );
+        // F01 no shops (no filter): a calm card, not the filter-empty copy; the CTA is absent without a callback.
+        expect(find.byKey(const Key('home-no-shops')), findsOneWidget);
+        expect(find.text('Chưa có quán đang phục vụ'), findsOneWidget);
+        expect(find.text('Chưa có quán phù hợp'), findsNothing);
+        expect(find.byKey(const Key('home-notify-cta')), findsNothing);
       },
     );
+
+    testWidgets('F01 no shops: "Nhận tin khi có quán" only runs its navigation callback', (
+      WidgetTester tester,
+    ) async {
+      phone(tester);
+      int taps = 0;
+      final DiscoveryController empty = DiscoveryController(
+        api: FakeDiscoveryApi(),
+      );
+      addTearDown(empty.dispose);
+      await home(tester, empty, onNotifyWhenShops: () => taps++);
+      await tapKey(tester, 'home-notify-cta');
+      expect(taps, 1);
+    });
+
+    testWidgets('F01 GPS pending: short locate line fits 360px without overflow', (
+      WidgetTester tester,
+    ) async {
+      phone(tester, width: 360, height: 800);
+      final DiscoveryController c = DiscoveryController(api: seeded());
+      addTearDown(c.dispose);
+      await home(tester, c);
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets(
       'several areas without a GPS match: no manual selection; failed refresh retains the current list',

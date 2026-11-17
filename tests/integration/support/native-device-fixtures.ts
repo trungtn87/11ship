@@ -165,7 +165,7 @@ export interface AttestationOptions {
   readonly extraPackage?: boolean;
 }
 
-export const FIXTURE_PACKAGES = { FOOD: 'vn.eleven.food.test', SHIP: 'vn.eleven.ship.test' } as const;
+export const FIXTURE_PACKAGES = { FOOD: 'vn.eleven.food', SHIP: 'vn.eleven.ship' } as const;
 export const FIXTURE_SIGNER = createHash('sha256').update('fixture-persistent-signer-certificate').digest();
 
 function keyDescription(options: AttestationOptions): Buffer {

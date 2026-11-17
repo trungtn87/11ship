@@ -82,7 +82,8 @@ export class DeliveryCustomerService {
       const activeRows = query.scope === 'history' ? [] : await this.deliveries.listActiveOfCustomer(context, principal.userId);
       const endedRows = query.scope === 'active' ? [] : await this.deliveries.listEndedOfCustomer(context, principal.userId, limit);
       const rows = query.scope === 'history' ? endedRows : query.scope === 'active' ? activeRows : [...activeRows, ...endedRows];
-      return { deliveries: await Promise.all(rows.map((row) => this.views.forCustomer(context, row, nowMs))) };
+      // P6-3: a list carries no route (no geometry, no per-row snapshot read); the detail view does.
+      return { deliveries: await Promise.all(rows.map((row) => this.views.forCustomer(context, row, nowMs, false))) };
     });
   }
 

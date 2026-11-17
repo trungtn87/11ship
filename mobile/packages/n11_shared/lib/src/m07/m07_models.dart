@@ -1,4 +1,5 @@
 import '../address_change/address_change_models.dart';
+import '../m10/m10_models.dart' show OrderRoute;
 // M07 (delivery flow) data the phone screens draw. Wire contract: docs/current/M07-implementation-20261018.md section 5.
 //
 // PRIVACY BY TYPE. [OfferView] (what a Shipper sees BEFORE accepting) has no field for a customer phone, a detailed address or a drop-off
@@ -423,6 +424,8 @@ class DeliveryView {
     this.timeline = const <TimelineEntry>[],
     this.story = const <StoryEntry>[],
     this.addressChange,
+    this.route,
+    this.legacyReferenceOnly = false,
   });
 
   factory DeliveryView.fromJson(Object? raw) {
@@ -448,6 +451,8 @@ class DeliveryView {
       location: m['location'] == null ? null : LocationView.fromJson(m['location']),
       result: m['result'] == null ? null : ResultView.fromJson(m['result']),
       incident: m['incident'] == null ? null : IncidentView.fromJson(m['incident']),
+      route: OrderRoute.fromJson(m['route']),
+      legacyReferenceOnly: m['legacy_reference_only'] == true,
       can: <String>{for (final MapEntry<String, Object?> e in can.entries) if (_bool(e.value)) e.key},
       timeline: <TimelineEntry>[for (final Object? t in _list(m['timeline'] ?? <Object?>[])) TimelineEntry.fromJson(t)],
       story: storyOf(m['story']),
@@ -487,6 +492,12 @@ class DeliveryView {
   /// The milestones for the screen (plain words); [timeline] is the raw log and is never drawn.
   final List<StoryEntry> story;
   final AddressChangeView? addressChange;
+
+  /// The stored road (P6-3): its geometry is sent only while this Shipper holds the delivery. Null = no route (a DIRECT call or none sent).
+  final OrderRoute? route;
+
+  /// A delivery created before route snapshots: no road; its stored distance and fee stay as they were.
+  final bool legacyReferenceOnly;
 
   bool allows(String action) => can.contains(action);
 
@@ -533,6 +544,8 @@ class DeliveryView {
         timeline: timeline ?? this.timeline,
         story: story ?? this.story,
         addressChange: clearAddressChange ? null : (addressChange ?? this.addressChange),
+        route: route,
+        legacyReferenceOnly: legacyReferenceOnly,
       );
 
   /// The fee was never settled and the server lets the Shipper enter the agreed amount (`can.confirm_fee`). A missing map point never blocks anything:

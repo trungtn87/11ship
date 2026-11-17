@@ -8,6 +8,8 @@ services:
     environment:
       M14_RATE_PER_MIN: ${M14_RATE_PER_MIN:-20}
       M14_MAX_CONCURRENT: ${M14_MAX_CONCURRENT:-2}
+      # Shortest motorcycle route is ON by default (Owner 2026-11-09); set 0 only to roll back to the previous profile.
+      M14_SHORTEST: ${M14_SHORTEST:-1}
     ports: ['127.0.0.1:18014:10000']
     mem_limit: 512m
     cpus: 0.5

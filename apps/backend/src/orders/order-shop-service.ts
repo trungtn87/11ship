@@ -269,6 +269,7 @@ export class OrderShopService {
         dropoffNote: order.deliveryNote,
         agreedFee,
         estimatedDistanceM: order.feeEstimateDistanceM,
+        routeSnapshotId: order.routeSnapshotId,
         route: routeResult.route?.leg,
         routeFrom: routeResult.route?.from,
         requestId,

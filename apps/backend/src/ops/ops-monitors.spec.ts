@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateSustained, GatewayFacts } from './ops-monitors';
+import { evaluateBackup, evaluateDisk, evaluateErrorBurst, evaluateGateway, evaluateHttps, evaluateOtpQueue, evaluateQueue, evaluateRestoreTest, evaluateStaleHigh, evaluateStaleNormal, evaluateSustained, GatewayFacts } from './ops-monitors';
 import { defaultSettings } from './ops-settings';
 
 const s = defaultSettings();
@@ -133,5 +133,16 @@ describe('M13 server rules (design section 5)', () => {
     expect(e(4, 4).state).toBe('OK');
     expect(e(5, 2).checkKey).toBe('client.app_ship.1.0.1');
     expect(e(5, 2).impact).toContain('Chưa chứng minh toàn hệ thống lỗi');
+  });
+
+  it('stale M08 events: ordinary ones warn, a finance/account fact delivered late is CRITICAL on its own check; nothing in the window is OK', () => {
+    const n = (dropped: number, deliveredLate: number) => evaluateStaleNormal({ dropped, deliveredLate, windowMinutes: 30 });
+    const h = (deliveredLateHigh: number) => evaluateStaleHigh({ deliveredLateHigh, windowMinutes: 30 });
+    expect(n(0, 0)).toMatchObject({ state: 'OK', checkKey: 'm08_stale_event', evidenceCode: 'NO_STALE_EVENT' });
+    expect(n(1, 0)).toMatchObject({ state: 'WARNING', evidenceCode: 'STALE_EVENT_SEEN' });
+    expect(n(0, 2).state).toBe('WARNING');
+    expect(h(0)).toMatchObject({ state: 'OK', checkKey: 'm08_stale_high' });
+    expect(h(1)).toMatchObject({ state: 'CRITICAL', evidenceCode: 'STALE_FINANCE_ACCOUNT_LATE' });
+    expect(n(0, 0).checkKey).not.toBe(h(1).checkKey);
   });
 });

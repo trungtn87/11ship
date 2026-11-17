@@ -6,7 +6,7 @@
 - VPS chạy `APP_ENV=production` trên **cùng** PostgreSQL và database `ship11_staging`. Tên database không quyết định môi trường; không đổi tên, không chuyển dữ liệu, không reset/drop/down.
 - Origin giữ nguyên: `https://103.9.78.67.sslip.io`. Không đổi tên miền. Service giữ tên `11ship-staging` và file `/etc/11ship/staging.env` để không phải đổi systemd/nginx (chỉ nội dung env đổi).
 - Food và Ship chỉ phát hành **app điện thoại**; Web Admin vẫn là web. Không mở bản web Food/Ship. Bản web Food/Ship trong repo chỉ là công cụ thiết kế/dev.
-- `applicationId` (`vn.eleven.food.test`, `vn.eleven.ship.test`, `vn.eleven.gateway.test`) và khóa ký bền vững giữ nguyên; `versionCode` = số lần chạy workflow (luôn tăng); cài đè không gỡ app. Không đổi package chỉ để bỏ chữ “test”.
+- **Cập nhật 13/11/2026 (Owner chốt):** applicationId chính thức của 11Food là `vn.eleven.food` và của 11Ship là `vn.eleven.ship` (không còn hậu tố `.test`; không đăng ký thêm app Firebase `.test`). Bản mới cài mới, không cài đè APK `.test`, người dùng đăng nhập lại; dữ liệu tài khoản vẫn ở backend. `versionName`/`versionCode` lấy từ một nguồn duy nhất: `version: X.Y.Z+N` trong `pubspec.yaml` (xem `mobile/tool/app-version.sh`); bản đầu `1.0.0+1`. Gateway SMS (`vn.eleven.gateway.test`) không thuộc quyết định này và giữ nguyên.
 
 ## Cổng production (chính sách tường minh, có test từ chối cấu hình sai)
 | Cổng | Production được chấp nhận khi | Vẫn từ chối |

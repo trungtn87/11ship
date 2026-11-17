@@ -4,6 +4,7 @@
 Run only against a disposable emulator. Authentication/OTP success is covered by
 Flutter/controller tests; this smoke does not claim real-device attestation.
 """
+import glob
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,16 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-PACKAGE = 'vn.eleven.ship.test'
+
+def _apk(pattern):
+    # The workflow names the APK 11Ship-v<versionName>.apk; exactly one file must match (a stale copy is refused).
+    found = sorted(glob.glob(pattern))
+    if len(found) != 1:
+        raise SystemExit(f"expected one APK matching {pattern}, found {found}")
+    return found[0]
+
+
+PACKAGE = 'vn.eleven.ship'
 OUTPUT = Path(os.environ.get('SHIP_UI_OUTPUT', '/tmp/ship-android-ui'))
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
@@ -71,7 +81,7 @@ def capture(name):
 
 
 try:
-    adb('install', '-r', '11Ship-test.apk')
+    adb('install', '-r', _apk('11Ship-v*.apk'))
     # Cold launch without network or location access: map must render from APK assets.
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
@@ -84,6 +94,9 @@ try:
     adb('logcat', '-c')
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
     wait('Bản đồ offline Cao Bằng đã hiển thị')
+    # Guest without a position: "Bật định vị ngay" is shown on the first screen (above the bottom navigation, about y 730) and the map above is unchanged.
+    _, locate_y = wait('Bật định vị ngay')
+    assert locate_y < 730, f'the locate button must be on the first screen, got y={locate_y}'
     capture('01-home-offline-no-gps')
     wait('Chưa xác định trạng thái hoạt động', scroll=True)
     wait('Bật online · Chưa khả dụng', scroll=True)
@@ -99,13 +112,15 @@ try:
     for tab, title, name in [
         ('Thông báo', 'Đăng nhập để xem thông báo của bạn.', '02-notifications'),
         ('Đơn hàng', 'Chưa có đơn hàng', '03-orders'),
-        ('Thu nhập', 'Chưa có dữ liệu thu nhập', '04-income'),
-        ('Tài khoản', 'Tạo tài khoản', '05-account'),
+        # S03 guest: the process & benefits card (Owner 14/11), no income figures.
+        ('Thu nhập', 'Quy trình & quyền lợi tài xế 11Ship', '04-income'),
+        # S05 guest: the outlined "Đăng ký làm shipper" action (registration of an account; approval is separate).
+        ('Tài khoản', 'Đăng ký làm shipper', '05-account'),
     ]:
         tap(tab)
         wait(title, scroll=tab == 'Thu nhập')
         capture(name)
-    tap('Tạo tài khoản')
+    tap('Đăng ký làm shipper')
     wait('Đăng ký shipper')
     capture('06-register-step1')
     adb('shell', 'input', 'keyevent', '4')

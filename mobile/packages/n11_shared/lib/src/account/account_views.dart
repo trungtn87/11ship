@@ -169,7 +169,13 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[]});
+  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[]});
+
+  /// Look of the guest register action (the shipper app uses [ButtonKind.outline]). Only the button look; the form is unchanged.
+  final ButtonKind registerKind;
+
+  /// Rows placed last on the screen (after "Kiểm tra cập nhật"), for guests and signed-in people alike.
+  final List<Widget> footerEntries;
 
   final SessionController session;
   final ResetController? reset;
@@ -254,6 +260,7 @@ class AccountTab extends StatelessWidget {
       ...entries,
       _updateRow(context),
       if (showDiagnostics && brand.id != AppId.food) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
+      ...footerEntries,
     ]);
   }
 
@@ -300,7 +307,7 @@ class AccountTab extends StatelessWidget {
       if (ended)
         N11Button(key: const Key('open-login'), label: 'Đăng nhập lại', onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null)
       else ...<Widget>[
-        N11Button(key: const Key('open-register'), label: registerLabel, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand, shop: shop))) : null),
+        N11Button(key: const Key('open-register'), label: registerLabel, kind: registerKind, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand, shop: shop))) : null),
         N11Button(key: const Key('open-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null),
       ],
       const SizedBox(height: N11Space.gap1),
@@ -1054,6 +1061,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _message;
   bool _messageOk = false;
   bool _loading = true;
+  /// The profile version this editor opened on. Saves send this, so a version the background refresh moved meanwhile gives VERSION_CONFLICT.
+  int? _baseVersion;
 
   @override
   void initState() {
@@ -1082,12 +1091,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     setState(() {
       _name.text = widget.session.profile?.fullName ?? '';
+      _baseVersion = widget.session.profile?.version;
       _loading = false;
     });
   }
 
   Future<void> _save() async {
-    final ProfileSave result = await widget.session.saveProfile(_name.text.trim());
+    final int? base = _baseVersion;
+    if (base == null) {
+      setState(() {
+        _message = 'Chưa tải được hồ sơ. Vui lòng thử lại.';
+        _messageOk = false;
+      });
+      return;
+    }
+    final ProfileSave result = await widget.session.saveProfile(_name.text.trim(), expectedVersion: base);
     if (!mounted) {
       return;
     }
@@ -1097,10 +1115,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _message = 'Đã lưu họ tên.';
           _messageOk = true;
           _name.text = widget.session.profile?.fullName ?? _name.text;
+          _baseVersion = widget.session.profile?.version;
         case ProfileSave.conflict:
           _message = failureMessage(const AuthFailure(AuthFailureKind.versionConflict));
           _messageOk = false;
           _name.text = widget.session.profile?.fullName ?? '';
+          _baseVersion = widget.session.profile?.version;
         case ProfileSave.unknown:
           _message = failureMessage(const AuthFailure(AuthFailureKind.unknownOutcome));
           _messageOk = false;

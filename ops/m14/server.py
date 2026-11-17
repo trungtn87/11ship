@@ -1,7 +1,9 @@
 """Small bounded gateway. No history endpoint, user database, request-body logging or paid provider."""
+import hashlib
 import json
 import math
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -12,6 +14,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BOUNDS = (106.0, 22.43, 106.52, 22.91)
 ENGINE = 'http://127.0.0.1:8002'
+ENGINE_NAME = 'valhalla-3.9.1'  # the image is pinned by digest in the Dockerfile
+DATA_VERSION_FILE = '/opt/m14/data.version'  # written by the Dockerfile from the PBF the graph was built from
+# Same rule as the backend (apps/backend/src/delivery/m14-route-client.ts ROUTE_VERSION_PATTERN): a version that does not match is never served.
+ROUTE_VERSION_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}')
+DATA_VERSION_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/+:-]{0,63}')
+# The motorcycle profile actually sent to the engine. Every value here is part of the profile digest in route_version().
+USE_HIGHWAYS = 0.3
+USE_TOLLS = 0.0
+USE_FERRY = 0.0
+SNAP_RADIUS = 100
+SEARCH_CUTOFF = 500
 def env_int(name, default, low, high):
     """A bounded integer limit from the environment; anything else keeps the default (the gateway never starts on a nonsense limit)."""
     raw = os.environ.get(name)
@@ -29,6 +42,67 @@ LOCK = threading.Lock()
 REQUESTS = {}
 
 
+def env_flag(name, default):
+    """A boolean from the environment: 1/true/on or 0/false/off; anything else keeps the default."""
+    raw = (os.environ.get(name) or '').strip().lower()
+    if raw in ('1', 'true', 'on'):
+        return True
+    if raw in ('0', 'false', 'off'):
+        return False
+    return default
+
+
+def shortest_enabled():
+    """Owner 2026-11-09: the shortest motorcycle route is the DEFAULT. M14_SHORTEST=0/false/off exists only to roll back to the previous profile."""
+    return env_flag('M14_SHORTEST', True)
+
+
+def data_version():
+    """Identifies the map data the graph was built from: M14_DATA_VERSION, else the file the image build wrote. None when unknown or malformed (nothing invented)."""
+    explicit = (os.environ.get('M14_DATA_VERSION') or '').strip()
+    if explicit:
+        value = explicit
+    else:
+        try:
+            with open(DATA_VERSION_FILE, encoding='ascii') as f:
+                value = f.read().strip()
+        except (OSError, UnicodeDecodeError):
+            return None
+    return value if DATA_VERSION_RE.fullmatch(value) else None
+
+
+def motorcycle_costing():
+    costing = {'use_highways': USE_HIGHWAYS, 'use_tolls': USE_TOLLS, 'use_ferry': USE_FERRY}
+    if shortest_enabled():
+        costing['shortest'] = True
+    return costing
+
+
+def routing_profile():
+    """Everything in a request that shapes the route, except the two coordinates."""
+    return {
+        'costing': 'motorcycle',
+        'costing_options': {'motorcycle': motorcycle_costing()},
+        'directions_options': {'units': 'kilometers', 'directions_type': 'none'},
+        'snap': {'radius': SNAP_RADIUS, 'search_cutoff': SEARCH_CUTOFF},
+    }
+
+
+def profile_digest():
+    """8 hex characters of the profile above: changing any profile value (shortest, highways, snapping...) changes the route version."""
+    return hashlib.sha256(json.dumps(routing_profile(), sort_keys=True).encode()).hexdigest()[:8]
+
+
+def route_version():
+    """engine + profile digest + data version from this service's own configuration. None when the data version is unknown or the result is malformed:
+    /health is then not ready and /route refuses before asking the engine."""
+    data = data_version()
+    if data is None:
+        return None
+    value = '%s/motorcycle-%s-%s/%s' % (ENGINE_NAME, 'shortest' if shortest_enabled() else 'default', profile_digest(), data)
+    return value if ROUTE_VERSION_RE.fullmatch(value) else None
+
+
 def validated_request(data):
     locations = data.get('locations')
     if not isinstance(locations, list) or len(locations) != 2:
@@ -42,8 +116,9 @@ def validated_request(data):
             raise ValueError('Tọa độ không hợp lệ')
         if not (BOUNDS[0] <= lon <= BOUNDS[2] and BOUNDS[1] <= lat <= BOUNDS[3]):
             raise ValueError('Điểm nằm ngoài vùng dữ liệu Cao Bằng phục vụ test')
-        clean.append(dict(lat=lat, lon=lon, radius=100, search_cutoff=500))
-    return dict(locations=clean, costing='motorcycle', costing_options={'motorcycle': {'use_highways': 0.3, 'use_tolls': 0.0, 'use_ferry': 0.0}}, directions_options={'units': 'kilometers', 'directions_type': 'none'})
+        clean.append(dict(lat=lat, lon=lon, radius=SNAP_RADIUS, search_cutoff=SEARCH_CUTOFF))
+    profile = routing_profile()
+    return dict(locations=clean, costing=profile['costing'], costing_options=profile['costing_options'], directions_options=profile['directions_options'])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -67,16 +142,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != '/health':
             return self.reply(404, {'message': 'Không có chức năng này'})
+        version = route_version()
+        if version is None:
+            # Not ready: the backend preflight (ops/m14/vps.sh) and any load balancer must not send traffic here.
+            return self.reply(503, {'ready': False, 'message': 'Cấu hình phiên bản tuyến không hợp lệ'})
         try:
             with urllib.request.urlopen(ENGINE+'/status', timeout=3) as r:
                 status = r.status
-            self.reply(200 if status == 200 else 503, {'ready': status == 200, 'engine': 'Valhalla 3.9.1', 'costing': 'motorcycle', 'bounds': BOUNDS})
+            ready = status == 200
+            self.reply(200 if ready else 503, {'ready': ready, 'engine': 'Valhalla 3.9.1', 'costing': 'motorcycle', 'bounds': BOUNDS, 'shortest': shortest_enabled(), 'routeVersion': version})
         except Exception:
             self.reply(503, {'ready': False, 'message': 'Dịch vụ đang khởi động'})
 
     def do_POST(self):
         if self.path != '/route':
             return self.reply(404, {'message': 'Không có chức năng này'})
+        version = route_version()
+        if version is None:
+            # Refused BEFORE the engine is asked: an answer without a valid version would be unusable to the backend.
+            return self.reply(503, {'message': 'Chưa xác định được phiên bản dữ liệu tuyến'})
         now = time.monotonic()
         with LOCK:
             # Fixed ceiling on in-memory rate-limit bookkeeping; no persistent IP logs.
@@ -104,6 +188,7 @@ class Handler(BaseHTTPRequestHandler):
                     body = json.load(r)
                 if 'trip' not in body:
                     raise ValueError('Không tìm được tuyến')
+                body['route_version'] = version  # the shape (trip.legs[0].shape, polyline6) is already part of the engine answer
                 return self.reply(200, body)
             except urllib.error.HTTPError as error:
                 if error.code < 500:

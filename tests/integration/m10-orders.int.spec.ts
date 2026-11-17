@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import { OrderRecorder } from '../../apps/backend/src/orders/order-recorder';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -46,7 +47,7 @@ describe('M10 — food orders', () => {
       holdNextRoute = null;
       if (hold !== null) await hold();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: routeKm, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(routeKm, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;
@@ -1005,9 +1006,9 @@ describe('M10 — food orders', () => {
 
   it('an ORDER whose fee cannot be priced is told so instead of creating a call no Shipper could take; the shop then proposes a fee, and an address-only order works with the checkout distance', async () => {
     const order = await confirmed(alice);
-    // Reproduces "no route and no estimate": the order carries no distance and the fee table cannot price an unknown distance.
+    // Reproduces "no route and no estimate": the order carries no distance and no route snapshot (the pair invariant: a pointer needs its distance), and the fee table cannot price an unknown distance.
     await app.pool.query('ALTER TABLE app.orders DISABLE TRIGGER USER');
-    await app.pool.query('UPDATE app.orders SET fee_estimate_distance_m = NULL, address_lat = NULL, address_lng = NULL WHERE order_id = $1::uuid', [order.order_id]);
+    await app.pool.query('UPDATE app.orders SET fee_estimate_distance_m = NULL, route_snapshot_id = NULL, address_lat = NULL, address_lng = NULL WHERE order_id = $1::uuid', [order.order_id]);
     await app.pool.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
     const fresh = await shopView(String(order.order_id));
     expect(refused(await callShipper(fresh))).toEqual({ status: 400, code: 'DROPOFF_PIN_MISSING' });

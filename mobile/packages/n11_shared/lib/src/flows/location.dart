@@ -34,9 +34,12 @@ abstract class LocationProvider {
 }
 
 class MethodChannelLocationProvider implements LocationProvider {
-  MethodChannelLocationProvider({MethodChannel? channel}) : _channel = channel ?? const MethodChannel('vn.eleven.n11/location');
+  /// [reportFaults] false for a flow that must not write to the server (for example the Ship guest home): the fix and the refusal still reach the
+  /// caller; only the ops report of a phone fault is skipped.
+  MethodChannelLocationProvider({MethodChannel? channel, this.reportFaults = true}) : _channel = channel ?? const MethodChannel('vn.eleven.n11/location');
 
   final MethodChannel _channel;
+  final bool reportFaults;
 
   @override
   Future<LocationFix> currentFix() async {
@@ -44,7 +47,7 @@ class MethodChannelLocationProvider implements LocationProvider {
       return await _currentFix();
     } on LocationException catch (error) {
       // A refusal of the person (permission denied, GPS switched off) is their choice; a timeout or a phone that cannot give a fix is a fault worth knowing.
-      if (error.failure == LocationFailure.unavailable || error.failure == LocationFailure.timeout) {
+      if (reportFaults && (error.failure == LocationFailure.unavailable || error.failure == LocationFailure.timeout)) {
         OpsClient.report(kind: 'MAP_ERROR', code: 'LOCATION_${error.failure.name.toUpperCase()}', message: 'One-shot location failed');
       }
       rethrow;

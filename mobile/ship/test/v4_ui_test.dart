@@ -120,7 +120,7 @@ void main() {
       ShipperDeliveryDetailScreen(
         source: SampleShipperSource(),
         deliveryId: 'm-run',
-        mapBuilder: (BuildContext context, List<M07MapPin> pins) {
+        mapBuilder: (BuildContext context, List<M07MapPin> pins, [List<List<double>> route = const <List<double>>[]]) {
           built++;
           return const ColoredBox(color: N11Colors.yellowSoft);
         },

@@ -87,34 +87,39 @@ function parentEntry(item: MenuItem, active: boolean, view: MenuView): HTMLEleme
 
 export function renderMenu(nav: HTMLElement, view: MenuView): void {
   const activeId = activeMenuId(view.route);
-  const sections: HTMLElement[] = [];
-  view.groups.forEach((group, index) => {
-    const entries = group.items.map((item) => {
-      if (!item.ready) {
-        return h('li', {}, soonEntry(item));
-      }
-      if (item.children === undefined) {
-        const target = item.route;
-        return h('li', {}, target === undefined ? soonEntry(item) : link(item, target, activeId === item.id, view, false));
-      }
-      const childActive = item.children.some((child) => child.id === activeId);
-      const open = view.expanded.has(item.id) && !view.collapsed;
-      const sub = h(
-        'ul',
-        { id: `side-sub-${item.id}`, class: 'side-sub', ...(open ? {} : { hidden: true }) },
-        ...item.children.map((child) => h('li', {}, child.route === undefined ? undefined : link(child, child.route, child.id === activeId, view, true))),
-      );
-      return h('li', { class: 'side-item' }, parentEntry(item, childActive, view), sub);
-    });
-    const headingId = `side-heading-${group.id}`;
-    sections.push(
-      h(
-        'div',
-        { class: 'side-group', ...(group.label === undefined ? {} : { role: 'group', 'aria-labelledby': headingId }) },
-        index === 0 || group.label === undefined ? undefined : h('div', { class: 'side-rule', 'aria-hidden': 'true' }),
-        group.label === undefined ? undefined : h('p', { id: headingId, class: 'side-heading' }, group.label),
-        h('ul', { class: 'side-list' }, ...entries),
-      ),
+  const entryOf = (item: MenuItem): HTMLElement => {
+    if (!item.ready) {
+      return h('li', {}, soonEntry(item));
+    }
+    if (item.children === undefined) {
+      const target = item.route;
+      return h('li', {}, target === undefined ? soonEntry(item) : link(item, target, activeId === item.id, view, false));
+    }
+    const childActive = item.children.some((child) => child.id === activeId);
+    const open = view.expanded.has(item.id) && !view.collapsed;
+    const sub = h(
+      'ul',
+      { id: `side-sub-${item.id}`, class: 'side-sub', ...(open ? {} : { hidden: true }) },
+      ...item.children.map((child) => h('li', {}, child.route === undefined ? undefined : link(child, child.route, child.id === activeId, view, true))),
+    );
+    return h('li', { class: 'side-item' }, parentEntry(item, childActive, view), sub);
+  };
+  // Groups of one section share a single heading (ĐIỀU HÀNH / QUẢN LÝ / HỆ THỐNG), in order of first appearance. Routes, access and MENU order are unchanged.
+  const bundles = new Map<string, { section: string | undefined; items: MenuItem[] }>();
+  for (const group of view.groups) {
+    const key = group.section ?? '';
+    const bundle = bundles.get(key) ?? { section: group.section, items: [] };
+    bundle.items.push(...group.items);
+    bundles.set(key, bundle);
+  }
+  const sections = [...bundles.values()].map((bundle, index) => {
+    const headingId = `side-heading-${index}`;
+    return h(
+      'div',
+      { class: 'side-group', ...(bundle.section === undefined ? {} : { role: 'group', 'aria-labelledby': headingId }) },
+      index === 0 || bundle.section === undefined ? undefined : h('div', { class: 'side-rule', 'aria-hidden': 'true' }),
+      bundle.section === undefined ? undefined : h('p', { id: headingId, class: 'side-heading' }, bundle.section),
+      h('ul', { class: 'side-list' }, ...bundle.items.map(entryOf)),
     );
   });
   nav.replaceChildren(...sections);
