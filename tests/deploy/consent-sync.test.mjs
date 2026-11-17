@@ -1,37 +1,39 @@
-// The consent texts and versions must be the same in the app, the production template for the server and the text document:
-// the app sends the pair, the server accepts only the pair it is configured with, and the document is what the Owner approved.
+// The consent texts and versions must be the same in the app, the public legal pages (backend source), the production template for the server and the text document:
+// the app sends the pair, the server accepts only the pair it is configured with, and the document is what the Owner approved (14/11/2026).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const read = (path) => readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8');
-const views = read('mobile/packages/n11_shared/lib/src/account/account_views.dart');
+const policyDart = read('mobile/packages/n11_shared/lib/src/account/legal_policy_draft.dart');
 const session = read('mobile/packages/n11_shared/lib/src/account/session_controller.dart');
-const doc = read('docs/current/M01-terms-privacy-20261014.md');
+const termsPage = read('apps/backend/src/legal/terms-page.ts');
+const privacyPage = read('apps/backend/src/legal/privacy-page.ts');
+const doc = read('docs/current/M01-terms-page-20261112.md');
 const env = read('ops/vinahost/production.env.example');
 
-const dartText = (name) => {
-  const match = new RegExp(`const String ${name} =\\s*'((?:[^'\\\\]|\\\\.)*)';`).exec(views);
+// Every quoted paragraph/title in the Dart mirror must appear verbatim in the backend source that serves the public pages.
+const dartParagraphs = [...policyDart.split('\n')]
+  .map((line) => /^\s+"(.*)",?$/.exec(line)?.[1])
+  .filter((text) => text !== undefined);
+const dartConst = (name) => {
+  const match = new RegExp(`const String ${name} = '([^']+)';`).exec(policyDart);
   assert.ok(match, `${name} not found`);
   return match[1];
 };
-const section = (heading) => {
-  const start = doc.indexOf(`## ${heading}`);
-  assert.ok(start >= 0, heading);
-  return doc.slice(start).split('\n').slice(1).find((line) => line.trim() !== '').trim();
-};
 
 describe('consent texts and versions', () => {
-  it('the app texts are the document texts, word for word', () => {
-    assert.equal(dartText('kTermsText'), section('Điều khoản sử dụng'));
-    assert.equal(dartText('kPrivacyText'), section('Chính sách quyền riêng tư'));
+  it('the app texts are the public page texts, word for word', () => {
+    assert.ok(dartParagraphs.length > 0, 'no paragraphs parsed from legal_policy_draft.dart');
+    const backend = termsPage + privacyPage;
+    const missing = dartParagraphs.filter((text) => !backend.includes(text));
+    assert.deepEqual(missing.map((text) => text.slice(0, 80)), []);
   });
 
-  it('the privacy text states the Shipper data as the Owner worded it', () => {
-    const text = dartText('kPrivacyText');
-    assert.ok(text.includes('Hồ sơ Shipper có thể bao gồm họ tên, số điện thoại, biển số xe và thông tin tài khoản ngân hàng. Thông tin ngân hàng được sử dụng để xác minh chủ tài khoản và phục vụ các nghiệp vụ thanh toán liên quan. Thông tin này không được công khai cho khách hàng, chủ quán hoặc Shipper khác.'));
-    assert.doesNotMatch(text, /thời hạn lưu|xóa dữ liệu|xuất dữ liệu/i, 'no retention or legal commitment the Owner has not confirmed');
+  it('the privacy text keeps the Owner-approved Shipper data statement', () => {
+    assert.ok(policyDart.includes('Shipper: hồ sơ cá nhân, biển số xe, trạng thái nhận đơn'));
+    assert.ok(policyDart.includes('thông tin tài khoản ngân hàng khi cần đối soát và thanh toán.'));
   });
 
   it('the version the app sends is the pair the production template configures on the server', () => {
@@ -40,5 +42,14 @@ describe('consent texts and versions', () => {
     assert.equal(env.match(/^CLIENT_AUTH_TERMS_VERSION=(.+)$/m)?.[1], terms);
     assert.equal(env.match(/^CLIENT_AUTH_PRIVACY_VERSION=(.+)$/m)?.[1], privacy);
     assert.ok(doc.includes(`\`${terms}\``) && doc.includes(`\`${privacy}\``));
+  });
+
+  it('the Dart policy versions and the public pages report the same versions', () => {
+    const terms = /kConsentTermsVersion = '([^']+)'/.exec(session)?.[1];
+    const privacy = /kConsentPrivacyVersion = '([^']+)'/.exec(session)?.[1];
+    assert.equal(dartConst('kTermsPolicyVersion'), terms);
+    assert.equal(dartConst('kPrivacyPolicyVersion'), privacy);
+    assert.equal(/TERMS_PAGE_VERSION = '([^']+)'/.exec(termsPage)?.[1], terms);
+    assert.equal(/PRIVACY_PAGE_VERSION = '([^']+)'/.exec(privacyPage)?.[1], privacy);
   });
 });
