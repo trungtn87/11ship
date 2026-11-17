@@ -1,6 +1,6 @@
 import { AppDefinition } from '../../client-shared/src/app.js';
 import { FOOD_BRAND, logo } from '../../client-shared/src/brand.js';
-import { FOOD_TEST_CONSENT } from '../../client-shared/src/consent.js';
+import { REGISTER_CONSENT } from '../../client-shared/src/consent.js';
 import { banner, bottomNav, button, chip, emptyState, gate, list, listItem, openDialog, reasonNote, setBusy, TabDef, textField, textLink } from '../../client-shared/src/components.js';
 import { h } from '../../client-shared/src/dom.js';
 import { icon } from '../../client-shared/src/icons.js';
@@ -484,7 +484,7 @@ export const FOOD_DEFINITION: AppDefinition = {
   flowStart: { 'register-otp': '/register', 'reset-otp': '/reset', 'reset-password': '/reset' },
   testSmsNotice: true,
   // M01.07: register + OTP are connected here (only on a local https runtime, see client-shared/src/app.ts).
-  register: { consent: FOOD_TEST_CONSENT },
+  register: { consent: REGISTER_CONSENT },
   // F20-F23 are connected to the shop onboarding (only on a local https runtime, see client-shared/src/app.ts). 11Ship does not set this.
   shopOnboarding: true,
 };

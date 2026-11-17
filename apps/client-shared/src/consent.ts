@@ -1,27 +1,29 @@
-// The consent the 11Food register screen shows and sends (M01.07). The pair of versions and the two texts are the ones the Owner
-// approved for local development and tests (docs/tasks/M01-03-customer-register-local-handoff.md §3, approval 11/10/2026). They are
-// NOT a production policy and the server decides whether it accepts the pair (CONSENT_VERSION_UNSUPPORTED otherwise): this file
-// never lets the screen claim an acceptance the server did not take. The texts are shown in full, before the form is submitted.
+// The consent the 11Food and 11Ship register screens show and send. The texts and the version pair are the Owner-approved official
+// texts (14/11/2026), generated from the backend legal pages into legal-official.ts, so the screen shows the same words the public
+// pages show. The server decides whether it accepts the pair (CONSENT_VERSION_UNSUPPORTED otherwise). The texts are shown in full,
+// before the form is submitted; the checkbox starts unchecked.
+
+import { OFFICIAL_PRIVACY_SECTIONS, OFFICIAL_PRIVACY_VERSION, OFFICIAL_TERMS_SECTIONS, OFFICIAL_TERMS_VERSION, OfficialLegalSection } from './legal-official.js';
 
 export interface ConsentOffer {
   readonly termsVersion: string;
   readonly privacyVersion: string;
   readonly termsTitle: string;
-  readonly termsText: string;
+  /** The Điều khoản sử dụng sections, in order, shown in full. */
+  readonly termsSections: readonly OfficialLegalSection[];
   readonly privacyTitle: string;
-  readonly privacyText: string;
+  /** The Chính sách quyền riêng tư sections, in order, shown in full. */
+  readonly privacySections: readonly OfficialLegalSection[];
   /** Label of the single checkbox (unchecked by default). */
   readonly checkboxLabel: string;
 }
 
-export const FOOD_TEST_CONSENT: ConsentOffer = {
-  termsVersion: 'test-terms-20261011-v1',
-  privacyVersion: 'test-privacy-20261011-v1',
-  termsTitle: 'Điều khoản dùng thử',
-  termsText:
-    'Đây là bản thử nghiệm 11Ship/11Food để kiểm tra đăng ký, đăng nhập và quản lý tài khoản. Chỉ sử dụng dữ liệu thử. Mã OTP được lấy từ công cụ SMS test trên máy tính, chưa gửi SMS đến điện thoại. Việc tạo tài khoản chưa kích hoạt cửa hàng hoặc quyền nhận đơn của shipper.',
-  privacyTitle: 'Thông tin dữ liệu thử nghiệm',
-  privacyText:
-    'Bản thử nghiệm lưu số điện thoại, tên bạn nhập, mật khẩu ở dạng băm, phiên đăng nhập và thời điểm/cặp phiên bản bạn chấp thuận để kiểm tra chức năng tài khoản. Không nhập thông tin nhạy cảm hoặc dùng mật khẩu đang dùng ở dịch vụ khác. Nội dung này chỉ dùng cho môi trường thử nghiệm, chưa phải chính sách phát hành chính thức.',
-  checkboxLabel: 'Tôi đồng ý với Điều khoản dùng thử và Thông tin dữ liệu thử nghiệm.',
+export const REGISTER_CONSENT: ConsentOffer = {
+  termsVersion: OFFICIAL_TERMS_VERSION,
+  privacyVersion: OFFICIAL_PRIVACY_VERSION,
+  termsTitle: 'Điều khoản sử dụng',
+  termsSections: OFFICIAL_TERMS_SECTIONS,
+  privacyTitle: 'Chính sách quyền riêng tư',
+  privacySections: OFFICIAL_PRIVACY_SECTIONS,
+  checkboxLabel: 'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư',
 };

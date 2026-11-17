@@ -6,8 +6,8 @@ import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 // Issue #102: the Android apps register in REQUIRED mode (OTP + verification_token) and the OTP proof does NOT replace the native
 // device proof. FIXTURE attestation (server logic only, not a real phone); the OTP provider is the test fake of this suite.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const DEVICE = { device_id: 'android-food-0001', platform: 'ANDROID', app: 'FOOD' };
 
 describe('ANDROID registration in REQUIRED mode (OTP proof + native device proof)', () => {

@@ -268,7 +268,7 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
       ...configWithDatabaseUrl(base, RUNTIME_URL),
       crypto: fixtureKeyring('k1'),
       auth: authTestConfig(),
-      clientAuth: { termsVersion: 'test-terms-20261011-v1', privacyVersion: 'test-privacy-20261011-v1' },
+      clientAuth: { termsVersion: 'terms-20261114-v3', privacyVersion: 'privacy-20261114-v3' },
     };
     const otp = new FakeOtpProvider();
     const running = await startApp(config, { auth: { otpProvider: otp } });
@@ -288,7 +288,7 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
           verification_token: verified.body.data?.verification_token,
           device: { device_id: 'web-r10-0001', platform: 'WEB', app: 'FOOD' },
           full_name: 'Nguyễn Văn R10',
-          consent: { terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' },
+          consent: { terms_version: 'terms-20261114-v3', privacy_version: 'privacy-20261114-v3' },
         },
       });
       expect([registered.status, registered.text.slice(0, 200)]).toEqual([201, registered.text.slice(0, 200)]);
@@ -301,7 +301,7 @@ describeWithFixture('M00-D1 — remote migration path on a fresh disposable Post
           verification_token: verified.body.data?.verification_token,
           device: { device_id: 'web-r10-0001', platform: 'WEB', app: 'FOOD' },
           full_name: 'Nguyễn Văn R10',
-          consent: { terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' },
+          consent: { terms_version: 'terms-20261114-v3', privacy_version: 'privacy-20261114-v3' },
         },
       });
       expect(replay.status).toBe(201);

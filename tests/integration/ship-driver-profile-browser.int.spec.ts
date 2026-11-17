@@ -11,8 +11,8 @@ import { minimalChildEnv } from './support/test-helpers';
 
 // M03: real browser registration provisions the active Shipper without a second onboarding form.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const MOBILE = { width: 390, height: 844, mobile: true };
 const PASSWORD = 'Mật khẩu thử 12345 ü';
 const NAME = 'Nguyễn Văn An';

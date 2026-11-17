@@ -32,8 +32,8 @@ import { containsCode, readOtp, startInboxAuthApp, InboxAuthApp } from './suppor
 // provisioning, strict input, device gate, consent, idempotency/replay, concurrency, rollback, and the TEST_INBOX (M01.22) path.
 // Table of cases: docs/tasks/M01-03-customer-register-local-handoff.md section 6.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const CONSENT = { terms_version: TERMS, privacy_version: PRIVACY };
 const WEB_FOOD = { device_id: 'web-device-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-device-0002', platform: 'WEB', app: 'SHIP' };
@@ -634,13 +634,14 @@ describe('M01.03 — client register', () => {
       const userId = String(dataOf(accepted).user_id);
       const before = await app.pool.query('SELECT id::text, accepted_at::text FROM app.user_consents WHERE user_id = $1::uuid', [userId]);
 
-      // Config drift: a second app whose server pair moved on. The committed replay must neither fail nor rewrite.
-      const drifted = await startAuthApp({}, { configOverride: { clientAuth: { termsVersion: 'drifted-terms-v9', privacyVersion: 'drifted-privacy-v9' } } });
+      // Config drift: a second app whose server pair moved to the other published pair. The committed replay must neither fail nor rewrite.
+      const drifted = await startAuthApp({}, { configOverride: { clientAuth: { termsVersion: 'terms-20261014-v1', privacyVersion: 'privacy-20261017-v1' } } });
       try {
         const replay = await call(body(phone, proof.proofToken), key, drifted);
         expect([replay.status, replay.text]).toEqual([201, accepted.text]);
         const fresh = await obtainProof(drifted, randomPhone());
-        const old = await call(body(fresh.phone, fresh.proofToken), randomUUID(), drifted);
+        // A mixed pair (halves from different releases) is refused whatever the configured published pair is.
+        const old = await call(body(fresh.phone, fresh.proofToken, { consent: { terms_version: TERMS, privacy_version: 'privacy-20261017-v1' } }), randomUUID(), drifted);
         expect(errorCode(old)).toBe('CONSENT_VERSION_UNSUPPORTED');
       } finally {
         await drifted.close();

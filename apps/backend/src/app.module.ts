@@ -4,6 +4,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { ActivationOtpProvider } from './admin-activation/activation-otp-provider';
 import { ActivationSmsGatewayBinding } from './admin-activation/activation-otp-providers';
 import { AccountDeletionModule } from './account-deletion/account-deletion.module';
+import { LegalModule } from './legal/legal.module';
 import { AccountRecoveryModule } from './account-recovery/account-recovery.module';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuthModule, AuthModuleOptions } from './auth/auth.module';
@@ -78,6 +79,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
+        LegalModule,
         ConfigModule.forRoot(options.config),
         ...(options.testSms === undefined ? [] : [TestSmsModule.register(options.testSms)]),
         LoggingModule.forRoot(options.logger),

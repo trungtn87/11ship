@@ -37,8 +37,8 @@ import { createInvitation, createPayload, systemSession, SystemSession } from '.
 // blocks that wait for M04, and the privacy of the internal classification. Two applications share the one test database: the
 // "client" one (with a controllable stand-in for the M04 wallet port, the only provider replaced) and the administration one.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const tag = randomBytes(3).toString('hex').toUpperCase();

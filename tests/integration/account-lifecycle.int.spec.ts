@@ -28,8 +28,8 @@ import { systemSession, SystemSession } from './support/provisioning-fixtures';
 // to /v1/sms-gateway, exactly as in sms-gateway.int.spec.ts; the OTP is read from the claim response.
 
 const tag = randomBytes(3).toString('hex').toUpperCase();
-const TERMS = 'test-terms-20261014-v1';
-const PRIVACY = 'test-privacy-20261014-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const CONSENT = { terms_version: TERMS, privacy_version: PRIVACY };
 const NEW_PASSWORD = 'Brand-New-Passw0rd-7';
 const FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };

@@ -21,8 +21,8 @@ import { FixtureTrust, NativePhone } from './support/native-device-fixtures';
 // The business rules themselves are covered by the shop/driver/reset suites; this file proves that the same routes work with the
 // native proof, refuse a missing/foreign proof, recheck the binding inside the transaction, and that the PUBLIC reset takes no proof.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const NEW_PASSWORD = 'Brand-New-Passw0rd-7';
 const GPS = { pickup_lat: 10.0123, pickup_lng: 106.0456 };
 

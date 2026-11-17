@@ -27,8 +27,8 @@ import {
 // the current session and role, independence of the customer name from the driver profile, and all-or-nothing commits.
 // Contract: docs/evidence/M01-05.md with contract10 sections 1-3 and contract11 sections 1-3.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const PROFILE_KEYS = ['user_id', 'full_name', 'version'];
