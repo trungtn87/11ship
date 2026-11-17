@@ -133,11 +133,22 @@ ${services}
 `;
 }
 
-function check(app, spec, { name = '1.0.0', code = '1' } = {}) {
+// The checker reads the committed Play record and has no override (the script is pinned). So the default fixture versionCode
+// is derived from that record: the committed highest for the app + 1. It is above the record whatever Owner has recorded,
+// and the foregroundServiceType cases below stay about the manifest. An explicit `code` is used exactly as given.
+const RECORD = 'mobile/release/play-submitted-versioncode.json';
+const nextCode = app => JSON.parse(readFileSync(RECORD, 'utf8')).apps[app].highest_submitted_version_code + 1;
+
+function check(app, spec, { name = '1.0.0', code } = {}) {
+  let body = spec;
+  if (code === undefined) {
+    code = String(nextCode(app));
+    body = { ...spec, code };
+  }
   const dir = mkdtempSync(join(tmpdir(), 'aab-manifest-'));
   try {
     const file = join(dir, 'manifest.xml');
-    writeFileSync(file, manifestXml(spec));
+    writeFileSync(file, manifestXml(body));
     const r = spawnSync('python3', [CHECKER, app, file, name, code], { encoding: 'utf8' });
     return { status: r.status, out: `${r.stdout}${r.stderr}` };
   } finally { rmSync(dir, { recursive: true, force: true }); }
