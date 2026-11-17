@@ -13,9 +13,9 @@ import {
   APP_ERROR_DEFINITIONS,
   AppError,
   AppErrorCode,
-  PublicRateLimitedError,
   TechnicalError,
 } from '../common/app-errors';
+import { PublicRateLimitedError } from './public-rate-limited-error';
 import { CryptoError } from '../crypto/crypto-error';
 import { JsonLogger, LOG_META_WHITELIST } from '../logging/json-logger';
 import { JsonValidationError } from '../shared/json/safe-json';

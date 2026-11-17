@@ -3,13 +3,13 @@ import {
   ActivationStateError,
   AdminAuthRateLimitError,
   DeviceRateLimitedError,
-  PublicRateLimitedError,
   APP_ERROR_DEFINITIONS,
   AppError,
   isAppErrorCode,
   OtpRefusalError,
   TechnicalError,
 } from '../common/app-errors';
+import { PublicRateLimitedError } from './public-rate-limited-error';
 
 export interface ErrorBody {
   error: {

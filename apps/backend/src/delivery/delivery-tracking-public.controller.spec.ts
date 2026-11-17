@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { HttpException } from '@nestjs/common';
 import { OtpClientIp } from '../auth/otp-client-ip';
-import { PublicRateLimitedError } from '../common/app-errors';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { AppConfig } from '../config/app-config';
 import { DeliveryCustomerService } from './delivery-customer-service';
 import { DeliveryTrackingPublicController } from './delivery-tracking-public.controller';

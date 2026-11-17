@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
-import { PublicRateLimitedError } from '../common/app-errors';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { PublicRateLimiter } from '../delivery/public-rate-limiter';
 import { DiscoveryRouteService } from './discovery-route-service';
 import { parseRouteDistancesBody } from './discovery-route-validation';

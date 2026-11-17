@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Header, Param, Req, Res } from '@nestjs/common';
 import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
-import { PublicRateLimitedError } from '../common/app-errors';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { DeliveryCustomerService, PublicTrackResult } from './delivery-customer-service';
 import { PublicRateLimiter } from './public-rate-limiter';
 
