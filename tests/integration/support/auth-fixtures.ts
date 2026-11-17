@@ -21,7 +21,7 @@ export const OTHER_PASSWORD = 'Another-Passw0rd-Entirely';
 // Client-auth devices (OD-1: the legacy /auth routes and their SHIP11 device labels are gone). WEB sessions need no native device proof.
 export const DEVICE = Object.freeze({ device_id: 'device-test-0001', platform: 'WEB', app: 'FOOD' });
 export const SHIP_DEVICE = Object.freeze({ device_id: 'device-test-0002', platform: 'WEB', app: 'SHIP' });
-export const CONSENT = Object.freeze({ terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' });
+export const CONSENT = Object.freeze({ terms_version: 'terms-20261114-v3', privacy_version: 'privacy-20261114-v3' });
 
 export const TEST_OTP_KEY_BYTES = Buffer.alloc(32, 7);
 

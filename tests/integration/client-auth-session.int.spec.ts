@@ -30,8 +30,8 @@ import { LockHolder } from './support/idempotency-fixtures';
 // token and the CURRENT identity, context eligibility and replay, session-only revocation. Contract: docs/design/system-v2-20261011
 // 10-m01-client-contract.md and 11-m01-session-device-contract.md sections 1-6.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const ANDROID_FOOD = { device_id: 'android-device-0001', platform: 'ANDROID', app: 'FOOD' };

@@ -8,8 +8,8 @@ import { AuthApp, PASSWORD, randomPhone, startAuthApp } from './support/auth-fix
 // logout -> login). Client-side races (stale answers, lost responses, timeouts) need controlled answers and live in
 // tests/client-shell/auth-client.test.mjs.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 
 function ok<T>(result: AuthResult<T>): T {
   if (result.kind !== 'ok') {

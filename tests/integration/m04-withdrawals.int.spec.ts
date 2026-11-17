@@ -15,8 +15,8 @@ import { createInvitation, createPayload, systemSession, SystemSession } from '.
 // makes the transfer BY HAND and records it, or reports an unknown outcome for reconciliation. Money moves only in the PAID transaction, exactly once; everything
 // else only sets money aside (hold) or gives it back. Funding goes through the REAL top-up path (request -> administrator confirms), never a fixture ledger row.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const tag = randomBytes(3).toString('hex').toUpperCase();

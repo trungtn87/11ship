@@ -23,8 +23,8 @@ import { ApiResponse, AuthApp, createActiveShopFor, createServiceArea, dataOf, e
 // to a local HTTP server that stands in for Google (the OAuth token endpoint and messages:send), so the HTTP shape, the retry and the error handling are
 // exercised; nothing here proves delivery to a physical phone.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0008', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0008', platform: 'WEB', app: 'FOOD' };
 const tag = randomBytes(3).toString('hex').toUpperCase();

@@ -18,8 +18,8 @@ import {
 // DISABLED_TEST registration (docs/tasks/M01-food-register-disabled-test-handoff-20261012.md) on the REAL Nest pipeline and a
 // REAL PostgreSQL (TEST database only). No OTP, no proof: the account is TEST_UNVERIFIED with phone_verified_at NULL.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const CONSENT = { terms_version: TERMS, privacy_version: PRIVACY };
 const WEB_FOOD = { device_id: 'web-device-0001', platform: 'WEB', app: 'FOOD' };
 const CLIENT_AUTH = { termsVersion: TERMS, privacyVersion: PRIVACY };
