@@ -671,7 +671,7 @@ class CheckoutDraft {
 }
 
 class CheckoutPreview {
-  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs, this.routeSnapshotId});
+  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs, this.routeSnapshotId, this.route});
 
   factory CheckoutPreview.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -685,6 +685,7 @@ class CheckoutPreview {
       feeEstimateVnd: _intOrNull(fee['estimate_vnd']),
       feeDistanceM: _intOrNull(fee['distance_m']),
       routeSnapshotId: _strOrNull(fee['route_snapshot_id']),
+      route: OrderRoute.fromJson(fee['route']),
       expectedTotalVnd: _intOrNull(m['expected_total_vnd']),
       tipVnd: _int(m['tip_vnd'] ?? 0),
       feeStatus: _str(fee['status']),
@@ -710,6 +711,10 @@ class CheckoutPreview {
   /// The id of the route snapshot this quote owns (P6-2). The place call sends it back so the Order gets exactly the road the customer saw; null when
   /// the quote measured no route.
   final String? routeSnapshotId;
+
+  /// The road of THIS quote (P6-3b): the same snapshot the fee was measured on, so its distance equals [feeDistanceM]. Null when the server sent no usable
+  /// route; the checkout then draws nothing and shows only what the quote already says.
+  final OrderRoute? route;
   final int? expectedTotalVnd;
   final int tipVnd;
   final String feeStatus;
