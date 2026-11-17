@@ -3,8 +3,10 @@
 > Tài liệu này chỉ **soạn** cấu hình và hướng dẫn. **Chưa có gì được áp lên VPS**: không sửa VPS, không reload/restart nginx, không restart backend, không deploy. Không có script hay workflow chạy lên VPS trong PR này.
 > **Chưa nghiệm thu runtime.** Cấu hình VPS thật chưa được đọc nên mọi "hiện trạng VPS" bên dưới là **CHƯA XÁC MINH** cho tới khi operator chạy mục 4 và ghi kết quả.
 > Mọi thao tác trên VPS cần Owner cho phép rõ ràng và do operator được ủy quyền thực hiện theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
+>
+> **P5-7d (cùng trạng thái PREPARED / NOT DEPLOYED):** thêm giới hạn tần suất `limit_req` cho đăng nhập, OTP, tracking công khai và route-distances — xem **mục 3.3**. Mẫu `ops/vinahost/nginx-11ship-staging.conf` đã có zone và location; chưa áp lên VPS.
 
-# nginx + trust proxy cho limiter theo IP (P5-7a, OD-30)
+# nginx + trust proxy cho limiter theo IP (P5-7a, OD-30; bổ sung P5-7d)
 
 ## 1. Vấn đề
 
@@ -29,16 +31,16 @@ Các limiter theo địa chỉ client (OTP request, xóa tài khoản — IP 20 
 | OTP request (`auth.controller`), khôi phục tài khoản (`account-recovery.controller`, 3 chỗ), xóa tài khoản (`account-deletion.controller`) | `OtpClientIp.identity()` ← `resolveClientIp` |
 | Admin: login, activation, provisioning, account-lock, menu-categories, service-areas, shippers, shipping-policy, otp-policy, system-settings | `resolveClientIp` trực tiếp + `ipLimiterIdentity` |
 | Đăng nhập khách (`client-auth`) | **Không dùng IP**: chỉ theo số điện thoại (30/phút) |
-| `delivery-tracking-public.controller` (`/public/tracking/:token`, `/track/:token`) | `req.ip \|\| socket.remoteAddress`, limiter trong bộ nhớ 60 giây — **không** đi qua `resolveClientIp` |
+| `delivery-tracking-public.controller` (`/public/tracking/:token`, `/track/:token`) | `OtpClientIp.identity()` ← `resolveClientIp`, limiter trong bộ nhớ 60 giây (đã đổi khỏi `req.ip`, đối chiếu main 9a3538e6) |
 
-**Phát hiện (ngoài phạm vi PR này, chuyển Claude Lead):** vì Express không bật `trust proxy`, `req.ip` phía sau nginx luôn là `127.0.0.1` nên limiter tracking công khai dùng **một bucket chung** cho mọi client, kể cả sau khi OD-30 được áp. Đây là lỗi độ chính xác của limiter, không phải lỗ hổng giả mạo. Sửa cần thay đổi mã backend (đổi sang `OtpClientIp`/`resolveClientIp`), phải được giao riêng; PR này là docs-only.
+**Cập nhật P5-7d — tracking đã đúng về mã, nhưng vẫn chung một bucket khi chưa bật tin cậy:** `req.ip` không còn được dùng cho tracking (đã sửa trong main). Tuy nhiên `OtpClientIp` chỉ đọc địa chỉ thật khi socket nằm trong `ADMIN_AUTH_TRUSTED_PROXY_IPS`. Ở trạng thái S0/S2 (chưa tin proxy), **mọi khách truy cập đều dùng chung địa chỉ `127.0.0.1`**, tức một bucket 60 yêu cầu/phút cho cả hệ thống; khi vượt thì mọi khách bị 429 cùng lúc. Bật tin cậy (trạng thái T, mục 5) mới cho mỗi khách một bucket ở lớp backend. Lớp giới hạn nginx ở mục 3.3 khóa theo địa chỉ thật ở edge nên vẫn tách khách với nhau ngay cả khi backend chưa tin proxy, nhưng **không** thay thế bucket của backend. Đây là lỗi độ chính xác, không phải lỗ hổng giả mạo; các trường hợp cần Claude Lead quyết định được ghi ở mục 8.
 
 **Mẫu nginx/env trong repo** (đã có sẵn, được kiểm tĩnh bởi [tests/deploy/ubuntu-vinahost-templates.test.mjs](../../tests/deploy/ubuntu-vinahost-templates.test.mjs)):
 
 - [ops/vinahost/nginx-11ship-staging.conf](../../ops/vinahost/nginx-11ship-staging.conf): cả hai `location` (`= /v1/shop/me/menu/images` và `/`) đã `proxy_set_header X-Forwarded-For $remote_addr;`, `X-Real-IP $remote_addr`, `Forwarded ""`; không có `$proxy_add_x_forwarded_for`; `proxy_pass http://127.0.0.1:3000`.
 - [ops/vinahost/production.env.example](../../ops/vinahost/production.env.example) và `staging.env.example`: `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]`.
 
-⇒ **Cấu hình đề xuất = đúng mẫu đã có trong repo.** PR này không đổi mẫu (không có diff mã/cấu hình); giá trị của PR là chuẩn hóa yêu cầu, quy trình kiểm tra, deploy và rollback để đối chiếu VPS thật. Nếu mục 4 cho thấy VPS lệch mẫu, áp phần "diff" ở mục 3 cho phần lệch.
+⇒ **Cấu hình trust/forwarding đề xuất (3.1, 3.2) = đúng mẫu đã có trong repo, không đổi ở P5-7d.** P5-7d chỉ thêm zone và location giới hạn tần suất (mục 3.3). Nếu mục 4 cho thấy VPS lệch mẫu, áp phần "diff" ở mục 3 cho phần lệch.
 
 ## 3. Cấu hình đề xuất
 
@@ -67,6 +69,32 @@ ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]
 - Phải đúng dạng chuẩn (IP literal, JSON). Không dùng `"::ffff:127.0.0.1"`, CIDR, tên máy, hay `*`.
 - Chỉ đổi khi socket thực tế từ nginx khác `127.0.0.1` (ví dụ `proxy_pass http://[::1]:3000` → `["::1"]`). Hiện `proxy_pass` là `127.0.0.1` nên giữ `["127.0.0.1"]`.
 - Backend phải chỉ nghe loopback (`127.0.0.1:3000`); nếu nghe `0.0.0.0` thì client bên ngoài có thể vượt nginx và gửi thẳng, vẫn bị coi là không tin cậy (không phải `127.0.0.1`), nhưng giữ loopback để không mở thêm bề mặt.
+
+### 3.3 Giới hạn tần suất nginx (P5-7d)
+
+Các zone nằm trong mẫu `ops/vinahost/nginx-11ship-staging.conf` (cấp http, qua `sites-enabled`). Mốc backend lấy từ mã nguồn trên main; "backstop" là mốc chọn thêm, backend không có mốc IP tĩnh tương ứng.
+
+| Zone | Location | Rate nginx | Burst | Mốc backend | Ghi chú |
+| --- | --- | --- | --- | --- | --- |
+| `ship11_tracking` | `~* ^/(v1/(public/tracking\|track)\|public/tracking\|track)/` | 60 r/phút | 20 | `PUBLIC_TRACKING_LIMIT` = 60/phút | khớp; gồm cả alias gốc `/track/`, `/public/tracking/` |
+| `ship11_route_dist` | `~* ^/v1/discovery/route-distances/?$` | 120 r/phút | 40 | `ROUTE_DISTANCES_LIMIT_PER_MINUTE` = 120 | khớp |
+| `ship11_admin_login` | `~* ^/v1/admin-auth/login/?$` | 10 r/phút | 5 | `LOGIN_REQUEST_LIMIT` = 10 trong 60 s theo IP | khớp |
+| `ship11_client_login` | `~* ^/v1/client-auth/login/?$` | 30 r/phút | 10 | 30/phút **theo số điện thoại**, backend không có mốc IP | **backstop mới** — cần Claude Lead xác nhận |
+| `ship11_otp_send` | `~* ^/v1/(auth/phone-verifications\|account-recovery/(locked/)?otp\|admin-recovery/otp)/?$` | 10 r/phút | 5 | `ip_per_hour` mặc định 10/giờ, **lưu trong DB, admin chỉnh được** | **backstop**, không khớp chính xác |
+| `ship11_deletion` | `~* ^/v1/account-deletion/confirm/?$` | 2 r/phút | 20 | `ACCOUNT_DELETE_IP_LIMIT` 20 / `ACCOUNT_DELETE_IP_WINDOW_SECONDS` 600 | xấp xỉ; hai biến môi trường có thể đổi |
+| `ship11_app_download` | `~* ^/v1/app-updates/download/[^/]+/?$` (+ `limit_conn` 4 luồng/IP, zone `ship11_app_download_conn`) | 30 r/phút | 10 | backend **không có mốc** | **backstop mới** — chỉnh được; tải APK giữ kết nối suốt file |
+| `ship11_ops_ingest` | `~* ^/v1/ops/ingest/` | 60 r/phút | 20 | backend **không có mốc** (ba route máy: probe, backup, deploy) | **backstop mới** — chỉnh được |
+
+Quy tắc:
+
+- Zone khóa theo `$binary_remote_addr`, tức địa chỉ socket của nginx = địa chỉ khách thật vì nginx là edge. Zone vì thế **không** phụ thuộc `ADMIN_AUTH_TRUSTED_PROXY_IPS`: đúng ở S0 lẫn T và không thể bị giả mạo bằng header.
+- `limit_req … burst=N nodelay` và `limit_req_status 429`: vượt burst thì trả 429 ngay, không xếp hàng.
+- **Backend vẫn là thẩm quyền.** nginx không thay thế các giới hạn của backend (theo số điện thoại, theo IP cấu hình được, khóa đăng nhập…). Nếu đổi `ip_per_hour`, `ACCOUNT_DELETE_IP_LIMIT` hoặc `ACCOUNT_DELETE_IP_WINDOW_SECONDS`, phải đổi zone tương ứng trong mẫu; test tĩnh `tests/deploy/nginx-rate-limits.test.mjs` kiểm các mốc tĩnh (tracking, route-distances, admin login, deletion), các alias và biến thể hoa/thường/dấu `/` cuối, và đủ sáu header chuyển tiếp.
+- Mọi location giới hạn lặp đủ bộ header của 3.1. `proxy_set_header` ở cấp location thay thế toàn bộ cấp cha nên thiếu một dòng là mất ghi đè.
+- **Không** giới hạn: verify OTP (`.../{id}/verify`; backend đã có `max_wrong_attempts`), TOTP admin, các route khác. Mở rộng cần quyết định riêng.
+- Giới hạn đã biết: IPv6 được tính theo từng địa chỉ ở nginx, còn backend gom `/64`. Nhiều người sau cùng một IPv4 (CGNAT) chung một zone, nên đăng nhập/OTP theo IP có thể bị 429 khi một mạng đông người. Sau triển khai, theo dõi log nginx dòng `limiting requests`.
+- 429 do nginx trả có **envelope JSON giống backend** (`apps/backend/src/http/error-envelope.ts`): `{"error":{"code":"TOO_MANY_REQUESTS","message":"Too many requests","request_id":…,"details":{}}}`, `Content-Type: application/json`, cùng `X-Request-ID`. `request_id` do nginx tạo (dạng UUID từ `$request_id`), nên nó không xuất hiện trong log của backend. 429 do backend trả đi qua nguyên vẹn. Ứng dụng coi `TOO_MANY_REQUESTS` là "thử lại sau". **NOT TESTED trên máy.**
+- Hai backstop **khách 30/phút** và **OTP 10/phút** là số **chỉnh được**. Nếu nhiều người dùng chung một IP (mạng văn phòng, CGNAT), tăng `rate` và `burst` của zone tương ứng trong mẫu, áp lại theo mục 5, và dựa vào dòng `limiting requests` trong log nginx để quyết định.
 
 ## 4. Kiểm tra trạng thái VPS **trước** khi đổi (chỉ đọc; do operator được ủy quyền chạy, kết quả ghi vào hồ sơ vận hành)
 
@@ -98,7 +126,15 @@ Nếu không xác định chắc được N hoặc T, **coi là S1** (đường 
 
 ## 5. Deploy từng bước (CHỈ khi Owner cho phép; chưa thực hiện)
 
-Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` (hoặc đường dẫn `ready` tương ứng của build đang chạy) trả `ready` trước khi sang bước sau. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
+Thứ tự bất biến: **(1) gỡ trust nếu đang bật → (2) sửa và chứng minh nginx ghi đè → (3) mới bật trust.** Mỗi lần restart backend phải kiểm `curl -fsS http://127.0.0.1:3000/v1/health/ready` trả `ready` trước khi sang bước sau. Đường dẫn này theo mã nguồn là `GLOBAL_PREFIX = 'v1'` + `@Controller('health')`, **chưa xác nhận trên VPS**: giữ là **backlog #329**. Xác nhận bằng curl chỉ-đọc lúc deploy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/v1/health/ready` (kỳ vọng 200). Nếu VPS trả 404 thì dừng và đối chiếu build đang chạy, không đoán đường dẫn khác.
+
+**Thứ tự bắt buộc khi áp P5-7d (quyết định Claude Lead):** bật `ADMIN_AUTH_TRUSTED_PROXY_IPS=["127.0.0.1"]` **trước hoặc cùng lúc** khi áp zone giới hạn của mục 3.3, trong cùng một cửa sổ bảo trì. Không bao giờ áp zone khi trust còn tắt: khi đó mọi khách dùng chung một bucket tracking 60/phút ở backend, một khách vượt là mọi khách bị 429. Điều kiện an toàn của mục 4–5 vẫn giữ: **trust chỉ được bật sau khi 6A đã PASS** (nginx ghi đè `X-Forwarded-For`), và 6A được chứng minh trên cấu hình **chỉ có ghi đè (mục 3.1), chưa có khối zone**. Trình tự:
+
+1. Áp cấu hình nginx chỉ có ghi đè (mục 3.1, không có khối zone, `limit_req` hay 429 JSON của P5-7d), `nginx -t`, reload, rồi chứng minh 6A trên các location. Nếu 6A FAIL: **dừng**, không bật trust, không áp zone, báo.
+2. Nếu 6A PASS: bật trust (5.A bước 5 hoặc 5.B bước 4), restart, kiểm `ready`, rồi 6B–6D.
+3. Chỉ sau đó áp khối zone, location giới hạn và 429 JSON của mục 3.3 (bản mẫu `ops/vinahost/nginx-11ship-staging.conf`), `nginx -t`, reload, rồi 6E.
+
+Bước 2 và 3 nằm trong cùng cửa sổ bảo trì. Không được kết thúc cửa sổ với zone đã áp mà trust vẫn tắt. Restart ngắt dịch vụ trong chốc lát: làm ngoài giờ cao điểm, theo [vps-production-update-20261014.md](vps-production-update-20261014.md).
 
 **Sao lưu trước khi đổi bất cứ thứ gì** (cho rollback tái lập được):
 
@@ -111,7 +147,7 @@ Ghi lại: đường dẫn hai bản sao, thời điểm, và trạng thái đ�
 
 ### 5.A — S0 / S2 (backend chưa tin proxy)
 
-1. nginx: đưa các dòng 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu lệch chỉ ở phần này). Giữ nguyên SSL, `server_name`, `client_max_body_size`.
+1. nginx: đưa các dòng 3.1 vào mọi `location` còn thiếu (hoặc `install` lại mẫu repo theo [ubuntu-vinahost-staging.md](ubuntu-vinahost-staging.md) §7 nếu lệch chỉ ở phần này). Giữ nguyên SSL, `server_name`, `client_max_body_size`. **Không cài lại toàn bộ mẫu repo ở bước này**: mẫu có khối zone P5-7d, phải áp ở bước 3 của đầu mục 5, sau khi trust đã bật.
 2. `sudo nginx -t` phải `syntax is ok` + `test is successful`; lỗi → khôi phục bản sao nginx (bản sao đạt invariant vì backend chưa tin), dừng, báo.
 3. `sudo systemctl reload nginx` (reload, không restart).
 4. **Chứng minh ghi đè (6A)** — phải PASS trước khi sang bước 5.
@@ -146,6 +182,16 @@ Kỳ vọng: **không** có `400` do header (nginx đã ghi đè thành một gi
 
 **6D — truy cập trực tiếp không qua nginx:** từ ngoài VPS, `curl http://103.9.78.67:3000` phải không tới được (cổng đóng/nghe loopback).
 
+**6E — giới hạn tần suất nginx (P5-7d; không gửi SMS, không đăng nhập được, không đổi tài khoản):** từ máy vận hành, không dùng phiên admin đang đăng nhập:
+
+```bash
+for i in $(seq 1 12); do curl -sk -o /dev/null -w "%{http_code} " -X POST -H 'Content-Type: application/json' -d '{}' https://103.9.78.67.sslip.io/v1/admin-auth/login; done; echo
+```
+
+Đường dẫn tải APK và ingest (không SMS, chỉ đọc hoặc không tác động): `for i in $(seq 1 40); do curl -sk -o /dev/null -w "%{http_code} " https://103.9.78.67.sslip.io/v1/app-updates/download/<release-id-giả>; done` (kỳ vọng: khoảng 11 yêu cầu đầu không phải 429 với burst 10, sau đó 429; bản "release-id giả" có thể trả 404 của backend, vẫn tính vào giới hạn). Ingest: `curl -sk -o /dev/null -w "%{http_code} " -X POST https://103.9.78.67.sslip.io/v1/ops/ingest/probe` lặp 30 lần, kỳ vọng khoảng 21 yêu cầu đầu không phải 429 (burst 20), sau đó 429; backend trả 401 cho khóa giả là bình thường. Không dùng khóa máy thật để kiểm.
+
+Kỳ vọng: khoảng 6 yêu cầu đầu không phải 429 (burst 5 + 1), các yêu cầu sau là `429` với body JSON `TOO_MANY_REQUESTS` và header `X-Request-ID` (`curl -sk -i …` để xem). Lặp lại với `X-Forwarded-For` giả khác nhau: vẫn 429, nghĩa là không có quota mới. Với tracking, thay URL bằng `/v1/track/<token-giả-đủ-dài>` (60/phút): token không tồn tại trả mã của backend; khoảng 21 yêu cầu đầu (1 + burst 20) không phải 429, các yêu cầu sau là 429. Sau khi chạy, đợi một phút trước khi đăng nhập admin từ máy đó.
+
 ## 7. Rollback
 
 Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **trước**; chỉ sau đó mới đụng nginx.
@@ -156,6 +202,7 @@ Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **t
    - **Không đạt** (append/passthrough hoặc thiếu ghi đè): **KHÔNG khôi phục.** Giữ cấu hình ghi đè an toàn hiện tại; rollback chỉ ở phía backend (bước 1). Báo lại rằng bản nginx cũ không an toàn.
 3. Không bao giờ rollback bằng cách bật `$proxy_add_x_forwarded_for`, truyền nguyên header client, hay nới danh sách tin cậy. Mọi con đường rollback kết thúc ở trạng thái: (nginx ghi đè hoặc backend không tin) — không bao giờ (backend tin + nginx không ghi đè).
 4. Dữ liệu limiter (bảng quota) không cần dọn; cửa sổ quota tự hết hạn.
+5. Chỉ gỡ giới hạn tần suất P5-7d: khôi phục bản sao nginx trước P5-7d (không có zone/location giới hạn). Các mục 7.2–7.3 về ghi đè vẫn áp dụng cho bản đó; không cần đổi backend.
 
 
 ## 8. Checklist rủi ro
@@ -167,12 +214,16 @@ Hướng **ngược** với deploy: bỏ trust backend và xác minh healthy **t
 | Danh sách tin cậy sai dạng | Backend không khởi động (cấu hình không hợp lệ) | Chỉ IP literal chuẩn; thử cấu hình ở staging/local trước |
 | Thêm CDN/LB phía trước nginx | IP thật bị thay bằng IP lớp đó, tất cả dùng chung một bucket | Không có trong phạm vi; cần thiết kế riêng |
 | Restart backend khi deploy | Gián đoạn ngắn | Làm ngoài giờ cao điểm, theo runbook cập nhật |
-| Tracking công khai dùng `req.ip` | Một bucket chung (mục 2) | Escalate Claude Lead, sửa mã ở PR riêng |
-| IPv6 | Gom `/64`; người dùng chung `/64` chia sẻ quota | Hành vi thiết kế, không đổi |
-| NAT nhà mạng (CGNAT) | Nhiều người dùng chung một IPv4 | Lớp theo số điện thoại là lớp chính (xem P5-6a); chấp nhận |
+| Tracking khi backend CHƯA tin proxy (S0/S2) | Mọi khách dùng chung bucket 60/phút ở backend; khi vượt thì mọi khách bị 429 cùng lúc | Bật T cùng cửa sổ với zone, sau khi 6A PASS (mục 5, thứ tự bắt buộc). Zone nginx 3.3 không sửa bucket backend. Không làm PR backend riêng (quyết định Lead) |
+| Zone nginx quá chặt với CGNAT/nhiều người sau một IP | Người dùng hợp lệ bị 429 khi đăng nhập hoặc gửi OTP | Các backstop mới (client login 30/phút, OTP 10/phút) cần Claude Lead xác nhận trước khi áp; theo dõi `limiting requests` trong log nginx |
+| Mốc nginx lệch cấu hình backend (`ip_per_hour`, `ACCOUNT_DELETE_*`) | Hai nơi cho hai con số | Mục 3.3; đổi cấu hình thì đổi zone tương ứng |
+| 429 của nginx lệch envelope backend | App không nhận ra `TOO_MANY_REQUESTS` | Envelope khớp backend (test tĩnh đối chiếu `error-envelope.ts`, kiểm bằng echo upstream); app chưa kiểm trên máy (NOT TESTED) |
+| IPv6 | Gom `/64` ở backend; nginx tính từng địa chỉ | Hành vi thiết kế; ghi rõ ở 3.3 |
+| NAT nhà mạng (CGNAT) | Nhiều người dùng chung một IPv4 | Lớp theo số điện thoại là lớp chính (xem P5-6a); mục 3.3 ghi rõ giới hạn |
 
 ## 9. Phạm vi và giới hạn của PR
 
-- Docs-only; **không chạy runtime**, không chạy test sản phẩm, không đọc/đổi VPS, không APK, không merge/deploy.
-- Không đổi `ops/vinahost/*` vì mẫu repo đã đúng đề xuất.
+- Không đổi mã backend, env, tên miền hay VPS; không APK; không merge/deploy.
+- Đổi duy nhất `ops/vinahost/nginx-11ship-staging.conf` (P5-7d: 8 zone và 8 location giới hạn, mục 3.3) và thêm `tests/deploy/nginx-rate-limits.test.mjs` (tĩnh, chạy trong `npm run deploy:test` của CI).
+- Kiểm chứng P5-7d: `nginx -t` trên nginx 1.24 (phiên bản Ubuntu 24.04) trong container Docker với chứng chỉ tự ký thử, cộng kiểm hành vi trên một upstream giả; **chưa chạy trên VPS**.
 - Việc VPS thật khớp mẫu hay chưa: **CHƯA XÁC MINH**.
