@@ -1,5 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { M14RouteClient } from './m14-route-client';
+import { ReferenceRoadGate } from '../orders/reference-road-gate';
 import { UserRepository } from '../auth/user-repository';
 import { DriverRepository, DriverRow } from '../driver/driver-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
@@ -117,7 +117,7 @@ export class DeliveryViews {
     private readonly snapshots: RouteSnapshotRepository,
     private readonly addressChanges?: AddressChangeRepository,
     // P6-8b: only the GET readers pass `reference`; the M14 client is optional so write paths and tests need no route service.
-    @Optional() private readonly roads?: M14RouteClient,
+    @Optional() private readonly roads?: ReferenceRoadGate,
   ) {}
 
   /** P6-8b: asks M14 for the reference road a read requested. Called by the reader AFTER its transaction has ended, never inside one. */

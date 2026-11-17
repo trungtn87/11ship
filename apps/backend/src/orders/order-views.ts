@@ -1,5 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { M14RouteClient } from '../delivery/m14-route-client';
+import { ReferenceRoadGate } from './reference-road-gate';
 import { DeliveryRepository, DeliveryRow } from '../delivery/delivery-repository';
 import { mayRecall } from '../delivery/delivery-rules';
 import { DeliveryViews } from '../delivery/delivery-views';
@@ -90,7 +90,7 @@ export class OrderViews {
     private readonly snapshots: RouteSnapshotRepository,
     private readonly addressChanges?: AddressChangeRepository,
     // P6-8b: only the GET readers ask for the reference road; the route client is optional so write paths need no route service.
-    @Optional() private readonly roads?: M14RouteClient,
+    @Optional() private readonly roads?: ReferenceRoadGate,
   ) {}
 
   /** P6-8b: asks M14 for the reference road a read requested. Called by the reader AFTER its transaction has ended, never inside one. */

@@ -756,9 +756,18 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                           if (d.location != null)
                             M07MapPin(lat: d.location!.lat, lng: d.location!.lng, label: 'Shipper', color: 0xFF2A2A2E),
                         ],
+                        // The stored road of a new delivery comes first. A legacy record (before route snapshots) draws only its CURRENT road as reference.
+                        d.route?.points ?? (d.legacyReferenceOnly ? d.referencePoints : const <List<double>>[]),
                       ),
                     ),
                   ),
+                  if (d.route == null && d.legacyReferenceOnly) ...<Widget>[
+                    const SizedBox(height: N11Space.gap2),
+                    if (d.referencePoints.isNotEmpty)
+                      const ReasonNote('Tuyến hiện tại chỉ tham khảo, có thể khác phí đã chốt. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-c-route-reference'), icon: Icons.info_outline)
+                    else
+                      const ReasonNote('Chưa có tuyến để tham khảo. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-c-route-legacy'), icon: Icons.history),
+                  ],
                   const SizedBox(height: N11Space.gap3),
                 ] else if (!hasBothPins) ...<Widget>[
                   Container(
