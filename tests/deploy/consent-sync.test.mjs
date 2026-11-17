@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { generateWebLegalSource, GENERATED_PATH } from '../../scripts/legal/official-legal.mjs';
 
 const read = (path) => readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8');
 const policyDart = read('mobile/packages/n11_shared/lib/src/account/legal_policy_draft.dart');
@@ -135,5 +136,9 @@ describe('consent texts and versions', () => {
     assert.equal(dartConst('kPrivacyPolicyVersion'), privacy);
     assert.equal(/TERMS_PAGE_VERSION = '([^']+)'/.exec(termsPage)?.[1], terms);
     assert.equal(/PRIVACY_PAGE_VERSION = '([^']+)'/.exec(privacyPage)?.[1], privacy);
+  });
+
+  it('the browser copy of the official texts is generated from the backend pages and is up to date', () => {
+    assert.equal(read(GENERATED_PATH), generateWebLegalSource(fileURLToPath(new URL('../../', import.meta.url))), `${GENERATED_PATH} is out of date: run node scripts/legal/official-legal.mjs --write`);
   });
 });

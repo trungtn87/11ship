@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { buildClientWeb } from '../../scripts/client-web-build.mjs';
+import { readOfficialLegal } from '../../scripts/legal/official-legal.mjs';
 
 // M01.07 — the register flow controller (apps/client-shared/src/register-flow.ts) on top of the REAL adapter (createAuthClient)
 // with a controlled fetch. What is proved: the form typed in F11 reaches the final register unchanged while the code step
@@ -76,26 +77,30 @@ async function setup(handler, options = {}) {
   const { createAuthClient } = await load('auth/client.js');
   const { createRegisterController, REGISTER_FLOW } = await load('register-flow.js');
   const { FlowStore } = await load('screen.js');
-  const { FOOD_TEST_CONSENT } = await load('consent.js');
+  const { REGISTER_CONSENT } = await load('consent.js');
   const http = stub(handler);
   const auth = createAuthClient({ fetch: http.fetch, app: 'FOOD', newKey: KEYS(), deviceId: 'web-test-device' });
   const flows = new FlowStore();
-  const controller = createRegisterController({ auth, flows, consent: FOOD_TEST_CONSENT, ...options });
-  return { auth, flows, controller, http, REGISTER_FLOW, consent: FOOD_TEST_CONSENT };
+  const controller = createRegisterController({ auth, flows, consent: REGISTER_CONSENT, ...options });
+  return { auth, flows, controller, http, REGISTER_FLOW, consent: REGISTER_CONSENT };
 }
 
 const FORM = { fullName: '  Nguyễn  Văn An ', phone: ` ${PHONE} `, password: PASSWORD };
 const happy = (call) => (isOtpRequest(call) ? reply(201, issued()) : isVerify(call) ? reply(200, verified()) : reply(201, signIn()));
 
-describe('the approved consent (docs/tasks/M01-03-customer-register-local-handoff.md §3)', () => {
-  it('the texts and versions of the screen are the approved ones, character for character', async () => {
-    const { FOOD_TEST_CONSENT: c } = await load('consent.js');
-    const doc = readFileSync(new URL('../../docs/tasks/M01-03-customer-register-local-handoff.md', import.meta.url), 'utf8');
-    assert.equal(c.termsVersion, 'test-terms-20261011-v1');
-    assert.equal(c.privacyVersion, 'test-privacy-20261011-v1');
-    for (const text of [c.termsText, c.privacyText, c.checkboxLabel, c.termsVersion, c.privacyVersion]) {
-      assert.ok(doc.includes(text), `the approved document contains: ${text.slice(0, 50)}…`);
-    }
+describe('the official consent (the public legal pages, Owner-approved 14/11/2026)', () => {
+  it('the screen shows the official versions and the official sections, in order, from the backend pages', async () => {
+    const { REGISTER_CONSENT: c } = await load('consent.js');
+    const official = readOfficialLegal();
+    assert.equal(c.termsVersion, 'terms-20261114-v3');
+    assert.equal(c.privacyVersion, 'privacy-20261114-v3');
+    assert.equal(c.termsVersion, official.terms.version);
+    assert.equal(c.privacyVersion, official.privacy.version);
+    assert.deepEqual(c.termsSections, official.terms.sections);
+    assert.deepEqual(c.privacySections, official.privacy.sections);
+    assert.equal(c.termsSections.length, 16);
+    assert.equal(c.privacySections.length, 12);
+    assert.doesNotMatch(JSON.stringify([c.termsTitle, c.privacyTitle, c.checkboxLabel]), /thử/i, 'no test wording on the consent screen');
   });
 });
 

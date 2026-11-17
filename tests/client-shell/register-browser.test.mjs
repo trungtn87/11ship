@@ -7,6 +7,7 @@ import { after, before, describe, it } from 'node:test';
 import { createLocalCertificate } from '../../scripts/admin-web-cert.mjs';
 import { buildClientWeb } from '../../scripts/client-web-build.mjs';
 import { createClientWebServer } from '../../scripts/client-web-dev.mjs';
+import { readOfficialLegal } from '../../scripts/legal/official-legal.mjs';
 import { launchChrome, OVERFLOW, SMALL_TARGETS, sleep, spkiHash } from './support/chrome.mjs';
 
 // M01.07, real browser: the 11Food register flow F11 -> F12 -> F01 in headless Chromium over the REAL local https front
@@ -233,14 +234,16 @@ describe('F11: the approved consent, readable before submit', () => {
   it('shows both texts in full, the checkbox is unchecked, and sending without it sends nothing', async () => {
     await withPage(390, async (page) => {
       await page.goto(`${origin}/register`);
-      const doc = readFileSync(new URL('../../docs/tasks/M01-03-customer-register-local-handoff.md', import.meta.url), 'utf8');
+      // The official texts (the same words as the public pages): every section title and its first paragraph are shown.
+      const official = readOfficialLegal();
       const shown = await page.evaluate(text('#consent-texts'));
-      const terms = /Đây là bản thử nghiệm 11Ship\/11Food[^\n]*/.exec(doc)[0];
-      const privacy = /Bản thử nghiệm lưu số điện thoại[^\n]*/.exec(doc)[0];
-      assert.ok(shown.includes(terms), 'the terms text is shown verbatim');
-      assert.ok(shown.includes(privacy), 'the data information is shown verbatim');
+      for (const section of [...official.terms.sections, ...official.privacy.sections]) {
+        assert.ok(shown.includes(section.title), `the section title is shown: ${section.title}`);
+        assert.ok(shown.includes(section.paragraphs[0]), `the first paragraph of "${section.title}" is shown verbatim`);
+      }
       assert.equal(await page.evaluate(`document.querySelector('#consent').checked`), false);
-      assert.match(await page.evaluate(text('label[for=consent]')), /Tôi đồng ý với Điều khoản dùng thử và Thông tin dữ liệu thử nghiệm\./);
+      assert.match(await page.evaluate(text('label[for=consent]')), /Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư/);
+      assert.doesNotMatch(shown, /thử nghiệm|dùng thử/i, 'no test wording on the consent screen');
       await fillRegister(page, { consent: false });
       await page.click('#register-submit');
       await page.waitFor(`document.querySelector('#consent-error')?.hidden === false`, 'consent error');
@@ -294,7 +297,7 @@ describe('the whole flow: F11 -> code -> account -> F01, with what the server sa
       assert.equal(sent.full_name, NAME);
       assert.equal(sent.phone, PHONE);
       assert.equal(sent.verification_token, PROOF);
-      assert.deepEqual(sent.consent, { terms_version: 'test-terms-20261011-v1', privacy_version: 'test-privacy-20261011-v1' });
+      assert.deepEqual(sent.consent, { terms_version: 'terms-20261114-v3', privacy_version: 'privacy-20261114-v3' });
       assert.deepEqual(sent.device.platform, 'WEB');
       assert.equal(sent.device.app, 'FOOD');
       for (const entry of backend.state.seen) {
