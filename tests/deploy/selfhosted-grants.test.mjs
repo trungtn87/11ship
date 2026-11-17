@@ -126,6 +126,19 @@ describe('ops/selfhosted/02-runtime-grants.sql', () => {
   });
 });
 
+describe('ops/selfhosted/05-rollback-complaint-attachment-delete.sql (#261 rollback)', () => {
+  test('revokes exactly the DELETE on app.complaint_attachments that 02 grants, and changes nothing else', () => {
+    const granted = read('ops/selfhosted/02-runtime-grants.sql').match(/^GRANT ([A-Z, ]+) ON app\.complaint_attachments TO ship11_app;$/m);
+    assert.ok(granted, '02 grants complaint_attachments');
+    assert.ok(granted[1].split(', ').includes('DELETE'));
+    const code = read('ops/selfhosted/05-rollback-complaint-attachment-delete.sql').replace(/--.*$/gm, '');
+    const revokes = [...code.matchAll(/REVOKE ([A-Z, ]+) ON app\.([a-z_]+) FROM ship11_app;/g)].map((match) => [match[2], match[1]]);
+    assert.deepEqual(revokes, [['complaint_attachments', 'DELETE']]);
+    assert.doesNotMatch(code, /\b(GRANT|TRUNCATE|ALTER|CREATE|DROP|INSERT|UPDATE|ALL)\b/i);
+    assert.match(code, /current_database\(\) <> 'ship11_staging'/);
+  });
+});
+
 describe('ops/selfhosted configuration files', () => {
   test('pg_hba.conf allows only TLS + SCRAM from loopback for the two project roles on ship11_staging, and rejects everything else', () => {
     const rules = read('ops/selfhosted/pg_hba.conf')

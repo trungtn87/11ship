@@ -47,7 +47,7 @@ export class FeedbackRecorder {
   }
 
   /** Issue #261: the janitor removed never-attached pictures. Counts only: never a picture, an owner or a file name. */
-  async orphanPicturesPurged(context: TransactionContext, requestId: string, removed: { count: number; bytes: number }): Promise<void> {
+  async orphanPicturesPurged(context: TransactionContext, requestId: string, removed: { count: number; bytes: number }, retentionSeconds: number): Promise<void> {
     await this.audit.append(context, {
       requestId,
       actorType: 'SYSTEM',
@@ -57,7 +57,7 @@ export class FeedbackRecorder {
       resourceId: requestId,
       resourceVersion: 1,
       outcome: 'SUCCESS',
-      metadata: { removed: removed.count, bytes: removed.bytes, ttl_hours: 24 },
+      metadata: { removed: removed.count, bytes: removed.bytes, ttl_hours: Math.ceil(retentionSeconds / 3600) },
     });
   }
 

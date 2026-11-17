@@ -45,6 +45,12 @@ export const ATTACHMENT_MAX_COUNT = 5;
 export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 /** How many uploaded pictures of one account may wait unattached (a bound on abandoned uploads, not a business limit). */
 export const UNLINKED_ATTACHMENT_LIMIT = 20;
+/**
+ * Issue #261: the shortest time a picture uploaded for a complaint and never attached is kept. The database row guard (migration
+ * 1797379200000_complaint-orphan-attachment-janitor) refuses any delete younger than 24 hours: keep the two equal (a unit test checks it).
+ * A longer replay window of the upload (IDEMPOTENCY_REPLAY_TTL_SECONDS) raises the retention; see shared/orphan-retention.ts.
+ */
+export const UNLINKED_ATTACHMENT_TTL_HOURS = 24;
 
 /** Technical bounds of free text (the approved design sets no length on a rating comment; these only protect storage). */
 export const COMMENT_MAX_CODEPOINTS = 2000;
