@@ -162,7 +162,7 @@ describe('routes and numbers match the backend', () => {
   });
 
   test('tracking: the rate is the backend PUBLIC_TRACKING_LIMIT (60/min)', () => {
-    assert.equal(zones(nginx).get('ship11_tracking'), Number(/PUBLIC_TRACKING_LIMIT = (\d+)/.exec(backendSource('delivery/public-tracking-rate-limiter.ts'))[1]));
+    assert.equal(zones(nginx).get('ship11_tracking'), Number(/PUBLIC_TRACKING_LIMIT = (\d+)/.exec(backendSource('delivery/public-rate-limiter.ts'))[1]));
   });
 
   test('route-distances: POST route, rate = ROUTE_DISTANCES_LIMIT_PER_MINUTE, trailing slash and case variants limited', () => {

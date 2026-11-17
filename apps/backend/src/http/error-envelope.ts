@@ -9,6 +9,7 @@ import {
   OtpRefusalError,
   TechnicalError,
 } from '../common/app-errors';
+import { PublicRateLimitedError } from './public-rate-limited-error';
 
 export interface ErrorBody {
   error: {
@@ -23,7 +24,7 @@ export interface ClassifiedError {
   status: number;
   code: string;
   message: string;
-  /** Set only for the typed rate-limit errors (administration, device, OTP): seconds for the Retry-After header. */
+  /** Set only for the typed rate-limit errors (administration, device, OTP, public routes): seconds for the Retry-After header. */
   retryAfterSeconds?: number;
   /** Set only for the typed ActivationStateError: the safe state facts the client needs. */
   details?: Readonly<Record<string, unknown>>;
@@ -85,6 +86,13 @@ export function classifyException(exception: unknown): ClassifiedError {
   if (exception instanceof DeviceRateLimitedError) {
     const definition = APP_ERROR_DEFINITIONS.DEVICE_RATE_LIMITED;
     return { status: definition.status, code: 'DEVICE_RATE_LIMITED', message: definition.message, retryAfterSeconds: exception.retryAfterSeconds };
+  }
+  if (exception instanceof PublicRateLimitedError) {
+    // Same public code, status and message as the generic 429 below; only the Retry-After value is added.
+    const known = KNOWN[429];
+    if (known !== undefined) {
+      return { status: 429, code: known.code, message: known.message, retryAfterSeconds: exception.retryAfterSeconds };
+    }
   }
   if (exception instanceof ActivationStateError) {
     const definition = APP_ERROR_DEFINITIONS.ADMIN_ACTIVATION_STEP_INVALID;

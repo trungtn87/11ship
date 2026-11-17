@@ -1,6 +1,7 @@
-import { describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { HttpException } from '@nestjs/common';
 import { OtpClientIp } from '../auth/otp-client-ip';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { AppConfig } from '../config/app-config';
 import { DeliveryCustomerService } from './delivery-customer-service';
 import { DeliveryTrackingPublicController } from './delivery-tracking-public.controller';
@@ -68,12 +69,71 @@ describe('public tracking limiter identity (P5-7b)', () => {
   });
 });
 
-describe('public tracking limiter memory bound (P5-7b)', () => {
-  it('many distinct sources beyond the cap keep every one of them served and the 60/min quota intact', async () => {
+describe('public tracking limiter memory bound (P5-7b, overflow bucket)', () => {
+  it('(a) after 10 000 sources, new sources share one overflow bucket of 10 x 60 and then get 429', async () => {
     const c = controller();
-    for (let i = 0; i < 10_500; i += 1) {
+    for (let i = 0; i < 10_000; i += 1) {
       expect(await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`))).toBe(200);
     }
-    await exhaust(c, () => request('198.51.100.200'));
+    for (let i = 0; i < LIMIT * 10; i += 1) {
+      expect(await hit(c, request(`203.0.${Math.floor(i / 250)}.${i % 250}`))).toBe(200);
+    }
+    expect(await hit(c, request('203.0.200.1'))).toBe(429);
+    expect(await hit(c, request('203.0.200.2'))).toBe(429); // a different new source is in the same spent bucket
+  });
+
+  it('(b) a source already in the table keeps its own 60/min quota while the overflow bucket is spent', async () => {
+    const c = controller();
+    for (let i = 0; i < 10_000; i += 1) {
+      await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`));
+    }
+    for (let i = 0; i < LIMIT * 10; i += 1) {
+      await hit(c, request(`203.0.${Math.floor(i / 250)}.${i % 250}`));
+    }
+    expect(await hit(c, request('203.0.200.3'))).toBe(429);
+    // Resident source 198.18.0.0 used 1 of 60 above; it still has its own quota.
+    for (let i = 0; i < LIMIT - 1; i += 1) expect(await hit(c, request('198.18.0.0'))).toBe(200);
+    expect(await hit(c, request('198.18.0.0'))).toBe(429);
+  });
+
+  it('(c) the overflow refusal is a PublicRateLimitedError with Retry-After seconds of the overflow window', async () => {
+    jest.useFakeTimers({ now: 0 });
+    try {
+      const c = controller();
+      for (let i = 0; i < 10_000; i += 1) {
+        await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`));
+      }
+      for (let i = 0; i < LIMIT * 10; i += 1) {
+        await hit(c, request(`203.0.${Math.floor(i / 250)}.${i % 250}`));
+      }
+      jest.setSystemTime(15_000); // 15 s into the overflow window: 45 s left
+      const error = await c.getStatus(TOKEN, request('203.0.200.4'), res).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PublicRateLimitedError);
+      expect((error as PublicRateLimitedError).getStatus()).toBe(429);
+      expect((error as PublicRateLimitedError).retryAfterSeconds).toBe(45);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('public tracking 429 carries Retry-After seconds (P5-7b)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: 0 });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('the refusal is a PublicRateLimitedError (still an HttpException 429) with the seconds left in the window', async () => {
+    const c = controller();
+    for (let i = 0; i < LIMIT; i += 1) expect(await hit(c, request('198.51.100.60'))).toBe(200);
+    jest.setSystemTime(10_000); // 10 s into the window: 50 s left
+    const error = await c.getStatus(TOKEN, request('198.51.100.60'), res).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PublicRateLimitedError);
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(429);
+    expect((error as PublicRateLimitedError).retryAfterSeconds).toBe(50);
   });
 });

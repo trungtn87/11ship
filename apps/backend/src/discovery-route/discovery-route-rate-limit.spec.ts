@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { HttpException } from '@nestjs/common';
 import { OtpClientIp } from '../auth/otp-client-ip';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { AppConfig } from '../config/app-config';
-import { PUBLIC_TRACKING_MAX_IDENTITIES, PublicTrackingRateLimiter } from '../delivery/public-tracking-rate-limiter';
+import { PUBLIC_TRACKING_MAX_IDENTITIES, PublicRateLimiter } from '../delivery/public-rate-limiter';
 import { DiscoveryRouteController, ROUTE_DISTANCES_LIMIT_PER_MINUTE } from './discovery-route.controller';
 import { DiscoveryRouteService } from './discovery-route-service';
 
@@ -62,6 +63,7 @@ describe('route-distances per-address limit (P5-7c)', () => {
     expect(error).toBeInstanceOf(HttpException);
     expect((error as HttpException).getStatus()).toBe(429);
     expect((error as HttpException).message).toBe('Too Many Requests');
+    expect((error as PublicRateLimitedError).retryAfterSeconds).toBe(60); // window just started at fake t=0
   });
 
   it('a different address is not affected by an exhausted one', async () => {
@@ -99,7 +101,7 @@ describe('route-distances per-address limit (P5-7c)', () => {
     for (let i = 0; i < PUBLIC_TRACKING_MAX_IDENTITIES + 500; i += 1) {
       expect(await hit(c, request(`198.18.${Math.floor(i / 250)}.${i % 250}`))).toBe(200);
     }
-    const limiter = (c as unknown as { limiter: PublicTrackingRateLimiter }).limiter;
+    const limiter = (c as unknown as { limiter: PublicRateLimiter }).limiter;
     expect(limiter.size).toBeLessThanOrEqual(PUBLIC_TRACKING_MAX_IDENTITIES);
   });
 });
