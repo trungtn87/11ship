@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { M14RouteClient } from './m14-route-client';
 import { UserRepository } from '../auth/user-repository';
 import { DriverRepository, DriverRow } from '../driver/driver-repository';
 import { JsonObject } from '../idempotency/idempotency-executor';
@@ -17,7 +18,7 @@ import { AddressChangeRepository } from '../address-change/address-change-reposi
 import { addressChangeView } from '../address-change/address-change-views';
 import { failReasonText, humanDeliveryReason, incidentReasonText } from './delivery-reason-text';
 import { RouteSnapshotRepository } from '../orders/route-snapshot-repository';
-import { RouteFields, routeFieldsOf } from '../orders/route-snapshot-view';
+import { referenceRouteOf, RouteFields, routeFieldsOf } from '../orders/route-snapshot-view';
 
 // The JSON each reader gets. The server decides which fields are filled; a field the caller may not see is null (or absent), so a screen cannot
 // show what it was never given. Money is a whole number or null (never 0 for "unknown"); times are ISO strings; the search block carries the
@@ -115,6 +116,8 @@ export class DeliveryViews {
     private readonly agreements: ShippingFeeAgreementService,
     private readonly snapshots: RouteSnapshotRepository,
     private readonly addressChanges?: AddressChangeRepository,
+    // P6-8b: only the GET readers pass `reference`; the M14 client is optional so write paths and tests need no route service.
+    @Optional() private readonly roads?: M14RouteClient,
   ) {}
 
   async shipperOf(context: TransactionContext, driverId: string): Promise<ShipperIdentity | undefined> {
@@ -185,7 +188,7 @@ export class DeliveryViews {
   }
 
   /** The shop's full view of one of its deliveries. `detail` adds the timeline. */
-  async forShop(context: TransactionContext, d: DeliveryRow, nowMs: number, detail: boolean): Promise<JsonObject> {
+  async forShop(context: TransactionContext, d: DeliveryRow, nowMs: number, detail: boolean, reference = false): Promise<JsonObject> {
     const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
     const assignment = activeAssignment ?? ((d.state === 'completed' || d.state === 'failed') ? await this.deliveries.findExecutingAssignment(context, d.deliveryId) : undefined);
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
@@ -263,7 +266,12 @@ export class DeliveryViews {
     };
     if (detail) {
       // P6-3: the shop of the delivery sees its drop-off (`recipient`), so it sees the road of the same call. The list passes detail=false.
-      Object.assign(view, await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true, d.source !== 'DIRECT'));
+      const fields = await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true, d.source !== 'DIRECT');
+      Object.assign(view, fields);
+      // P6-8b: a legacy call gets the CURRENT road for reference, read only (never stored); the shop already sees the drop-off.
+      if (reference && fields.legacy_reference_only) {
+        view.reference_route = await referenceRouteOf(this.roads, { lat: d.pickupLat, lng: d.pickupLng }, { lat: d.dropoffLat, lng: d.dropoffLng });
+      }
       view.timeline = (await this.deliveries.listEvents(context, d.deliveryId, 200)).map(eventView);
       view.story = buildDeliveryStory(await this.storyOf(context, d, incident), 'shop').map((entry) => ({ at: entry.at, text: entry.text }));
     }
@@ -275,7 +283,7 @@ export class DeliveryViews {
    * it is and the Shipper's LATEST position with its age. Nothing about the shop's other deliveries, the fee agreement or the commission. Once the delivery
    * has ended (or the Shipper gave it back) there is no Shipper and no position: tracking stops with the right to see it.
    */
-  async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number, withRoute = true): Promise<JsonObject> {
+  async forCustomer(context: TransactionContext, d: DeliveryRow, nowMs: number, withRoute = true, reference = false): Promise<JsonObject> {
     const activeAssignment = await this.deliveries.findActiveAssignment(context, d.deliveryId);
     const isRunning = activeAssignment !== undefined && RUNNING_STATES.includes(d.state);
     const assignment = isRunning
@@ -343,6 +351,8 @@ export class DeliveryViews {
     }
     // P6-3: the customer of the delivery sees its drop-off (below), so the road of the same call. Lists pass withRoute=false and get no `route` key.
     const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, true, d.source !== 'DIRECT') : {};
+    // P6-8b: the customer of a legacy call sees the CURRENT road for reference (their drop-off is always given to them below).
+    const referenceFields: JsonObject = withRoute && reference && routeFields.legacy_reference_only === true ? { reference_route: await referenceRouteOf(this.roads, { lat: d.pickupLat, lng: d.pickupLng }, { lat: d.dropoffLat, lng: d.dropoffLng }) } : {};
     return {
       delivery_id: d.deliveryId,
       code: d.code,
@@ -350,6 +360,7 @@ export class DeliveryViews {
       state: d.state,
       version: d.version,
       ...routeFields,
+      ...referenceFields,
       fee: feeView,
       search: this.#search(d, nowMs),
       assignment: assignmentView,
@@ -387,12 +398,14 @@ export class DeliveryViews {
    * The view of a delivery for a Shipper who took it. While the assignment is ACTIVE the Shipper has the contacts and the map points; once it ended
    * (given back, completed, failed) the view is the LIMITED projection: no phone, no street address, no position of the drop-off.
    */
-  async forShipper(context: TransactionContext, d: DeliveryRow, assignment: AssignmentRow, nowMs: number, withRoute = true): Promise<JsonObject> {
+  async forShipper(context: TransactionContext, d: DeliveryRow, assignment: AssignmentRow, nowMs: number, withRoute = true, reference = false): Promise<JsonObject> {
     const incident = await this.deliveries.findIncident(context, d.deliveryId);
     const agreement = await this.agreements.readByDelivery(context, d.deliveryId);
     const active = assignment.status === 'ACTIVE';
     // P6-3: the road only while this Shipper HOLDS the delivery, the same condition under which the drop-off point is given (`active` below).
     const routeFields: Partial<RouteFields> = withRoute ? await routeFieldsOf(this.snapshots, context, d.routeSnapshotId, active, d.source !== 'DIRECT') : {};
+    // P6-8b: a legacy call gets the CURRENT road for reference only while this Shipper holds it, the same condition that gives the drop-off.
+    const referenceFields: JsonObject = withRoute && reference && active && routeFields.legacy_reference_only === true ? { reference_route: await referenceRouteOf(this.roads, { lat: d.pickupLat, lng: d.pickupLng }, { lat: d.dropoffLat, lng: d.dropoffLng }) } : {};
     const running = active && RUNNING_STATES.includes(d.state);
     const before = d.state === 'accepted' || d.state === 'location_confirmed';
     let activeAddressChange = this.addressChanges ? await this.addressChanges.findActiveByDeliveryId(context, d.deliveryId) : undefined;
@@ -442,6 +455,7 @@ export class DeliveryViews {
         destination_confirmed: assignment.destinationConfirmedAtMs !== null || d.feeVnd !== null,
       },
       ...routeFields,
+      ...referenceFields,
       location: null,
       result: active ? null : { outcome: assignment.status === 'COMPLETED' ? 'completed' : assignment.status === 'FAILED' ? 'failed' : 'cancelled', at: iso(assignment.endedAtMs), reason: humanDeliveryReason(assignment.endReason), goods_condition: incident?.goodsCondition ?? null },
       incident: incident !== undefined && incident.assignmentId === assignment.assignmentId ? this.#incident(incident) : null,

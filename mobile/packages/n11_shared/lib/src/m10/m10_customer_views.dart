@@ -1599,6 +1599,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             who: 'shipper',
             route: o.route,
             legacyReferenceOnly: o.legacyReferenceOnly,
+            referencePoints: o.referencePoints,
           ),
         ),
       if (_chat != null) _chatSection(_chat!),

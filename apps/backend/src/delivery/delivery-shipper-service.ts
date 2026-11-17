@@ -141,7 +141,7 @@ export class DeliveryShipperService {
         // A delivery this Shipper never held is not readable: the same answer as one that does not exist.
         throw new AppError('DELIVERY_NOT_FOUND');
       }
-      return this.views.forShipper(context, delivery, latest, await freshClockMs(context));
+      return this.views.forShipper(context, delivery, latest, await freshClockMs(context), true, true);
     });
   }
 

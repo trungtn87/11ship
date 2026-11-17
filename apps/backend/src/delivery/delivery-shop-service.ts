@@ -103,7 +103,7 @@ export class DeliveryShopService {
       if (delivery === undefined) {
         throw new AppError('DELIVERY_NOT_FOUND');
       }
-      return this.views.forShop(context, delivery, await freshClockMs(context), true);
+      return this.views.forShop(context, delivery, await freshClockMs(context), true, true);
     });
   }
 

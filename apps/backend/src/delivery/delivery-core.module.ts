@@ -17,6 +17,7 @@ import { OrdersCoreModule } from '../orders/orders-core.module';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
 import { AddressChangeReadModule } from '../address-change/address-change-read.module';
 import { ShipperLocationModule } from './shipper-location.module';
+import { M14RoutingModule } from './m14-routing.module';
 
 /**
  * What the delivery routes of the apps AND of the administration web share: who is calling (re-checked under the locks), the views each reader gets and
@@ -28,7 +29,7 @@ export class DeliveryCoreModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryCoreModule,
-      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule, AddressChangeReadModule, OrdersCoreModule],
+      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule, AddressChangeReadModule, OrdersCoreModule, M14RoutingModule],
       providers: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry],
       exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule, AddressChangeReadModule],
     };

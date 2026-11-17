@@ -43,7 +43,7 @@ OrderRoute _route({bool geometry = true}) => OrderRoute.fromJson(<String, Object
         ]),
     })!;
 
-DeliveryView _view({DeliveryState state = DeliveryState.delivering, OrderRoute? route, bool legacy = false}) => DeliveryView(
+DeliveryView _view({DeliveryState state = DeliveryState.delivering, OrderRoute? route, bool legacy = false, List<List<double>> reference = const <List<double>>[]}) => DeliveryView(
       deliveryId: 'r-1',
       code: 'G-R1',
       source: 'ORDER',
@@ -57,6 +57,7 @@ DeliveryView _view({DeliveryState state = DeliveryState.delivering, OrderRoute? 
       can: const <String>{'complete'},
       route: route,
       legacyReferenceOnly: legacy,
+      referencePoints: reference,
     );
 
 class _Holding extends SampleShipperSource {
@@ -115,12 +116,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an old record before route snapshots draws no line, no distance, and says so neutrally', (WidgetTester tester) async {
+  testWidgets('an old record with no reference road draws no line, no distance, and says so honestly', (WidgetTester tester) async {
     final ({int calls, List<List<double>>? road}) map = await _openMap(tester, _view(legacy: true));
     expect(map.road, isEmpty);
     expect(find.byKey(const Key('m07-ship-route')), findsNothing);
     expect(find.byKey(const Key('m07-ship-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('Chưa có tuyến để tham khảo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an old record gets the CURRENT road as reference only: labelled, drawn, and no distance or time', (WidgetTester tester) async {
+    final List<List<double>> reference = <List<double>>[
+      <double>[22.66, 106.25],
+      <double>[22.67, 106.26],
+    ];
+    final ({int calls, List<List<double>>? road}) map = await _openMap(tester, _view(legacy: true, reference: reference));
+    expect(map.road, hasLength(2));
+    expect(find.byKey(const Key('m07-ship-route-reference')), findsOneWidget);
+    expect(find.textContaining('chỉ tham khảo, có thể khác phí đã chốt'), findsOneWidget);
+    expect(find.byKey(const Key('m07-ship-route')), findsNothing);
+    expect(find.textContaining(' km'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

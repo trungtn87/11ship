@@ -545,7 +545,7 @@ export class OrderCustomerService {
       if (order === undefined) {
         throw new AppError('ORDER_NOT_FOUND');
       }
-      return this.views.forCustomer(context, order, true);
+      return this.views.forCustomer(context, order, true, true);
     });
   }
 

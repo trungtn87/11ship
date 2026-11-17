@@ -65,7 +65,7 @@ export class OrderShopService {
       if (order === undefined) {
         throw new AppError('ORDER_NOT_FOUND');
       }
-      return this.views.forShop(context, order, true);
+      return this.views.forShop(context, order, true, true);
     });
   }
 

@@ -167,6 +167,14 @@ class OrderRoute {
   List<List<double>> get points => decodePolyline6(geometry) ?? const <List<double>>[];
 }
 
+/// P6-8b (#294): the REFERENCE road of a legacy record (`reference_route`, geometry only: no distance, no time). Empty when absent or malformed, so nothing
+/// is drawn and no figure is shown. It is the road of today, for reference only; it never replaces the fee in force.
+List<List<double>> referencePointsOf(Object? raw) {
+  if (raw is! Map<String, Object?> || raw['status'] != 'REFERENCE') return const <List<double>>[];
+  final Object? geometry = raw['geometry'];
+  return geometry is String ? (decodePolyline6(geometry) ?? const <List<double>>[]) : const <List<double>>[];
+}
+
 class OrderFee {
   const OrderFee({required this.payer, required this.amountVnd, required this.estimateVnd, required this.status, required this.distanceM, this.customerProposed = false, this.reason, this.snapshot, this.policyVersion, this.quotedAt});
 
@@ -400,6 +408,7 @@ class OrderView {
     this.addressChange,
     this.route,
     this.legacyReferenceOnly = false,
+    this.referencePoints = const <List<double>>[],
   });
 
   factory OrderView.fromJson(Object? raw) {
@@ -425,6 +434,7 @@ class OrderView {
       customerEditCount: m['customer_edit_count'] is int ? m['customer_edit_count']! as int : 0,
       route: OrderRoute.fromJson(m['route']),
       legacyReferenceOnly: m['legacy_reference_only'] == true,
+      referencePoints: referencePointsOf(m['reference_route']),
       confirmedAt: _timeOrNull(m['confirmed_at']),
       endedAt: _timeOrNull(m['ended_at']),
       endReason: _strOrNull(m['end_reason']),
@@ -457,6 +467,9 @@ class OrderView {
 
   /// True for an Order created before route snapshots: its distance and fee are the old ones, and it has no road to show.
   final bool legacyReferenceOnly;
+
+  /// The reference road of a legacy Order (see [referencePointsOf]); empty when none can be drawn.
+  final List<List<double>> referencePoints;
   final int version;
 
   /// Issue #238: how many times the customer replaced the content while the Order waited for the shop (the shop is told "Khách vừa cập nhật đơn hàng").

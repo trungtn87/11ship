@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { RouteSnapshotRepository, RouteSnapshotRow } from './route-snapshot-repository';
-import { routeFieldsOf, routeView } from './route-snapshot-view';
+import { ReferenceRoads, referenceRouteOf, routeFieldsOf, routeView } from './route-snapshot-view';
 
 // P6-3 (#294): the `route` of a view. These cases are pure: the database paths are in tests/integration/p6-3-route-view.int.spec.ts.
 
@@ -78,5 +78,48 @@ describe('P6-3 route view: a pointer that may be NULL', () => {
     const { repo } = fakeSnapshots(SNAPSHOT);
     const fields = await routeFieldsOf(repo, CONTEXT, SNAPSHOT.id, false, true);
     expect(fields.route !== null && 'geometry' in fields.route).toBe(false);
+  });
+});
+
+// P6-8b (#294): the reference road of a legacy record. It is read only: geometry and nothing else, and "chưa có tuyến" (null) on any failure.
+
+const LEG = { distanceM: 2500, seconds: 420, geometry: '_p~iF~ps|U_ulLnnqC_mqNvxq`@', routeVersion: 'valhalla-3.9.1/motorcycle-shortest/test-a' };
+const FROM = { lat: 10.7769, lng: 106.7009 };
+const TO = { lat: 10.7829, lng: 106.6957 };
+
+/** A road source that records each question; `answer` is what it returns. */
+function fakeRoads(answer: typeof LEG | undefined): { roads: ReferenceRoads; asked: [unknown, unknown][] } {
+  const asked: [unknown, unknown][] = [];
+  return {
+    asked,
+    roads: {
+      route: async (from, to) => {
+        asked.push([from, to]);
+        return answer;
+      },
+    },
+  };
+}
+
+describe('P6-8b reference road: the legacy record\'s current road, never stored and never with a figure', () => {
+  it('gives the geometry with status REFERENCE and NO distance or time keys, so no new figure joins the old fee', async () => {
+    const { roads, asked } = fakeRoads(LEG);
+    const view = await referenceRouteOf(roads, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng });
+    expect(view).toEqual({ status: 'REFERENCE', geometry: LEG.geometry });
+    expect(view !== null && ('distance_m' in view || 'duration_s' in view)).toBe(false);
+    expect(asked).toEqual([[FROM, TO]]);
+  });
+
+  it('a failed or unavailable route is null ("chưa có tuyến"), never a straight line and never a guessed road', async () => {
+    const { roads } = fakeRoads(undefined);
+    expect(await referenceRouteOf(roads, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng })).toBeNull();
+  });
+
+  it('no routing service, a missing point, or an invalid point gives null and asks nothing', async () => {
+    const { roads, asked } = fakeRoads(LEG);
+    expect(await referenceRouteOf(undefined, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng })).toBeNull();
+    expect(await referenceRouteOf(roads, { lat: null, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng })).toBeNull();
+    expect(await referenceRouteOf(roads, { lat: FROM.lat, lng: FROM.lng }, { lat: 200, lng: TO.lng })).toBeNull();
+    expect(asked).toEqual([]);
   });
 });

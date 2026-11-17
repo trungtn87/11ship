@@ -1,5 +1,5 @@
 import '../address_change/address_change_models.dart';
-import '../m10/m10_models.dart' show OrderRoute;
+import '../m10/m10_models.dart' show OrderRoute, referencePointsOf;
 // M07 (delivery flow) data the phone screens draw. Wire contract: docs/current/M07-implementation-20261018.md section 5.
 //
 // PRIVACY BY TYPE. [OfferView] (what a Shipper sees BEFORE accepting) has no field for a customer phone, a detailed address or a drop-off
@@ -426,6 +426,7 @@ class DeliveryView {
     this.addressChange,
     this.route,
     this.legacyReferenceOnly = false,
+    this.referencePoints = const <List<double>>[],
   });
 
   factory DeliveryView.fromJson(Object? raw) {
@@ -453,6 +454,7 @@ class DeliveryView {
       incident: m['incident'] == null ? null : IncidentView.fromJson(m['incident']),
       route: OrderRoute.fromJson(m['route']),
       legacyReferenceOnly: m['legacy_reference_only'] == true,
+      referencePoints: referencePointsOf(m['reference_route']),
       can: <String>{for (final MapEntry<String, Object?> e in can.entries) if (_bool(e.value)) e.key},
       timeline: <TimelineEntry>[for (final Object? t in _list(m['timeline'] ?? <Object?>[])) TimelineEntry.fromJson(t)],
       story: storyOf(m['story']),
@@ -498,6 +500,9 @@ class DeliveryView {
 
   /// A delivery created before route snapshots: no road; its stored distance and fee stay as they were.
   final bool legacyReferenceOnly;
+
+  /// The reference road of a legacy delivery (P6-8b); only while this Shipper holds it. Empty when none can be drawn.
+  final List<List<double>> referencePoints;
 
   bool allows(String action) => can.contains(action);
 
@@ -546,6 +551,7 @@ class DeliveryView {
         addressChange: clearAddressChange ? null : (addressChange ?? this.addressChange),
         route: route,
         legacyReferenceOnly: legacyReferenceOnly,
+        referencePoints: referencePoints,
       );
 
   /// The fee was never settled and the server lets the Shipper enter the agreed amount (`can.confirm_fee`). A missing map point never blocks anything:

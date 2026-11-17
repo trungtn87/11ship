@@ -43,7 +43,7 @@ OrderRoute _route() => OrderRoute.fromJson(<String, Object?>{
     })!;
 
 void main() {
-  Future<List<List<double>>?> pump(WidgetTester tester, {OrderRoute? route, bool legacy = false}) async {
+  Future<List<List<double>>?> pump(WidgetTester tester, {OrderRoute? route, bool legacy = false, List<List<double>> reference = const <List<double>>[]}) async {
     List<List<double>>? seen;
     await tester.pumpWidget(MaterialApp(
       theme: buildN11Theme(),
@@ -60,6 +60,7 @@ void main() {
             who: 'shipper',
             route: route,
             legacyReferenceOnly: legacy,
+            referencePoints: reference,
             mapBuilder: (BuildContext context, List<M07MapPin> pins, [List<List<double>> road = const <List<double>>[]]) {
               seen = road;
               return const SizedBox(height: 10);
@@ -83,12 +84,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an Order from before route snapshots draws no road and says so neutrally', (WidgetTester tester) async {
+  testWidgets('an Order from before route snapshots with no reference road says so honestly and draws nothing', (WidgetTester tester) async {
     final List<List<double>>? road = await pump(tester, legacy: true);
     expect(road, isEmpty);
     expect(find.byKey(const Key('m10-route-summary')), findsNothing);
     expect(find.byKey(const Key('m10-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('Chưa có tuyến để tham khảo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an Order from before route snapshots draws its CURRENT road as reference, labelled, with no distance or time', (WidgetTester tester) async {
+    final List<List<double>> reference = <List<double>>[
+      <double>[22.66, 106.25],
+      <double>[22.67, 106.26],
+    ];
+    final List<List<double>>? road = await pump(tester, legacy: true, reference: reference);
+    expect(road, hasLength(2));
+    expect(find.byKey(const Key('m10-route-reference')), findsOneWidget);
+    expect(find.textContaining('chỉ tham khảo, có thể khác phí đã chốt'), findsOneWidget);
+    expect(find.byKey(const Key('m10-route-summary')), findsNothing);
+    expect(find.textContaining(' km'), findsNothing);
+    expect(find.textContaining('phút'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a NEW Order draws only its stored road, even when a reference road is also sent', (WidgetTester tester) async {
+    final List<List<double>> reference = <List<double>>[
+      <double>[22.1, 106.1],
+      <double>[22.2, 106.2],
+    ];
+    final List<List<double>>? road = await pump(tester, route: _route(), reference: reference);
+    expect(road, hasLength(3));
+    expect(find.byKey(const Key('m10-route-summary')), findsOneWidget);
+    expect(find.byKey(const Key('m10-route-reference')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

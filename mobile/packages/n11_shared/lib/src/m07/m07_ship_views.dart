@@ -621,7 +621,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
     ];
     // The stored road is drawn as it was saved (never recomputed), and only while this Shipper holds the delivery: the server sends its geometry only then.
     // Otherwise the road is empty and nothing is drawn.
-    final List<List<double>> road = active ? (d.route?.points ?? const <List<double>>[]) : const <List<double>>[];
+    final List<List<double>> road = active ? (d.route?.points ?? (d.legacyReferenceOnly ? d.referencePoints : const <List<double>>[])) : const <List<double>>[];
     final List<Widget> body = <Widget>[
       Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[Text(d.code, key: const Key('m07-ship-code'), style: N11Text.title), N11Chip(chip.label, kind: chip.kind)]),
       actionBanner(),
@@ -651,8 +651,10 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
       // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
       if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
-      if (active && d.legacyReferenceOnly)
-        const ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
+      if (active && d.legacyReferenceOnly && d.referencePoints.isNotEmpty)
+        const ReasonNote('Tuyến hiện tại chỉ tham khảo, có thể khác phí đã chốt. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-reference'), icon: Icons.info_outline),
+      if (active && d.legacyReferenceOnly && d.referencePoints.isEmpty)
+        const ReasonNote('Chưa có tuyến để tham khảo. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
       if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),

@@ -1,6 +1,8 @@
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { RouteSnapshotRepository, RouteSnapshotRow } from './route-snapshot-repository';
 import { TransactionContext } from '../transaction/transaction-context';
+import { RouteLeg } from '../delivery/m14-route-client';
+import { isValidPoint, LatLng } from '../shipping-policy/shipping-eligibility';
 
 // P6-3 (#294): the `route` of an Order or delivery detail, read from the immutable snapshot the checkout quote (P6-2) pointed to. No M14 call happens
 // here and nothing is recomputed. An Order or delivery without a snapshot (created before P6-2) gets `route: null` and `legacy_reference_only: true`:
@@ -42,4 +44,27 @@ export async function routeFieldsOf(snapshots: RouteSnapshotRepository, context:
   }
   const row = await snapshots.read(context, snapshotId);
   return { route: routeView(row, withGeometry), legacy_reference_only: false };
+}
+
+/** The part of the M14 route client a reference road needs: one leg between two points, or undefined when no clean route exists. */
+export interface ReferenceRoads {
+  route(from: LatLng, to: LatLng): Promise<RouteLeg | undefined>;
+}
+
+/**
+ * P6-8b (#294): the CURRENT road of a legacy record (no snapshot), for reference only. It is computed on a read, never stored, and it carries the
+ * geometry and nothing else: no distance and no time, so no new figure is attached to the fee in force. Any missing point, missing service or failed
+ * answer is null ("chưa có tuyến"). The caller attaches the key only when the reader may see the drop-off point.
+ */
+export async function referenceRouteOf(roads: ReferenceRoads | undefined, from: { lat: number | null; lng: number | null }, to: { lat: number | null; lng: number | null }): Promise<JsonObject | null> {
+  if (roads === undefined || from.lat === null || from.lng === null || to.lat === null || to.lng === null) {
+    return null;
+  }
+  const start = { lat: from.lat, lng: from.lng };
+  const end = { lat: to.lat, lng: to.lng };
+  if (!isValidPoint(start) || !isValidPoint(end)) {
+    return null;
+  }
+  const leg = await roads.route(start, end);
+  return leg === undefined ? null : { status: 'REFERENCE', geometry: leg.geometry };
 }

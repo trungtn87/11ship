@@ -251,7 +251,7 @@ String _orderQuoteReason(String? reason) => switch (reason) {
 /// recorded — only while a Shipper holds the delivery ([location] is null otherwise and nothing live is drawn). When this build has no map, the points are
 /// said in words; a position is never faked and a route is never replaced by a straight line.
 class OrderMapCard extends StatelessWidget {
-  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who, this.framed = true, this.route, this.legacyReferenceOnly = false});
+  const OrderMapCard({super.key, required this.pickupLat, required this.pickupLng, required this.dropoffLat, required this.dropoffLng, required this.location, required this.mapBuilder, required this.ended, required this.who, this.framed = true, this.route, this.legacyReferenceOnly = false, this.referencePoints = const <List<double>>[]});
 
   /// False inside a collapsible section, which already is the card: the map is then drawn without a second frame and title.
   final bool framed;
@@ -261,6 +261,9 @@ class OrderMapCard extends StatelessWidget {
 
   /// An Order created before route snapshots: says in words that there is no road to show; its old distance and fee stay as they were.
   final bool legacyReferenceOnly;
+
+  /// P6-8b: the CURRENT road of a legacy Order, for reference only (drawn with a label; no figure). Empty when none could be computed.
+  final List<List<double>> referencePoints;
 
   final double? pickupLat;
   final double? pickupLng;
@@ -278,12 +281,14 @@ class OrderMapCard extends StatelessWidget {
       if (dropoffLat != null && dropoffLng != null) M07MapPin(lat: dropoffLat!, lng: dropoffLng!, label: 'Điểm giao', color: 0xFF2E7D4F),
     ];
     final bool nothing = pins.isEmpty && location == null;
+    // A legacy Order draws only the reference road; the stored road of a new Order is drawn as saved (never mixed with a reference).
+    final List<List<double>> road = route?.points ?? (legacyReferenceOnly ? referencePoints : const <List<double>>[]);
     return Column(
       key: const Key('m10-map'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (location != null)
-          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who, route: route?.points ?? const <List<double>>[])
+          LocationCard(location: location, mapBuilder: mapBuilder, pins: pins, who: who, route: road)
         else
           _frame(
             Column(
@@ -294,7 +299,7 @@ class OrderMapCard extends StatelessWidget {
                 if (nothing)
                   const ReasonNote('Chưa có ghim điểm giao nên chưa vẽ được bản đồ.')
                 else if (mapBuilder != null)
-                  SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, pins, route?.points ?? const <List<double>>[])))
+                  SizedBox(height: 200, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusControl), child: mapBuilder!(context, pins, road)))
                 else
                   for (final M07MapPin p in pins) Text('${p.label}: ${p.lat.toStringAsFixed(5)}, ${p.lng.toStringAsFixed(5)}', style: N11Text.body),
                 const SizedBox(height: N11Space.gap2),
@@ -308,9 +313,12 @@ class OrderMapCard extends StatelessWidget {
             child: Text('Đường đi đã lưu: ≈ ${RouteDistance.text(route!.distanceM)}${_durationText(route!.durationS)}', key: const Key('m10-route-summary'), style: N11Text.body),
           )
         else if (legacyReferenceOnly)
-          const Padding(
-            padding: EdgeInsets.only(top: N11Space.gap2),
-            child: ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap2),
+            // The reference road carries no distance or time: the fee and distance in force are said to be unchanged.
+            child: referencePoints.isNotEmpty
+                ? const ReasonNote('Tuyến hiện tại chỉ tham khảo, có thể khác phí đã chốt. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-reference'), icon: Icons.info_outline)
+                : const ReasonNote('Chưa có tuyến để tham khảo. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
           ),
       ],
     );
