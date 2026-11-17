@@ -10,6 +10,7 @@ import { Agreement, AgreementAction, feeAllowsAssignment, revisionIsPending } fr
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { ShippingEligibilityService } from '../shipping-policy/shipping-eligibility-service';
 import { TransactionContext } from '../transaction/transaction-context';
+import { readWithReferenceRoute } from '../orders/route-snapshot-view';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
 import { CommissionPolicyRepository } from '../wallet/commission-policy-repository';
@@ -132,7 +133,7 @@ export class DeliveryShipperService {
   }
 
   async read(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
+    return readWithReferenceRoute(this.transactions, async (context, holder) => {
       const caller = await this.actors.shipperHolderReader(context, principal);
       const mine = (await this.deliveries.listAssignments(context, deliveryId)).filter((assignment) => assignment.driverId === caller.driver.driverId);
       const latest = mine[mine.length - 1];
@@ -141,8 +142,8 @@ export class DeliveryShipperService {
         // A delivery this Shipper never held is not readable: the same answer as one that does not exist.
         throw new AppError('DELIVERY_NOT_FOUND');
       }
-      return this.views.forShipper(context, delivery, latest, await freshClockMs(context), true, true);
-    });
+      return this.views.forShipper(context, delivery, latest, await freshClockMs(context), true, holder);
+    }, (view, holder) => this.views.attachReferenceRoute(view, holder));
   }
 
   /** Keeps ONLY the latest position of the Shipper (M14). Not a business command: it overwrites, so it needs no Idempotency-Key. */

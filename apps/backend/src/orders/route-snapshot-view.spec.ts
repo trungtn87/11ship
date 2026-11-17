@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { RouteSnapshotRepository, RouteSnapshotRow } from './route-snapshot-repository';
-import { ReferenceRoads, referenceRouteOf, routeFieldsOf, routeView } from './route-snapshot-view';
+import { attachReferenceRoute, ReadTransactions, ReferenceRoads, readWithReferenceRoute, referenceRouteOf, requestReferenceRoute, routeFieldsOf, routeView } from './route-snapshot-view';
+import { JsonObject } from '../idempotency/idempotency-executor';
 
 // P6-3 (#294): the `route` of a view. These cases are pure: the database paths are in tests/integration/p6-3-route-view.int.spec.ts.
 
@@ -121,5 +122,99 @@ describe('P6-8b reference road: the legacy record\'s current road, never stored 
     expect(await referenceRouteOf(roads, { lat: null, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng })).toBeNull();
     expect(await referenceRouteOf(roads, { lat: FROM.lat, lng: FROM.lng }, { lat: 200, lng: TO.lng })).toBeNull();
     expect(asked).toEqual([]);
+  });
+});
+
+// P6-8b review fix (#294): the M14 call runs only AFTER the read transaction has returned and released its connection.
+
+/** A transaction manager fake: `held` is true exactly while the work runs, and a failed work releases the transaction too. */
+function fakeTransactions(): { transactions: ReadTransactions; state: { held: boolean; openCount: number } } {
+  const state = { held: false, openCount: 0 };
+  const transactions: ReadTransactions = {
+    withTransaction: async <T>(work: (context: never) => Promise<T>): Promise<T> => {
+      state.openCount += 1;
+      state.held = true;
+      try {
+        return await work({} as never);
+      } finally {
+        state.held = false;
+        state.openCount -= 1;
+      }
+    },
+  };
+  return { transactions, state };
+}
+
+/** A route source that records whether a transaction was still held when it was asked. */
+function roadsRecording(state: { held: boolean }, answer: typeof LEG | undefined): { roads: ReferenceRoads; heldAtCall: boolean[] } {
+  const heldAtCall: boolean[] = [];
+  return {
+    heldAtCall,
+    roads: {
+      route: async () => {
+        heldAtCall.push(state.held);
+        return answer;
+      },
+    },
+  };
+}
+
+describe('P6-8b review fix: M14 is asked only after the read transaction is released', () => {
+  it('the reference road is requested with NO transaction or connection held, and the view gets it', async () => {
+    const { transactions, state } = fakeTransactions();
+    const { roads, heldAtCall } = roadsRecording(state, LEG);
+    const view = await readWithReferenceRoute(
+      transactions,
+      async (_context, holder) => {
+        // The read records only the endpoints it needs, inside its transaction.
+        requestReferenceRoute(holder, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng });
+        return { order_id: 'o-1' } as JsonObject;
+      },
+      (v, holder) => attachReferenceRoute(v, holder, roads),
+    );
+    expect(heldAtCall).toEqual([false]);
+    expect(state.openCount).toBe(0);
+    expect(view).toEqual({ order_id: 'o-1', reference_route: { status: 'REFERENCE', geometry: LEG.geometry } });
+  });
+
+  it('a read that asks for no reference never calls M14 and attaches no key', async () => {
+    const { transactions, state } = fakeTransactions();
+    const { roads, heldAtCall } = roadsRecording(state, LEG);
+    const view = await readWithReferenceRoute(transactions, async () => ({ order_id: 'o-2' }) as JsonObject, (v, holder) => attachReferenceRoute(v, holder, roads));
+    expect(heldAtCall).toEqual([]);
+    expect(view).toEqual({ order_id: 'o-2' });
+    expect('reference_route' in view).toBe(false);
+  });
+
+  it('when M14 gives no clean road the view says null ("chưa có tuyến"), with the transaction already released and nothing written', async () => {
+    const { transactions, state } = fakeTransactions();
+    const { roads, heldAtCall } = roadsRecording(state, undefined);
+    const view = await readWithReferenceRoute(
+      transactions,
+      async (_context, holder) => {
+        requestReferenceRoute(holder, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng });
+        return { order_id: 'o-3' } as JsonObject;
+      },
+      (v, holder) => attachReferenceRoute(v, holder, roads),
+    );
+    expect(heldAtCall).toEqual([false]);
+    expect(view).toEqual({ order_id: 'o-3', reference_route: null });
+  });
+
+  it('a failing read never reaches M14', async () => {
+    const { transactions, state } = fakeTransactions();
+    const { roads, heldAtCall } = roadsRecording(state, LEG);
+    await expect(
+      readWithReferenceRoute(
+        transactions,
+        async (_context, holder) => {
+          requestReferenceRoute(holder, { lat: FROM.lat, lng: FROM.lng }, { lat: TO.lat, lng: TO.lng });
+          throw new Error('ORDER_NOT_FOUND');
+        },
+        (v, holder) => attachReferenceRoute(v, holder, roads),
+      ),
+    ).rejects.toThrow('ORDER_NOT_FOUND');
+    expect(heldAtCall).toEqual([]);
+    expect(state.openCount).toBe(0);
   });
 });

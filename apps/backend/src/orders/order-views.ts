@@ -16,7 +16,7 @@ import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, isEnd
 import { AddressChangeRepository } from '../address-change/address-change-repository';
 import { addressChangeView } from '../address-change/address-change-views';
 import { RouteSnapshotRepository } from './route-snapshot-repository';
-import { referenceRouteOf, routeFieldsOf } from './route-snapshot-view';
+import { attachReferenceRoute as attachRoad, ReferenceHolder, requestReferenceRoute, routeFieldsOf } from './route-snapshot-view';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
 // number or null (never 0 for "unknown"); times are ISO strings; `server_now` carries the SERVER clock so nothing depends on the phone clock. The fee and the
@@ -93,6 +93,11 @@ export class OrderViews {
     @Optional() private readonly roads?: M14RouteClient,
   ) {}
 
+  /** P6-8b: asks M14 for the reference road a read requested. Called by the reader AFTER its transaction has ended, never inside one. */
+  async attachReferenceRoute<T extends JsonObject>(view: T, holder: ReferenceHolder): Promise<T> {
+    return attachRoad(view, holder, this.roads);
+  }
+
   /** The skeleton shared by every reader. */
   async #base(context: TransactionContext, o: OrderRow, items: readonly ItemRow[], latest: DeliveryRow | undefined, nowMs: number): Promise<JsonObject> {
     return {
@@ -163,7 +168,7 @@ export class OrderViews {
     return buildOrderStory(events, calls, audience).map((entry) => ({ at: entry.at, text: entry.text }));
   }
 
-  async forCustomer(context: TransactionContext, o: OrderRow, detail: boolean, reference = false): Promise<JsonObject> {
+  async forCustomer(context: TransactionContext, o: OrderRow, detail: boolean, reference?: ReferenceHolder): Promise<JsonObject> {
     const nowMs = await freshClockMs(context);
     const items = await this.orders.listItems(context, o.orderId);
     const { all, latest } = await this.#latest(context, o);
@@ -194,8 +199,8 @@ export class OrderViews {
       const fields = await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true);
       Object.assign(view, fields);
       // P6-8b: a legacy Order gets the CURRENT road for reference, read only: from the pickup of its latest call to the Order's own address.
-      if (reference && fields.legacy_reference_only) {
-        view.reference_route = await referenceRouteOf(this.roads, { lat: latest?.pickupLat ?? null, lng: latest?.pickupLng ?? null }, { lat: o.addressLat, lng: o.addressLng });
+      if (fields.legacy_reference_only) {
+        requestReferenceRoute(reference, { lat: latest?.pickupLat ?? null, lng: latest?.pickupLng ?? null }, { lat: o.addressLat, lng: o.addressLng });
       }
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');
@@ -203,7 +208,7 @@ export class OrderViews {
     return view;
   }
 
-  async forShop(context: TransactionContext, o: OrderRow, detail: boolean, reference = false): Promise<JsonObject> {
+  async forShop(context: TransactionContext, o: OrderRow, detail: boolean, reference?: ReferenceHolder): Promise<JsonObject> {
     const nowMs = await freshClockMs(context);
     const items = await this.orders.listItems(context, o.orderId);
     const { all, latest } = await this.#latest(context, o);
@@ -238,8 +243,8 @@ export class OrderViews {
       const fields = await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true);
       Object.assign(view, fields);
       // P6-8b: the reference road of a legacy Order, read only (see forCustomer).
-      if (reference && fields.legacy_reference_only) {
-        view.reference_route = await referenceRouteOf(this.roads, { lat: latest?.pickupLat ?? null, lng: latest?.pickupLng ?? null }, { lat: o.addressLat, lng: o.addressLng });
+      if (fields.legacy_reference_only) {
+        requestReferenceRoute(reference, { lat: latest?.pickupLat ?? null, lng: latest?.pickupLng ?? null }, { lat: o.addressLat, lng: o.addressLng });
       }
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'shop');

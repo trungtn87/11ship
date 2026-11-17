@@ -9,6 +9,7 @@ import { DriverRepository } from '../driver/driver-repository';
 import { answerIsWaiting } from '../shipping-policy/shipping-fee-agreement';
 import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agreement-service';
 import { TransactionContext } from '../transaction/transaction-context';
+import { readWithReferenceRoute } from '../orders/route-snapshot-view';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CommissionHoldService } from '../wallet/commission-hold-service';
 import { DELIVERY_SCOPE_TYPE, OPERATIONS, RUNNING_STATES } from './delivery-constants';
@@ -88,13 +89,13 @@ export class DeliveryCustomerService {
   }
 
   async read(principal: AuthPrincipal, deliveryId: string): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
+    return readWithReferenceRoute(this.transactions, async (context, holder) => {
       const delivery = await this.deliveries.findOfCustomer(context, deliveryId, principal.userId);
       if (delivery === undefined) {
         throw new AppError('DELIVERY_NOT_FOUND');
       }
-      return this.views.forCustomer(context, delivery, await freshClockMs(context), true, true);
-    });
+      return this.views.forCustomer(context, delivery, await freshClockMs(context), true, holder);
+    }, (view, holder) => this.views.attachReferenceRoute(view, holder));
   }
 
   // ---- create ----------------------------------------------------------------------------------------------------------------

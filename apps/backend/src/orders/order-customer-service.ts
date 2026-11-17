@@ -10,6 +10,7 @@ import { CustomersService } from '../customers/customers-service';
 import { M14RouteClient, RouteLeg, RouteResult } from '../delivery/m14-route-client';
 import { RouteSnapshotRepository, routeSnapshotMatchesLeg } from './route-snapshot-repository';
 import { routeView } from './route-snapshot-view';
+import { readWithReferenceRoute } from './route-snapshot-view';
 import { ShopSetupGate } from '../shop-setup/shop-setup-gate';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
@@ -539,14 +540,14 @@ export class OrderCustomerService {
   }
 
   async read(principal: AuthPrincipal, orderId: string): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
+    return readWithReferenceRoute(this.transactions, async (context, holder) => {
       const actor = await this.#customer(context, principal, 'share');
       const order = await this.orders.findOfCustomer(context, orderId, actor.userId);
       if (order === undefined) {
         throw new AppError('ORDER_NOT_FOUND');
       }
-      return this.views.forCustomer(context, order, true, true);
-    });
+      return this.views.forCustomer(context, order, true, holder);
+    }, (view, holder) => this.views.attachReferenceRoute(view, holder));
   }
 
   // ---- cancelling ------------------------------------------------------------------------------------------------------------

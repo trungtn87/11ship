@@ -12,6 +12,7 @@ import { freshClockMs } from '../idempotency/idempotency-repository';
 import { isCanonicalUuid } from '../shared/identifiers';
 import { requireActiveShop } from '../shop/shop-guards';
 import { TransactionContext } from '../transaction/transaction-context';
+import { readWithReferenceRoute } from './route-snapshot-view';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ORDER_OPERATIONS, ORDER_SCOPE_TYPE } from './order-constants';
 import { OrderRecorder } from './order-recorder';
@@ -59,14 +60,14 @@ export class OrderShopService {
   }
 
   async read(principal: AuthPrincipal, orderId: string): Promise<JsonObject> {
-    return this.transactions.withTransaction(async (context) => {
+    return readWithReferenceRoute(this.transactions, async (context, holder) => {
       const { shop } = await this.actors.shopReader(context, principal);
       const order = await this.orders.findOfShop(context, orderId, shop.shopId);
       if (order === undefined) {
         throw new AppError('ORDER_NOT_FOUND');
       }
-      return this.views.forShop(context, order, true, true);
-    });
+      return this.views.forShop(context, order, true, holder);
+    }, (view, holder) => this.views.attachReferenceRoute(view, holder));
   }
 
   // ---- before confirmation ---------------------------------------------------------------------------------------------------
