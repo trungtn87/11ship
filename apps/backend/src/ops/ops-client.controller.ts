@@ -3,7 +3,7 @@ import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
 import { AuthenticatedRequest, AuthPrincipal } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
-import { PublicTrackingRateLimiter } from '../delivery/public-tracking-rate-limiter';
+import { PublicRateLimiter } from '../delivery/public-rate-limiter';
 import { OpsIngestService } from './ops-ingest-service';
 import { APP_UPDATE_DOWNLOAD_LIMIT_PER_MINUTE, OPS_INGEST_LIMIT_PER_MINUTE } from './ops-client-rate-limits';
 import { parseAppUpdateCheck, parseBackupBody, parseClientLogs, parseDeployBody, parseProbeBody, parseReleaseId, parseVersionReport } from './ops-validation';
@@ -22,9 +22,9 @@ interface DownloadResponse {
 @Controller()
 export class OpsClientController {
   /** Per-address backstop shared by the three ingest routes (one quota, checked before any credential is read). See ops-client-rate-limits.ts. */
-  private readonly ingestLimiter = new PublicTrackingRateLimiter(() => Date.now(), OPS_INGEST_LIMIT_PER_MINUTE);
+  private readonly ingestLimiter = new PublicRateLimiter(() => Date.now(), OPS_INGEST_LIMIT_PER_MINUTE);
   /** Per-address backstop for the APK download (checked before the release is looked up). See ops-client-rate-limits.ts. */
-  private readonly downloadLimiter = new PublicTrackingRateLimiter(() => Date.now(), APP_UPDATE_DOWNLOAD_LIMIT_PER_MINUTE);
+  private readonly downloadLimiter = new PublicRateLimiter(() => Date.now(), APP_UPDATE_DOWNLOAD_LIMIT_PER_MINUTE);
 
   constructor(
     private readonly ingest: OpsIngestService,
@@ -98,7 +98,7 @@ export class OpsClientController {
   }
 
   /** Refuses with the backend's standard 429 (the error envelope maps HttpException 429 to TOO_MANY_REQUESTS). No Retry-After yet: see the PR. */
-  #refuseOverLimit(limiter: PublicTrackingRateLimiter, req: OtpIpRequest): void {
+  #refuseOverLimit(limiter: PublicRateLimiter, req: OtpIpRequest): void {
     if (!limiter.allow(this.clientIp.identity(req))) {
       throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
     }
