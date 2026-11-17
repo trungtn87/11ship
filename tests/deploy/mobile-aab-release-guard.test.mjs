@@ -133,11 +133,22 @@ ${services}
 `;
 }
 
-function check(app, spec, { name = '1.0.0', code = '1' } = {}) {
+// The checker reads the committed Play record and has no override (the script is pinned). So the default fixture versionCode
+// is derived from that record: the committed highest for the app + 1. It is above the record whatever Owner has recorded,
+// and the foregroundServiceType cases below stay about the manifest. An explicit `code` is used exactly as given.
+const RECORD = 'mobile/release/play-submitted-versioncode.json';
+const nextCode = app => JSON.parse(readFileSync(RECORD, 'utf8')).apps[app].highest_submitted_version_code + 1;
+
+function check(app, spec, { name = '1.0.0', code } = {}) {
+  let body = spec;
+  if (code === undefined) {
+    code = String(nextCode(app));
+    body = { ...spec, code };
+  }
   const dir = mkdtempSync(join(tmpdir(), 'aab-manifest-'));
   try {
     const file = join(dir, 'manifest.xml');
-    writeFileSync(file, manifestXml(spec));
+    writeFileSync(file, manifestXml(body));
     const r = spawnSync('python3', [CHECKER, app, file, name, code], { encoding: 'utf8' });
     return { status: r.status, out: `${r.stdout}${r.stderr}` };
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -146,7 +157,7 @@ function check(app, spec, { name = '1.0.0', code = '1' } = {}) {
 test('the checker accepts a clean food bundle and a clean ship bundle', () => {
   const food = check('food', FOOD_OK);
   assert.equal(food.status, 0, food.out);
-  assert.match(food.out, /aab ok \(food\): vn\.eleven\.food 1\.0\.0\+1, targetSdk 36/);
+  assert.ok(food.out.includes(`aab ok (food): vn.eleven.food 1.0.0+${nextCode('food')}, targetSdk 36`), food.out);
   const ship = check('ship', SHIP_OK);
   assert.equal(ship.status, 0, ship.out);
 });
