@@ -4,15 +4,15 @@
   "apps": {
     "food": {
       "package": "vn.eleven.food",
-      "highest_submitted_version_code": 0,
-      "highest_submitted_version_name": null,
-      "owner_confirmed_on": null
+      "highest_submitted_version_code": 1,
+      "highest_submitted_version_name": "1.0.0",
+      "owner_confirmed_on": "2026-11-17"
     },
     "ship": {
       "package": "vn.eleven.ship",
-      "highest_submitted_version_code": 0,
-      "highest_submitted_version_name": null,
-      "owner_confirmed_on": null
+      "highest_submitted_version_code": 1,
+      "highest_submitted_version_name": "1.0.0",
+      "owner_confirmed_on": "2026-11-17"
     }
   }
 }
