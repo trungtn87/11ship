@@ -31,6 +31,9 @@ function secondsUntil(resetAt: number, now: number): number {
 /**
  * Fixed-window counter per identity (in memory, per process), bounded in size and in work per call.
  *
+ * One convention everywhere (own buckets, overflow, head drop, purge, Retry-After): a window is half-open, [start, resetAt). A bucket is
+ * live while now < resetAt and has expired from now >= resetAt, so a client that waits the Retry-After seconds is never refused again by the same window.
+ *
  * Every bucket lives exactly one window from its creation, and a bucket whose window ended is deleted and re-inserted, so Map insertion
  * order is also expiry order: the head is always the next bucket to expire. That gives O(1) work per call:
  *  - expired buckets are discarded from the head, at most PUBLIC_TRACKING_PURGE_BATCH per call, stopping at the first live one;
@@ -68,7 +71,7 @@ export class PublicRateLimiter {
     this.#purgeExpired(now);
 
     const bucket = this.#buckets.get(identity);
-    if (bucket !== undefined && now <= bucket.resetAt) {
+    if (bucket !== undefined && now < bucket.resetAt) {
       bucket.count += 1;
       return bucket.count <= this.limit ? ALLOWED : { allowed: false, retryAfterSeconds: secondsUntil(bucket.resetAt, now) };
     }
@@ -85,7 +88,7 @@ export class PublicRateLimiter {
 
   #takeOverflow(now: number): RateDecision {
     let overflow = this.#overflow;
-    if (overflow === undefined || now > overflow.resetAt) {
+    if (overflow === undefined || now >= overflow.resetAt) {
       overflow = { count: 0, resetAt: now + this.windowMs };
       this.#overflow = overflow;
     }
@@ -98,7 +101,7 @@ export class PublicRateLimiter {
 
   #dropExpiredHead(now: number): boolean {
     const head = this.#buckets.entries().next();
-    if (head.done === true || now <= head.value[1].resetAt) {
+    if (head.done === true || now < head.value[1].resetAt) {
       return false;
     }
     this.#buckets.delete(head.value[0]);
@@ -108,7 +111,7 @@ export class PublicRateLimiter {
   #purgeExpired(now: number): void {
     let budget = this.purgeBatch;
     for (const [key, bucket] of this.#buckets) {
-      if (budget === 0 || now <= bucket.resetAt) {
+      if (budget === 0 || now < bucket.resetAt) {
         return;
       }
       this.#buckets.delete(key);

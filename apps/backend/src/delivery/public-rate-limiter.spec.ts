@@ -27,8 +27,8 @@ describe('PublicRateLimiter Retry-After (whole seconds until the window ends)', 
     expect(limiter.take('a')).toEqual({ allowed: false, retryAfterSeconds: 60 });
     clock.t += 59_500;
     expect(limiter.take('a')).toEqual({ allowed: false, retryAfterSeconds: 1 }); // 500 ms left rounds up to 1 s
-    clock.t += 500; // exactly at the window edge: still refused when now == resetAt
-    expect(limiter.take('a')).toEqual({ allowed: false, retryAfterSeconds: 1 });
+    clock.t += 500; // exactly at the window edge: the window has ended (live while now < resetAt), so the request is served
+    expect(limiter.take('a')).toEqual({ allowed: true, retryAfterSeconds: 1 });
   });
 
   it('(c) an overflow refusal carries the seconds left in the shared overflow window', () => {
@@ -155,5 +155,70 @@ describe('PublicRateLimiter (P5-7b bounded store)', () => {
     // Steady state: the backlog drains at `batch` per call, so it is gone after ceil(5000/batch) calls.
     for (let i = 0; i < Math.ceil(5_000 / batch); i += 1) limiter.allow('fresh');
     expect(limiter.size).toBe(1);
+  });
+});
+
+describe('PublicRateLimiter window edge: a window is live while now < resetAt (half-open [start, resetAt))', () => {
+  const W = PUBLIC_TRACKING_WINDOW_MS;
+  const OVERFLOW = PUBLIC_TRACKING_LIMIT * PUBLIC_TRACKING_OVERFLOW_FACTOR;
+
+  it('(a) own bucket: at now == resetAt, and at resetAt + 1 ms, the identity starts a new window with a full quota', () => {
+    const { limiter, clock } = make();
+    for (let i = 0; i < PUBLIC_TRACKING_LIMIT; i += 1) limiter.take('a');
+    clock.t += W - 1;
+    expect(limiter.take('a')).toEqual({ allowed: false, retryAfterSeconds: 1 });
+    clock.t += 1; // now == resetAt
+    expect(limiter.take('a')).toEqual({ allowed: true, retryAfterSeconds: 1 });
+    for (let i = 0; i < PUBLIC_TRACKING_LIMIT - 1; i += 1) expect(limiter.allow('a')).toBe(true);
+    expect(limiter.allow('a')).toBe(false);
+  });
+
+  it('(a) own bucket at resetAt + 1 ms is a new window too', () => {
+    const { limiter, clock } = make();
+    for (let i = 0; i < PUBLIC_TRACKING_LIMIT; i += 1) limiter.take('a');
+    clock.t += W + 1;
+    expect(limiter.take('a')).toEqual({ allowed: true, retryAfterSeconds: 1 });
+  });
+
+  it('(b) overflow: the spent shared window ends at its resetAt, and the next shared window starts there with a full quota', () => {
+    const { limiter, clock } = make({ max: 1 });
+    limiter.allow('resident'); // resident and the overflow window both start at t0, so they end together
+    for (let i = 0; i < OVERFLOW; i += 1) limiter.take(`new-${i}`);
+    expect(limiter.take('new-refused')).toEqual({ allowed: false, retryAfterSeconds: 60 });
+    clock.t += W - 1;
+    expect(limiter.take('still-refused')).toEqual({ allowed: false, retryAfterSeconds: 1 });
+    clock.t += 1; // now == overflow.resetAt: resident expired, its slot is free
+    expect(limiter.take('n1')).toEqual({ allowed: true, retryAfterSeconds: 1 });
+    // n1 now holds the only slot, so the next new identity goes to the overflow path, which must be a fresh window
+    for (let i = 0; i < OVERFLOW; i += 1) expect(limiter.allow(`m-${i}`)).toBe(true);
+    expect(limiter.allow('m-refused')).toBe(false);
+  });
+
+  it('(c) a slot freed by an expired entry at now == resetAt gives the new identity its own bucket, not the overflow', () => {
+    const { limiter, clock } = make({ max: 1 });
+    limiter.allow('resident');
+    clock.t += W;
+    for (let i = 0; i < PUBLIC_TRACKING_LIMIT; i += 1) expect(limiter.allow('fresh')).toBe(true);
+    expect(limiter.take('fresh')).toEqual({ allowed: false, retryAfterSeconds: 60 }); // its own quota of 60, not 600
+    expect(limiter.size).toBe(1);
+  });
+
+  it('(d) Retry-After at the edge is a whole number >= 1, and a client that waits exactly that long is served', () => {
+    const own = make();
+    for (let i = 0; i < PUBLIC_TRACKING_LIMIT; i += 1) own.limiter.take('a');
+    own.clock.t += W - 500;
+    const refusedOwn = own.limiter.take('a');
+    expect(refusedOwn).toEqual({ allowed: false, retryAfterSeconds: 1 });
+    own.clock.t += refusedOwn.retryAfterSeconds * 1000;
+    expect(own.limiter.take('a').allowed).toBe(true);
+
+    const shared = make({ max: 1 });
+    shared.limiter.allow('resident');
+    for (let i = 0; i < OVERFLOW; i += 1) shared.limiter.take(`new-${i}`);
+    shared.clock.t += W - 1000;
+    const refusedShared = shared.limiter.take('y');
+    expect(refusedShared).toEqual({ allowed: false, retryAfterSeconds: 1 });
+    shared.clock.t += refusedShared.retryAfterSeconds * 1000; // now == overflow.resetAt
+    expect(shared.limiter.take('z').allowed).toBe(true);
   });
 });
