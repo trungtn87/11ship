@@ -171,6 +171,7 @@ GRANT SELECT, INSERT, UPDATE ON app.complaints TO ship11_app;
 GRANT SELECT, INSERT ON app.complaint_messages TO ship11_app;
 -- #261: the orphan-picture janitor (AttachmentJanitor) deletes a picture that was never attached and is older than 24 hours. The row guard
 -- (migration 1797379200000) refuses every other delete, linked evidence included, and TRUNCATE stays refused. No other privilege is added.
+-- Rollback of this DELETE: ops/selfhosted/05-rollback-complaint-attachment-delete.sql. Re-running this file on a rolled-back release grants it again.
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.complaint_attachments TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.complaint_reconsiderations TO ship11_app;
 GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;

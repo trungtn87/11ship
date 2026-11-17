@@ -421,9 +421,53 @@ describe('runtime grants (ops/selfhosted/02-runtime-grants.sql) with the real re
       const results = await client.query(checkSql);
       const report = results.find((result) => result.fields.some((field) => field.name === 'check_name'));
       const functionGrants = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '03-runtime-function-grants.sql'), 'utf8').match(/^GRANT EXECUTE ON FUNCTION /gm) ?? [];
-      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + functionGrants.length + 2;
+      // + database, app:USAGE and the exact complaint_attachments privilege set
+      const count = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + functionGrants.length + 3;
       assert.deepEqual(report.rows, [{ check_name: 'SUMMARY', result: `${count}/${count} checks OK (${matrix.size} tables)` }]);
     });
+  });
+
+  test('04 is an EXACT check for complaint_attachments: an extra or a missing privilege fails, and the rollback (05, then mode revoked) passes', async () => {
+    const checkSql = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '04-check-runtime-grants.sql'), 'utf8').replace(/^\\set.*$/gm, '');
+    const rollbackSql = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '05-rollback-complaint-attachment-delete.sql'), 'utf8').replace(/^\\set.*$/gm, '');
+    const functionGrants = readFileSync(path.join(ROOT, 'ops', 'selfhosted', '03-runtime-function-grants.sql'), 'utf8').match(/^GRANT EXECUTE ON FUNCTION /gm) ?? [];
+    const total = [...matrix.values()].reduce((n, privileges) => n + privileges.length, 0) + functionGrants.length + 3;
+    const ok = (checks) => `${total - checks}/${total} checks OK (${matrix.size} tables)`;
+    const migrator = (sql) => withClient(asMigrator, (client) => client.query(sql));
+    // Returns only the rows that are NOT OK, plus SUMMARY, keyed by check name (the order of rows is not part of the contract).
+    const runCheck = (mode) => withClient(asRuntime, async (client) => {
+      if (mode !== undefined) await client.query(`SET ship11.complaint_attachment_delete = '${mode}'`);
+      const results = await client.query(checkSql);
+      const report = results.find((result) => result.fields.some((field) => field.name === 'check_name'));
+      return Object.fromEntries(report.rows.map((row) => [row.check_name, row.result]));
+    });
+    try {
+      // 1. The release as deployed (02 + 03): everything passes.
+      assert.deepEqual(await runCheck(), { SUMMARY: ok(0) });
+      // 2. An EXTRA privilege fails, and only the exact check reports it. TRUNCATE would bypass the row guard of the janitor.
+      await migrator('GRANT TRUNCATE ON app.complaint_attachments TO ship11_app');
+      assert.deepEqual(await runCheck(), { 'app.complaint_attachments:EXACT_PRIVILEGES': 'EXTRA:TRUNCATE', SUMMARY: ok(1) });
+      await migrator('REVOKE TRUNCATE ON app.complaint_attachments FROM ship11_app');
+      assert.deepEqual(await runCheck(), { SUMMARY: ok(0) });
+      // 3. The rollback as shipped (05): the release WITH DELETE now reports the missing DELETE (both the presence row and the exact check).
+      await migrator(rollbackSql);
+      assert.deepEqual(await runCheck(), {
+        'app.complaint_attachments:DELETE': 'MISSING_PRIVILEGE',
+        'app.complaint_attachments:EXACT_PRIVILEGES': 'MISSING:DELETE',
+        SUMMARY: ok(2),
+      });
+      // 4. The rolled-back release (mode revoked): green. The DELETE row is not expected in that mode, so the total is one less.
+      assert.deepEqual(await runCheck('revoked'), { SUMMARY: `${total - 1}/${total - 1} checks OK (${matrix.size} tables)` });
+      // 5. In that mode a DELETE granted again is an EXTRA privilege.
+      await migrator('GRANT DELETE ON app.complaint_attachments TO ship11_app');
+      assert.deepEqual(await runCheck('revoked'), { 'app.complaint_attachments:EXACT_PRIVILEGES': 'EXTRA:DELETE', SUMMARY: `${total - 2}/${total - 1} checks OK (${matrix.size} tables)` });
+      // 6. A mistyped mode is refused, never silently treated as the default.
+      assert.equal((await runCheck('revokd'))['app.complaint_attachments:EXACT_PRIVILEGES'], 'INVALID_MODE');
+    } finally {
+      // Back to the deployed matrix (02 grants DELETE again; TRUNCATE was removed above).
+      await migrator('REVOKE TRUNCATE ON app.complaint_attachments FROM ship11_app');
+      await migrator(grantsSql);
+    }
   });
 
   test('the effective privileges of ship11_app on EVERY table equal the matrix, and nothing else', async () => {

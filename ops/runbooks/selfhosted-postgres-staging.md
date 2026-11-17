@@ -228,6 +228,33 @@ rt "select 1 from app.audit_logs"                      # ERROR: permission denie
 rt "create table app.x (id int)"                       # ERROR: permission denied (42501)
 ```
 
+### 7.1 Kiểm quyền bằng 04 (chính xác, không chỉ "có quyền")
+
+`04-check-runtime-grants.sql` (chỉ đọc) báo `OK` cho mỗi quyền bắt buộc; với `app.complaint_attachments` còn có dòng
+`EXACT_PRIVILEGES`: **thiếu hoặc thừa** một quyền đều báo lỗi (`MISSING:<quyền>` / `EXTRA:<quyền>`), ví dụ `EXTRA:TRUNCATE`
+(TRUNCATE bỏ qua guard theo dòng). Kết quả đạt: `SUMMARY` với `n/n checks OK` và không có dòng nào khác.
+
+### 7.2 Rollback quyền DELETE của janitor (#261, PR #374)
+
+Khi rollback release về bản **không có janitor**, phải thu hồi DELETE trên `app.complaint_attachments`. `02` vẫn cấp quyền này,
+nên **không chạy lại `02` sau rollback** (chạy lại sẽ cấp lại DELETE).
+
+```bash
+# 1. Thu hồi (role migrator; file chỉ REVOKE DELETE trên đúng bảng, chỉ chạy trên ship11_staging, idempotent)
+PGSSLROOTCERT=/etc/11ship/db-ca.crt PGPASSWORD="$(cat /root/ship11-secrets/migrator.pw)" \
+  psql "host=localhost port=5432 dbname=ship11_staging user=ship11_migrator sslmode=verify-full" \
+  -v ON_ERROR_STOP=1 -f ops/selfhosted/05-rollback-complaint-attachment-delete.sql
+
+# 2. Kiểm lại bằng 04 ở CHẾ ĐỘ ROLLBACK (role runtime). Kỳ vọng: SUMMARY "n/n checks OK" và không dòng nào khác.
+PGSSLROOTCERT=/etc/11ship/db-ca.crt PGPASSWORD="$(cat /root/ship11-secrets/app.pw)" \
+  psql "host=localhost port=5432 dbname=ship11_staging user=ship11_app sslmode=verify-full" \
+  -v ON_ERROR_STOP=1 -c "SET ship11.complaint_attachment_delete = 'revoked'" -f ops/selfhosted/04-check-runtime-grants.sql
+```
+
+Đọc kết quả: không có `SET` (release **có** janitor) 04 báo `MISSING:DELETE` sau khi thu hồi — đúng, vì release đó cần DELETE;
+`SET ... = 'revoked'` là chế độ của release đã rollback. `EXTRA:DELETE` ở chế độ `revoked` nghĩa là quyền đã bị cấp lại.
+Mọi giá trị khác `granted`/`revoked` bị từ chối (`INVALID_MODE`).
+
 ## 8. Cấu hình limiter, SYSTEM (operator, đọc bí mật từ stdin)
 
 Khóa limiter dùng **một lần và không đổi**; cùng cặp giá trị phải có trong environment dịch vụ (gói B) khi bật admin auth:
