@@ -38,3 +38,5 @@ landing-web-standalone/
 google-services.json
 *firebase-adminsdk*.json
 service-account*.json
+# Landing web packages (build output, never committed)
+landing-web-*.zip

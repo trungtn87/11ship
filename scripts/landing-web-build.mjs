@@ -14,9 +14,7 @@ const shared = join(root, 'apps', 'client-shared', 'public');
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(join(dist, 'brand'), { recursive: true });
-mkdirSync(join(dist, 'fonts'), { recursive: true });
-cpSync(join(shared, 'tokens.css'), join(dist, 'tokens.css'));
-cpSync(join(shared, 'fonts', 'PlusJakartaSans-wght.woff2'), join(dist, 'fonts', 'PlusJakartaSans-wght.woff2'));
+cpSync(join(root, 'apps', 'landing-web', 'src', 'fonts'), join(dist, 'fonts'), { recursive: true });
 for (const f of ['logo-11-ui.png', 'logo-11food-ui.png', 'logo-11ship-ui.png']) {
   cpSync(join(shared, 'brand', f), join(dist, 'brand', f));
 }

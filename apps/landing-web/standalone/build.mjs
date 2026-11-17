@@ -22,6 +22,7 @@ mkdirSync(dist, { recursive: true });
 copy(join(root, 'assets'), dist, { recursive: true });
 copy(join(root, 'src', 'site.css'), join(dist, 'site.css'));
 copy(join(root, 'src', 'img'), join(dist, 'img'), { recursive: true });
+copy(join(root, 'src', 'fonts'), join(dist, 'fonts'), { recursive: true });
 for (const [path, html] of Object.entries(pages)) {
   const dir = path === '/' ? dist : join(dist, path.replace(/^\//, ''));
   mkdirSync(dir, { recursive: true });

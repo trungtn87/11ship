@@ -22,7 +22,7 @@ Sửa xong chạy `node build.mjs` (hoặc `chay-thu.cmd`). Site chỉ cho lập
 ## Đổi nội dung chữ và ảnh
 - Chữ: `src/pages.mjs` (mỗi trang là một khối riêng).
 - Giao diện: `src/site.css`. Ảnh: thay file trong `src/img/` (giữ tên file, hoặc sửa tên trong `pages.mjs`).
-- Logo, font, màu nằm trong `assets/`, là bản gốc đã duyệt theo Brand Guideline v1.0: không sửa.
+- Logo nằm trong `assets/brand/`, là bản gốc đã duyệt: không sửa. Font Be Vietnam Pro (OFL) nằm trong `fonts/`; màu và kích thước khai báo ở đầu `src/site.css` (theo bộ thiết kế 11, trang 05).
 
 ## Đưa lên VPS (chỉ khi Owner cho phép)
 1. `node build.mjs`, chép **thư mục `dist/`** lên VPS, ví dụ `/var/www/11-landing`.

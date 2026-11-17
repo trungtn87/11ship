@@ -25,6 +25,7 @@
     "build:food-web:design": "node scripts/client-web-build.mjs food-web --design",
     "build:ship-web": "node scripts/client-web-build.mjs ship-web",
     "build:landing-web": "node scripts/landing-web-build.mjs",
+    "package:landing-web": "node scripts/landing-web-package.mjs",
     "build:ship-web:design": "node scripts/client-web-build.mjs ship-web --design",
     "ui:preview": "node scripts/ui-preview.mjs --open",
     "client-shell:test": "node --test \"tests/client-shell/*.test.mjs\"",

@@ -25,13 +25,9 @@ const shared = join(root, 'apps', 'client-shared', 'public');
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(join(out, 'assets', 'brand'), { recursive: true });
-mkdirSync(join(out, 'assets', 'fonts'), { recursive: true });
 copy(join(app, 'standalone'), out, { recursive: true });
 copy(join(app, 'src'), join(out, 'src'), { recursive: true });
 copy(join(app, 'site.config.json'), join(out, 'site.config.json'));
-copy(join(shared, 'tokens.css'), join(out, 'assets', 'tokens.css'));
-copy(join(shared, 'fonts', 'PlusJakartaSans-wght.woff2'), join(out, 'assets', 'fonts', 'PlusJakartaSans-wght.woff2'));
-copy(join(shared, 'fonts', 'OFL.txt'), join(out, 'assets', 'fonts', 'OFL.txt'));
 for (const f of ['logo-11-ui.png', 'logo-11food-ui.png', 'logo-11ship-ui.png']) {
   copy(join(shared, 'brand', f), join(out, 'assets', 'brand', f));
 }
