@@ -10,8 +10,19 @@ import {
 } from './client-auth-policy';
 
 const PAIR = { termsVersion: 'test-terms-20261011-v1', privacyVersion: 'test-privacy-20261011-v1' };
+const LEGACY = { termsVersion: 'terms-20261014-v1', privacyVersion: 'privacy-20261017-v1' };
+const OFFICIAL = { termsVersion: 'terms-20261114-v3', privacyVersion: 'privacy-20261114-v3' };
+// Mixed pairs: each half is published, but the two halves come from different releases.
+const CROSS_OFFICIAL_TERMS = { termsVersion: OFFICIAL.termsVersion, privacyVersion: LEGACY.privacyVersion };
+const CROSS_LEGACY_TERMS = { termsVersion: LEGACY.termsVersion, privacyVersion: OFFICIAL.privacyVersion };
 const web = { deviceId: 'd-1', platform: 'WEB', app: 'FOOD' } as const;
 const android = { deviceId: 'd-2', platform: 'ANDROID', app: 'SHIP' } as const;
+
+const settingsWith = (consent: ClientAuthSettings['consent'], localWeb = false): ClientAuthSettings => ({
+  consent,
+  phoneVerificationMode: 'REQUIRED',
+  localWeb,
+});
 
 describe('assertDeviceAllowed', () => {
   it('accepts WEB only in LOCAL_WEB mode', () => {
@@ -41,45 +52,70 @@ describe('assertPlatformAllowed (the platform recorded on a session)', () => {
   });
 });
 
-describe('assertConsentSupported', () => {
-  const settings: ClientAuthSettings = { consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true };
-  it('returns the configured pair on an exact match', () => {
-    expect(assertConsentSupported(settings, PAIR)).toEqual(PAIR);
+describe('assertConsentSupported: only the two published pairs are ever accepted', () => {
+  it('returns the configured pair on an exact match when it is a published pair', () => {
+    for (const published of [LEGACY, OFFICIAL]) {
+      expect(assertConsentSupported(settingsWith(published), published)).toEqual(published);
+    }
   });
-  it('refuses any mismatch (swapped, partial, other version)', () => {
+
+  it('refuses any mismatch (swapped, partial, other version) against a published configuration', () => {
+    const settings = settingsWith(OFFICIAL);
     for (const consent of [
-      { termsVersion: PAIR.privacyVersion, privacyVersion: PAIR.termsVersion },
-      { termsVersion: PAIR.termsVersion, privacyVersion: 'x' },
-      { termsVersion: 'x', privacyVersion: PAIR.privacyVersion },
+      { termsVersion: OFFICIAL.privacyVersion, privacyVersion: OFFICIAL.termsVersion },
+      { termsVersion: OFFICIAL.termsVersion, privacyVersion: 'x' },
+      { termsVersion: 'x', privacyVersion: OFFICIAL.privacyVersion },
     ]) {
       expect(() => assertConsentSupported(settings, consent)).toThrow(AppError);
     }
   });
+
   it('fails closed when no pair is configured', () => {
-    expect(() => assertConsentSupported({ consent: undefined, phoneVerificationMode: 'REQUIRED', localWeb: true }, PAIR)).toThrow(TechnicalError);
+    expect(() => assertConsentSupported(settingsWith(undefined), OFFICIAL)).toThrow(TechnicalError);
+  });
+
+  // Regression: the exact-match branch used to return before the allowlist was checked, so an arbitrary or mixed pair in the
+  // environment was accepted whenever the request repeated the same values, and user_consents stored that pair.
+  it('a configured pair that is not published closes the endpoint, even when the request repeats it', () => {
+    for (const configured of [PAIR, CROSS_OFFICIAL_TERMS, CROSS_LEGACY_TERMS]) {
+      expect(() => assertConsentSupported(settingsWith(configured), configured)).toThrow(TechnicalError);
+    }
+  });
+
+  it('an arbitrary configured pair opens no version, not even the published ones', () => {
+    for (const consent of [PAIR, LEGACY, OFFICIAL]) {
+      expect(() => assertConsentSupported(settingsWith(PAIR, true), consent)).toThrow(TechnicalError);
+    }
   });
 });
 
 describe('approved consent version transition', () => {
-  const legacy = { termsVersion: 'terms-20261014-v1', privacyVersion: 'privacy-20261017-v1' };
-  const official = { termsVersion: 'terms-20261114-v3', privacyVersion: 'privacy-20261114-v3' };
-
-  for (const configured of [legacy, official]) {
-    it('accepts either published pair while storing the exact agreed version', () => {
-      const settings: ClientAuthSettings = { consent: configured, phoneVerificationMode: 'REQUIRED', localWeb: false };
-      expect(assertConsentSupported(settings, official)).toEqual(official);
-      expect(assertConsentSupported(settings, legacy)).toEqual(legacy);
+  for (const configured of [LEGACY, OFFICIAL]) {
+    it(`accepts either published pair while the server is configured with ${configured.termsVersion}`, () => {
+      const settings = settingsWith(configured);
+      expect(assertConsentSupported(settings, OFFICIAL)).toEqual(OFFICIAL);
+      expect(assertConsentSupported(settings, LEGACY)).toEqual(LEGACY);
     });
-    it('rejects mixing a legacy policy with an official policy', () => {
-      const settings: ClientAuthSettings = { consent: configured, phoneVerificationMode: 'REQUIRED', localWeb: false };
-      expect(() => assertConsentSupported(settings, { termsVersion: official.termsVersion, privacyVersion: legacy.privacyVersion })).toThrow(AppError);
-      expect(() => assertConsentSupported(settings, { termsVersion: legacy.termsVersion, privacyVersion: official.privacyVersion })).toThrow(AppError);
+
+    it(`refuses a mixed pair (cross-released halves) while configured with ${configured.termsVersion}`, () => {
+      const settings = settingsWith(configured);
+      for (const mixed of [CROSS_OFFICIAL_TERMS, CROSS_LEGACY_TERMS]) {
+        let code: string | undefined;
+        try {
+          assertConsentSupported(settings, mixed);
+        } catch (error) {
+          code = (error as AppError).code;
+        }
+        expect(code).toBe('CONSENT_VERSION_UNSUPPORTED');
+      }
     });
   }
-  it('does not open up extra versions on arbitrary development configuration', () => {
-    const settings: ClientAuthSettings = { consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: true };
-    expect(() => assertConsentSupported(settings, official)).toThrow(AppError);
-    expect(() => assertConsentSupported(settings, legacy)).toThrow(AppError);
+
+  it('refuses a mixed pair even when the environment itself is configured with it', () => {
+    for (const mixed of [CROSS_OFFICIAL_TERMS, CROSS_LEGACY_TERMS]) {
+      expect(() => assertConsentSupported(settingsWith(mixed), mixed)).toThrow(TechnicalError);
+      expect(() => assertConsentSupported(settingsWith(mixed), OFFICIAL)).toThrow(TechnicalError);
+    }
   });
 });
 

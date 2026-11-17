@@ -67,26 +67,30 @@ const OFFICIAL_PAIR: ClientAuthConfig = { termsVersion: TERMS_PAGE_VERSION, priv
 /**
  * The consent comparison of a FIRST execution (it runs inside the idempotency callback, before any row is written; a
  * committed replay never comes here, so a later change of the server pair cannot make an accepted registration fail or be
- * rewritten). No configured pair is a closed endpoint (SERVICE_UNAVAILABLE), not an accepted anything. A pair that does not
- * match the configured one exactly is CONSENT_VERSION_UNSUPPORTED, except while migrating between the two
- * Owner-approved versions. The accepted pair is returned unchanged so user_consents stores what the user actually saw.
+ * rewritten). No configured pair, or a configured pair that is not published, is a closed endpoint (unavailable), not an
+ * accepted anything. A request pair that is not one of the published pairs is CONSENT_VERSION_UNSUPPORTED; while the two
+ * Owner-approved versions coexist (backend before APK), both published pairs are accepted. The accepted pair is returned unchanged so user_consents stores what the user actually saw.
+ * The accepted pairs are exactly the two published pairs (LEGACY_PAIR, OFFICIAL_PAIR), each half from the same release; a
+ * configured value outside that allowlist closes the endpoint (TechnicalError), it never widens the accepted set.
  */
 export function assertConsentSupported(settings: ClientAuthSettings, consent: ClientConsentInput): ClientAuthConfig {
   const configured = settings.consent;
   if (configured === undefined) {
     throw new TechnicalError('unavailable', 'No consent pair is configured for the client registration');
   }
-  if (equalsPair(consent, configured)) {
-    return configured;
+  // The allowlist is checked on BOTH sides before any return. An environment value that is not one of the two published
+  // pairs (arbitrary, or mixed terms/privacy from different releases) closes the endpoint, even when a request repeats it.
+  if (!isPublishedPair(configured)) {
+    throw new TechnicalError('unavailable', 'The configured consent pair is not a published pair; the client registration is closed');
   }
+  if (!isPublishedPair(consent)) {
+    throw new AppError('CONSENT_VERSION_UNSUPPORTED');
+  }
+  // Exactly one of the two published pairs is accepted: the configured one, or (during the migration window) the other one.
+  // equalsPair compares both halves, so a mixed pair never matches either published pair.
+  return { termsVersion: consent.termsVersion, privacyVersion: consent.privacyVersion };
+}
 
-  // This narrow compatibility window supports old, already-installed APKs and new APKs
-  // regardless of whether the VPS's primary consent version has been switched yet.
-  // Never accept mixed terms/privacy versions, or arbitrary unconfigured versions.
-  const configuredIsApproved = equalsPair(configured, LEGACY_PAIR) || equalsPair(configured, OFFICIAL_PAIR);
-  const requestedIsApproved = equalsPair(consent, LEGACY_PAIR) || equalsPair(consent, OFFICIAL_PAIR);
-  if (configuredIsApproved && requestedIsApproved) {
-    return { termsVersion: consent.termsVersion, privacyVersion: consent.privacyVersion };
-  }
-  throw new AppError('CONSENT_VERSION_UNSUPPORTED');
+function isPublishedPair(pair: ClientAuthConfig): boolean {
+  return equalsPair(pair, LEGACY_PAIR) || equalsPair(pair, OFFICIAL_PAIR);
 }
