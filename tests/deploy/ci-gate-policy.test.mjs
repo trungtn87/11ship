@@ -133,6 +133,9 @@ const SENSITIVE = /vps_|vps-production|\bssh\b|\bscp\b|\brsync\b|\bsftp\b|secret
 const SECRETS_CONTEXT = /tojson\s*\(\s*secrets\b|\bsecrets\s*\[|\bsecrets\s*\}\}|\(\s*secrets\s*[,)]|,\s*secrets\s*[,)]/i;
 const SAFE_NODE_SCRIPTS = ['check-app-compat.mjs', 'build-ubuntu-artifact.mjs', 'verify-ubuntu-artifact.mjs'];
 const CI_GATE_PINNED_SHA256 = 'fb9340b2e5d610b291e788a0970792263aa127d77f3a08b325217f8b2f35343e';
+// M14 gateway upgrade workflow (same ci-gate job, pinned; its `gateway` job is pinned by sha256 so any edit needs Lead + Codex re-review).
+const M14_GATEWAY_FILE = 'deploy-m14-gateway.yml';
+const M14_GATEWAY_JOB_PINNED_SHA256 = 'c1a4f38cc714f9472f58abb4726a26cbbad1315eaa71d53e229df9a05a3ab742';
 
 function unsafeReferences(text) {
   const out = [];
@@ -386,7 +389,7 @@ function topologyViolations(file, text) {
   const out = [];
   const bad = (where, list) => list.forEach(reason => out.push(`${file}:${where} ${reason}`));
   // The one workflow-level mention allowed: deploy-vps.yml serialises runs with this concurrency group name.
-  const outsideChecked = file === 'deploy-vps.yml' ? outside.replace('\n  group: vps-production-deploy\n', '\n') : outside;
+  const outsideChecked = file === 'deploy-vps.yml' || file === M14_GATEWAY_FILE ? outside.replace('\n  group: vps-production-deploy\n', '\n') : outside;
   bad('(outside jobs: workflow-level env, permissions, triggers)', unsafeReferences(outsideChecked));
   // The whole secrets context is never handed over, not even in the two allowed workflows.
   if (SECRETS_CONTEXT.test(text)) out.push(`${file} passes the whole secrets context`);
@@ -396,6 +399,14 @@ function topologyViolations(file, text) {
     else if (jobSha256(jobs['ci-gate']) !== CI_GATE_PINNED_SHA256) out.push(`${file}:ci-gate job changed: requires Lead + Codex re-review of the gate, then update the pinned hash`);
     if (jobs.deploy === undefined) out.push(`${file} has no deploy job`);
     else out.push(...deployJobViolations(jobs.deploy).map(reason => `${file}:deploy ${reason}`));
+  } else if (file === M14_GATEWAY_FILE) {
+    if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['ci-gate', 'gateway'])) out.push(`${file} must have exactly the jobs ci-gate, gateway (found ${Object.keys(jobs).join(', ')})`);
+    if (jobs['ci-gate'] === undefined || jobSha256(jobs['ci-gate']) !== CI_GATE_PINNED_SHA256) out.push(`${file}:ci-gate job changed: requires Lead + Codex re-review of the gate, then update the pinned hash`);
+    if (jobs.gateway === undefined) out.push(`${file} has no gateway job`);
+    else {
+      out.push(...deployJobViolations(jobs.gateway).map(reason => `${file}:gateway ${reason}`));
+      if (jobSha256(jobs.gateway) !== M14_GATEWAY_JOB_PINNED_SHA256) out.push(`${file}:gateway job changed: requires Lead + Codex re-review, then update the pinned hash`);
+    }
   } else if (file === 'diagnose-vps-release.yml') {
     if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['diagnose'])) out.push(`${file} must have exactly the job diagnose (found ${Object.keys(jobs).join(', ')})`);
     const allow = READ_ONLY_ALLOWLIST[file];
@@ -406,7 +417,7 @@ function topologyViolations(file, text) {
     for (const [name, block] of Object.entries(jobs)) {
       bad(name, unsafeReferences(block));
       // No environment at all outside the two allowed jobs (also catches dynamic names like ${{ inputs.x }}).
-      if (jobProps(block).environment !== undefined) out.push(`${file}:${name} declares an environment (only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose may)`);
+      if (jobProps(block).environment !== undefined) out.push(`${file}:${name} declares an environment (only deploy-vps.yml:deploy, deploy-m14-gateway.yml:gateway and diagnose-vps-release.yml:diagnose may)`);
     }
   }
   return out;
@@ -715,7 +726,7 @@ test('AAB exception: the exception is keyed to the file; the same pair under ano
 
 test('closed topology: only deploy-vps.yml:deploy and diagnose-vps-release.yml:diagnose reach the VPS; deploy is gated; every other workflow is clean', () => {
   const files = readdirSync(WORKFLOWS).filter(f => /\.ya?ml$/.test(f));
-  assert.ok(files.includes('deploy-vps.yml') && files.includes('diagnose-vps-release.yml'));
+  assert.ok(files.includes('deploy-vps.yml') && files.includes('diagnose-vps-release.yml') && files.includes(M14_GATEWAY_FILE));
   for (const file of files) assert.deepEqual(topologyViolations(file, readFileSync(join(WORKFLOWS, file), 'utf8')), [], file);
   // The three allowed scripts never reach the VPS (check-app-compat only over HTTPS, and only --static is exempt).
   for (const name of SAFE_NODE_SCRIPTS) assert.doesNotMatch(readFileSync(join(ROOT, 'scripts/deploy', name), 'utf8'), /vps_|\bssh\b|\bscp\b|\brsync\b|\bsftp\b/i, name);

@@ -60,6 +60,14 @@ Rollback theo cặp (SỬA-9):
 
 Các bước đầu của runbook (`load`, `up`, `connect`) không đổi; chỉ bổ sung kiểm tra `check` ở bước 2.
 
+## Nâng gateway từ GitHub Actions (Deploy M14 Gateway)
+
+Khi "Deploy VPS" dừng với `gateway routeVersion is missing or malformed`, gateway trên VPS cũ hơn backend. Gate đúng, không nới. Chạy workflow **Deploy M14 Gateway** (Actions → Run workflow, nhánh main, môi trường `vps-production` cần reviewer duyệt):
+1. `mode = inspect` (chỉ đọc): in container, image, `/health` và kết quả gate. Không đổi gì.
+2. `mode = upgrade`: build image trên runner, tải lên VPS, `vps.sh load` + `up` (health + smoke, tự khôi phục container cũ nếu lỗi) + `check`. Không đụng backend, env file hay service.
+3. Sau khi `check` xanh, chạy lại **Deploy VPS**.
+Workflow không thay đổi `M14_ROUTING_ORIGIN` và không restart backend.
+
 ## Gate trong luồng deploy backend thật, probe khi khởi động, quy tắc phiên bản dữ liệu (P6-1 vòng 2)
 
 **Deploy backend thật** là workflow `deploy-vps` → `scripts/deploy/github-vps-deploy.sh` → `scripts/deploy/vps-update.py update` trên VPS. Khi `M14_ROUTING_ORIGIN` đã cấu hình trong `/etc/11ship/staging.env`:
