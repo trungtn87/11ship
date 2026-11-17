@@ -1,5 +1,5 @@
 import { CheckReport } from './ops-engine';
-import { CHECK_BACKUP, CHECK_HTTPS, CHECK_OTP_SEND, CHECK_RESTORE_TEST, GatewayFacet, gatewayCheckKey } from './ops-constants';
+import { CHECK_BACKUP, CHECK_HTTPS, CHECK_M08_STALE_EVENT, CHECK_M08_STALE_HIGH, CHECK_OTP_SEND, CHECK_RESTORE_TEST, GatewayFacet, gatewayCheckKey } from './ops-constants';
 import { OpsSettings } from './ops-settings';
 
 // Pure evaluators: facts in, a verdict out. No clock, no database, no network, so each rule of the approved design can be tested by feeding it numbers.
@@ -274,6 +274,43 @@ export function evaluateQueue(f: QueueFacts, settings: OpsSettings): CheckReport
     state,
     value: { pending: f.pending, oldest_due_seconds: f.oldestDueAgeMs === null ? null : Math.floor(f.oldestDueAgeMs / 1000), growing },
     evidenceCode: overdue ? 'QUEUE_OVERDUE' : growing ? 'QUEUE_GROWING' : 'QUEUE_OK',
+  };
+}
+
+/** P6-9: ordinary stale M08 events in the window (a dropped time-bound draft, or an ordinary durable fact delivered late) are a WARNING. */
+export interface StaleEventFacts {
+  readonly dropped: number;
+  readonly deliveredLate: number;
+  readonly windowMinutes: number;
+}
+
+export function evaluateStaleNormal(f: StaleEventFacts): CheckReport {
+  const seen = f.dropped + f.deliveredLate;
+  const state = seen > 0 ? 'WARNING' : 'OK';
+  return {
+    source: 'NOTIFICATIONS',
+    checkKey: CHECK_M08_STALE_EVENT,
+    state,
+    value: { dropped: f.dropped, delivered_late: f.deliveredLate, window_minutes: f.windowMinutes },
+    evidenceCode: seen > 0 ? 'STALE_EVENT_SEEN' : 'NO_STALE_EVENT',
+    staleAfterSeconds: 600,
+    title: 'Có sự kiện thông báo cũ hơn 24 giờ',
+    impact: 'Thông báo thời điểm đã bị bỏ, hoặc thông báo còn giá trị được đưa vào hộp thư muộn (không đẩy push)',
+  };
+}
+
+/** P6-9 (S-3): a finance or account fact delivered more than 24 h late is CRITICAL while it is in the window. */
+export function evaluateStaleHigh(f: { readonly deliveredLateHigh: number; readonly windowMinutes: number }): CheckReport {
+  const state = f.deliveredLateHigh > 0 ? 'CRITICAL' : 'OK';
+  return {
+    source: 'NOTIFICATIONS',
+    checkKey: CHECK_M08_STALE_HIGH,
+    state,
+    value: { delivered_late_high: f.deliveredLateHigh, window_minutes: f.windowMinutes },
+    evidenceCode: state === 'CRITICAL' ? 'STALE_FINANCE_ACCOUNT_LATE' : 'NO_STALE_FINANCE_ACCOUNT',
+    staleAfterSeconds: 600,
+    title: 'Sự kiện tài chính/tài khoản bị giao muộn hơn 24 giờ',
+    impact: 'Hộp thư đã nhận thông báo tài chính hoặc tài khoản cũ hơn 24 giờ (không đẩy push). Cần đối chiếu trạng thái hiện tại',
   };
 }
 

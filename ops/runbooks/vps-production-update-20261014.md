@@ -48,7 +48,7 @@ Kiểm tra quyền tối thiểu: `sudo -u postgres psql -d ship11_staging -c "\
 ```bash
 install -d -m 750 -o root -g ship11 /etc/11ship/trust
 ```
-- **Signer cố định**: artifact `android-signers.json` của workflow **Mobile APK** (SHA-256 chứng chỉ ký của khóa bền vững; không chứa bí mật). Lấy từ lần chạy dùng để phát hành APK; đặt `install -m 640 -o root -g ship11 android-signers.json /etc/11ship/trust/`. Hai package: `vn.eleven.food.test`, `vn.eleven.ship.test`, cùng một signer.
+- **Signer cố định**: artifact `android-signers.json` của workflow **Mobile APK** (SHA-256 chứng chỉ ký của khóa bền vững; không chứa bí mật). Lấy từ lần chạy dùng để phát hành APK; đặt `install -m 640 -o root -g ship11 android-signers.json /etc/11ship/trust/`. Hai package: `vn.eleven.food`, `vn.eleven.ship`, cùng một signer.
 - **Attestation roots**: PEM các root Android Key Attestation do **Owner/vận hành tự pin** từ nguồn chính thức của Google (tài liệu Android “Verify hardware-backed key pairs with key attestation”). Đối chiếu dấu vân tay với nguồn chính thức trước khi dùng; server không bao giờ dùng kho tin cậy của hệ điều hành cho việc này. `install -m 640 -o root -g ship11 roots.pem /etc/11ship/trust/android-attestation-roots.pem`. **Repo không chứa roots thật; thiếu file này thì dịch vụ từ chối khởi động (đúng thiết kế).**
 - **Revocation**: tạo lần đầu và đặt timer làm mới:
 ```bash

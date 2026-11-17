@@ -9,8 +9,8 @@ import { holdRowLock } from './support/lock-fixtures';
 // asks for money and never moves any: every test that writes also proves the wallet balance, the ledger, the topups and the bank
 // registry are untouched. The receiving account is a TEST fixture row (the product has none until a SYSTEM-only package configures one).
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const tag = randomBytes(3).toString('hex').toUpperCase();

@@ -156,6 +156,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | order_chat_messages | SELECT, INSERT, DELETE (#191: text messages of an order or direct delivery; never updated; deleted only by the retention job) |
 | order_chat_holds | SELECT, INSERT, UPDATE (#191: evidence hold on one chat; released once, never deleted) |
 | address_change_requests | SELECT, INSERT, UPDATE (#218: address change requests for confirmed orders and direct deliveries; never deleted) |
+| route_snapshots | SELECT, INSERT (P6-2 #294: immutable route snapshot of a checkout quote; a trigger refuses UPDATE, DELETE and TRUNCATE; the only delete is the retention function app.purge_unreferenced_route_snapshots, EXECUTE only, see 03-runtime-function-grants.sql) |
 | order_timeout_policy | SELECT, UPDATE (M10/M07: current versioned stage policy) |
 | order_timeout_policy_changes | SELECT, INSERT (append-only policy history) |
 | order_parameters | SELECT, UPDATE (M07: fee-answer time configured by SYSTEM) |
@@ -194,7 +195,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | review_reply_history | SELECT, INSERT (M11: earlier reply texts; append-only) |
 | complaints | SELECT, INSERT, UPDATE (M11: one file per issue; status moves by the Administration; never deleted) |
 | complaint_messages | SELECT, INSERT (M11: the thread (submitter, parties, support, internal notes); append-only) |
-| complaint_attachments | SELECT, INSERT, UPDATE (M11: evidence pictures; attached to a file once; never deleted) |
+| complaint_attachments | SELECT, INSERT, UPDATE, DELETE (M11: evidence pictures; attached to a file once; #261: DELETE only by the orphan-picture janitor for an unattached picture older than 24 h, the row guard refuses any other) |
 | complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
 | complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
 | wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |

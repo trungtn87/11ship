@@ -72,8 +72,8 @@ export const COMPONENT_LABEL: Readonly<Record<ReleaseComponent, string>> = {
 
 /** The Android applicationIds the update flow serves. They are NOT configurable here: M13 never changes an application id or a signing key. */
 export const APPLICATION_IDS: Readonly<Record<'FOOD' | 'SHIP' | 'GATEWAY', string>> = {
-  FOOD: 'vn.eleven.food.test',
-  SHIP: 'vn.eleven.ship.test',
+  FOOD: 'vn.eleven.food',
+  SHIP: 'vn.eleven.ship',
   GATEWAY: 'vn.eleven.gateway.test',
 };
 
@@ -102,6 +102,10 @@ export const CHECK_RESTORE_TEST = 'restore_test';
 export const CHECK_PUBLIC_API = 'public_api';
 export const CHECK_EXTERNAL_PROBE = 'external_probe';
 export const CHECK_NOTIFICATIONS = 'notifications';
+/** P6-9: M08 events older than 24 h that were dropped or delivered late (metric `m08_stale_event.*`). */
+export const CHECK_M08_STALE_EVENT = 'm08_stale_event';
+/** P6-9 (S-3): a finance/account fact delivered more than 24 h late — its own check and fingerprint, so it can close while the ordinary one stays open. */
+export const CHECK_M08_STALE_HIGH = 'm08_stale_high';
 export const CHECK_M14 = 'm14';
 export const CHECK_OTP_SEND = 'otp_sending';
 

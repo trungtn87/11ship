@@ -1,4 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { OtpClientIp } from '../auth/otp-client-ip';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { NotificationsReadModule } from '../notifications/notifications-read.module';
 import { TransactionModule } from '../transaction/transaction.module';
@@ -22,6 +23,8 @@ export class OpsModule {
       controllers: [OpsClientController],
       providers: [
         { provide: OPS_SYSTEM_PROBE, inject: [APP_CONFIG], useFactory: (config: AppConfig) => new NodeSystemProbe({ host: config.host, port: config.port }) },
+        // The per-address backstop of the two unlimited M13 doors (P5-7j) reads the same client address as OTP and tracking.
+        OtpClientIp,
         OpsRetention,
         OpsRuntime,
         OpsCollector,

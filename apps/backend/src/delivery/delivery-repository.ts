@@ -64,6 +64,8 @@ export interface DeliveryRow {
   readonly feePayer: FeePayer;
   readonly feeVnd: number | null;
   readonly routeDistanceM: number | null;
+  /** P6-2: the route snapshot of the Order this delivery was called for (null for direct and pre-P6-2 deliveries). */
+  readonly routeSnapshotId: string | null;
   readonly searchStartedAtMs: number;
   readonly searchExpiresAtMs: number;
   readonly searchStoppedAtMs: number | null;
@@ -109,6 +111,7 @@ interface RawDelivery {
   fee_payer: FeePayer;
   fee_vnd: string | null;
   route_distance_m: number | null;
+  route_snapshot_id: string | null;
   started_ms: string;
   expires_ms: string;
   stopped_ms: string | null;
@@ -125,7 +128,7 @@ export const DELIVERY_COLUMNS = `d.delivery_id::text AS delivery_id, d.code, app
   d.shop_id::text AS shop_id, d.requested_by::text AS requested_by, d.state, d.version::text AS version, d.shop_name, d.shop_phone, d.pickup_address_text,
   d.pickup_lat, d.pickup_lng, d.recipient_name, d.recipient_phone, d.dropoff_address_text, d.dropoff_area_text, d.dropoff_lat, d.dropoff_lng,
   d.dropoff_pinned_by::text AS dropoff_pinned_by, d.goods_description, d.goods_value_vnd::text AS goods_value_vnd, d.paid_vnd::text AS paid_vnd, d.cod_vnd::text AS cod_vnd, d.note, d.dropoff_note,
-  d.fee_mode, d.fee_payer, d.fee_vnd::text AS fee_vnd, d.route_distance_m,
+  d.fee_mode, d.fee_payer, d.fee_vnd::text AS fee_vnd, d.route_distance_m, d.route_snapshot_id::text AS route_snapshot_id,
   ${ms('d.search_started_at', 'started_ms')}, ${ms('d.search_expires_at', 'expires_ms')}, ${ms('d.search_stopped_at', 'stopped_ms')},
   ${ms('d.reminded_5_at', 'r5_ms')}, ${ms('d.reminded_15_at', 'r15_ms')}, ${ms('d.picked_up_at', 'picked_ms')}, ${ms('d.ended_at', 'ended_ms')}, d.end_reason,
   ${ms('d.created_at', 'created_ms')}, ${ms('d.updated_at', 'updated_ms')}`;
@@ -164,6 +167,7 @@ export function toDelivery(row: RawDelivery): DeliveryRow {
     feePayer: row.fee_payer,
     feeVnd: safeOrNull(row.fee_vnd),
     routeDistanceM: row.route_distance_m,
+    routeSnapshotId: row.route_snapshot_id,
     searchStartedAtMs: safe(row.started_ms),
     searchExpiresAtMs: safe(row.expires_ms),
     searchStoppedAtMs: safeOrNull(row.stopped_ms),
@@ -206,6 +210,8 @@ export interface NewDelivery {
   readonly feePayer: FeePayer;
   readonly feeVnd: number | null;
   readonly routeDistanceM: number | null;
+  /** P6-2: the Order's route snapshot; null when the delivery is not called for an Order that has one. */
+  readonly routeSnapshotId?: string | null;
 }
 
 /** The columns a state change may write. Anything else is fixed at creation. A key set to null clears the column. */
@@ -374,16 +380,16 @@ export class DeliveryRepository {
       `INSERT INTO app.deliveries (
          delivery_id, code, source, order_id, previous_delivery_id, shop_id, requested_by, state, shop_name, shop_phone, pickup_address_text, pickup_lat, pickup_lng,
           recipient_name, recipient_phone, dropoff_address_text, dropoff_area_text, dropoff_lat, dropoff_lng, goods_description, goods_value_vnd, paid_vnd, cod_vnd, note, dropoff_note,
-         fee_mode, fee_payer, fee_vnd, route_distance_m, search_started_at, search_expires_at, version, created_at, updated_at)
+         fee_mode, fee_payer, fee_vnd, route_distance_m, route_snapshot_id, search_started_at, search_expires_at, version, created_at, updated_at)
        SELECT $1::uuid, $2, $3, $4::uuid, $5::uuid, $6::uuid, $7::uuid, 'waiting_driver', $8, $9, $10, $11::float8, $12::float8,
                $13, $14, $15, $16, $17::float8, $18::float8, $19, $20::bigint, $21::bigint, $22::bigint, $23, $24,
-               $25, $26, $27::bigint, $28::int, clock.t, clock.t + interval '30 minutes', 1, clock.t, clock.t
+               $25, $26, $27::bigint, $28::int, $29::uuid, clock.t, clock.t + interval '30 minutes', 1, clock.t, clock.t
          FROM (SELECT ${CLOCK} AS t) AS clock
        ON CONFLICT (code) DO NOTHING`,
       [
         d.deliveryId, d.code, d.source, d.orderId, d.previousDeliveryId, d.shopId, d.requestedBy, d.shopName, d.shopPhone, d.pickupAddressText, d.pickupLat, d.pickupLng,
         d.recipientName, d.recipientPhone, d.dropoffAddressText, d.dropoffAreaText, d.dropoffLat, d.dropoffLng, d.goodsDescription, d.goodsValueVnd, d.paidVnd, d.codVnd ?? 0, d.note, d.dropoffNote,
-        d.feeMode, d.feePayer, d.feeVnd, d.routeDistanceM,
+        d.feeMode, d.feePayer, d.feeVnd, d.routeDistanceM, d.routeSnapshotId ?? null,
       ],
     );
     return result.rowCount === 1;

@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
+import { complaintScopeSql } from '../feedback/complaint-repository';
+import { FeedbackScope } from '../feedback/feedback-constants';
 import { TransactionContext } from '../transaction/transaction-context';
 
 /** One record still waiting, as stored. The service adds the wording, the rights and the sort; nothing here is invented or counted twice. */
 export interface QueueRecord {
   /** Identity of the file within its kind: the same file is the same key on every read, so reloading never multiplies it. */
   readonly key: string;
-  readonly code: string;
+  /** null when the caller may not see this file's complaint code (out of its complaint scope): hidden, never guessed. */
+  readonly code: string | null;
   readonly status: string;
   /** Closed code of why it waits (the service turns it into words). */
   readonly reason: string;
@@ -73,14 +76,14 @@ export class AdminActionQueueReader {
    * Complaints that still wait for the administration (the same three statuses the overview counts) PLUS closed ones with a reconsideration request still
    * PENDING. One row per complaint: its follow-up messages are never counted.
    */
-  async complaints(context: TransactionContext, limit: number): Promise<QueueRecord[]> {
+  async complaints(context: TransactionContext, limit: number, scope: FeedbackScope): Promise<QueueRecord[]> {
     const result = await context.query<{ complaint_id: string; code: string; status: string; awaiting_from: string | null; since: string; related_code: string; reconsider: string | null }>(
       `SELECT c.complaint_id::text AS complaint_id, c.code, c.status, c.awaiting_from, c.related_code, ${ms('c.created_at')} AS since, ${ms('r.requested_at')} AS reconsider
          FROM app.complaints c
          LEFT JOIN LATERAL (SELECT requested_at FROM app.complaint_reconsiderations q WHERE q.complaint_id = c.complaint_id AND q.status = 'PENDING' ORDER BY requested_at LIMIT 1) r ON true
-        WHERE c.status IN ('PENDING', 'IN_PROGRESS', 'AWAITING_INFO') OR r.requested_at IS NOT NULL
+        WHERE (c.status IN ('PENDING', 'IN_PROGRESS', 'AWAITING_INFO') OR r.requested_at IS NOT NULL) AND ${complaintScopeSql('c', 2, 3)}
         ORDER BY COALESCE(r.requested_at, c.created_at), c.complaint_id LIMIT $1::int`,
-      [limit],
+      [limit, scope.shop, scope.driver],
     );
     return result.rows.map((row) => {
       const open = row.status === 'PENDING' || row.status === 'IN_PROGRESS' || row.status === 'AWAITING_INFO';
@@ -101,15 +104,22 @@ export class AdminActionQueueReader {
     });
   }
 
-  /** Commission adjustments of complaints whose money M04 has not posted: one row per adjustment, with the reason M04 gave. */
-  async pendingAdjustments(context: TransactionContext, limit: number): Promise<QueueRecord[]> {
-    const result = await context.query<{ adjustment_id: string; complaint_code: string; delivery_code: string; direction: string; amount: string; reason: string; since: string }>(
-      `SELECT a.adjustment_id::text AS adjustment_id, c.code AS complaint_code, d.code AS delivery_code, a.direction, a.amount_vnd::text AS amount, a.pending_reason AS reason, ${ms('a.created_at')} AS since
+  /**
+   * Commission adjustments of complaints whose money M04 has not posted: one row per adjustment, with the reason M04 gave. Every caller keeps the row (the
+   * count does not change), but the complaint code and the delivery code are read ONLY inside the caller's complaint scope (issue #261, the rule of
+   * complaintInScope); outside it they are NULL. The decision is taken in SQL, so no code path can print a hidden code by mistake.
+   */
+  async pendingAdjustments(context: TransactionContext, limit: number, scope: FeedbackScope): Promise<QueueRecord[]> {
+    const result = await context.query<{ adjustment_id: string; complaint_code: string | null; delivery_code: string | null; direction: string; amount: string; reason: string; since: string }>(
+      `SELECT a.adjustment_id::text AS adjustment_id,
+              CASE WHEN ${complaintScopeSql('c', 2, 3)} THEN c.code END AS complaint_code,
+              CASE WHEN ${complaintScopeSql('c', 2, 3)} THEN d.code END AS delivery_code,
+              a.direction, a.amount_vnd::text AS amount, a.pending_reason AS reason, ${ms('a.created_at')} AS since
          FROM app.complaint_adjustments a
          JOIN app.complaints c ON c.complaint_id = a.complaint_id
          JOIN app.deliveries d ON d.delivery_id = a.delivery_id
         WHERE a.status = 'PENDING_FINANCE' ORDER BY a.created_at, a.adjustment_id LIMIT $1::int`,
-      [limit],
+      [limit, scope.shop, scope.driver],
     );
     return result.rows.map((row) => ({
       key: `adjustment:${row.adjustment_id}`,

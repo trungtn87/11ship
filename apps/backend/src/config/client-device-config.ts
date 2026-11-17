@@ -25,8 +25,8 @@ export const CLIENT_DEVICE_ALLOWED_SIGNERS_FILE_ENV = 'CLIENT_DEVICE_ALLOWED_SIG
 export const CLIENT_DEVICE_ATTESTATION_ROOTS_FILE_ENV = 'CLIENT_DEVICE_ATTESTATION_ROOTS_FILE';
 export const CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE_ENV = 'CLIENT_DEVICE_ATTESTATION_REVOCATION_FILE';
 
-/** The fixed test package names (applicationId never changes between updates). */
-export const NATIVE_TEST_PACKAGES = { FOOD: 'vn.eleven.food.test', SHIP: 'vn.eleven.ship.test' } as const;
+/** The official applicationIds (Owner 13/11/2026); fixed, never change between updates. */
+export const NATIVE_PACKAGES = { FOOD: 'vn.eleven.food', SHIP: 'vn.eleven.ship' } as const;
 
 const ENVIRONMENT_TOKEN = /^[A-Za-z0-9._-]{1,64}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -177,8 +177,8 @@ function parseSigners(value: unknown): ClientDeviceConfig['signers'] | undefined
   if (!isPlainObject(value) || !hasExactKeys(value, ['FOOD', 'SHIP'])) {
     return undefined;
   }
-  const food = parseSigner(value['FOOD'], NATIVE_TEST_PACKAGES.FOOD);
-  const ship = parseSigner(value['SHIP'], NATIVE_TEST_PACKAGES.SHIP);
+  const food = parseSigner(value['FOOD'], NATIVE_PACKAGES.FOOD);
+  const ship = parseSigner(value['SHIP'], NATIVE_PACKAGES.SHIP);
   // Two apps, one persistent signer (the Binder join needs it): both entries name the same certificate.
   if (food === undefined || ship === undefined || food.signerSha256 !== ship.signerSha256) {
     return undefined;

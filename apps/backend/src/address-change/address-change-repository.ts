@@ -25,6 +25,8 @@ export interface AddressChangeRequestRow {
   readonly newLng: number | null;
   readonly newFeeVnd: number | null;
   readonly newDistanceM: number | null;
+  /** P6-2: the route snapshot the change applies (null for a text-only change or a change without a measured route). */
+  readonly newRouteSnapshotId: string | null;
   readonly feeDifferenceVnd: number | null;
   readonly note: string | null;
   readonly rejectReason: string | null;
@@ -64,6 +66,7 @@ interface RawAddressChangeRequest {
   readonly new_fee_vnd: string | null;
   readonly new_distance_m: number | null;
   readonly fee_difference_vnd: string | null;
+  readonly new_route_snapshot_id: string | null;
   readonly note: string | null;
   readonly reject_reason: string | null;
   readonly resolved_by: string | null;
@@ -81,7 +84,7 @@ const SELECT_COLUMNS = `
   original_recipient_name, original_recipient_phone, original_address_text, original_lat, original_lng,
   original_fee_vnd, original_distance_m,
   new_recipient_name, new_recipient_phone, new_address_text, new_lat, new_lng,
-  new_fee_vnd, new_distance_m, fee_difference_vnd, note, reject_reason, resolved_by,
+  new_fee_vnd, new_distance_m, new_route_snapshot_id::text AS new_route_snapshot_id, fee_difference_vnd, note, reject_reason, resolved_by,
   floor(extract(epoch from resolved_at) * 1000)::text as resolved_at_ms,
   floor(extract(epoch from expires_at) * 1000)::text as expires_at_ms,
   order_version, delivery_version, version,
@@ -113,6 +116,7 @@ function mapRow(raw: RawAddressChangeRequest): AddressChangeRequestRow {
     newLng: raw.new_lng === null ? null : Number(raw.new_lng),
     newFeeVnd: raw.new_fee_vnd === null ? null : Number(raw.new_fee_vnd),
     newDistanceM: raw.new_distance_m === null ? null : Number(raw.new_distance_m),
+    newRouteSnapshotId: raw.new_route_snapshot_id,
     feeDifferenceVnd: raw.fee_difference_vnd === null ? null : Number(raw.fee_difference_vnd),
     note: raw.note,
     rejectReason: raw.reject_reason,
@@ -136,14 +140,14 @@ export class AddressChangeRepository {
         original_recipient_name, original_recipient_phone, original_address_text, original_lat, original_lng,
         original_fee_vnd, original_distance_m,
         new_recipient_name, new_recipient_phone, new_address_text, new_lat, new_lng,
-        new_fee_vnd, new_distance_m, fee_difference_vnd, note,
+        new_fee_vnd, new_distance_m, fee_difference_vnd, note, new_route_snapshot_id,
         expires_at, order_version, delivery_version, version, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
         $14, $15,
         $16, $17, $18, $19, $20,
-        $21, $22, $23, $24,
+        $21, $22, $23, $24, $28::uuid,
         to_timestamp($25::bigint / 1000.0), $26, $27, 1, clock_timestamp(), clock_timestamp()
       )`,
       [
@@ -174,6 +178,7 @@ export class AddressChangeRepository {
         req.expiresAtMs,
         req.orderVersion,
         req.deliveryVersion,
+        req.newRouteSnapshotId,
       ],
     );
   }

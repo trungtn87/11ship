@@ -1,5 +1,5 @@
 import { AppDefinition } from '../../client-shared/src/app.js';
-import { FOOD_TEST_CONSENT } from '../../client-shared/src/consent.js';
+import { REGISTER_CONSENT } from '../../client-shared/src/consent.js';
 import { logo, SHIP_BRAND } from '../../client-shared/src/brand.js';
 import { banner, bottomNav, button, chip, emptyState, gate, list, listItem, openDialog, reasonNote, setBusy, TabDef, textField } from '../../client-shared/src/components.js';
 import { h } from '../../client-shared/src/dom.js';
@@ -401,7 +401,7 @@ export const SHIP_DEFINITION: AppDefinition = {
   flowStart: { 'register-otp': '/register', 'reset-otp': '/reset', 'reset-password': '/reset' },
   testSmsNotice: true,
   // The register flow of #82 (OTP, or none in DISABLED_TEST), connected on a local https runtime. The approved test texts name 11Ship/11Food.
-  register: { consent: FOOD_TEST_CONSENT },
+  register: { consent: REGISTER_CONSENT },
   // The driver profile (S12/S13) of the existing backend, on a local https runtime.
   driverProfile: true,
 };

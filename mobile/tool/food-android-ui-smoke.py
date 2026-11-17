@@ -4,6 +4,7 @@
 The disposable emulator uses a Cao Bằng location and the real app/API. The
 script never injects shops, dishes, prices or ratings.
 """
+import glob
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,16 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-PACKAGE = 'vn.eleven.food.test'
+
+def _apk(pattern):
+    # The workflow names the APK 11Food-v<versionName>.apk; exactly one file must match (a stale copy is refused).
+    found = sorted(glob.glob(pattern))
+    if len(found) != 1:
+        raise SystemExit(f"expected one APK matching {pattern}, found {found}")
+    return found[0]
+
+
+PACKAGE = 'vn.eleven.food'
 OUTPUT = Path(os.environ.get('FOOD_UI_OUTPUT', '/tmp/food-android-ui'))
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
@@ -48,7 +58,7 @@ def capture(name):
 
 
 try:
-    adb('install', '-r', '11Food-test.apk')
+    adb('install', '-r', _apk('11Food-v*.apk'))
     adb('shell', 'wm', 'density', '160')
     adb('shell', 'wm', 'size', '390x844')
     adb('shell', 'svc', 'wifi', 'enable')

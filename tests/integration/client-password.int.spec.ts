@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { AuthApp, dataOf, errorCode, obtainProof, PASSWORD, OTHER_PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 
-const terms = 'test-terms-20261011-v1';
-const privacy = 'test-privacy-20261011-v1';
+const terms = 'terms-20261114-v3';
+const privacy = 'privacy-20261114-v3';
 
 describe('Client own password change through HTTP and PostgreSQL', () => {
   let app: AuthApp;

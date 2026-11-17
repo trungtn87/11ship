@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -13,8 +14,8 @@ import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 // a give-back never restarts, the privacy of the offer). The M14 routing service is a REAL local HTTP server (not an in-process fake).
 // M10 (Order), M08 and M11 are not connected: only direct calls from the shop are exercised.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0007', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0007', platform: 'WEB', app: 'FOOD' };
 const tag = randomBytes(3).toString('hex').toUpperCase();
@@ -38,7 +39,7 @@ describe('M07 — delivery flow', () => {
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(2.5, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;

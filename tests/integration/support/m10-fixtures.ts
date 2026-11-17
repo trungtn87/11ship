@@ -7,8 +7,8 @@ import { createItemWithPicture, createCategory } from './menu-fixtures';
 // the rows an Order test leaves (orders and deliveries are never deleted by the application, so a test removes exactly its own rows with the user triggers of
 // those tables lifted for the statement). Everything goes through the real HTTP pipeline except the test-only wallet funding (the money-in path is M04).
 
-export const TERMS = 'test-terms-20261011-v1';
-export const PRIVACY = 'test-privacy-20261011-v1';
+export const TERMS = 'terms-20261114-v3';
+export const PRIVACY = 'privacy-20261114-v3';
 export const WEB_SHIP = { device_id: 'web-ship-0010', platform: 'WEB', app: 'SHIP' };
 export const WEB_FOOD = { device_id: 'web-food-0010', platform: 'WEB', app: 'FOOD' };
 export const tag = randomBytes(3).toString('hex').toUpperCase();

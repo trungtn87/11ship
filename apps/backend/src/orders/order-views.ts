@@ -14,6 +14,8 @@ import { publicContactOf } from '../shop-setup/shop-public-contact';
 import { customerMayCancel, customerMayCancelAfterPickup, displayStatusOf, isEnded, mayCallShipper, needsAttention } from './order-rules';
 import { AddressChangeRepository } from '../address-change/address-change-repository';
 import { addressChangeView } from '../address-change/address-change-views';
+import { RouteSnapshotRepository } from './route-snapshot-repository';
+import { routeFieldsOf } from './route-snapshot-view';
 
 // The JSON each reader of an Order gets. The server decides which fields are filled; a field the caller may not see is null (or absent). Money is a whole
 // number or null (never 0 for "unknown"); times are ISO strings; `server_now` carries the SERVER clock so nothing depends on the phone clock. The fee and the
@@ -84,6 +86,7 @@ export class OrderViews {
     private readonly deliveries: DeliveryRepository,
     private readonly deliveryViews: DeliveryViews,
     private readonly shops: ShopAvailabilityReader,
+    private readonly snapshots: RouteSnapshotRepository,
     private readonly addressChanges?: AddressChangeRepository,
   ) {}
 
@@ -184,6 +187,8 @@ export class OrderViews {
     // After pickup the customer (who created an ORDER) may cancel; the Shipper is told to call the shop and the goods stay with them until the shop settles them.
     view.can = { edit: o.status === 'PENDING_CONFIRMATION', cancel: customerMayCancel(o.status), cancel_after_pickup: customerMayCancelAfterPickup(o.status, latest?.state ?? null), reorder: true, request_address_change: canRequestAddressChange, cancel_address_change: canCancelAddressChange };
     if (detail) {
+      // P6-3: the customer of this Order sees its road (the drop-off is already in `recipient`).
+      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
       view.timeline = (await this.orders.listEvents(context, o.orderId, 200)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'customer');
     }
@@ -221,6 +226,8 @@ export class OrderViews {
       decide_address_change: running && (latest === undefined || !['accepted', 'location_confirmed', 'delivering', 'picked_up'].includes(latest.state)) && activeAddressChange !== undefined && activeAddressChange.status === 'PENDING' && nowMs < activeAddressChange.expiresAtMs,
     };
     if (detail) {
+      // P6-3: the shop of this Order already sees the drop-off in `recipient`, so it sees the road of the same Order (no new permission).
+      Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
       view.timeline = (await this.orders.listEvents(context, o.orderId, 300)).map((e) => eventView(e, true));
       view.story = await this.#story(context, o, all, 'shop');
     }
@@ -237,6 +244,8 @@ export class OrderViews {
       calls.push(await this.deliveryViews.forCustomer(context, d, nowMs));
     }
     view.customer = { user_id: o.customerUserId };
+    // P6-3: the Admin detail carries the same drop-off as `recipient` above (admin scope unchanged), so the road of the Order is given with it.
+    Object.assign(view, await routeFieldsOf(this.snapshots, context, o.routeSnapshotId, true, true));
     view.deliveries = all.map((d) => ({ delivery_id: d.deliveryId, code: d.code, display_code: d.displayCode ?? d.code, state: d.state, previous_delivery_id: d.previousDeliveryId, created_at: iso(d.createdAtMs), ended_at: iso(d.endedAtMs), end_reason: d.endReason }));
     view.delivery = calls.length === 0 ? null : (calls[calls.length - 1] as JsonObject);
     view.timeline = (await this.orders.listEvents(context, o.orderId, 400)).map((e) => eventView(e, true));

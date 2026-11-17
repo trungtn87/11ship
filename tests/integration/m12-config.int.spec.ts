@@ -4,6 +4,7 @@ import { AdminApp, adminData, adminErrorCode, AdminResponse, startAdminApp } fro
 import { countRows } from './support/auth-fixtures';
 import { ActivatedAdmin, activatedAdmin, getAs, permission, postAs, systemLoginOf } from './support/m12-fixtures';
 import { systemSession, SystemSession } from './support/provisioning-fixtures';
+import { SystemSettingsRepository } from '../../apps/backend/src/system-settings/system-settings-repository';
 
 // M12-D on a REAL PostgreSQL: the configuration hub reads the OWNERS' values (no second source), every administrator may read and only SYSTEM changes (the owner decides
 // again), the change flow carries a reason into the owner's audit row, a stale screen is refused, two writers racing on one version have exactly one winner, and a revert
@@ -11,6 +12,36 @@ import { systemSession, SystemSession } from './support/provisioning-fixtures';
 
 const tag = randomBytes(3).toString('hex').toUpperCase();
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/**
+ * The real repository, with one optional pause: the NEXT writer that reads the settings rows stops right after its read,
+ * still inside its own transaction, until released. Every other call is the plain repository.
+ */
+class GatedSystemSettingsRepository extends SystemSettingsRepository {
+  #gate: { reached: () => void; open: Promise<void> } | undefined;
+
+  holdNextWriter(): { reached: Promise<void>; release: () => void } {
+    let reached!: () => void;
+    let release!: () => void;
+    const reachedP = new Promise<void>((resolve) => (reached = resolve));
+    const open = new Promise<void>((resolve) => (release = resolve));
+    this.#gate = { reached, open };
+    return { reached: reachedP, release };
+  }
+
+  override async lockAll(context: Parameters<SystemSettingsRepository['lockAll']>[0]): ReturnType<SystemSettingsRepository['lockAll']> {
+    const states = await super.lockAll(context);
+    const gate = this.#gate;
+    this.#gate = undefined;
+    if (gate !== undefined) {
+      gate.reached();
+      await gate.open;
+    }
+    return states;
+  }
+}
+const gatedSettings = new GatedSystemSettingsRepository();
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('M12-D — central configuration', () => {
   let admin: AdminApp;
@@ -20,7 +51,7 @@ describe('M12-D — central configuration', () => {
   const code = (response: AdminResponse): { status: number; code: string | undefined } => ({ status: response.status, code: adminErrorCode(response) });
 
   beforeAll(async () => {
-    admin = await startAdminApp({ activationDisabledTest: true });
+    admin = await startAdminApp({ activationDisabledTest: true, overrides: [{ provide: SystemSettingsRepository, useValue: gatedSettings }] });
     system = await systemSession(admin);
     viewer = await activatedAdmin(admin, system, [permission('DRIVER')], `Xem cấu hình ${tag}`);
   });
@@ -45,6 +76,25 @@ describe('M12-D — central configuration', () => {
   const groupOf = async (key: string, who = systemLoginOf(system)): Promise<Json> => ((await groups(who)).groups as Json[]).find((g) => g.key === key) as Json;
   const valueOf = (group: Json, key: string): number | boolean => (group.values as Json[]).find((v) => v.key === key)?.value;
   const history = async (group: string): Promise<Json[]> => ((adminData(await getAs(admin, systemLoginOf(system), `/config/history?group=${group}&limit=100`)) as Json).items as Json[]).filter((i) => i.metadata && Date.parse(i.at) >= startedAt);
+
+  /**
+   * Polls PostgreSQL until a writer is WAITING on the advisory lock of a settings group ('waiting'), or until the writer has already
+   * finished ('finished', checked first on every round). The poll interval and the bound only pace and stop a hang: a pass or a fail
+   * never depends on how long the runner takes.
+   */
+  const waitForSecondWriter = async (secondDone: () => boolean, boundMs = 20000): Promise<'waiting' | 'finished' | 'timeout'> => {
+    const deadline = Date.now() + boundMs;
+    while (Date.now() < deadline) {
+      if (secondDone()) return 'finished';
+      const blocked = await countRows(
+        admin.pool,
+        `SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND wait_event = 'advisory' AND query LIKE '%pg_advisory_xact_lock%'`,
+      );
+      if (blocked > 0) return 'waiting';
+      await pause(20);
+    }
+    return 'timeout';
+  };
 
   it('every administrator reads the seven groups from the owners; fixed rules are listed apart and have no edit; only SYSTEM is marked editable', async () => {
     const asAdmin = await groups(viewer.login);
@@ -76,9 +126,11 @@ describe('M12-D — central configuration', () => {
     for (const bad of [{ ...body, reason: '' }, { ...body, reason: 'x'.repeat(501) }, { ...body, extra: 1 }]) {
       expect(code(await postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', bad)).code).toBe('ADMIN_INPUT_INVALID');
     }
-    // Two writers on the same version: exactly one wins.
-    const results = await Promise.all([postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', body), postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi thứ hai' })]);
-    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    // Writers racing on one version while NO settings row exists yet (the group's default state): exactly one wins, the rest are stale.
+    expect(before.version).toBe(0);
+    const racers = await Promise.all(Array.from({ length: 8 }, (_, i) => postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: `Người ghi ${i}` })));
+    expect(racers.map((r) => r.status).sort()).toEqual([200, ...Array(7).fill(409)]);
+    expect(racers.filter((r) => r.status === 409).map((r) => adminErrorCode(r))).toEqual(Array(7).fill('SYSTEM_SETTING_VERSION_CONFLICT'));
     const after = await groupOf('security');
     expect(after.version).toBeGreaterThan(before.version);
     expect(valueOf(after, 'otp_registration_enabled')).toBe(!valueOf(before, 'otp_registration_enabled'));
@@ -87,7 +139,7 @@ describe('M12-D — central configuration', () => {
     // The history shows who, when, before/after and the reason of the winner.
     const entries = (await history('security')).filter((e) => e.metadata.setting_key === 'otp_registration_enabled');
     expect(entries[0]).toMatchObject({ group: 'security', actor_name: 'SYSTEM', metadata: { setting_key: 'otp_registration_enabled', old_value: valueOf(before, 'otp_registration_enabled'), new_value: !valueOf(before, 'otp_registration_enabled') } });
-    expect(['Kiểm thử cấu hình', 'Người ghi thứ hai']).toContain(entries[0]?.metadata.reason);
+    expect(entries[0]?.metadata.reason).toMatch(/^(Kiểm thử cấu hình|Người ghi \d)$/);
     // Revert = a new, ordinary change: a new version, both entries stay in the history.
     const revert = { expected_version: after.version, otp_registration_enabled: valueOf(before, 'otp_registration_enabled'), otp_password_reset_enabled: valueOf(after, 'otp_password_reset_enabled'), reason: 'Hoàn nguyên về giá trị cũ' };
     const key = randomUUID();
@@ -162,5 +214,37 @@ describe('M12-D — central configuration', () => {
     // Back to the default as an ordinary new change.
     expect((await postAs(admin, systemLoginOf(system), '/system-settings/order-parameters', { expected_version: after.version, fee_answer_minutes: 5, reason: 'Hoàn nguyên' })).status).toBe(200);
     expect(valueOf(await groupOf('orders'), 'fee_answer_minutes')).toBe(5);
+  });
+
+  // Deterministic lost-update check (no timing luck): the first writer is held between reading the group (version 0, no row yet) and
+  // writing it. A second writer with the same expected version must WAIT for the first and then be refused, never succeed beside it.
+  // The hold is not a sleep: the test waits until the second writer is observed blocked on the group's advisory lock.
+  it('a second writer on an empty group waits for the first and is refused (the first is held between its read and its write)', async () => {
+    await admin.pool.query(`DELETE FROM app.system_setting_changes`);
+    await admin.pool.query(`DELETE FROM app.system_settings`);
+    const before = await groupOf('security');
+    expect(before.version).toBe(0);
+    const body = { expected_version: 0, otp_registration_enabled: false, otp_password_reset_enabled: true };
+    const hold = gatedSettings.holdNextWriter();
+    const first = postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi A' });
+    let second: Promise<AdminResponse> | undefined;
+    let secondDone = false;
+    try {
+      await hold.reached;
+      second = postAs(admin, systemLoginOf(system), '/system-settings/phone-verification', { ...body, reason: 'Người ghi B' }).then((response) => {
+        secondDone = true;
+        return response;
+      });
+      // Red on the old code: nothing is locked, so the second writer reads version 0 too and finishes while the first is still held,
+      // and the outcome is 'finished' at once, never by elapsed time.
+      expect(await waitForSecondWriter(() => secondDone)).toBe('waiting');
+    } finally {
+      hold.release();
+    }
+    const [a, b] = await Promise.all([first, second as Promise<AdminResponse>]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(code(a.status === 409 ? a : b).code).toBe('SYSTEM_SETTING_VERSION_CONFLICT');
+    expect(valueOf(await groupOf('security'), 'otp_registration_enabled')).toBe(false);
+    expect((await groupOf('security')).version).toBe(1);
   });
 });

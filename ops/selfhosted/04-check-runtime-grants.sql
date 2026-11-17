@@ -89,6 +89,7 @@ WITH expected(table_name, privileges) AS (
     ('order_chat_messages', ARRAY['SELECT', 'INSERT', 'DELETE']::text[]),
     ('order_chat_holds', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('address_change_requests', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('route_snapshots', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_timeout_policy', ARRAY['SELECT', 'UPDATE']::text[]),
     ('order_timeout_policy_changes', ARRAY['SELECT', 'INSERT']::text[]),
     ('order_parameters', ARRAY['SELECT', 'UPDATE']::text[]),
@@ -128,7 +129,7 @@ WITH expected(table_name, privileges) AS (
     ('review_reply_history', ARRAY['SELECT', 'INSERT']::text[]),
     ('complaints', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_messages', ARRAY['SELECT', 'INSERT']::text[]),
-    ('complaint_attachments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('complaint_attachments', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
     ('complaint_reconsiderations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_adjustments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[]),
@@ -147,15 +148,43 @@ WITH expected(table_name, privileges) AS (
     ('ops_version_reports', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_deploys', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_backup_reports', ARRAY['SELECT', 'INSERT', 'DELETE']::text[])
+), cat_mode AS (
+  -- #261 rollback switch for complaint_attachments DELETE. Unset or 'granted' = the release that needs DELETE (default).
+  -- 'revoked' = the rolled-back release, after ops/selfhosted/05-rollback-complaint-attachment-delete.sql. Any other value is refused.
+  SELECT coalesce(current_setting('ship11.complaint_attachment_delete', true), 'granted') AS mode
 ), table_checks AS (
   SELECT 'app.' || table_name || ':' || privilege AS check_name,
          CASE WHEN to_regclass('app.' || table_name) IS NULL THEN 'MISSING_TABLE'
               WHEN NOT has_table_privilege('ship11_app', to_regclass('app.' || table_name), privilege) THEN 'MISSING_PRIVILEGE'
               ELSE 'OK' END AS result
     FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege)
+   CROSS JOIN cat_mode
+   WHERE NOT (table_name = 'complaint_attachments' AND privilege = 'DELETE' AND cat_mode.mode = 'revoked')
+), cat_expected AS (
+  -- The exact expected set for complaint_attachments in the selected mode (the row above is the source of truth).
+  SELECT p.privilege
+    FROM expected CROSS JOIN LATERAL unnest(privileges) AS p(privilege) CROSS JOIN cat_mode
+   WHERE table_name = 'complaint_attachments' AND (p.privilege <> 'DELETE' OR cat_mode.mode = 'granted')
+), cat_kinds AS (
+  -- Effective privileges (direct, inherited or PUBLIC) of ship11_app on complaint_attachments, for every table privilege kind.
+  SELECT k AS kind,
+         k IN (SELECT privilege FROM cat_expected) AS expected_kind,
+         to_regclass('app.complaint_attachments') IS NOT NULL
+           AND has_table_privilege('ship11_app', to_regclass('app.complaint_attachments'), k) AS actual_kind
+    FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']::text[]) AS k
+), cat_check AS (
+  -- NOT A SUPERSET CHECK: a missing expected privilege AND an extra one (e.g. TRUNCATE, which bypasses the row guard) both fail.
+  SELECT 'app.complaint_attachments:EXACT_PRIVILEGES' AS check_name,
+         CASE WHEN (SELECT mode FROM cat_mode) NOT IN ('granted', 'revoked') THEN 'INVALID_MODE'
+              WHEN to_regclass('app.complaint_attachments') IS NULL THEN 'MISSING_TABLE'
+              WHEN NOT EXISTS (SELECT 1 FROM cat_kinds WHERE expected_kind <> actual_kind) THEN 'OK'
+              ELSE (SELECT string_agg(CASE WHEN expected_kind THEN 'MISSING:' ELSE 'EXTRA:' END || kind, ' ' ORDER BY kind)
+                      FROM cat_kinds WHERE expected_kind <> actual_kind)
+         END AS result
 ), functions(signature) AS (
   VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
-         ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)')
+         ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)'),
+         ('app.purge_unreferenced_route_snapshots(interval)')
 ), function_checks AS (
   SELECT signature || ':EXECUTE' AS check_name,
          CASE WHEN to_regprocedure(signature) IS NULL THEN 'MISSING_FUNCTION'
@@ -165,6 +194,7 @@ WITH expected(table_name, privileges) AS (
 ), checks AS (
   SELECT * FROM table_checks
   UNION ALL SELECT * FROM function_checks
+  UNION ALL SELECT * FROM cat_check
   UNION ALL SELECT 'app:USAGE', CASE WHEN NOT has_schema_privilege('ship11_app', 'app', 'USAGE') THEN 'MISSING_PRIVILEGE' ELSE 'OK' END
   UNION ALL SELECT 'database', CASE WHEN current_database() = 'ship11_staging' THEN 'OK' ELSE 'WRONG_DATABASE' END
 )

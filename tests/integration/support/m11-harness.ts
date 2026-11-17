@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './m14-fake-route';
 import { newDish } from './m10-fixtures';
 import { randomBytes, randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -25,8 +26,8 @@ import { createShopOwner, ShopOwner } from './shop-management-fixtures';
 // the real registration / login, and deliveries that go through the REAL M07 routes (accept, destination, pickup, complete; a failed one is old data). The ONE stand-in is the
 // M10 order adapter (M10 is not built): a port bound in memory that answers like M10 will (an order belongs to the account that placed it).
 
-export const TERMS = 'test-terms-20261011-v1';
-export const PRIVACY = 'test-privacy-20261011-v1';
+export const TERMS = 'terms-20261114-v3';
+export const PRIVACY = 'privacy-20261114-v3';
 const WEB_SHIP = { device_id: 'web-ship-0011', platform: 'WEB', app: 'SHIP' };
 const WEB_FOOD = { device_id: 'web-food-0011', platform: 'WEB', app: 'FOOD' };
 export const tag = randomBytes(3).toString('hex').toUpperCase();
@@ -97,7 +98,7 @@ export class M11World {
     const router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(2.5, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;

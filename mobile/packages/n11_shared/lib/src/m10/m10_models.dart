@@ -1,3 +1,5 @@
+import 'package:n11_m14_map/n11_m14_map.dart';
+
 import '../address_change/address_change_models.dart';
 import '../m02/shop_contact.dart';
 import '../m07/m07_models.dart';
@@ -132,6 +134,37 @@ class OrderLine {
   final int? originalPriceVnd;
 
   bool get changed => originalQuantity != null;
+}
+
+final RegExp _routeVersionPattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$');
+
+/// The road of an Order as the server stored it with the checkout quote (P6-3, #294). Read only: the phone draws the stored geometry and never asks
+/// the routing service again. Null when the server sent no usable route (an Order before route snapshots, an Order the shop created directly, or a
+/// malformed answer): nothing is drawn and no new distance is attached to an old fee.
+class OrderRoute {
+  const OrderRoute({required this.distanceM, required this.durationS, required this.routeVersion, required this.geometry});
+
+  /// Parses `route`. Never throws: anything unexpected is "no route". A missing or malformed geometry keeps the distance and time (they are the stored
+  /// numbers) but [points] is empty, so the screen draws no line.
+  static OrderRoute? fromJson(Object? raw) {
+    if (raw is! Map<String, Object?> || raw['status'] != 'ROUTE') return null;
+    final Object? distance = raw['distance_m'];
+    final Object? version = raw['route_version'];
+    if (distance is! int || distance < 0 || version is! String || !_routeVersionPattern.hasMatch(version)) return null;
+    final Object? duration = raw['duration_s'];
+    final Object? geometry = raw['geometry'];
+    return OrderRoute(distanceM: distance, durationS: duration is int && duration >= 0 ? duration : null, routeVersion: version, geometry: geometry is String ? geometry : null);
+  }
+
+  final int distanceM;
+  final int? durationS;
+  final String routeVersion;
+
+  /// The encoded road (polyline, precision 6) as stored; null when the server did not send one.
+  final String? geometry;
+
+  /// The `[latitude, longitude]` points to draw; empty when the geometry is missing or malformed (nothing is drawn, no error is shown).
+  List<List<double>> get points => decodePolyline6(geometry) ?? const <List<double>>[];
 }
 
 class OrderFee {
@@ -365,6 +398,8 @@ class OrderView {
     required this.timeline,
     this.story = const <StoryEntry>[],
     this.addressChange,
+    this.route,
+    this.legacyReferenceOnly = false,
   });
 
   factory OrderView.fromJson(Object? raw) {
@@ -388,6 +423,8 @@ class OrderView {
       edited: _bool(m['edited']),
       changeReason: _strOrNull(m['change_reason']),
       customerEditCount: m['customer_edit_count'] is int ? m['customer_edit_count']! as int : 0,
+      route: OrderRoute.fromJson(m['route']),
+      legacyReferenceOnly: m['legacy_reference_only'] == true,
       confirmedAt: _timeOrNull(m['confirmed_at']),
       endedAt: _timeOrNull(m['ended_at']),
       endReason: _strOrNull(m['end_reason']),
@@ -414,6 +451,12 @@ class OrderView {
   final String code;
   final String status;
   final DisplayStatus display;
+
+  /// The stored road of this Order (detail views only); null when there is none to draw.
+  final OrderRoute? route;
+
+  /// True for an Order created before route snapshots: its distance and fee are the old ones, and it has no road to show.
+  final bool legacyReferenceOnly;
   final int version;
 
   /// Issue #238: how many times the customer replaced the content while the Order waited for the shop (the shop is told "Khách vừa cập nhật đơn hàng").
@@ -628,7 +671,7 @@ class CheckoutDraft {
 }
 
 class CheckoutPreview {
-  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs});
+  const CheckoutPreview({required this.ok, required this.blockers, required this.lines, required this.itemsVnd, required this.feeEstimateVnd, required this.feeDistanceM, required this.expectedTotalVnd, this.tipVnd = 0, this.feeStatus = 'UNAVAILABLE', this.feeReason, this.quoteSnapshot = '', this.policyVersion, this.quotedAt, this.nextRefreshMs, this.routeSnapshotId, this.route});
 
   factory CheckoutPreview.fromJson(Object? raw) {
     final Map<String, Object?> m = _obj(raw);
@@ -641,6 +684,8 @@ class CheckoutPreview {
       itemsVnd: _int(m['items_total_vnd']),
       feeEstimateVnd: _intOrNull(fee['estimate_vnd']),
       feeDistanceM: _intOrNull(fee['distance_m']),
+      routeSnapshotId: _strOrNull(fee['route_snapshot_id']),
+      route: OrderRoute.fromJson(fee['route']),
       expectedTotalVnd: _intOrNull(m['expected_total_vnd']),
       tipVnd: _int(m['tip_vnd'] ?? 0),
       feeStatus: _str(fee['status']),
@@ -662,6 +707,14 @@ class CheckoutPreview {
   /// M06's estimate; null = "Chưa xác định phí" (no pin, no route, no price) — never 0.
   final int? feeEstimateVnd;
   final int? feeDistanceM;
+
+  /// The id of the route snapshot this quote owns (P6-2). The place call sends it back so the Order gets exactly the road the customer saw; null when
+  /// the quote measured no route.
+  final String? routeSnapshotId;
+
+  /// The road of THIS quote (P6-3b): the same snapshot the fee was measured on, so its distance equals [feeDistanceM]. Null when the server sent no usable
+  /// route; the checkout then draws nothing and shows only what the quote already says.
+  final OrderRoute? route;
   final int? expectedTotalVnd;
   final int tipVnd;
   final String feeStatus;
@@ -670,7 +723,7 @@ class CheckoutPreview {
   final int? policyVersion;
   final DateTime? quotedAt;
 
-  Map<String, Object?> get expectedQuoteJson => <String, Object?>{'status': feeStatus, 'distance_m': feeDistanceM, 'fee_vnd': feeEstimateVnd, 'reason': feeReason, 'policy_version': policyVersion, 'snapshot': quoteSnapshot};
+  Map<String, Object?> get expectedQuoteJson => <String, Object?>{'status': feeStatus, 'distance_m': feeDistanceM, 'fee_vnd': feeEstimateVnd, 'reason': feeReason, 'policy_version': policyVersion, 'snapshot': quoteSnapshot, if (routeSnapshotId != null) 'route_snapshot_id': routeSnapshotId};
 
   bool lineChanged(DraftLine draft) {
     for (final PreviewLine l in lines) {

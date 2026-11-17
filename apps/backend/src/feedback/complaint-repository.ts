@@ -325,21 +325,21 @@ export class ComplaintRepository {
   // ---- attachments -------------------------------------------------------------------------------------------------------------
 
   /**
-   * Issue #261 janitor: deletes up to `limit` pictures that were never attached (complaint_id IS NULL) and were uploaded more than 24 hours ago. The rows are
-   * locked first and skipped when another transaction holds them (an upload being attached right now locks its rows), and the database guard refuses anything linked or
-   * younger than 24 hours, so a picture a user is still about to attach cannot be removed.
+   * Issue #261 janitor: deletes up to `limit` pictures that were never attached (complaint_id IS NULL) and were uploaded more than `olderThanSeconds` ago
+   * (at least 24 hours; the caller applies the replay-aware retention). The rows are locked first and skipped when another transaction holds them (an upload
+   * being attached right now locks its rows), and the database guard refuses anything linked or younger than 24 hours.
    */
-  async purgeOrphanAttachments(context: TransactionContext, limit: number): Promise<{ count: number; bytes: number }> {
+  async purgeOrphanAttachments(context: TransactionContext, limit: number, olderThanSeconds: number): Promise<{ count: number; bytes: number }> {
     const result = await context.query<{ n: string; bytes: string | null }>(
       `WITH doomed AS (
          SELECT attachment_id FROM app.complaint_attachments
-          WHERE complaint_id IS NULL AND created_at < ${CLOCK} - interval '24 hours'
+          WHERE complaint_id IS NULL AND created_at < ${CLOCK} - ($2::int * interval '1 second')
           ORDER BY created_at LIMIT $1::int FOR UPDATE SKIP LOCKED
        ), gone AS (
          DELETE FROM app.complaint_attachments a USING doomed d WHERE a.attachment_id = d.attachment_id AND a.complaint_id IS NULL RETURNING a.byte_size
        )
        SELECT count(*)::text AS n, sum(byte_size)::text AS bytes FROM gone`,
-      [limit],
+      [limit, olderThanSeconds],
     );
     return { count: safe(result.rows[0]?.n ?? '0'), bytes: safe(result.rows[0]?.bytes ?? '0') };
   }
@@ -666,5 +666,5 @@ const toAdjustment = (r: RawAdjustment): AdjustmentRow => ({
 });
 
 /** The same rule as complaintInScope() in SQL (shop part, driver part as parameters): a file naming both a shop and a Shipper needs both parts. */
-const complaintScopeSql = (alias: string, shopParam: number, driverParam: number): string =>
+export const complaintScopeSql = (alias: string, shopParam: number, driverParam: number): string =>
   `((${alias}.shop_id IS NULL OR $${String(shopParam)}::boolean) AND (${alias}.driver_id IS NULL OR $${String(driverParam)}::boolean) AND (${alias}.shop_id IS NOT NULL OR ${alias}.driver_id IS NOT NULL OR ($${String(shopParam)}::boolean AND $${String(driverParam)}::boolean)))`;

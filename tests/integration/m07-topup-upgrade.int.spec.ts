@@ -1,3 +1,4 @@
+import { m14RouteAnswer } from './support/m14-fake-route';
 import { PASSWORD_SESSION_UP_SQL, PASSWORD_SESSION_DOWN_SQL } from './support/password-session-migration-sql';
 import { ACCOUNT_DELETE_REQUEST_DOWN_SQL, ACCOUNT_DELETE_REQUEST_UP_SQL } from './support/account-delete-request-migration-sql';
 import { ORDER_CANCEL_RIGHT_DOWN_SQL, ORDER_CANCEL_RIGHT_UP_SQL } from './support/admin-order-cancel-right-migration-sql';
@@ -31,8 +32,8 @@ import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery
 // everything must be exactly as it was; then M07 runs on that money: another top-up, accept (hold), complete (one debit), cancel and fail (release), and the
 // ledger gate still refuses every source it must refuse. Both applications (administration and client) share the one test database.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const tag = randomBytes(3).toString('hex').toUpperCase();
 const RECORD = 'wallet.topup.record';
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -173,7 +174,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     router = http.createServer((request, response) => {
       request.resume();
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ trip: { summary: { length: 2.5, time: 420 } } }));
+      response.end(JSON.stringify(m14RouteAnswer(2.5, 420)));
     });
     await new Promise<void>((resolve) => router.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${(router.address() as AddressInfo).port}`;

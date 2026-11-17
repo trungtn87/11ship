@@ -1,6 +1,5 @@
 import { AppBrand, logo } from '../brand.js';
 import { banner, checkbox, countdown, button, otpField, passwordField, setBusy, setButtonLabel, textField, textLink } from '../components.js';
-import { FOOD_TEST_CONSENT } from '../consent.js';
 import { formatCountdown, h } from '../dom.js';
 import { icon, IconName } from '../icons.js';
 import { ScreenDef, ScreenEnv, VariantDef } from '../screen.js';
@@ -256,19 +255,25 @@ function registerScreen(brand: AppBrand, routes: AuthRoutes): ScreenDef {
       const phone = textField({ id: 'phone', label: 'Số điện thoại', icon: 'phone', type: 'tel', inputMode: 'tel', autocomplete: 'username', placeholder: 'Nhập số điện thoại để nhận mã xác thực' });
       const password = passwordField({ id: 'password', label: 'Mật khẩu', autocomplete: 'new-password', placeholder: 'Tạo mật khẩu', hint: '8 đến 128 ký tự.' });
       const confirm = passwordField({ id: 'password-confirm', label: 'Nhập lại mật khẩu', autocomplete: 'new-password', placeholder: 'Nhập lại mật khẩu' });
-      // 11Food: the two texts the Owner approved for the test build are shown IN FULL above the checkbox, which starts unchecked
-      // (consent.ts). 11Ship has no approved text yet, so it keeps its label and the "chờ duyệt" note (no link to an empty page).
-      // The approved test texts cover 11Ship as well ("bản thử nghiệm 11Ship/11Food"): a connected register shows them in either app.
-      const offer = food ? env.register?.consent ?? FOOD_TEST_CONSENT : env.register?.consent;
+      // Both apps show the Owner-approved official texts (consent.ts, generated from the public legal pages) IN FULL above the
+      // checkbox, which starts unchecked. A register without a configured consent offer shows the pending note instead.
+      const offer = env.register?.consent;
       const consent = checkbox({ id: 'consent', label: offer?.checkboxLabel ?? 'Tôi đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của 11Ship' });
+      const legalCard = (title: string, sections: readonly { readonly title: string; readonly paragraphs: readonly string[] }[]): HTMLElement =>
+        h(
+          'section',
+          { class: 'c-card c-card--soft c-stack c-stack--tight' },
+          h('h2', { class: 'c-h2' }, title),
+          ...sections.flatMap((section) => [h('h3', { class: 'c-lead' }, section.title), ...section.paragraphs.map((paragraph) => h('p', { class: 'c-lead' }, paragraph))]),
+        );
       const consentBlock =
         offer === undefined
           ? h('p', { class: 'c-hint' }, 'Nội dung Điều khoản đang chờ duyệt, liên kết sẽ có khi được duyệt.')
           : h(
               'div',
               { class: 'c-stack c-stack--tight', id: 'consent-texts' },
-              h('section', { class: 'c-card c-card--soft c-stack c-stack--tight' }, h('h2', { class: 'c-h2' }, offer.termsTitle), h('p', { class: 'c-lead' }, offer.termsText)),
-              h('section', { class: 'c-card c-card--soft c-stack c-stack--tight' }, h('h2', { class: 'c-h2' }, offer.privacyTitle), h('p', { class: 'c-lead' }, offer.privacyText)),
+              legalCard(offer.termsTitle, offer.termsSections),
+              legalCard(offer.privacyTitle, offer.privacySections),
             );
       const feedback = h('div', { class: 'c-stack', 'aria-live': 'polite' });
       // Connected register (live Food): the server says how a registration is verified (GET /v1/client-auth/config). Until it

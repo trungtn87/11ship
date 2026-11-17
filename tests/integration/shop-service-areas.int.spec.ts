@@ -20,8 +20,8 @@ import {
 // then by identifier, exactly {service_area_id, name}, no-store, read-only (no audit, outbox or idempotency row), no query and
 // no body, and the caller must be an ordinary enabled CUSTOMER with a valid CLIENT session.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_FOOD = { device_id: 'web-food-areas-1', platform: 'WEB', app: 'FOOD' };
 
 describe('M01 — shop onboarding service-area list', () => {

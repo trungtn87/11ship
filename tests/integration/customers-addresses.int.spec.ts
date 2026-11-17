@@ -23,8 +23,8 @@ import {
 // Contract: docs/current/11Ship-M05-design-approved-v1.0.md. Cases M05-01 .. M05-12 are proven here by the id in the test name.
 // M05-13 and M05-14 (checkout with an inline address) need M10 and are PENDING_M10: nothing here pretends to cover them.
 
-const TERMS = 'test-terms-20261011-v1';
-const PRIVACY = 'test-privacy-20261011-v1';
+const TERMS = 'terms-20261114-v3';
+const PRIVACY = 'privacy-20261114-v3';
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const NAME_AN = 'Nguyễn Văn An';
 const CUSTOMER_KEYS = ['customer_id', 'user_id', 'full_name', 'phone', 'created_at'];

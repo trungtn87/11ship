@@ -69,18 +69,37 @@ function service(options: { shops: Record<string, ShopSnapshot>; routes: Pick<M1
 describe('DiscoveryRouteService', () => {
   const origin = { lat: 22.6666, lng: 106.2578 };
 
-  it('routes from the customer position to the PICKUP point of each public shop (never the delivery leg), in request order', async () => {
+  it('routes from the PICKUP point of each public shop to the customer GPS (shop -> GPS, never the delivery leg), in request order', async () => {
     const asked: unknown[] = [];
     const routes = {
       available: true,
       route: async (from: unknown, to: unknown) => {
         asked.push([from, to]);
-        return { distanceM: 3400, seconds: 600 };
+        return { distanceM: 3400, seconds: 600, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' };
       },
     };
     const result = await service({ shops: { [A]: snapshotOf(A) }, routes }).distances({ origin, shopIds: [A] });
     expect(result).toEqual({ routing_available: true, distances: [{ shop_id: A, status: 'ROUTE', distance_m: 3400 }] });
-    expect(asked).toEqual([[origin, { lat: 22.66, lng: 106.25 }]]);
+    expect(asked).toEqual([[{ lat: 22.66, lng: 106.25 }, origin]]);
+  });
+
+  it('one-way roads: the answer is the shop -> GPS leg, not the GPS -> shop leg (catches a reversed direction)', async () => {
+    const pickup = { lat: 22.66, lng: 106.25 };
+    const legs: { from: unknown; to: unknown }[] = [];
+    const routes = {
+      available: true,
+      route: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+        legs.push({ from, to });
+        // Asymmetric fake: leaving the pickup point is 5200 m, arriving at it is 3100 m.
+        const geometry = 'oqjfj@_dntiEoe`@nkX';
+        return from.lat === pickup.lat && from.lng === pickup.lng
+          ? { distanceM: 5200, seconds: 900, geometry, routeVersion: 'test' }
+          : { distanceM: 3100, seconds: 500, geometry, routeVersion: 'test' };
+      },
+    };
+    const result = await service({ shops: { [A]: snapshotOf(A) }, routes }).distances({ origin, shopIds: [A] });
+    expect(result.distances).toEqual([{ shop_id: A, status: 'ROUTE', distance_m: 5200 }]);
+    expect(legs).toEqual([{ from: pickup, to: origin }]);
   });
 
   it('a shop that is not public, unknown or has no point is UNAVAILABLE without a routing call, and a failed route is UNAVAILABLE (no straight line, no zero)', async () => {
@@ -100,7 +119,7 @@ describe('DiscoveryRouteService', () => {
   });
 
   it('without a routing service nothing is invented', async () => {
-    const result = await service({ shops: { [A]: snapshotOf(A) }, routes: { available: false, route: async () => ({ distanceM: 1, seconds: 1 }) } }).distances({ origin, shopIds: [A] });
+    const result = await service({ shops: { [A]: snapshotOf(A) }, routes: { available: false, route: async () => ({ distanceM: 1, seconds: 1, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' }) } }).distances({ origin, shopIds: [A] });
     expect(result).toEqual({ routing_available: false, distances: [{ shop_id: A, status: 'UNAVAILABLE', distance_m: null }] });
   });
 
@@ -114,7 +133,7 @@ describe('DiscoveryRouteService', () => {
         peak = Math.max(peak, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 5));
         inFlight -= 1;
-        return { distanceM: 1000, seconds: 100 };
+        return { distanceM: 1000, seconds: 100, geometry: 'oqjfj@_dntiEoe`@nkX', routeVersion: 'test' };
       },
     };
     const ids = Array.from({ length: 12 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);

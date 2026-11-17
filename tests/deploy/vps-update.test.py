@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -21,6 +22,11 @@ class DeployTests(unittest.TestCase):
         self.patch = patch.object(d, 'BASE', self.root)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        # Routing not configured by default, so the M14 gateway gate does not run in the older tests (the host may have no /etc/11ship).
+        (self.root / 'staging.env').write_text('APP_ENV=test\n')
+        self.env_patch = patch.object(d, 'ENV', str(self.root / 'staging.env'))
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
         (self.root / 'releases').mkdir()
         self.old = self.release('a')
         self.new = self.release('b')
@@ -387,6 +393,56 @@ class DeployTests(unittest.TestCase):
             switch.assert_not_called()
             save.assert_not_called()
         self.assertEqual((self.root / 'previous').resolve(), before)
+
+
+    def routing_env(self, origin='http://127.0.0.1:18014'):
+        (self.root / 'staging.env').write_text('APP_ENV=test\nM14_ROUTING_ORIGIN=' + origin + '\n')
+
+    def gate_result(self, returncode=0, stderr=b''):
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=b'== gateway check OK\n', stderr=stderr)
+
+    def test_m14_gate_is_skipped_when_routing_is_not_configured(self):
+        with patch.object(d.subprocess, 'run') as run_gate:
+            d.m14_gate(self.new, 'update')
+        run_gate.assert_not_called()
+
+    def test_m14_gate_green_lets_the_deploy_continue(self):
+        self.routing_env()
+        (self.new / d.M14_GATE).parent.mkdir(parents=True)
+        (self.new / d.M14_GATE).write_text('#!/bin/bash\n')
+        with patch.object(d.subprocess, 'run', return_value=self.gate_result()) as run_gate:
+            d.m14_gate(self.new, 'update')
+        self.assertEqual(run_gate.call_args[0][0][:2], ['bash', str(self.new / d.M14_GATE)])
+
+    def test_m14_gate_red_stops_the_update_before_any_change(self):
+        self.routing_env()
+        (self.new / d.M14_GATE).parent.mkdir(parents=True)
+        (self.new / d.M14_GATE).write_text('#!/bin/bash\n')
+        with patch.object(d, 'verify_service'), patch.object(d, 'extract', return_value=self.new),              patch.object(d.subprocess, 'run', return_value=self.gate_result(1, b'ERROR: gateway is not ready')),              patch.object(d, 'run') as run, patch.object(d, 'probe') as probe, patch.object(d, 'backup') as backup,              patch.object(d, 'migrate') as migrate, patch.object(d, 'switch') as switch:
+            with self.assertRaisesRegex(RuntimeError, 'not ready for this backend; deploy stopped, nothing changed'):
+                d.update('archive', 'b' * 40)
+            run.assert_not_called()
+            probe.assert_not_called()
+            backup.assert_not_called()
+            migrate.assert_not_called()
+            switch.assert_not_called()
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+
+    def test_m14_gate_missing_script_in_the_release_stops_the_deploy(self):
+        self.routing_env()
+        with self.assertRaisesRegex(RuntimeError, 'gate script is missing'):
+            d.m14_gate(self.new, 'update')
+
+    def test_rollback_is_paired_with_the_gateway_gate_before_the_switch(self):
+        self.routing_env()
+        (self.old / d.M14_GATE).parent.mkdir(parents=True)
+        (self.old / d.M14_GATE).write_text('#!/bin/bash\n')
+        state = {'previous': str(self.new), 'current': str(self.old), 'backward_compatible': True}
+        (self.root / 'deploy-state.json').write_text(json.dumps(state))
+        with patch.object(d, 'verify_service'), patch.object(d, 'probe', return_value='[]'),              patch.object(d.subprocess, 'run', return_value=self.gate_result(1, b'ERROR: gateway routeVersion is missing')),              patch.object(d, 'switch') as switch:
+            with self.assertRaisesRegex(RuntimeError, 'rollback: routing gateway is not ready'):
+                d.rollback()
+            switch.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -13,6 +13,7 @@ import { DeliveryHandback } from './delivery-handback';
 import { DeliveryReadModule } from './delivery-read.module';
 import { DeliveryRecorder } from './delivery-recorder';
 import { DeliveryViews } from './delivery-views';
+import { OrdersCoreModule } from '../orders/orders-core.module';
 import { FeeAnswerExpiry } from './fee-answer-expiry';
 import { AddressChangeReadModule } from '../address-change/address-change-read.module';
 import { ShipperLocationModule } from './shipper-location.module';
@@ -27,7 +28,7 @@ export class DeliveryCoreModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DeliveryCoreModule,
-      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule, AddressChangeReadModule],
+      imports: [auth, TransactionModule, IdempotencyModule, AuditModule, OutboxModule, DriverModule, ShopModule, WalletModule, ShippingEligibilityModule, DeliveryReadModule, ShipperLocationModule, AddressChangeReadModule, OrdersCoreModule],
       providers: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry],
       exports: [DeliveryActors, DeliveryViews, DeliveryRecorder, DeliveryCancel, DeliveryHandback, FeeAnswerExpiry, DeliveryReadModule, ShipperLocationModule, WalletModule, ShippingEligibilityModule, AddressChangeReadModule],
     };

@@ -1047,11 +1047,11 @@ select {
 :root {
   --sidebar-width: 232px;
   --sidebar-rail: 64px;
-  --sidebar-bg: #2a2a2e;
-  --sidebar-hover: #3a3a40;
+  --sidebar-bg: #1a1a1a;
+  --sidebar-hover: #2d2d32;
   --sidebar-text: #ffffff;
-  --sidebar-muted: #e3e1db;
-  --sidebar-line: #45454c;
+  --sidebar-muted: #ece9e1;
+  --sidebar-line: #3d3d44;
 }
 
 .sr-only {
@@ -1178,7 +1178,7 @@ select {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #a9a79f;
+  color: #d6d3ca;
 }
 
 .side-link {
@@ -3093,11 +3093,23 @@ select {
 .ov-ranges {
   display: inline-flex;
   flex-wrap: wrap;
+  align-self: flex-start;
+  width: max-content;
+  max-width: 100%;
   gap: 4px;
   padding: 4px;
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
+}
+/* Quiet secondary button (Đơn hàng "Làm mới"): still calls the same fetch; white/light-grey outline, no yellow. */
+.btn-quiet {
+  background: var(--white);
+  color: var(--charcoal);
+  border: 1px solid var(--line-strong);
+}
+.btn-quiet:hover:not(:disabled) {
+  background: var(--surface-subtle, #f7f8fa);
 }
 .ov-range {
   min-height: 40px;

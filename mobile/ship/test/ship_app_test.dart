@@ -11,7 +11,7 @@ const String sha = '0123456789abcdef0123456789abcdef01234567';
 
 const AppConfig config = AppConfig(
   apiBaseUrl: 'https://103.9.78.67.sslip.io',
-  appId: 'vn.eleven.ship.test',
+  appId: 'vn.eleven.ship',
   versionName: '0.1.0',
   buildNumber: '3',
   sourceSha: sha,
@@ -106,11 +106,72 @@ void main() {
   testWidgets('income remains unknown and notifications introduce no fake data', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'income');
-    expect(find.text('—'), findsOneWidget);
-    expect(find.text('Chưa có dữ liệu thu nhập'), findsOneWidget);
+    // S03 guest (Owner 14/11): process card and sign-in actions only; no income figures, no transactions.
+    expect(find.byKey(const Key('driver-process-card')), findsOneWidget);
+    expect(find.text('Tổng thu nhập'), findsNothing);
+    expect(find.text('Giao dịch gần đây'), findsNothing);
+    expect(find.byKey(const Key('income-guest-login')), findsOneWidget);
     await openTab(tester, 'notifications');
     expect(find.text('Đăng nhập để xem thông báo của bạn.'), findsOneWidget);
     expect(find.textContaining('₫'), findsNothing);
+  });
+
+  testWidgets('S05 guest: "Đăng ký làm shipper" and the process entry; no "Hồ sơ shipper" row', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'account');
+    expect(find.byKey(const Key('driver-process-entry')), findsOneWidget);
+    expect(find.text('Quy trình & quyền lợi tài xế 11Ship'), findsOneWidget);
+    expect(find.text('Đăng ký · Duyệt hồ sơ · Nhận đơn'), findsOneWidget);
+    expect(find.byKey(const Key('driver-register-note-account')), findsOneWidget);
+    expect(find.text('Đăng ký làm shipper'), findsOneWidget);
+    // Outlined brand-yellow button with dark text (not a solid yellow fill).
+    expect(tester.widget<N11Button>(find.byKey(const Key('open-register'))).kind, ButtonKind.outline);
+    expect(find.text('Hồ sơ shipper'), findsNothing);
+    // The register action opens the account registration with the 11Ship brand (not a shipper approval).
+    await tester.ensureVisible(find.byKey(const Key('open-register')));
+    await tester.tap(find.byKey(const Key('open-register')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RegisterScreen), findsOneWidget);
+  });
+
+  testWidgets('S03 guest card: exact process copy and the account-vs-approval note', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'income');
+    expect(find.text(kDriverProcessTitle), findsOneWidget);
+    expect(find.text(kDriverProcessText), findsOneWidget);
+    expect(find.text(kDriverProcessSteps), findsOneWidget);
+    expect(find.text(kDriverRegisterNote), findsOneWidget);
+    expect(find.textContaining('thu nhập', findRichText: true), findsWidgets);
+    // No income figures or commission/benefit amounts for guests.
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.textContaining('₫'), findsNothing);
+  });
+
+  testWidgets('S01 guest without a position: "Bật định vị ngay" shows and the map still shows on the first screen; gradient header and receiving area still shown', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    // The button is local only (s01_locate_test.dart covers what it does); here it must not push the map out of the first screen.
+    expect(find.text('Bật định vị ngay'), findsOneWidget);
+    // First screen at 390x844: the map panel starts above the bottom navigation (about y 730), so its label is on the first screen.
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    await tester.pump();
+    await tester.pump();
+    // The map label band (top 56 px of the panel) must be above the real navigation bar, not just the panel's first pixel.
+    final double navTop = tester.getTopLeft(find.byKey(const Key('tab-home'))).dy;
+    expect(tester.getTopLeft(find.byKey(const Key('home-v5-map-panel'))).dy + 56, lessThan(navTop));
+    expect(tester.getRect(find.byKey(const Key('home-locate-cta'))).bottom, lessThan(navTop));
+    expect(find.byKey(const Key('ship-home-header')), findsOneWidget);
+    expect(find.text('Khu vực nhận đơn'), findsOneWidget);
+  });
+
+  testWidgets('S02 offline orders: "Về trang chủ" switches to the Home tab', (WidgetTester tester) async {
+    await pump(tester, healthy());
+    await openTab(tester, 'orders');
+    expect(find.byKey(const Key('orders-home')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('orders-home')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('ship-home-scroll')), findsOneWidget);
   });
 
   testWidgets('orders view toggles between active and history, both empty', (WidgetTester tester) async {

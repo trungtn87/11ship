@@ -494,6 +494,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _previewing = false;
   bool _previewFresh = false;
   int _previewEpoch = 0;
+  // True while the cart is reloaded after a changed-cart refusal: no preview may publish then (it would price the old cart).
+  bool _cartReloading = false;
+  // A reload after a changed-cart refusal did not read the new cart: send stays locked and only a retry of that reload may follow.
+  bool _cartReloadFailed = false;
+  int _cartSeen = -1;
   late final AvailabilityRefresh _freshness = AvailabilityRefresh(
       refresh: _check,
       invalidate: () {
@@ -522,6 +527,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     _freshness.observe();
+    _cartSeen = cart.generation;
+    cart.addListener(_onCartChanged);
     final Identity? who = widget.session?.identity;
     _name.text = who?.profile.fullName ?? '';
     _phone.text = who == null ? '' : '0${who.phoneNormalized.replaceFirst('+84', '')}';
@@ -538,6 +545,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void dispose() {
     _tipDebounce?.cancel();
+    cart.removeListener(_onCartChanged);
     _name.dispose();
     _phone.dispose();
     _note.dispose();
@@ -603,7 +611,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _check() async {
-    if (_previewing || _locked) return;
+    // A failed cart reload prices nothing: the cart on screen is not confirmed, so no quote of it may open send.
+    if (!mounted || _previewing || _locked || _cartReloadFailed) return;
     final CheckoutDraft? draft = _draft();
     if (draft == null || textError(draft.recipientName, 'tên người nhận', 80) != null || phoneError(draft.recipientPhone) != null || textError(draft.note ?? '', 'ghi chú', 200, optional: true) != null || textError(draft.deliveryNote ?? '', 'hướng dẫn tìm đường', 200, optional: true) != null) {
       setState(() {
@@ -641,12 +650,56 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// Release that request without publishing any of its data, then preview only
   /// the latest draft (multiple edits while it was pending are coalesced).
   bool _restartStalePreview(int epoch) {
-    if (!mounted || epoch == _previewEpoch) return false;
+    if (!mounted || (epoch == _previewEpoch && !_cartReloading)) return false;
     setState(() => _previewing = false);
-    if (_tipDebounce == null || !_tipDebounce!.isActive) {
+    // While the cart reloads, the check that follows the reload prices the new cart; no restart here.
+    if (!_cartReloading && (_tipDebounce == null || !_tipDebounce!.isActive)) {
       unawaited(_check());
     }
     return true;
+  }
+
+  /// Any change of the saved cart (the freshness timer, a read from another screen, the recovery below) makes every preview priced before it stale.
+  void _onCartChanged() {
+    if (!mounted || cart.generation == _cartSeen) return;
+    _cartSeen = cart.generation;
+    _previewEpoch++;
+    // The recovery prices the new cart itself once its reload is applied; nothing here may publish or start a preview meanwhile.
+    if (_cartReloading) return;
+    // Only a successful reload (the recovery) clears a failed one: a save that merely started also changes the generation, and must not open send.
+    setState(() => _previewFresh = false);
+    if (!_locked) unawaited(_check());
+  }
+
+  /// After a changed-cart refusal: the saved cart is read again and only the NEW cart may be priced and sent. The reload waits for a read that was
+  /// already pending (it may predate the change) and then reads once more. A failed reload keeps send locked and offers a retry; the old cart is
+  /// never quoted again.
+  Future<void> _recoverCart() async {
+    setState(() {
+      _cartReloading = true;
+      _cartReloadFailed = false;
+    });
+    bool reloaded = false;
+    try {
+      reloaded = await cart.reloadAfterRefusal();
+    } finally {
+      // Every preview started before this point (it may still be in flight) is stale now.
+      if (mounted) {
+        setState(() {
+          _cartReloading = false;
+          _previewEpoch++;
+          _previewFresh = false;
+        });
+      }
+    }
+    if (!mounted) return;
+    if (!reloaded) {
+      setState(() => _cartReloadFailed = true);
+      return;
+    }
+    _clientRef = newIdempotencyKey();
+    _key = newIdempotencyKey();
+    await _check();
   }
 
   Future<void> _pickAddress() async {
@@ -741,10 +794,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       } else {
         _sendingDraft = null;
         _sendingPreview = null;
+        final bool quoteChanged = failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED';
         setState(() {
           _attempt = _Attempt.none;
           _failure = failure;
-          _changed = failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED';
+          _changed = quoteChanged;
+          // The quote the server refused is no longer valid: its amounts and its road go now; the re-check below draws the new quote's road.
+          if (quoteChanged) _previewFresh = false;
         });
         if (failure.code == 'ORDER_SHOP_NOT_OPEN') {
           await _freshness.reload();
@@ -752,10 +808,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
         if (failure.code == 'ORDER_CART_CHANGED' || failure.code == 'ORDER_QUOTE_CHANGED') {
           // The cart is read again: new prices, dishes that are gone. The person checks and sends again (a new attempt).
-          await cart.load();
-          _clientRef = newIdempotencyKey();
-          _key = newIdempotencyKey();
-          await _check();
+          await _recoverCart();
         }
       }
     }
@@ -845,6 +898,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final int? estimateFee = confirmed?.feeEstimateVnd;
     final int? expectedTotal = confirmed?.expectedTotalVnd;
     final bool canTip = _baseFee != null;
+    // The road of the CURRENT confirmed quote only (P6-5c): while a quote is being re-priced `confirmed` is null, so an old road is never kept.
+    final OrderRoute? road = confirmed?.route;
+    final List<List<double>> roadPoints = road?.points ?? const <List<double>>[];
     return m07Page(
       'Xác nhận đơn',
       source.isSample,
@@ -859,6 +915,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         if (_changed) N11Banner(key: const Key('checkout-changed'), kind: BannerKind.warn, title: 'Giá hoặc món đã thay đổi', text: 'Giỏ đã được cập nhật theo giá hiện tại. Hãy kiểm tra lại rồi gửi đơn.', icon: Icons.sync_problem_outlined),
+        if (_cartReloadFailed) N11Banner(key: const Key('checkout-cart-failed'), kind: BannerKind.error, title: 'Chưa tải lại được giỏ hàng', text: 'Đơn chưa được gửi. Hãy tải lại giỏ hàng; giá cũ không được dùng để gửi.'),
+        if (_cartReloadFailed) TextButton(key: const Key('checkout-cart-retry'), onPressed: _cartReloading ? null : () => unawaited(_recoverCart()), child: const Text('Tải lại giỏ hàng')),
         if (confirmed != null && confirmed.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: confirmed.blockers.map(_blockerText).join('\n')),
         const Text('Người nhận', style: N11Text.h2),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, enabled: !_locked, onChanged: _touch),
@@ -953,6 +1011,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ]),
         ),
+        if (road != null && roadPoints.isNotEmpty && widget.runtime.mapBuilder != null)
+          N11Card(
+            key: const Key('checkout-route'),
+            child: SizedBox(
+              height: 200,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(kRadiusControl),
+                // A new quote is a new road: its map is built again, so the camera fits the new route instead of keeping the old one.
+                child: KeyedSubtree(key: ValueKey<Object>(confirmed?.routeSnapshotId ?? road.geometry ?? ''), child: widget.runtime.mapBuilder!(context, const <M07MapPin>[], roadPoints)),
+              ),
+            ),
+          ),
         N11Card(
           key: const Key('checkout-summary'),
           child: Column(
@@ -963,6 +1033,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ('Tiền món', m10Money(items)),
                 ('Điểm giao', _draft()?.address.text ?? 'Chưa chọn'),
                 ('Quãng đường', confirmed?.feeDistanceM == null ? (_previewing ? 'Đang tính quãng đường…' : 'Chưa xác định quãng đường') : '≈ ${RouteDistance.text(confirmed!.feeDistanceM!)} · đường đi'),
+                if (road != null && (road.durationS ?? 0) > 0) ('Thời gian đi dự kiến', '≈ ${(road.durationS! / 60).ceil()} phút'),
                 ('Phí giao (dự tính)', estimateFee == null ? 'Chưa xác định được phí giao' : m10Money(estimateFee)),
                 if (_tipVnd > 0) ('Tiền cảm ơn', m10Money(_tipVnd)),
                 if (_tipVnd > 0 && estimateFee != null) ('Tổng phí giao đề xuất', m10Money(estimateFee + _tipVnd)),
@@ -1526,6 +1597,8 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
             mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
             ended: o.ended,
             who: 'shipper',
+            route: o.route,
+            legacyReferenceOnly: o.legacyReferenceOnly,
           ),
         ),
       if (_chat != null) _chatSection(_chat!),

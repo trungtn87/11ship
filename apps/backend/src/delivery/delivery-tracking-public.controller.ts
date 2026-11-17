@@ -1,7 +1,8 @@
-import { BadRequestException, Controller, Get, Header, HttpException, HttpStatus, Param, Req, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Param, Req, Res } from '@nestjs/common';
 import { OtpClientIp, OtpIpRequest } from '../auth/otp-client-ip';
+import { PublicRateLimitedError } from '../http/public-rate-limited-error';
 import { DeliveryCustomerService, PublicTrackResult } from './delivery-customer-service';
-import { PublicTrackingRateLimiter } from './public-tracking-rate-limiter';
+import { PublicRateLimiter } from './public-rate-limiter';
 
 /**
  * The per-address limiter of these public routes counts OtpClientIp.identity: the socket's address, and X-Forwarded-For only from a
@@ -37,8 +38,8 @@ function applySecurityHeaders(res: HttpResponse): void {
 
 @Controller()
 export class DeliveryTrackingPublicController {
-  /** 60 requests/minute per client address; bounded memory and per-request work (see PublicTrackingRateLimiter). */
-  private readonly limiter = new PublicTrackingRateLimiter();
+  /** 60 requests/minute per client address; bounded memory and per-request work (see PublicRateLimiter). */
+  private readonly limiter = new PublicRateLimiter();
 
   constructor(
     private readonly customer: DeliveryCustomerService,
@@ -46,8 +47,9 @@ export class DeliveryTrackingPublicController {
   ) {}
 
   private checkRateLimit(identity: string): void {
-    if (!this.limiter.allow(identity)) {
-      throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
+    const decision = this.limiter.take(identity);
+    if (!decision.allowed) {
+      throw new PublicRateLimitedError(decision.retryAfterSeconds);
     }
   }
 

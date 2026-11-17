@@ -16,6 +16,7 @@ import { OrderCustomerService } from './order-customer-service';
 import { OrderShopController } from './order-shop.controller';
 import { OrderShopService } from './order-shop-service';
 import { OrderSweeper, OrderSweeperRunner } from './order-sweeper';
+import { RouteSnapshotJanitor, RouteSnapshotJanitorRuntime } from './route-snapshot-janitor';
 import { OrderViews } from './order-views';
 import { OrdersCoreModule } from './orders-core.module';
 
@@ -32,7 +33,7 @@ export class OrdersModule {
       module: OrdersModule,
       imports: [DriverModule, auth, delivery, DeliveryCoreModule.register(auth), OrdersCoreModule, MenuModule.register(auth), CustomersModule.register(auth), ShopModule, ShopSetupCoreModule, M14RoutingModule, TransactionModule, IdempotencyModule, AddressChangeModule.register(auth)],
       controllers: [OrderCustomerController, OrderShopController],
-      providers: [OrderTimeoutSweeper, OrderCustomerService, OrderCustomerDeliveryService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner],
+      providers: [OrderTimeoutSweeper, OrderCustomerService, OrderCustomerDeliveryService, OrderShopService, OrderViews, OrderSweeper, OrderSweeperRunner, RouteSnapshotJanitor, RouteSnapshotJanitorRuntime],
       exports: [OrderSweeper],
     };
   }

@@ -125,8 +125,11 @@ export interface MenuItem extends MenuLeaf {
 
 export interface MenuGroup {
   readonly id: string;
-  /** Section heading ("TÀI KHOẢN"); the first group has none. */
-  readonly label?: string;
+  /**
+   * Sidebar section heading: ĐIỀU HÀNH / QUẢN LÝ / HỆ THỐNG. Consecutive groups with the same section share one heading.
+   * Grouping is presentation only: ids, routes, access and the server's rights are unchanged.
+   */
+  readonly section?: string;
   readonly items: readonly MenuItem[];
 }
 
@@ -134,6 +137,7 @@ export interface MenuGroup {
 export const MENU: readonly MenuGroup[] = [
   {
     id: 'overview',
+    section: 'ĐIỀU HÀNH',
     items: [
       { id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' },
       // M12-A: the figures and the work waiting; every figure is gated by the server per administrator (FORBIDDEN / NOT_READY / ERROR are shown as such).
@@ -144,7 +148,7 @@ export const MENU: readonly MenuGroup[] = [
   },
   {
     id: 'accounts',
-    label: 'TÀI KHOẢN',
+    section: 'QUẢN LÝ',
     items: [
       {
         id: 'users',
@@ -165,7 +169,7 @@ export const MENU: readonly MenuGroup[] = [
   },
   {
     id: 'operations',
-    label: 'VẬN HÀNH',
+    section: 'ĐIỀU HÀNH',
     items: [
       // M02 shop management: list and detail from the server; an ADMIN needs VIEW on the SHOP app (the server decides every call again).
       { id: 'shops', label: 'Quán', icon: 'store', route: { name: 'shops' }, ready: true, access: 'shops' },
@@ -179,7 +183,7 @@ export const MENU: readonly MenuGroup[] = [
   },
   {
     id: 'catalog',
-    label: 'DANH MỤC',
+    section: 'QUẢN LÝ',
     items: [
       {
         id: 'catalog',
@@ -195,7 +199,7 @@ export const MENU: readonly MenuGroup[] = [
     // M04 (UI phase, Owner-approved 2026-10-15): Tổng quan / Ví Shipper / Nạp tiền / Rút tiền / Giao dịch / Đối soát. SYSTEM sees all of it;
     // an ADMIN needs the matching grant, which the server does not send yet (grantsFromPermissions), so for now only SYSTEM sees it.
     id: 'finance',
-    label: 'TÀI CHÍNH',
+    section: 'QUẢN LÝ',
     items: [
       {
         id: 'finance',
@@ -221,7 +225,7 @@ export const MENU: readonly MenuGroup[] = [
     // M13 (Owner-approved 2026-10-16): Tổng quan / Sự cố / SMS Gateway / Nhật ký / Phiên bản & cập nhật / Cấu hình. SYSTEM sees all; an ADMIN only with a
     // grant from SYSTEM (view or handle), read from the server; the server decides every call again.
     id: 'sysops',
-    label: 'VẬN HÀNH HỆ THỐNG',
+    section: 'HỆ THỐNG',
     items: [
       {
         id: 'sysops',
@@ -243,7 +247,7 @@ export const MENU: readonly MenuGroup[] = [
   },
   {
     id: 'system',
-    label: 'HỆ THỐNG',
+    section: 'HỆ THỐNG',
     items: [
       // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
       { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },

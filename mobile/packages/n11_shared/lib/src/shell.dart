@@ -98,6 +98,7 @@ class N11App extends StatelessWidget {
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
     this.updates,
+    this.session,
     this.keepBottomNavOnChildRoutes = false,
   });
 
@@ -112,6 +113,9 @@ class N11App extends StatelessWidget {
   /// Live notifications, the push tap and the foreground resync (M08). Null = the shell does none of it (a build without notifications).
   final NotificationShell? notifications;
   final bool keepBottomNavOnChildRoutes;
+
+  /// The signed-in session whose identity is read again (throttled) when the app returns to the foreground or the Account tab opens (P5-6c). Null = no refresh.
+  final SessionController? session;
 
   /// Replaced only by tests; the real app uses [httpHealthTransport].
   final HealthTransport? transport;
@@ -139,6 +143,7 @@ class N11App extends StatelessWidget {
         transport: transport,
         pollInterval: pollInterval,
         notifications: notifications,
+        session: session,
         keepBottomNavOnChildRoutes: keepBottomNavOnChildRoutes,
       ),
     );
@@ -155,9 +160,11 @@ class N11Shell extends StatefulWidget {
     this.transport,
     this.pollInterval = const Duration(seconds: 30),
     this.notifications,
+    this.session,
     this.keepBottomNavOnChildRoutes = false,
   });
 
+  final SessionController? session;
   final String? navigationIdentity;
   final AppBrand brand;
   final List<TabSpec> tabs;
@@ -323,12 +330,21 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
       unawaited(_monitor.check());
       unawaited(widget.notifications?.controller.resync());
       unawaited(widget.notifications?.push?.resync());
+      unawaited(widget.session?.refreshIdentityIfStale());
     } else if (!visible) {
       widget.notifications?.controller.stopLive();
     }
   }
 
+  /// Opening the Account tab shows what the server says about the account (locked / unlocked): read it again, throttled by the session (P5-6c).
+  void _refreshIdentityForTab(int index) {
+    if (index >= 0 && index < widget.tabs.length && widget.tabs[index].id == 'account') {
+      unawaited(widget.session?.refreshIdentityIfStale());
+    }
+  }
+
   void _select(int index) {
+    _refreshIdentityForTab(index);
     if (index == _index && !_diagnostics) {
       if (widget.keepBottomNavOnChildRoutes) {
         _popTabToRoot(index);
