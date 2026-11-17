@@ -157,7 +157,7 @@ function check(app, spec, { name = '1.0.0', code } = {}) {
 test('the checker accepts a clean food bundle and a clean ship bundle', () => {
   const food = check('food', FOOD_OK);
   assert.equal(food.status, 0, food.out);
-  assert.match(food.out, new RegExp(`aab ok \\(food\\): vn\\.eleven\\.food 1\\.0\\.0\\+${nextCode('food')}, targetSdk 36`));
+  assert.ok(food.out.includes(`aab ok (food): vn.eleven.food 1.0.0+${nextCode('food')}, targetSdk 36`), food.out);
   const ship = check('ship', SHIP_OK);
   assert.equal(ship.status, 0, ship.out);
 });
