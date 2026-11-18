@@ -211,7 +211,12 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
                 icon: Icons.storefront_outlined,
                 title: 'Quán của bạn',
                 text: 'Khu vực quản lý quán chưa sẵn sàng trong bản này.')
-            : ShopTab(session: session, flows: flows!.m02!),
+            : ShopTab(
+                session: session,
+                flows: flows!.m02!,
+                // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
+                openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows, orderId))),
+              ),
       ),
     TabSpec(
         id: 'account',

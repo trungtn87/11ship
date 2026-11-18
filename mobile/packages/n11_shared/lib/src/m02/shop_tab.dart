@@ -11,10 +11,13 @@ import 'shop_manage_views.dart';
 /// shell decides), and the management screens need the shop context the SERVER holds for this session. The person enters that mode
 /// with their own tap (`POST /v1/client-auth/context`, refused by the server when not allowed); nothing here switches it for them.
 class ShopTab extends StatelessWidget {
-  const ShopTab({super.key, required this.session, required this.flows});
+  const ShopTab({super.key, required this.session, required this.flows, this.openOrder});
 
   final SessionController session;
   final M02Flows flows;
+
+  /// Opens an order's detail from the revenue screen (the app supplies it; null = rows not tappable).
+  final Future<void> Function(String orderId)? openOrder;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +72,7 @@ class ShopTab extends StatelessWidget {
           );
         }
         return vstack(<Widget>[
-          ShopManageScreen(flows: flows, embedded: true),
+          ShopManageScreen(flows: flows, embedded: true, openOrder: openOrder),
           if (onboarding != null)
             N11Button(
               key: const Key('shop-tab-leave'),
