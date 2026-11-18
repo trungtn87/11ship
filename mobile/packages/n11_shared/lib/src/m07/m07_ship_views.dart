@@ -197,15 +197,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       children: <Widget>[
         if (widget.source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M07SampleBanner()),
         if (widget.locationSlot != null) Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: widget.locationSlot!(context)),
-        Wrap(
-          spacing: N11Space.gap2,
-          runSpacing: N11Space.gap2,
-          children: <Widget>[
-            N11Button(key: const Key('m07-ship-tab-mine'), label: 'Đang thực hiện', compact: true, kind: _view == _ShipView.mine ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.mine)),
-            N11Button(key: const Key('m07-ship-tab-offers'), label: 'Có thể nhận', compact: true, kind: _view == _ShipView.offers ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.offers)),
-            N11Button(key: const Key('m07-ship-tab-history'), label: 'Lịch sử', compact: true, kind: _view == _ShipView.history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.history)),
-          ],
-        ),
+        _ShipViewSegments(selected: _view, onSelect: (_ShipView v) => setState(() => _view = v)),
         const SizedBox(height: N11Space.gap3),
         actionBanner(),
         if (_view == _ShipView.offers) _offers() else _deliveries(history: _view == _ShipView.history),
@@ -224,6 +216,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       emptyTitle: 'Chưa có đơn để nhận',
       emptyText: 'Đơn mới trong bán kính 3 km quanh bạn sẽ hiện ở đây khi quán gọi shipper.',
       builder: (BuildContext context, List<OfferView> offers, Future<void> Function() reload) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final OfferView o in offers)
             Padding(
@@ -253,11 +246,103 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       emptyTitle: history ? 'Chưa có lịch sử giao hàng' : 'Chưa có đơn đang thực hiện',
       emptyText: history ? 'Đơn đã kết thúc sẽ hiện ở đây.' : 'Vào "Có thể nhận" để nhận đơn.',
       builder: (BuildContext context, List<DeliveryView> items, Future<void> Function() reload) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final DeliveryView d in items)
             Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _MineCard(delivery: d, onTap: () => _open(d))),
         ],
       ),
+    );
+  }
+}
+
+/// The three list filters of the Orders tab on ONE row (#394). Each segment takes width in proportion to its label; when the text is too large for one
+/// row the row scrolls sideways instead of wrapping or shrinking the text.
+class _ShipViewSegments extends StatelessWidget {
+  const _ShipViewSegments({required this.selected, required this.onSelect});
+  final _ShipView selected;
+  final ValueChanged<_ShipView> onSelect;
+
+  static const List<({_ShipView view, String label, Key key})> _items = <({_ShipView view, String label, Key key})>[
+    (view: _ShipView.mine, label: 'Đang thực hiện', key: Key('m07-ship-tab-mine')),
+    (view: _ShipView.offers, label: 'Có thể nhận', key: Key('m07-ship-tab-offers')),
+    (view: _ShipView.history, label: 'Lịch sử', key: Key('m07-ship-tab-history')),
+  ];
+  static const TextStyle _style = TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black);
+  static const double _pad = 8;
+  static const double _gap = 6;
+
+  double _labelWidth(String label, TextScaler scaler) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: label, style: _style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    return painter.width + _pad * 2;
+  }
+
+  Widget _segment(({_ShipView view, String label, Key key}) item) {
+    final bool active = selected == item.view;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: item.label,
+      excludeSemantics: true,
+      onTap: () => onSelect(item.view),
+      child: Material(
+        color: active ? N11Colors.yellow : N11Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          side: BorderSide(color: active ? Colors.transparent : N11Colors.line),
+        ),
+        child: InkWell(
+          key: item.key,
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          onTap: () => onSelect(item.view),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kTapMin),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _pad, vertical: 4),
+                child: Text(item.label, style: _style, maxLines: 1, softWrap: false, textAlign: TextAlign.center),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final List<double> natural = <double>[for (final ({_ShipView view, String label, Key key}) i in _items) _labelWidth(i.label, scaler)];
+    final double total = natural.reduce((double a, double b) => a + b) + _gap * (_items.length - 1);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (total <= constraints.maxWidth) {
+          return Row(
+            children: <Widget>[
+              for (int i = 0; i < _items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: _gap),
+                Expanded(flex: (natural[i] * 100).round(), child: _segment(_items[i])),
+              ],
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (int i = 0; i < _items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: _gap),
+                SizedBox(width: natural[i], child: _segment(_items[i])),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }
