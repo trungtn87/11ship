@@ -57,10 +57,12 @@ void main() {
       expect(map.pins.single['lat'], 22.67);
       expect(map.radiusCircle, containsPair('radius_m', 3000.0));
       expect(map.radiusCircle, containsPair('lat', 22.67));
-      expect(
-        find.text('Bán kính nhận đơn 3 km quanh vị trí của bạn (đường thẳng)'),
-        findsOneWidget,
-      );
+      // #392: the chip is short; the full meaning sits behind its (i) and is not shown by default.
+      expect(find.text(kShipRadiusLabel), findsOneWidget);
+      expect(find.text(kShipRadiusHelp), findsNothing);
+      await tester.tap(find.byKey(const Key('home-radius-info')));
+      await tester.pump();
+      expect(find.text(kShipRadiusHelp), findsOneWidget);
       expect(find.text('Chờ vị trí để hiện bán kính'), findsNothing);
       expect(map.centerRequest, 0);
       // The honest label is longer and wraps, so the map starts lower; bring the button into view like a person scrolling would.

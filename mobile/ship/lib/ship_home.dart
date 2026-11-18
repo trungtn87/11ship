@@ -596,7 +596,7 @@ class _RadiusHeaderState extends State<_RadiusHeader> {
   @override
   Widget build(BuildContext context) {
     final String chip = !widget.ready
-        ? 'Chờ vị trí'
+        ? 'Chờ vị trí để hiện bán kính'
         : widget.exempt
             ? kShipRadiusExemptLabel
             : kShipRadiusLabel;
