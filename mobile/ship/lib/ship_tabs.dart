@@ -6,6 +6,7 @@ import 'ship_m07.dart';
 import 'ship_income_data.dart';
 import 'ship_income_view.dart';
 import 'ship_online.dart';
+import 'ship_profile_hub.dart';
 import 'ship_wallet.dart';
 
 // M01 phone tabs. Home follows the approved Offline/Online reference; later-module actions remain gated.
@@ -41,7 +42,7 @@ NotificationRouter shipNotificationRouter(SessionController session, AppFlows fl
           actions.goTab('orders');
         case TargetType.walletTxn:
           // Only a live signed-in session reaches the wallet; a notification opened after logout does nothing (#295).
-          if (session.status == SessionStatus.signedIn) await navigator.push(walletHomeRoute(session, buildWalletSource(session: session)));
+          if (session.status == SessionStatus.signedIn) await navigator.push(walletHomeRoute(session, buildWalletSource(session: session), driver: flows.driver));
         case TargetType.profile:
           final DriverController? driver = flows.driver;
           if (driver != null) {
@@ -145,8 +146,8 @@ Widget _income(BuildContext context, ShellActions actions, SessionController ses
   return IncomeBody(
     source: HttpIncomeSource(session: session),
     wallet: buildWalletSource(session: session),
-    walletEntry: WalletEntry(session: session),
-    onOpenHistory: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session))),
+    walletEntry: WalletEntry(session: session, driver: flows?.driver),
+    onOpenHistory: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session), driver: flows?.driver)),
   );
 }
 
@@ -186,7 +187,10 @@ Widget _notifications(SessionController session, AppFlows? flows, ShellActions a
 
 Widget _account(SessionController session, ShellActions actions, AppFlows? flows) {
   final DriverController? driver = flows?.driver;
-  return Builder(builder: (BuildContext context) => AccountTab(
+  // Rebuilt whenever the session (guest / signed in / role) or the shipper profile changes, so no entry of a previous state stays on screen (#295, #396).
+  return ListenableBuilder(
+    listenable: Listenable.merge(<Listenable>[session, if (driver != null) driver]),
+    builder: (BuildContext context, Widget? _) => AccountTab(
     session: session,
     brand: shipBrand,
     actions: actions,
@@ -195,6 +199,7 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
     signedInTitle: 'Shipper',
     showAccountStatus: false,
     showDiagnostics: false,
+    showProfileEntry: false,
     settingsEntries: <Widget>[
       N11ListItem(
         key: const Key('open-change-password'),
@@ -216,27 +221,18 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
         ),
       // M11: the Shipper's scores by source and their complaints (no new tab).
       if (flows?.feedback != null) ...m11AccountEntries(context, source: flows!.feedback!, picker: flows.picker, role: M11Role.shipper),
-      // S12-S14 (M03): the Shipper profile, bank account, review status, receiving orders and stopping activity, all connected to the server.
-      if (driver != null)
-        N11ListItem(
-          key: const Key('driver-entry'),
-          icon: Icons.badge_outlined,
-          title: 'Hồ sơ shipper',
-          sub: 'Thông tin cá nhân, nhận đơn, dừng hoạt động / rút tiền.',
-          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverProfileScreen(controller: driver, walletSource: wallet))),
-        ),
     ],
     entries: <Widget>[
-      if (session.status == SessionStatus.signedIn) WalletListItem(key: const Key('account-wallet-entry'), session: session),
-      if (session.status == SessionStatus.signedIn) N11ListItem(icon: Icons.chat_outlined, title: 'Trao đổi nạp tiền', sub: 'Yêu cầu, chưa đọc và lịch sử xử lý', onTap: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: session)))),
-      if (driver != null && session.status == SessionStatus.signedIn)
+      // #396: ONE "Thông tin & Hồ sơ" and ONE "Ví tiền" (the wallet page holds the financial requests and stop / withdraw).
+      if (session.status == SessionStatus.signedIn)
         N11ListItem(
-          key: const Key('account-closure-entry'),
-          icon: Icons.account_balance_outlined,
-          title: 'Dừng hoạt động / Rút tiền',
-          sub: 'Hoàn tất đơn và rút toàn bộ số dư ví',
-          onTap: () => Navigator.of(context).push(driverWalletRoute(session, (WalletSource wallet) => DriverActivityScreen(controller: driver, walletSource: wallet))),
+          key: const Key('account-profile-hub'),
+          icon: Icons.badge_outlined,
+          title: 'Thông tin & Hồ sơ',
+          sub: 'Tài khoản, hồ sơ shipper và điều kiện nhận đơn',
+          onTap: () => Navigator.of(context).push(n11Route(ShipProfileHub(session: session, driver: driver))),
         ),
+      if (session.status == SessionStatus.signedIn) WalletListItem(key: const Key('account-wallet-entry'), session: session, driver: driver),
       // S05 guest: no "Hồ sơ shipper" row; the process & benefits entry instead.
       if (session.status != SessionStatus.signedIn) ...<Widget>[
         N11ListItem(key: const Key('driver-process-entry'), icon: Icons.route_outlined, title: kDriverProcessTitle, sub: kDriverProcessSteps),
@@ -245,15 +241,8 @@ Widget _account(SessionController session, ShellActions actions, AppFlows? flows
           child: Text(kDriverRegisterNote, key: Key('driver-register-note-account'), style: N11Text.caption),
         ),
       ],
-      if (driver == null && session.status == SessionStatus.signedIn)
-        N11ListItem(
-          icon: Icons.badge_outlined,
-          title: 'Hồ sơ shipper',
-          sub: kNotOnAndroidReason,
-          soon: true,
-          trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
-        ),
       const N11ListItem(icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
     ],
-  ));
+  ),
+  );
 }

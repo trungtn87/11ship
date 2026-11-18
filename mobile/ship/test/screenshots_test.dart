@@ -111,7 +111,9 @@ void main() {
     await shot(tester, '04b-change-password');
     await tester.tap(find.byTooltip('Quay lại'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('driver-entry')));
+    await tester.tap(find.byKey(const Key('account-profile-hub')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('shipper-profile-entry')));
     await tester.pumpAndSettle();
     await shot(tester, '05-driver-form');
     // Full Online layout under fixture rendering only; not an online session.

@@ -123,7 +123,12 @@ void main() {
     expect(r.session.status, SessionStatus.guest);
     final e = await entries(tester);
     expect((e.account, e.income, e.home), (false, false, false));
-    expect(find.text('Ví của tôi'), findsNothing);
+    expect(find.text('Ví tiền'), findsNothing);
+    // #396: a guest sees neither the profile hub nor any wallet / financial action (#295).
+    expect(find.byKey(const Key('account-profile-hub')), findsNothing);
+    expect(find.text('Thông tin & Hồ sơ'), findsNothing);
+    expect(find.text('Trao đổi nạp tiền'), findsNothing);
+    expect(find.text('Dừng hoạt động / Rút tiền'), findsNothing);
   });
 
   testWidgets('starting (the token is still being read): no wallet entry', (WidgetTester tester) async {
@@ -152,6 +157,30 @@ void main() {
     expect(e.account, isTrue);
     expect(e.income, isTrue);
     expect(e.home, isFalse, reason: 'Home has no wallet button any more (#392)');
+    // #396: Tài khoản has ONE profile entry and ONE wallet entry; the old separate rows are gone.
+    expect(find.byKey(const Key('account-profile-hub')), findsOneWidget);
+    expect(find.text('Ví của tôi'), findsNothing);
+    expect(find.text('Trao đổi nạp tiền'), findsNothing);
+    expect(find.text('Dừng hoạt động / Rút tiền'), findsNothing);
+    expect(find.byKey(const Key('driver-entry')), findsNothing);
+    // The wallet page holds the financial requests and stop / withdraw, both for a valid driver.
+    await tester.ensureVisible(find.byKey(accountEntry));
+    await tester.tap(find.byKey(accountEntry));
+    await tester.pumpAndSettle();
+    expect(find.text('Ví tiền'), findsWidgets);
+    await tester.ensureVisible(find.byKey(const Key('wallet-requests-entry')));
+    expect(find.byKey(const Key('wallet-requests-entry')), findsOneWidget);
+    // This rig builds the tabs without the driver controller (flows), so the stop / withdraw row is not offered here: it needs a driver.
+    expect(find.byKey(const Key('wallet-closure-entry')), findsNothing);
+    Navigator.of(tester.element(find.byKey(const Key('wallet-card')))).pop();
+    await tester.pumpAndSettle();
+    // Thông tin & Hồ sơ holds the personal information and the shipper profile as two sections (no controller here: the profile is "not connected").
+    await tester.ensureVisible(find.byKey(const Key('account-profile-hub')));
+    await tester.tap(find.byKey(const Key('account-profile-hub')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('profile-personal-entry')), findsOneWidget);
+    expect(find.byKey(const Key('profile-shipper-unavailable')), findsOneWidget);
+    expect(find.byKey(const Key('shipper-profile-entry')), findsNothing);
   });
 
   testWidgets('a locked wallet-only driver keeps the wallet entry', (WidgetTester tester) async {
@@ -358,6 +387,8 @@ void main() {
     expect(find.byType(WithdrawScreen), findsOneWidget);
     Navigator.of(tester.element(find.byType(WithdrawScreen))).pop();
     await tester.pumpAndSettle();
+    // The account list is longer now ("Thông tin & Hồ sơ" sits above the wallet row): scroll the row into view as a user would.
+    await tester.ensureVisible(find.byKey(accountEntry));
     await tester.tap(find.byKey(accountEntry));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('wallet-card')), findsOneWidget);

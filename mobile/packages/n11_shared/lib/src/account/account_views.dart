@@ -169,7 +169,10 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[]});
+  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[], this.showProfileEntry = true});
+
+  /// The built-in "Thông tin cá nhân" row. The shipper app passes false and offers its own "Thông tin & Hồ sơ" entry (#396).
+  final bool showProfileEntry;
 
   /// Look of the guest register action (the shipper app uses [ButtonKind.outline]). Only the button look; the form is unchanged.
   final ButtonKind registerKind;
@@ -244,7 +247,7 @@ class AccountTab extends StatelessWidget {
 
   Widget _tools(BuildContext context, {required bool signedIn}) {
     return N11List(title: signedIn ? 'Cài đặt' : null, children: <Widget>[
-      if (signedIn)
+      if (signedIn && showProfileEntry)
         N11ListItem(
           key: const Key('open-profile'),
           icon: Icons.badge_outlined,

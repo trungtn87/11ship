@@ -208,7 +208,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Trạng thái tài khoản'), findsNothing);
     expect(find.text('Trạng thái'), findsNothing);
-    expect(find.byKey(const Key('open-profile')), findsOneWidget);
+    expect(find.byKey(const Key('open-profile')), findsNothing, reason: 'the shipper app shows one Thông tin & Hồ sơ entry (#396)');
+    expect(find.byKey(const Key('account-profile-hub')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const Key('open-change-password')));
     await tester.tap(find.byKey(const Key('open-change-password')));
     await tester.pumpAndSettle();
