@@ -611,7 +611,6 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         ),
       );
     }
-    if (c.area != null) out.add(_DiscoveryBanner(areaName: c.area!.name));
     if (c.stale) {
       out.add(
         N11Banner(
@@ -743,21 +742,37 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
             );
           }
         } else {
-          for (final ShopCardData s in c.shops) {
+          // Issue #385: two shops per row, in the server order. One row is one list item, so the list still scrolls once.
+          final List<ShopCardData> shops = c.shops;
+          for (int i = 0; i < shops.length; i += 2) {
+            HomeShopTile tile(ShopCardData s) => HomeShopTile(
+                  key: Key('shop-${s.shopId}'),
+                  shop: s,
+                  stale: c.stale,
+                  customerLocation: _position.fix,
+                  distance: c.distances.of(s, _position.fix),
+                  locating: _position.loading,
+                  onTap: () => _openShop(
+                    context,
+                    widget.publicApi,
+                    s,
+                    ratings: widget.ratings,
+                    onReturn: c.freshness.reload,
+                  ),
+                );
             out.add(
-              ShopCard(
-                key: Key('shop-${s.shopId}'),
-                shop: s,
-                stale: c.stale,
-                customerLocation: _position.fix,
-                distance: c.distances.of(s, _position.fix),
-                locating: _position.loading,
-                onTap: () => _openShop(
-                  context,
-                  widget.publicApi,
-                  s,
-                  ratings: widget.ratings,
-                  onReturn: c.freshness.reload,
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: tile(shops[i])),
+                    const SizedBox(width: N11Space.gap3),
+                    Expanded(
+                      child: i + 1 < shops.length
+                          ? tile(shops[i + 1])
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -836,66 +851,178 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       );
 }
 
-/// Brand-only V5 hero. It reflects the area already resolved by real GPS/API
-/// data and deliberately contains no invented shop, dish, price or promotion.
-class _DiscoveryBanner extends StatelessWidget {
-  const _DiscoveryBanner({required this.areaName});
+/// Issue #385: one shop tile of the Home grid (two per row). Home only; Search keeps [ShopCard].
+/// Left: the logo, with the star rating on it only when there is a real rating, and the open/closed label under it.
+/// Right: the name (truncated) and the road distance. The address is not shown here; it stays in the shop detail.
+class HomeShopTile extends StatelessWidget {
+  const HomeShopTile({
+    super.key,
+    required this.shop,
+    required this.onTap,
+    this.customerLocation,
+    this.locating = false,
+    this.distance = RouteDistance.noPosition,
+    this.stale = false,
+  });
 
-  final String areaName;
+  final LocationFix? customerLocation;
+  final RouteDistance distance;
+  final bool locating;
+  final ShopCardData shop;
+  final bool stale;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    key: const Key('home-v5-banner'),
-    constraints: const BoxConstraints(minHeight: 112),
-    padding: const EdgeInsets.all(N11Space.gap4),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: <Color>[N11Colors.homeBannerStart, N11Colors.homeBannerEnd],
-      ),
-      borderRadius: BorderRadius.circular(N11V5.cardRadius),
-      boxShadow: N11V5.cardShadow,
-    ),
-    child: Row(
-      children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text(
-                'Khám phá món ngon gần bạn',
-                style: N11Text.h2.copyWith(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+  Widget build(BuildContext context) {
+    final ({String label, ChipKind kind}) chip = stale
+        ? (label: 'Chưa cập nhật', kind: ChipKind.warn)
+        : _stateChip(shop.reason);
+    // Only a real rating is shown: no count of zero and no invented score.
+    final bool rated = shop.ratingCount > 0 && shop.ratingAverage != null;
+    final String score = rated ? shop.ratingAverage!.toStringAsFixed(1) : '';
+    final String distanceText = distanceLine(
+      shop,
+      distance,
+      customerLocation,
+      locating: locating,
+    );
+    return Semantics(
+      button: true,
+      label:
+          '${shop.name}, ${rated ? '$score sao' : 'chưa có đánh giá'}, $distanceText, ${chip.label}',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Material(
+        color: N11Colors.white,
+        borderRadius: BorderRadius.circular(N11V5.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(N11V5.cardRadius),
+          child: Container(
+            padding: const EdgeInsets.all(N11Space.gap2),
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          ShopLogoImage(
+                            key: Key('shop-logo-${shop.shopId}'),
+                            url: shop.logoUrl,
+                          ),
+                          if (rated)
+                            Positioned(
+                              left: 4,
+                              bottom: 4,
+                              child: Container(
+                                key: Key('shop-rating-${shop.shopId}'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: N11Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    const Icon(
+                                      Icons.star_rounded,
+                                      size: 12,
+                                      color: N11Colors.yellow,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      score,
+                                      style: N11Text.caption.copyWith(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 64,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: N11Chip(chip.label, kind: chip.kind),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: N11Space.gap1),
-              Text(
-                'Giao nhanh tại $areaName',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: N11Text.caption.copyWith(color: N11Colors.black),
-              ),
-            ],
+                const SizedBox(width: N11Space.gap2),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        shop.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          height: 1.25,
+                          fontWeight: FontWeight.w800,
+                          color: N11Colors.black,
+                        ),
+                      ),
+                      if (!rated)
+                        Text(
+                          'Chưa có đánh giá',
+                          key: Key('shop-rating-${shop.shopId}'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: N11Text.caption,
+                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Icon(
+                            Icons.route_outlined,
+                            size: 14,
+                            color: N11Colors.ink2,
+                          ),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              distanceText,
+                              key: Key('shop-distance-${shop.shopId}'),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: N11Text.caption,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: N11Space.gap3),
-        Container(
-          width: 64,
-          height: 64,
-          decoration: const BoxDecoration(
-            color: N11Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.delivery_dining_rounded,
-            size: 36,
-            color: N11Colors.accentOrange,
-          ),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 /// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
