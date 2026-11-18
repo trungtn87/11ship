@@ -371,6 +371,9 @@ Widget _orders(SessionController session, AppFlows? flows) {
   ]);
 }
 
+/// Issue #390: the shop's "Thanh toán và trao đổi" entry in the Account tab. Hidden (not deleted) until Owner wants it back.
+const bool kShopFinanceEntryVisible = false;
+
 // ---- F04: account (guest) --------------------------------------------------------------------------------------------
 
 Widget _account(
@@ -405,7 +408,9 @@ Widget _account(
                 ),
             ],
             entries: <Widget>[
-              if (session.status == SessionStatus.signedIn &&
+              // Owner (Issue #390): hidden for now, not removed. The screen, API and data stay; set the flag to true to show the entry again.
+              if (kShopFinanceEntryVisible &&
+                  session.status == SessionStatus.signedIn &&
                   session.identity?.activeRole == 'SHOP_OWNER')
                 N11ListItem(
                     icon: Icons.payments_outlined,
