@@ -409,7 +409,11 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(c.distances.want(c.shops, _position.fix));
         });
-        final List<Widget> body = <Widget>[_header()];
+        // Issue #384 / Figma F01: the header row (area + bell) is the first item; the gradient paints behind the status bar.
+        // Figma F01: the header sits 14px above the search panel (12 list gap + 2).
+        final List<Widget> body = <Widget>[
+          Padding(padding: const EdgeInsets.only(bottom: 2), child: _header()),
+        ];
         switch (c.choicesState) {
           case DiscoveryLoad.idle:
           case DiscoveryLoad.loading:
@@ -424,56 +428,116 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           case DiscoveryLoad.ready:
             body.addAll(_ready());
         }
-        return RefreshIndicator(
-          onRefresh: () =>
-              c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
-          child: ListView(
-            key: const Key('home-list'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              N11Space.pad,
-              N11Space.gap4,
-              N11Space.pad,
-              N11Space.gap8,
-            ),
-            children: <Widget>[
-              for (final Widget w in body)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: N11Space.gap3),
-                  child: w,
+        return Container(
+          key: const Key('home-gradient'),
+          decoration: const BoxDecoration(gradient: N11V5.homeGradient),
+          child: SafeArea(
+            bottom: false,
+            child: RefreshIndicator(
+              onRefresh: () =>
+                  c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
+              child: ListView(
+                key: const Key('home-list'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(
+                  N11Space.pad,
+                  N11Space.gap2,
+                  N11Space.pad,
+                  N11Space.gap8,
                 ),
-            ],
+                children: <Widget>[
+                  for (final Widget w in body)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                      child: w,
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  /// The notification bell (the brand logo was dropped from the Home by the Owner, #282).
-  Widget _header() => Row(
-    children: <Widget>[
-      const Spacer(),
-      Material(
-        color: N11Colors.white,
-        shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
-        child:
-            widget.bell ??
-            IconButton(
-              key: const Key('home-bell'),
-              tooltip: 'Thông báo',
-              constraints: const BoxConstraints(
-                minWidth: kTapMin,
-                minHeight: kTapMin,
-              ),
-              onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
-              icon: const Icon(
-                Icons.notifications_outlined,
-                color: N11Colors.black,
-              ),
+  /// Figma F01 header, one row 48 high: the area (with the GPS retry inline when needed) on the left and the bell on the right.
+  /// The brand logo was dropped from the Home by the Owner (#282). GPS controls the area label; it is not an area selector.
+  Widget _header() {
+    final String areaLabel = c.area == null
+        ? (c.resolvingArea || _position.loading
+              ? 'Đang xác định khu vực…'
+              : c.outsideCoverage
+              ? 'Ngoài khu vực phục vụ'
+              : 'Chưa xác định khu vực')
+        : c.manualArea
+        ? '${c.area!.name} · tham khảo'
+        : _position.failure != null
+        ? '${c.area!.name} · vị trí gần nhất'
+        : c.area!.name;
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
+                const SizedBox(width: 7),
+                Flexible(
+                  key: const Key('home-area'),
+                  child: Text(
+                    areaLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 19 / 14,
+                      fontWeight: FontWeight.w700,
+                      color: N11Colors.black,
+                    ),
+                  ),
+                ),
+                // Flexible: a long area name and the inline action share the row; the label truncates instead of overflowing at 320px.
+                Flexible(
+                  child: _PositionButton(
+                    position: _position,
+                    resolving: c.resolvingArea,
+                    failed: c.areaResolutionFailed,
+                    outsideCoverage: c.outsideCoverage,
+                    retry: () => c.locate(source: _position, force: true),
+                  ),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(width: N11Space.gap2),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: Material(
+              color: N11Colors.white,
+              shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
+              child:
+                  widget.bell ??
+                  IconButton(
+                    key: const Key('home-bell'),
+                    tooltip: 'Thông báo',
+                    constraints: const BoxConstraints(
+                      minWidth: kTapMin,
+                      minHeight: kTapMin,
+                    ),
+                    onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
+                    icon: const Icon(
+                      Icons.notifications_outlined,
+                      color: N11Colors.black,
+                    ),
+                  ),
+            ),
+          ),
+        ],
       ),
-    ],
-  );
+    );
+  }
 
   Widget _failed(VoidCallback retry) => Column(
     children: <Widget>[
@@ -493,68 +557,22 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
 
   List<Widget> _ready() {
     final List<Widget> out = <Widget>[];
-    // GPS controls this label; it is not an interactive area selector.
-    final String areaLabel = c.area == null
-        ? (c.resolvingArea || _position.loading
-              ? 'Đang xác định khu vực…'
-              : c.outsideCoverage
-              ? 'Ngoài khu vực phục vụ'
-              : 'Chưa xác định khu vực')
-        : c.manualArea
-        ? '${c.area!.name} · tham khảo'
-        : _position.failure != null
-        ? '${c.area!.name} · vị trí gần nhất'
-        : c.area!.name;
-    out.add(
-      ConstrainedBox(
-        key: const Key('home-area'),
-        constraints: const BoxConstraints(minHeight: 32),
-        child: Row(
-          children: <Widget>[
-            const Icon(
-              Icons.my_location,
-              size: 18,
-              color: N11Colors.yellowStrong,
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                areaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: N11Colors.black,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    out.add(
-      _PositionButton(
-        position: _position,
-        resolving: c.resolvingArea,
-        failed: c.areaResolutionFailed,
-        outsideCoverage: c.outsideCoverage,
-        retry: () => c.locate(source: _position, force: true),
-      ),
-    );
     // V5 visual shell: preserve the real search, filters, category controllers,
     // GPS and API data. No preview shops, mocked fees or hardcoded categories.
+    // Figma F01: search panel 358x76 (12 top/bottom, 11 sides), field 52 high, filter 42x52; 14px below the header.
     out.add(
-      Container(
-        key: const Key('home-v5-search-panel'),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: N11Colors.yellow,
-          borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
-        ),
-        child: Column(
-          children: <Widget>[
-            Row(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: Container(
+          key: const Key('home-v5-search-panel'),
+          padding: const EdgeInsets.fromLTRB(11, 12, 11, 12),
+          decoration: BoxDecoration(
+            color: N11Colors.yellow,
+            borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
+          ),
+          child: SizedBox(
+            height: 52,
+            child: Row(
               children: <Widget>[
                 Expanded(child: _FakeField(onTap: _openSearch)),
                 const SizedBox(width: N11Space.gap2),
@@ -564,49 +582,63 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                   child: IconButton(
                     key: const Key('home-filter'),
                     tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-                    constraints: const BoxConstraints(
-                      minWidth: kTapMin,
-                      minHeight: kTapMin,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 42,
+                      height: 52,
                     ),
                     color: c.filtersActive
                         ? N11Colors.accentOrange
                         : N11Colors.black,
                     onPressed: _openFilters,
-                    icon: const Icon(Icons.tune, size: 22),
+                    icon: const Icon(Icons.tune, size: 24),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
     // Category row sits on the light background below the yellow header (F01), scrolls sideways.
     if (c.categories.isNotEmpty) {
+      // Figma F01: white card 358x92 (radius 18), padding 9 / 8; the title below starts 20px under it (12 list gap + 8).
       out.add(
-        SingleChildScrollView(
-          key: const Key('home-v5-category-row'),
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: <Widget>[
-              _chip(
-                'home-cat-all',
-                'Tất cả',
-                c.categoryId == null,
-                () => c.categoryId == null
-                    ? null
-                    : c.toggleCategory(c.categoryId!),
-                icon: kCategoryAllIcon,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            key: const Key('home-v5-category-card'),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            decoration: BoxDecoration(
+              color: N11Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: SingleChildScrollView(
+              key: const Key('home-v5-category-row'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  _chip(
+                    'home-cat-all',
+                    'Tất cả',
+                    c.categoryId == null,
+                    () => c.categoryId == null
+                        ? null
+                        : c.toggleCategory(c.categoryId!),
+                    icon: kCategoryAllIcon,
+                  ),
+                  for (final CategoryChoice cat in c.categories)
+                    _chip(
+                      'home-cat-${cat.id}',
+                      cat.name,
+                      c.categoryId == cat.id,
+                      () => c.toggleCategory(cat.id),
+                      icon: categoryIconFor(cat.id),
+                    ),
+                ],
               ),
-              for (final CategoryChoice cat in c.categories)
-                _chip(
-                  'home-cat-${cat.id}',
-                  cat.name,
-                  c.categoryId == cat.id,
-                  () => c.toggleCategory(cat.id),
-                  icon: categoryIconFor(cat.id),
-                ),
-            ],
+            ),
           ),
         ),
       );
@@ -627,10 +659,20 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         ),
       );
     }
+    // Figma F01: ExtraBold 22/30 #191919; the shop grid starts 15px below it (12 list gap + 3).
     out.add(
-      Text(
-        'Quán gần bạn',
-        style: N11Text.title.copyWith(fontSize: N11V5.homeTitleSize),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Text(
+          'Quán gần bạn',
+          key: const Key('home-v5-section-title'),
+          style: N11Text.title.copyWith(
+            fontSize: N11V5.homeTitleSize,
+            height: 30 / 22,
+            fontWeight: FontWeight.w800,
+            color: N11Colors.black,
+          ),
+        ),
       ),
     );
     if (c.outsideCoverage) {
@@ -796,7 +838,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
   Widget _chip(String key, String label, bool on, VoidCallback? onTap,
           {required IconData icon}) =>
       Padding(
-        padding: const EdgeInsets.only(right: N11Space.gap2),
+        padding: const EdgeInsets.only(right: N11V5.homeCategoryGap),
         child: Semantics(
           selected: on,
           button: true,
@@ -804,42 +846,41 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           excludeSemantics: true,
           child: Material(
             key: Key(key),
-            color: on ? N11Colors.yellowSoft : N11Colors.white,
-            borderRadius: BorderRadius.circular(N11V5.inputRadius),
+            color: on ? N11Colors.homeCategorySelected : N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl),
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(N11V5.inputRadius),
+              borderRadius: BorderRadius.circular(kRadiusControl),
               child: Container(
-                width: N11V5.categoryTileWidth,
-                constraints: const BoxConstraints(
-                  minHeight: N11V5.categoryTileMinHeight,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                // Figma F01: tile 86x76, icon 25 at 8 from the top, label 11/17 at 42.
+                width: 86,
+                constraints: const BoxConstraints(minHeight: 76),
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
                 decoration: BoxDecoration(
                   border: Border.all(
                     color: on ? N11Colors.accentOrange : N11Colors.line,
                   ),
-                  borderRadius: BorderRadius.circular(N11V5.inputRadius),
+                  borderRadius: BorderRadius.circular(kRadiusControl),
                 ),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
                     Icon(
                       icon,
-                      size: 23,
+                      size: 25,
                       color: on ? N11Colors.accentOrange : N11Colors.black,
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 9),
                     Text(
                       label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: N11Text.caption.copyWith(
-                        fontSize: 12,
-                        height: 1.2,
-                        fontWeight: on ? FontWeight.w800 : FontWeight.w600,
-                        color: N11Colors.black,
+                        fontSize: 11,
+                        height: 17 / 11,
+                        fontWeight: FontWeight.w700,
+                        color: N11Colors.homeInk,
                       ),
                     ),
                   ],
@@ -1612,17 +1653,38 @@ class _PositionButton extends StatelessWidget {
         : position.failure == LocationFailure.disabled
         ? 'Bật vị trí'
         : 'Thử lại';
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: TextButton.icon(
-        key: const Key('discovery-locate'),
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+    // Figma F01 inline action: white pill, border #E7B628, radius 15, at least 78x30, Bold 12 #A65300.
+    return Padding(
+      padding: const EdgeInsets.only(left: N11Space.gap2),
+      child: Material(
+        color: N11Colors.white,
+        shape: const RoundedRectangleBorder(
+          side: BorderSide(color: N11Colors.homeLocateBorder),
+          borderRadius: BorderRadius.all(Radius.circular(15)),
         ),
-        onPressed: busy ? null : retry ?? position.locate,
-        icon: const Icon(Icons.my_location, size: 16),
-        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: InkWell(
+          key: const Key('discovery-locate'),
+          borderRadius: const BorderRadius.all(Radius.circular(15)),
+          onTap: busy ? null : retry ?? position.locate,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 78, minHeight: 30),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: N11Colors.homeLocateInk,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

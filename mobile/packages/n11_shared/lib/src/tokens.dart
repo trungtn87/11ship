@@ -29,6 +29,11 @@ abstract final class N11Colors {
     end: Alignment.bottomCenter,
     colors: <Color>[yellowSoft, white],
   );
+  // Figma 11Food F01 (node 2:75, GPS pending), used by the Home only.
+  static const Color homeCategorySelected = Color(0xFFFFF1BC);
+  static const Color homeInk = Color(0xFF242424);
+  static const Color homeLocateBorder = Color(0xFFE7B628);
+  static const Color homeLocateInk = Color(0xFFA65300);
   static const Color black = Color(0xFF191919);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);
@@ -101,6 +106,14 @@ abstract final class N11V5 {
   static const double shipMapMinHeight = 180;
   static const double shipMapMaxHeight = 440;
   static const double homeTitleSize = 22;
+  /// Figma F01: 180deg background, stops 0 / 32 / 70 / 100 %. A real gradient behind the status bar, never a flat colour.
+  static const LinearGradient homeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    stops: <double>[0, 0.32, 0.70, 1],
+    colors: <Color>[Color(0xFFFFEEA6), Color(0xFFFFF7D8), Color(0xFFFAFAF6), Color(0xFFF7F8FA)],
+  );
+  static const double homeCategoryGap = 10;
   static const List<BoxShadow> cardShadow = <BoxShadow>[
     BoxShadow(color: Color(0x13000000), blurRadius: 12, offset: Offset(0, 3)),
   ];
