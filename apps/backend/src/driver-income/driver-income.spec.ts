@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { averageFee, buildIncomeSummary } from './driver-income-summary';
-import { IncomeDayRow, IncomeTotalsRow } from './driver-income-repository';
+import { IncomeDayRow, IncomeTotalsRow } from '../wallet/wallet-income-repository';
 import { INCOME_MAX_DAYS, parseIncomePeriod } from './driver-income-validation';
 
 const totals = (over: Partial<IncomeTotalsRow> = {}): IncomeTotalsRow => ({

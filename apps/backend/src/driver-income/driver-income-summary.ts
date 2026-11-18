@@ -1,6 +1,6 @@
 import { safeJsonNumber } from '../driver-wallet/driver-wallet-validation';
 import { JsonObject } from '../idempotency/idempotency-executor';
-import { IncomeDayRow, IncomeTotalsRow, INCOME_TIME_ZONE } from './driver-income-repository';
+import { IncomeDayRow, IncomeTotalsRow, INCOME_TIME_ZONE } from '../wallet/wallet-income-repository';
 import { IncomePeriod } from './driver-income-validation';
 
 // Builds the JSON the Shipper's Thu nhập screen reads (issue #395). Pure: no database, no clock.

@@ -2,8 +2,8 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { DriverModule } from '../driver/driver.module';
 import { DriverWalletAccess } from '../driver-wallet/driver-wallet-access';
 import { TransactionModule } from '../transaction/transaction.module';
+import { WalletModule } from '../wallet/wallet.module';
 import { DriverIncomeController } from './driver-income.controller';
-import { DriverIncomeRepository } from './driver-income-repository';
 import { DriverIncomeService } from './driver-income.service';
 
 /**
@@ -15,9 +15,9 @@ export class DriverIncomeModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: DriverIncomeModule,
-      imports: [auth, DriverModule, TransactionModule],
+      imports: [auth, DriverModule, TransactionModule, WalletModule],
       controllers: [DriverIncomeController],
-      providers: [DriverWalletAccess, DriverIncomeRepository, DriverIncomeService],
+      providers: [DriverWalletAccess, DriverIncomeService],
     };
   }
 }

@@ -3,7 +3,7 @@ import { AuthPrincipal } from '../auth/auth-principal';
 import { DriverWalletAccess } from '../driver-wallet/driver-wallet-access';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { TransactionManager } from '../transaction/transaction-manager';
-import { DriverIncomeRepository } from './driver-income-repository';
+import { WalletIncomeRepository } from '../wallet/wallet-income-repository';
 import { buildIncomeSummary } from './driver-income-summary';
 import { IncomePeriod } from './driver-income-validation';
 
@@ -16,7 +16,7 @@ export class DriverIncomeService {
   constructor(
     private readonly transactions: TransactionManager,
     private readonly access: DriverWalletAccess,
-    private readonly repository: DriverIncomeRepository,
+    private readonly repository: WalletIncomeRepository,
   ) {}
 
   summary(principal: AuthPrincipal, period: IncomePeriod): Promise<JsonObject> {

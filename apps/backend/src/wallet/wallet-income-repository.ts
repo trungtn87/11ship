@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { TechnicalError } from '../common/app-errors';
-import { bigintOf } from '../wallet/wallet-read-repository';
+import { bigintOf } from './wallet-read-repository';
 import { TransactionContext } from '../transaction/transaction-context';
-import { IncomePeriod } from './driver-income-validation';
+
 
 export const INCOME_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 
@@ -53,8 +53,8 @@ function totalsOf(raw: RawTotals): IncomeTotalsRow {
  * Money stays in integer VND; sums are done in the database.
  */
 @Injectable()
-export class DriverIncomeRepository {
-  async summary(context: TransactionContext, driverId: string, period: IncomePeriod): Promise<{ totals: IncomeTotalsRow; days: IncomeDayRow[] }> {
+export class WalletIncomeRepository {
+  async summary(context: TransactionContext, driverId: string, period: { readonly from: string; readonly to: string }): Promise<{ totals: IncomeTotalsRow; days: IncomeDayRow[] }> {
     const result = await context.query<{ totals: RawTotals; days: RawDay[] }>(
       `WITH bounds AS (
          SELECT ($2::date)::timestamp AT TIME ZONE '${INCOME_TIME_ZONE}' AS start_at,

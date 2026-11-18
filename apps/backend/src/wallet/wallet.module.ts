@@ -18,6 +18,7 @@ import { CommissionPolicyRepository } from './commission-policy-repository';
 import { WalletReadRepository } from './wallet-read-repository';
 import { WithdrawalMoneyService } from './withdrawal-money-service';
 import { WithdrawalRepository } from './withdrawal-repository';
+import { WalletIncomeRepository } from './wallet-income-repository';
 
 /**
  * M04 Shipper wallet core (M04-A1): the zero wallet and its read model. It exposes NO controller, NO route and NO money command; it is
@@ -28,8 +29,8 @@ import { WithdrawalRepository } from './withdrawal-repository';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletAccountActivityReader, WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
-  exports: [WalletAccountActivityReader, WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, CommissionPolicyRepository, WalletDriverPort],
+  providers: [WalletAccountActivityReader, WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
+  exports: [WalletAccountActivityReader, WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort],
 })
 export class WalletModule implements OnModuleInit {
   constructor(private readonly port: DelegatingDriverWalletPort, private readonly wallet: WalletDriverPort) {}

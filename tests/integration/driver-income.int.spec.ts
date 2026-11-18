@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
-import { DriverIncomeRepository, IncomeTotalsRow } from '../../apps/backend/src/driver-income/driver-income-repository';
+import { IncomeTotalsRow, WalletIncomeRepository } from '../../apps/backend/src/wallet/wallet-income-repository';
 import { parseIncomePeriod } from '../../apps/backend/src/driver-income/driver-income-validation';
 import { DriverRepository } from '../../apps/backend/src/driver/driver-repository';
 import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
@@ -17,7 +17,7 @@ import { managerFor, testPool } from './support/transaction-fixtures';
 // way the wallet fixtures do it: the rows are shaped like real ones (completed assignments, COMMISSION_DEBIT rows with a chained sequence and balance).
 // The commit-time invariants are deferred and never run here, because nothing is committed.
 
-const repository = new DriverIncomeRepository();
+const repository = new WalletIncomeRepository();
 const contextOf = (client: PoolClient): TransactionContext => ({ isActive: true, query: (text, values) => client.query(text, values as unknown[] | undefined) });
 
 describe('#395 Shipper income - SQL on the real schema', () => {
