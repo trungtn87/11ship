@@ -7,8 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_shared/testing.dart';
 
-// PR #400 review (Antigravity FAIL): the Home tile must show a readable road distance, a readable name (2 lines), no cut "chưa có" label,
-// and the GPS pill must be exactly 30 high. Each item has a widget test; the layouts are checked at 390 / 360 / 320 px and text scale 1.3.
+// PR #400 review: the Home tile is vertical and must show a readable road distance, a readable name (2 lines), no unrated badge,
+// and the GPS pill must be exactly 30 high. The layouts are checked at 390 / 360 / 320 px and text scale 1.3.
 
 Future<void> _pumpTiles(WidgetTester tester, {required double width, double textScale = 1, required List<Widget> tiles}) async {
   tester.view.physicalSize = Size(width * 3, 844 * 3);
@@ -23,11 +23,18 @@ Future<void> _pumpTiles(WidgetTester tester, {required double width, double text
     home: Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(N11Space.pad),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final Widget t in tiles) ...<Widget>[Expanded(child: t), const SizedBox(width: N11Space.gap3)],
-          ],
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: tiles.first),
+                const SizedBox(width: N11Space.gap3),
+                Expanded(child: tiles.length > 1 ? tiles[1] : const SizedBox.shrink()),
+              ],
+            ),
+          ),
         ),
       ),
     ),
@@ -58,7 +65,7 @@ void main() {
   const ShopCardData longName = ShopCardData(shopId: 'l', name: 'B03 Quán Cơm Gà Cao Bằng chi nhánh trung tâm thành phố', address: 'x', reason: 'ONLINE');
 
   // 1. Distance: a short road distance in one readable line; never cut to "Quãng đườn…".
-  for (final (double width, double scale) in <(double, double)>[(390, 1), (360, 1), (360, 1.3), (320, 1), (320, 1.3)]) {
+  for (final (double width, double scale) in <(double, double)>[(390, 1), (390, 1.3), (360, 1), (360, 1.3), (320, 1), (320, 1.3)]) {
     testWidgets('road distance shows as a short number at ${width.toInt()}px, text ${scale}x, on one line', (WidgetTester tester) async {
       await _pumpTiles(tester, width: width, textScale: scale, tiles: <Widget>[
         _tile(rated, distance: const RouteDistance.route(1300)),
@@ -79,7 +86,16 @@ void main() {
     expect(find.byWidgetPredicate((Widget w) => w is Text && RegExp(r'\d\s?m$').hasMatch(w.data ?? '')), findsNothing);
   });
 
-  test('the full road wording stays in the semantics label (accessibility) and the other screens keep distanceLine', () {
+  testWidgets('the full road wording stays in the Home semantics label', (WidgetTester tester) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await _pumpTiles(tester, width: 390, tiles: <Widget>[
+      _tile(rated, distance: const RouteDistance.route(1300)),
+    ]);
+    expect(tester.getSemantics(find.byKey(const Key('tile-r'))).label, contains('Quãng đường đường bộ từ quán đến vị trí hiện tại: 1,3 km'));
+    handle.dispose();
+  });
+
+  test('Search and shop detail keep the existing distanceLine wording', () {
     expect(homeDistanceText(const RouteDistance.route(1300)), '1,3 km');
     expect(distanceLine(rated, const RouteDistance.route(1300), null), contains('Quãng đường từ quán đến vị trí hiện tại: ≈ 1,3 km'));
   });
@@ -97,7 +113,7 @@ void main() {
   }
 
   // 3. Long name: two lines of the name stay readable; the tile does not overflow.
-  for (final (double width, double scale) in <(double, double)>[(390, 1), (360, 1.3), (320, 1.3)]) {
+  for (final (double width, double scale) in <(double, double)>[(390, 1.3), (360, 1.3), (320, 1.3)]) {
     testWidgets('a long shop name uses up to two lines at ${width.toInt()}px, text ${scale}x', (WidgetTester tester) async {
       await _pumpTiles(tester, width: width, textScale: scale, tiles: <Widget>[_tile(longName), _tile(rated)]);
       final Finder name = find.byKey(const Key('shop-name-l'));

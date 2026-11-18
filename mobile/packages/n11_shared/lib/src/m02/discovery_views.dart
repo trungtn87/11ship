@@ -908,8 +908,8 @@ String homeDistanceText(RouteDistance distance, {bool locating = false}) {
 }
 
 /// Issue #385: one shop tile of the Home grid, two per row. Home only; Search keeps [ShopCard].
-/// Left: the logo (smaller in a narrow column), with the star score on it only when there is a real rating; the open/closed label under it.
-/// Right: the name (up to 2 lines) and the short road distance. A tile without a rating shows no rating line (no invented score, no "chưa có" text).
+/// Vertical layout: full-width image, state, name (up to 2 lines), then the compact road distance.
+/// A tile without a real rating shows no badge and never invents a score.
 class HomeShopTile extends StatelessWidget {
   const HomeShopTile({
     super.key,
@@ -936,12 +936,8 @@ class HomeShopTile extends StatelessWidget {
     // Only a real rating is shown: no count of zero and no invented score.
     final bool rated = shop.ratingCount > 0 && shop.ratingAverage != null;
     final String score = rated ? shop.ratingAverage!.toStringAsFixed(1) : '';
-    final String fullDistance = distanceLine(
-      shop,
-      distance,
-      customerLocation,
-      locating: locating,
-    );
+    final String shortDistance = homeDistanceText(distance, locating: locating);
+    final String fullDistance = 'Quãng đường đường bộ từ quán đến vị trí hiện tại: $shortDistance';
     return Semantics(
       button: true,
       label:
@@ -955,130 +951,95 @@ class HomeShopTile extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(N11V5.cardRadius),
-          child: Builder(
-            builder: (BuildContext context) {
-              // A narrow column (320 / 360 px with a large font) gives the name more room: smaller logo, tighter padding.
-              // Read from the screen width: LayoutBuilder cannot be inside IntrinsicHeight (the grid row), which asks intrinsic sizes.
-              final bool narrow =
-                  (MediaQuery.sizeOf(context).width - 2 * N11Space.pad - N11Space.gap3) / 2 < 160;
-              final double logo = narrow ? 48 : 64;
-              final double pad = narrow ? 6 : N11Space.gap2;
-              return Container(
-                padding: EdgeInsets.all(pad),
-                decoration: BoxDecoration(
-                  border: Border.all(color: N11Colors.line),
-                  borderRadius: BorderRadius.circular(N11V5.cardRadius),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        SizedBox(
-                          width: logo,
-                          height: logo,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: <Widget>[
-                              ShopLogoImage(
-                                key: Key('shop-logo-${shop.shopId}'),
-                                url: shop.logoUrl,
-                              ),
-                              if (rated)
-                                Positioned(
-                                  left: 4,
-                                  bottom: 4,
-                                  child: Container(
-                                    key: Key('shop-rating-${shop.shopId}'),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: N11Colors.white,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        const Icon(
-                                          Icons.star_rounded,
-                                          size: 12,
-                                          color: N11Colors.yellow,
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          score,
-                                          style: N11Text.caption.copyWith(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  key: Key('shop-image-frame-${shop.shopId}'),
+                  aspectRatio: 4 / 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      ShopLogoImage(
+                        key: Key('shop-logo-${shop.shopId}'),
+                        url: shop.logoUrl,
+                        borderRadius: N11V5.cardRadius,
+                      ),
+                      if (rated)
+                        Positioned(
+                          top: N11Space.gap2,
+                          right: N11Space.gap2,
+                          child: Container(
+                            key: Key('shop-rating-${shop.shopId}'),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: N11Colors.white,
+                              borderRadius: BorderRadius.circular(kRadiusPill),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const Icon(Icons.star_rounded, size: 13, color: N11Colors.yellow),
+                                const SizedBox(width: 2),
+                                Text(
+                                  score,
+                                  style: N11Text.caption.copyWith(fontSize: 11, height: 1.2, fontWeight: FontWeight.w800),
                                 ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          width: logo,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: N11Chip(chip.label, kind: chip.kind),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(width: narrow ? 6 : N11Space.gap2),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            shop.name,
-                            key: Key('shop-name-${shop.shopId}'),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: narrow ? 13 : 15,
-                              height: 1.25,
-                              fontWeight: FontWeight.w800,
-                              color: N11Colors.black,
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: <Widget>[
-                              Icon(
-                                Icons.route_outlined,
-                                size: narrow ? 12 : 14,
-                                color: N11Colors.ink2,
-                              ),
-                              const SizedBox(width: 2),
-                              Expanded(
-                                child: Text(
-                                  homeDistanceText(distance, locating: locating),
-                                  key: Key('shop-distance-${shop.shopId}'),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: N11Text.caption.copyWith(
-                                    fontSize: narrow ? 12 : 14,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(N11Space.gap2, N11Space.gap2, N11Space.gap2, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: N11Chip(chip.label, key: Key('shop-status-${shop.shopId}'), kind: chip.kind),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(N11Space.gap2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        shop.name,
+                        key: Key('shop-name-${shop.shopId}'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.route_outlined, size: 13, color: N11Colors.ink2),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              shortDistance,
+                              key: Key('shop-distance-${shop.shopId}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: N11Text.caption.copyWith(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
         ),
       ),

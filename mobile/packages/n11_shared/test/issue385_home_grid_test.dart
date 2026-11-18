@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
 
-// Issue #385: the Home shop grid tile. Two per row; rating only when real; status under the logo; name and road distance on the right;
-// the address is not on the Home tile.
+// Issue #385: the vertical Home shop grid tile. Two per row; full-width image, rating only when real, status under the image,
+// then name and compact road distance; the address is not on the Home tile.
 
 Future<void> _pumpRow(WidgetTester tester, double width, List<ShopCardData> shops, {bool stale = false}) async {
   tester.view.physicalSize = Size(width * 3, 800 * 3);
@@ -14,14 +14,22 @@ Future<void> _pumpRow(WidgetTester tester, double width, List<ShopCardData> shop
     home: Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(N11Space.pad),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final ShopCardData s in shops) ...<Widget>[
-              Expanded(child: HomeShopTile(key: Key('tile-${s.shopId}'), shop: s, stale: stale, onTap: () {})),
-              const SizedBox(width: N11Space.gap3),
-            ],
-          ],
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: HomeShopTile(key: Key('tile-${shops.first.shopId}'), shop: shops.first, stale: stale, onTap: () {})),
+                const SizedBox(width: N11Space.gap3),
+                Expanded(
+                  child: shops.length > 1
+                      ? HomeShopTile(key: Key('tile-${shops[1].shopId}'), shop: shops[1], stale: stale, onTap: () {})
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     ),
@@ -41,6 +49,15 @@ void main() {
       ]);
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('shop-rating-r')), findsOneWidget);
+      expect(tester.getSize(find.byKey(const Key('tile-long'))).height, tester.getSize(find.byKey(const Key('tile-r'))).height);
+      final Size image = tester.getSize(find.byKey(const Key('shop-image-frame-long')));
+      expect(image.aspectRatio, closeTo(4 / 3, 0.01));
+      expect(image.width, closeTo(tester.getSize(find.byKey(const Key('tile-long'))).width - 2, 0.01));
+      expect(find.descendant(of: find.byKey(const Key('shop-logo-long')), matching: find.byIcon(Icons.storefront_outlined)), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('shop-status-long'))).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(find.byKey(const Key('shop-image-frame-long'))).dy),
+      );
     });
   }
 

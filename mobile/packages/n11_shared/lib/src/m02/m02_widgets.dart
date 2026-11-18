@@ -478,9 +478,10 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
 
 /// The same square, uncropped frame for public logos and saved owner previews.
 class ShopLogoImage extends StatelessWidget {
-  const ShopLogoImage({super.key, this.url, this.bytes});
+  const ShopLogoImage({super.key, this.url, this.bytes, this.borderRadius = 12});
   final String? url;
   final Uint8List? bytes;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -488,7 +489,7 @@ class ShopLogoImage extends StatelessWidget {
     return AspectRatio(
       aspectRatio: 1,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(borderRadius),
         child: ColoredBox(
           color: N11Colors.yellowSoft,
           child: bytes != null
