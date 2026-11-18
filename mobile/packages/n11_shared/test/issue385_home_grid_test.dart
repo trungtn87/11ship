@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
-import 'package:n11_shared/src/m02/discovery_views.dart' show HomeShopTile;
-import 'package:n11_shared/src/m02/discovery_models.dart' show ShopCardData;
 
 // Issue #385: the Home shop grid tile. Two per row; rating only when real; status under the logo; name and road distance on the right;
 // the address is not on the Home tile.
