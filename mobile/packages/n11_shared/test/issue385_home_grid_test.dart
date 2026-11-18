@@ -47,9 +47,9 @@ void main() {
   testWidgets('a real rating shows the score on the logo; no rating shows the honest text and no score', (WidgetTester tester) async {
     await _pumpRow(tester, 390, const <ShopCardData>[rated, unrated]);
     expect(find.text('4.5'), findsOneWidget);
-    expect(find.text('Chưa có đánh giá'), findsOneWidget);
-    expect(find.byKey(const Key('shop-rating-u')), findsOneWidget);
-    // "Chưa có đánh giá" is never turned into a score.
+    // Antigravity #385 fix: an unrated tile shows no rating line (the long "Chưa có đánh giá" was cut); no score is invented.
+    expect(find.text('Chưa có đánh giá'), findsNothing);
+    expect(find.byKey(const Key('shop-rating-u')), findsNothing);
     expect(find.text('4.0'), findsNothing);
   });
 
@@ -58,7 +58,8 @@ void main() {
       ShopCardData(shopId: 'z', name: 'Zero', address: 'a', reason: 'ONLINE', ratingAverage: 5, ratingCount: 0),
     ]);
     expect(find.text('5.0'), findsNothing);
-    expect(find.text('Chưa có đánh giá'), findsOneWidget);
+    expect(find.text('Chưa có đánh giá'), findsNothing);
+    expect(find.byKey(const Key('shop-rating-z')), findsNothing);
   });
 
   testWidgets('the Home tile shows open / closed from the data and the address is not on it', (WidgetTester tester) async {

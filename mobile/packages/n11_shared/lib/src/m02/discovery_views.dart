@@ -892,9 +892,24 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       );
 }
 
-/// Issue #385: one shop tile of the Home grid (two per row). Home only; Search keeps [ShopCard].
-/// Left: the logo, with the star rating on it only when there is a real rating, and the open/closed label under it.
-/// Right: the name (truncated) and the road distance. The address is not shown here; it stays in the shop detail.
+/// Short distance for the Home tile only: a road distance as "1,3 km" (never a number without a route), otherwise one short word.
+/// The full road wording stays in the tile's semantics label, and [distanceLine] is unchanged for Search and the shop detail.
+String homeDistanceText(RouteDistance distance, {bool locating = false}) {
+  if (locating) return 'Đang tìm…';
+  switch (distance.kind) {
+    case RouteDistanceKind.route:
+      return RouteDistance.text(distance.meters!);
+    case RouteDistanceKind.loading:
+      return 'Đang tính…';
+    case RouteDistanceKind.noPosition:
+    case RouteDistanceKind.unavailable:
+      return 'Chưa rõ';
+  }
+}
+
+/// Issue #385: one shop tile of the Home grid, two per row. Home only; Search keeps [ShopCard].
+/// Left: the logo (smaller in a narrow column), with the star score on it only when there is a real rating; the open/closed label under it.
+/// Right: the name (up to 2 lines) and the short road distance. A tile without a rating shows no rating line (no invented score, no "chưa có" text).
 class HomeShopTile extends StatelessWidget {
   const HomeShopTile({
     super.key,
@@ -921,7 +936,7 @@ class HomeShopTile extends StatelessWidget {
     // Only a real rating is shown: no count of zero and no invented score.
     final bool rated = shop.ratingCount > 0 && shop.ratingAverage != null;
     final String score = rated ? shop.ratingAverage!.toStringAsFixed(1) : '';
-    final String distanceText = distanceLine(
+    final String fullDistance = distanceLine(
       shop,
       distance,
       customerLocation,
@@ -930,7 +945,7 @@ class HomeShopTile extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '${shop.name}, ${rated ? '$score sao' : 'chưa có đánh giá'}, $distanceText, ${chip.label}',
+          '${shop.name}, ${rated ? '$score sao' : 'chưa có đánh giá'}, $fullDistance, ${chip.label}',
       excludeSemantics: true,
       onTap: onTap,
       child: Material(
@@ -940,125 +955,130 @@ class HomeShopTile extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(N11V5.cardRadius),
-          child: Container(
-            padding: const EdgeInsets.all(N11Space.gap2),
-            decoration: BoxDecoration(
-              border: Border.all(color: N11Colors.line),
-              borderRadius: BorderRadius.circular(N11V5.cardRadius),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Column(
-                  mainAxisSize: MainAxisSize.min,
+          child: Builder(
+            builder: (BuildContext context) {
+              // A narrow column (320 / 360 px with a large font) gives the name more room: smaller logo, tighter padding.
+              // Read from the screen width: LayoutBuilder cannot be inside IntrinsicHeight (the grid row), which asks intrinsic sizes.
+              final bool narrow =
+                  (MediaQuery.sizeOf(context).width - 2 * N11Space.pad - N11Space.gap3) / 2 < 160;
+              final double logo = narrow ? 48 : 64;
+              final double pad = narrow ? 6 : N11Space.gap2;
+              return Container(
+                padding: EdgeInsets.all(pad),
+                decoration: BoxDecoration(
+                  border: Border.all(color: N11Colors.line),
+                  borderRadius: BorderRadius.circular(N11V5.cardRadius),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    SizedBox(
-                      width: 64,
-                      height: 64,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: <Widget>[
-                          ShopLogoImage(
-                            key: Key('shop-logo-${shop.shopId}'),
-                            url: shop.logoUrl,
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        SizedBox(
+                          width: logo,
+                          height: logo,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              ShopLogoImage(
+                                key: Key('shop-logo-${shop.shopId}'),
+                                url: shop.logoUrl,
+                              ),
+                              if (rated)
+                                Positioned(
+                                  left: 4,
+                                  bottom: 4,
+                                  child: Container(
+                                    key: Key('shop-rating-${shop.shopId}'),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: N11Colors.white,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        const Icon(
+                                          Icons.star_rounded,
+                                          size: 12,
+                                          color: N11Colors.yellow,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          score,
+                                          style: N11Text.caption.copyWith(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          if (rated)
-                            Positioned(
-                              left: 4,
-                              bottom: 4,
-                              child: Container(
-                                key: Key('shop-rating-${shop.shopId}'),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: N11Colors.white,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    const Icon(
-                                      Icons.star_rounded,
-                                      size: 12,
-                                      color: N11Colors.yellow,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      score,
-                                      style: N11Text.caption.copyWith(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: logo,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: N11Chip(chip.label, kind: chip.kind),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(width: narrow ? 6 : N11Space.gap2),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            shop.name,
+                            key: Key('shop-name-${shop.shopId}'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: narrow ? 13 : 15,
+                              height: 1.25,
+                              fontWeight: FontWeight.w800,
+                              color: N11Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.route_outlined,
+                                size: narrow ? 12 : 14,
+                                color: N11Colors.ink2,
+                              ),
+                              const SizedBox(width: 2),
+                              Expanded(
+                                child: Text(
+                                  homeDistanceText(distance, locating: locating),
+                                  key: Key('shop-distance-${shop.shopId}'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: N11Text.caption.copyWith(
+                                    fontSize: narrow ? 12 : 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
+                          ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: 64,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: N11Chip(chip.label, kind: chip.kind),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(width: N11Space.gap2),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        shop.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          height: 1.25,
-                          fontWeight: FontWeight.w800,
-                          color: N11Colors.black,
-                        ),
-                      ),
-                      if (!rated)
-                        Text(
-                          'Chưa có đánh giá',
-                          key: Key('shop-rating-${shop.shopId}'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: N11Text.caption,
-                        ),
-                      const SizedBox(height: 4),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const Icon(
-                            Icons.route_outlined,
-                            size: 14,
-                            color: N11Colors.ink2,
-                          ),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            child: Text(
-                              distanceText,
-                              key: Key('shop-distance-${shop.shopId}'),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: N11Text.caption,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -1666,21 +1686,20 @@ class _PositionButton extends StatelessWidget {
           key: const Key('discovery-locate'),
           borderRadius: const BorderRadius.all(Radius.circular(15)),
           onTap: busy ? null : retry ?? position.locate,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 78, minHeight: 30),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: N11Colors.homeLocateInk,
-                  ),
-                ),
+          // Exactly 30 high (a Center here would take the whole 48 px header height); at least 78 wide.
+          child: Container(
+            height: 30,
+            constraints: const BoxConstraints(minWidth: 78),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: N11Colors.homeLocateInk,
               ),
             ),
           ),
