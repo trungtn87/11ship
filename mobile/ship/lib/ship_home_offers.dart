@@ -51,7 +51,10 @@ class _HomeOffersState extends State<HomeOffers> {
   @override
   void didUpdateWidget(HomeOffers old) {
     super.didUpdateWidget(old);
-    if (old.receiving != widget.receiving || !identical(old.source, widget.source)) _sync();
+    if (old.receiving != widget.receiving ||
+        !identical(old.source, widget.source)) {
+      _sync();
+    }
   }
 
   @override
@@ -78,7 +81,10 @@ class _HomeOffersState extends State<HomeOffers> {
       final List<OfferView> all = await widget.source.offers();
       if (!mounted || generation != _generation) return;
       setState(() {
-        _offers = all.where((OfferView o) => o.eligible).take(kHomeOfferLimit).toList();
+        _offers = all
+            .where((OfferView o) => o.eligible)
+            .take(kHomeOfferLimit)
+            .toList();
         _failed = false;
       });
     } catch (_) {
@@ -89,26 +95,38 @@ class _HomeOffersState extends State<HomeOffers> {
 
   @override
   Widget build(BuildContext context) => Column(
-    key: const Key('home-offers'),
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: <Widget>[
-      Row(
+        key: const Key('home-offers'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const Expanded(child: Text('Đơn có thể nhận', key: Key('home-offers-title'), style: N11Text.h2)),
-          if (widget.onOpenOrders != null) N11Link('Xem tất cả', key: const Key('home-offers-all'), onPressed: widget.onOpenOrders),
+          Row(
+            children: <Widget>[
+              const Expanded(
+                  child: Text('Đơn có thể nhận',
+                      key: Key('home-offers-title'), style: N11Text.h2)),
+              if (widget.onOpenOrders != null)
+                N11Link('Xem tất cả',
+                    key: const Key('home-offers-all'),
+                    onPressed: widget.onOpenOrders),
+            ],
+          ),
+          const SizedBox(height: N11Space.gap2),
+          _body(),
         ],
-      ),
-      const SizedBox(height: N11Space.gap2),
-      _body(),
-    ],
-  );
+      );
 
   Widget _body() {
     if (!widget.receiving) {
       return _note(
         key: const Key('home-offers-off'),
         text: widget.notReceivingText,
-        action: widget.onGoOnline == null ? null : N11Button(key: const Key('home-offers-go-online'), label: 'Bật online', kind: ButtonKind.secondary, compact: true, onPressed: widget.onGoOnline),
+        action: widget.onGoOnline == null
+            ? null
+            : N11Button(
+                key: const Key('home-offers-go-online'),
+                label: 'Bật online',
+                kind: ButtonKind.secondary,
+                compact: true,
+                onPressed: widget.onGoOnline),
       );
     }
     final List<OfferView>? offers = _offers;
@@ -117,13 +135,20 @@ class _HomeOffersState extends State<HomeOffers> {
         return _note(
           key: const Key('home-offers-error'),
           text: 'Chưa tải được đơn có thể nhận. Kiểm tra mạng rồi thử lại.',
-          action: TextButton(key: const Key('home-offers-retry'), onPressed: () => unawaited(_load()), child: const Text('Thử lại')),
+          action: TextButton(
+              key: const Key('home-offers-retry'),
+              onPressed: () => unawaited(_load()),
+              child: const Text('Thử lại')),
         );
       }
-      return _note(key: const Key('home-offers-loading'), text: 'Đang tải đơn…');
+      return _note(
+          key: const Key('home-offers-loading'), text: 'Đang tải đơn…');
     }
     if (offers.isEmpty) {
-      return _note(key: const Key('home-offers-empty'), text: 'Chưa có đơn có thể nhận lúc này. Danh sách tự cập nhật mỗi 15 giây.');
+      return _note(
+          key: const Key('home-offers-empty'),
+          text:
+              'Chưa có đơn có thể nhận lúc này. Danh sách tự cập nhật mỗi 15 giây.');
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -137,19 +162,25 @@ class _HomeOffersState extends State<HomeOffers> {
     );
   }
 
-  Widget _note({required Key key, required String text, Widget? action}) => Container(
-    key: key,
-    width: double.infinity,
-    padding: const EdgeInsets.all(N11Space.gap3),
-    decoration: BoxDecoration(color: N11Colors.white, borderRadius: BorderRadius.circular(N11V5.inputRadius)),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(text, style: N11Text.caption),
-        if (action != null) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: Align(alignment: Alignment.centerLeft, child: action)),
-      ],
-    ),
-  );
+  Widget _note({required Key key, required String text, Widget? action}) =>
+      Container(
+        key: key,
+        width: double.infinity,
+        padding: const EdgeInsets.all(N11Space.gap3),
+        decoration: BoxDecoration(
+            color: N11Colors.white,
+            borderRadius: BorderRadius.circular(N11V5.inputRadius)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(text, style: N11Text.caption),
+            if (action != null)
+              Padding(
+                  padding: const EdgeInsets.only(top: N11Space.gap2),
+                  child: Align(alignment: Alignment.centerLeft, child: action)),
+          ],
+        ),
+      );
 }
 
 /// One compact offer: code, shop, and only the figures the server stated (distance, fee).
@@ -158,7 +189,8 @@ class _OfferTile extends StatelessWidget {
   final OfferView offer;
   final VoidCallback? onTap;
 
-  static String _distance(int metres) => metres < 1000 ? '$metres m' : '${(metres / 1000).toStringAsFixed(1)} km';
+  static String _distance(int metres) =>
+      metres < 1000 ? '$metres m' : '${(metres / 1000).toStringAsFixed(1)} km';
 
   @override
   Widget build(BuildContext context) {
@@ -181,13 +213,22 @@ class _OfferTile extends StatelessWidget {
                   children: <Widget>[
                     Text(offer.code, style: N11Text.bodyStrong),
                     const SizedBox(height: 2),
-                    Text(offer.shopName, style: N11Text.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    if (distance != null) Text('Cách quán ${_distance(distance)}', style: N11Text.caption),
+                    Text(offer.shopName,
+                        style: N11Text.caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    if (distance != null)
+                      Text('Cách quán ${_distance(distance)}',
+                          style: N11Text.caption),
                   ],
                 ),
               ),
-              if (fee != null) Text(formatVnd(fee), key: Key('home-offer-fee-${offer.deliveryId}'), style: N11Text.bodyStrong),
-              if (onTap != null) const Icon(Icons.chevron_right, color: N11Colors.ink2),
+              if (fee != null)
+                Text(formatVnd(fee),
+                    key: Key('home-offer-fee-${offer.deliveryId}'),
+                    style: N11Text.bodyStrong),
+              if (onTap != null)
+                const Icon(Icons.chevron_right, color: N11Colors.ink2),
             ],
           ),
         ),
