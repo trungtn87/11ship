@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
+import 'package:ship/ship_home.dart';
 import 'package:ship/ship_home_offers.dart';
 
 // #392 "Đơn có thể nhận" on Home: only server-eligible offers, at most three, real data only; offline and blocked states never look ready; a figure
@@ -69,6 +70,7 @@ HomeOffers _receiving(ShipperDeliverySource source, {VoidCallback? onOpen}) => H
 );
 
 void main() {
+  _onlineSemanticsTests();
   testWidgets('no eligible offer: an honest empty line, no invented order', (WidgetTester tester) async {
     await _mount(tester, _receiving(_Offers(<OfferView>[_offer('1', eligible: false)])));
     expect(find.byKey(const Key('home-offers-empty')), findsOneWidget);
@@ -142,6 +144,18 @@ void main() {
     }
     expect(find.byKey(const Key('home-offer-1')), findsOneWidget);
     expect(source.calls, 2);
+    await _unmount(tester);
+  });
+}
+
+// #392/#396 device smoke: the one Online control is a real button whose semantics say whether a tap would act.
+void _onlineSemanticsTests() {
+  testWidgets('the round Online control exposes a disabled button label while the state is unknown (guest)', (WidgetTester tester) async {
+    await _mount(tester, ShipActivityPanel(online: null, reason: 'x', onToggle: null, paused: false, busy: false));
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Bật online')),
+      matchesSemantics(label: 'Bật online', isButton: true, hasEnabledState: true, isEnabled: false),
+    );
     await _unmount(tester);
   });
 }

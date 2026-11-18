@@ -906,7 +906,10 @@ class _ShipActivityPanelState extends State<ShipActivityPanel> {
           Row(
             children: <Widget>[
               Semantics(
+                // The one online control for TalkBack and the device smoke: it is a button, and only enabled when a tap would act.
                 label: online == true ? 'Tắt online' : 'Bật online',
+                button: true,
+                enabled: online != null && !widget.busy && widget.onToggle != null,
                 child: SizedBox(
                   width: 76,
                   height: 76,
