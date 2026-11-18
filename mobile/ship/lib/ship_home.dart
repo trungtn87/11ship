@@ -5,9 +5,9 @@ import 'package:n11_shared/n11_shared.dart';
 import 'package:n11_m14/n11_m14.dart';
 
 import 'ship_alerts.dart';
+import 'ship_home_offers.dart';
 import 'ship_m07.dart';
 import 'ship_online.dart';
-import 'ship_wallet.dart';
 
 const String kOnlineReason =
     'Chưa có dữ liệu trạng thái hoạt động. Chưa thể bật online.';
@@ -16,15 +16,27 @@ const String kOnlineReason =
 /// apps/backend/src/shipping-policy/shipping-eligibility.ts; a display value only, the server decides.
 const double kShipSearchRadiusM = 3000.0;
 
-/// What the chip above the map says. It is NOT the delivery distance that fees are computed from.
-const String kShipRadiusLabel = 'Bán kính nhận đơn 3 km quanh vị trí của bạn (đường thẳng)';
+/// The short chip on the map (#392). The full meaning is behind its (i), so the first screen stays uncluttered.
+const String kShipRadiusLabel = 'Bán kính 3 km';
 
-/// Shown instead of [kShipRadiusLabel] when the server says the account is not limited by the radius (PLATFORM): the ring stays only as a reference.
-const String kShipRadiusExemptLabel = 'Tài khoản của bạn không bị giới hạn bán kính nhận đơn; vòng 3 km chỉ để tham khảo (đường thẳng)';
+/// What the (i) says about the chip: a straight line, not the road distance that fees are computed from.
+const String kShipRadiusHelp =
+    'Vòng 3 km quanh vị trí của bạn, tính theo đường thẳng. Quãng đường đi thực tế có thể dài hơn.';
+
+/// Short chip when the server says the account is not limited by the radius (PLATFORM); the ring is only a reference.
+const String kShipRadiusExemptLabel = 'Bán kính 3 km · tham khảo';
+
+/// What the (i) says for an exempt account.
+const String kShipRadiusExemptHelp =
+    'Tài khoản của bạn không bị giới hạn bán kính nhận đơn; vòng 3 km chỉ để tham khảo (đường thẳng).';
 
 /// Outside the radius: a neutral grey with a medium alpha, so names and roads stay readable. Inside keeps the map's own colours.
 const int kShipRadiusOutsideColor = 0x66757575;
 const int kShipRadiusBorderColor = 0xFF1565C0;
+
+/// Height the Home keeps for everything that is NOT the map (header, status card, map title, the offers block). The map gets the rest of the
+/// visible area, clamped to the V5 min/max, so on a 390x844 phone the map is large and the offers start near the bottom of the first screen.
+const double kShipHomeReservedHeight = 500;
 
 /// A GPS position the ring may be drawn around: numbers, finite, in range and not the (0, 0) "no fix" placeholder.
 bool shipRadiusCentreUsable(Map<String, dynamic>? position) {
@@ -46,13 +58,23 @@ class ShipHome extends StatefulWidget {
     this.notifications,
     this.driver,
     this.walletSource,
+    this.deliverySource,
+    this.onOpenOrders,
     this.onlineOverride,
     this.locationProvider,
     this.liveTick = const Duration(seconds: 15),
   });
   final SessionController session;
   final DriverController? driver;
+
+  /// Kept for the wallet tests and the account routes; the Home no longer shows a wallet button (#392).
   final WalletSource? walletSource;
+
+  /// The same offer source as the Orders tab (#392 "Đơn có thể nhận"). Null = no offers block.
+  final ShipperDeliverySource? deliverySource;
+
+  /// Opens the Orders tab ("Xem tất cả" and a tap on an offer).
+  final VoidCallback? onOpenOrders;
   final ResetController? reset;
   final VoidCallback onNotifications;
   final NotificationController? notifications;
@@ -165,6 +187,15 @@ class _ShipHomeState extends State<ShipHome> {
     return _localFix;
   }
 
+  /// Why the offers block shows no offers (plain Vietnamese, never a promise that an order exists).
+  static String _notReceivingText(bool? onlineNow, bool paused, LocationProblem problem) {
+    if (onlineNow == null) return 'Chưa xác định trạng thái nên chưa hiện đơn.';
+    if (!onlineNow) return 'Bạn đang offline. Bật online để xem đơn có thể nhận gần bạn.';
+    if (paused) return 'Đang tạm dừng nhận đơn nên chưa có đơn mới.';
+    if (problem != LocationProblem.none) return 'Chưa lấy được vị trí của bạn nên chưa hiện đơn. Xem cảnh báo phía trên.';
+    return 'Đang chờ điều kiện nhận đơn.';
+  }
+
   Widget _layout(BuildContext context, HealthMonitor? monitor) {
     final bool signedIn = widget.session.status == SessionStatus.signedIn;
     final bool acquiring =
@@ -200,8 +231,29 @@ class _ShipHomeState extends State<ShipHome> {
             accuracyMetres: reporter.fixAccuracyMetres,
             hasFix: reporter.position != null,
           );
+    final bool? onlineNow = widget.driver?.profile?.acceptingDeliveries;
+    final VoidCallback? toggle =
+        widget.driver?.profile == null ||
+            widget.driver!.busy ||
+            online.busy ||
+            !(widget.driver!.profile!.acceptingDeliveries ||
+                widget.driver!.profile!.readiness.canAccept)
+        ? null
+        : () => widget.driver!.setAccepting(
+            !widget.driver!.profile!.acceptingDeliveries,
+          );
+    final ShipperDeliverySource? deliveries = widget.deliverySource;
+    final Widget? offers = !signedIn || deliveries == null
+        ? null
+        : HomeOffers(
+            source: deliveries,
+            receiving: onlineNow == true && !online.paused && online.problem == LocationProblem.none,
+            notReceivingText: _notReceivingText(onlineNow, online.paused, online.problem),
+            onGoOnline: onlineNow == false ? toggle : null,
+            onOpenOrders: widget.onOpenOrders,
+          );
     return ShipHomeLayout(
-      online: widget.driver?.profile?.acceptingDeliveries,
+      online: onlineNow,
       reason: widget.driver?.profile == null
           ? kOnlineReason
           : (widget.driver!.profile!.readiness.canAccept
@@ -209,16 +261,7 @@ class _ShipHomeState extends State<ShipHome> {
                 : widget.driver!.profile!.readiness.blocks
                       .map(driverBlockLabel)
                       .join('\n')),
-      onToggle:
-          widget.driver?.profile == null ||
-              widget.driver!.busy ||
-              online.busy ||
-              !(widget.driver!.profile!.acceptingDeliveries ||
-                  widget.driver!.profile!.readiness.canAccept)
-          ? null
-          : () => widget.driver!.setAccepting(
-              !widget.driver!.profile!.acceptingDeliveries,
-            ),
+      onToggle: toggle,
       paused: online.paused,
       busy: online.busy,
       message: online.message,
@@ -252,6 +295,7 @@ class _ShipHomeState extends State<ShipHome> {
               controller: widget.notifications!,
               onPressed: widget.onNotifications,
             ),
+      // #392: no wallet button and no secondary links on Home. Wallet, profile and "cập nhật điều kiện" live under Tài khoản.
       footer: widget.session.status == SessionStatus.guest
           ? N11Link(
               'Đăng nhập tài khoản shipper',
@@ -268,35 +312,8 @@ class _ShipHomeState extends State<ShipHome> {
                     )
                   : null,
             )
-          : widget.walletSource == null || widget.session.status != SessionStatus.signedIn
-          ? null
-          : Column(
-              children: <Widget>[
-                N11Button(
-                  label: 'Ví tiền / Nạp tiền',
-                  onPressed: () => Navigator.of(context).push(
-                    walletHomeRoute(widget.session, widget.walletSource!),
-                  ),
-                ),
-                if (widget.driver != null)
-                  N11Link(
-                    'Cập nhật điều kiện nhận đơn',
-                    onPressed: widget.driver!.load,
-                  ),
-                if (widget.driver != null)
-                  N11Link(
-                    'Thông tin và hoạt động shipper',
-                    onPressed: () => Navigator.of(context).push(
-                      n11Route(
-                        guardForWalletSource(
-                          widget.walletSource,
-                          DriverProfileScreen(controller: widget.driver!, walletSource: widget.walletSource),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          : null,
+      offers: offers,
     );
   }
 }
@@ -323,6 +340,7 @@ class ShipHomeLayout extends StatelessWidget {
     this.onLocate,
     this.locateState = ShipLocateState.idle,
     this.onOpenSettings,
+    this.offers,
   });
   final bool? online;
 
@@ -341,6 +359,9 @@ class ShipHomeLayout extends StatelessWidget {
   final VoidCallback? onToggle;
   final Widget? bell;
   final Widget? footer;
+
+  /// The "Đơn có thể nhận" block under the map (#392), or null. Built by the home from the same offer source as the Orders tab.
+  final Widget? offers;
 
   /// The one small status line (null: nothing to say). Comes from the same state as the online button.
   final String? gpsStatus;
@@ -395,7 +416,7 @@ class ShipHomeLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
-      final double mapHeight = (constraints.maxHeight * .40)
+      final double mapHeight = (constraints.maxHeight - kShipHomeReservedHeight)
           .clamp(N11V5.shipMapMinHeight, N11V5.shipMapMaxHeight)
           .toDouble();
       return SingleChildScrollView(
@@ -403,20 +424,18 @@ class ShipHomeLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // #392 one header row: the title on the left, the bell on the right. No large logo, no placeholder band.
             Container(
               key: const Key('ship-home-header'),
-              // Light yellow fading to white (Owner 14/11): the header band only; the content below stays on the normal background.
-              decoration: const BoxDecoration(gradient: N11Colors.headerFadeGradient),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              decoration: const BoxDecoration(gradient: N11V5.shipHomeGradient),
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               child: Row(
                 children: <Widget>[
-                  const Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: BrandLogo(
-                        brand: shipBrand,
-                        height: N11V5.logoHeight,
-                      ),
+                  Expanded(
+                    child: Text(
+                      'Nhận đơn giao hàng',
+                      key: const Key('ship-home-title'),
+                      style: N11Text.title.copyWith(fontSize: N11V5.homeTitleSize),
                     ),
                   ),
                   bell ??
@@ -432,13 +451,6 @@ class ShipHomeLayout extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Text(
-                'Nhận đơn giao hàng',
-                style: N11Text.title.copyWith(fontSize: N11V5.homeTitleSize),
-              ),
-            ),
             if (alert != null) alert! else if (connection != null) connection!,
             if (gpsStatus != null && locationView == null)
               Padding(
@@ -450,7 +462,7 @@ class ShipHomeLayout extends StatelessWidget {
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.all(N11Space.pad),
+              padding: const EdgeInsets.fromLTRB(N11Space.pad, 12, N11Space.pad, 8),
               child: ShipActivityPanel(
                 online: online,
                 reason: reason,
@@ -462,7 +474,6 @@ class ShipHomeLayout extends StatelessWidget {
                 problem: problem,
               ),
             ),
-
             Container(
               key: const Key('home-v5-map-panel'),
               margin: const EdgeInsets.symmetric(horizontal: N11Space.pad),
@@ -475,41 +486,11 @@ class ShipHomeLayout extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: N11Space.gap2,
-                    runSpacing: N11Space.gap2,
-                    children: <Widget>[
-                      const Text('Khu vực nhận đơn', style: N11Text.h2),
-                      Container(
-                        key: Key(
-                          !shipRadiusCentreUsable(position)
-                              ? 'home-radius-pending'
-                              : 'home-radius-ready',
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: !shipRadiusCentreUsable(position)
-                              ? N11Colors.disabledBg
-                              : N11Colors.yellowSoft,
-                          borderRadius: BorderRadius.circular(kRadiusPill),
-                        ),
-                        child: Text(
-                          !shipRadiusCentreUsable(position)
-                              ? 'Chờ vị trí để hiện bán kính'
-                              : radiusExempt
-                              ? kShipRadiusExemptLabel
-                              : kShipRadiusLabel,
-                          style: N11Text.caption,
-                        ),
-                      ),
-                    ],
+                  _RadiusHeader(
+                    ready: shipRadiusCentreUsable(position),
+                    exempt: radiusExempt,
                   ),
-                  const SizedBox(height: N11Space.gap3),
+                  const SizedBox(height: N11Space.gap2),
                   if (_locateHelp() case final Widget help) ...<Widget>[
                     help,
                     const SizedBox(height: N11Space.gap2),
@@ -551,11 +532,73 @@ class ShipHomeLayout extends StatelessWidget {
                 ],
               ),
             ),
+            if (offers != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(N11Space.pad, 12, N11Space.pad, N11Space.gap3),
+                child: offers,
+              ),
           ],
         ),
       );
     },
   );
+}
+
+/// The title of the receiving-area card, the short radius chip and its (i). The explanation opens right under the row, on this screen.
+class _RadiusHeader extends StatefulWidget {
+  const _RadiusHeader({required this.ready, required this.exempt});
+  final bool ready;
+  final bool exempt;
+
+  @override
+  State<_RadiusHeader> createState() => _RadiusHeaderState();
+}
+
+class _RadiusHeaderState extends State<_RadiusHeader> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final String chip = !widget.ready
+        ? 'Chờ vị trí'
+        : widget.exempt
+        ? kShipRadiusExemptLabel
+        : kShipRadiusLabel;
+    final String help = widget.exempt ? kShipRadiusExemptHelp : kShipRadiusHelp;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            const Expanded(child: Text('Khu vực nhận đơn', style: N11Text.h2)),
+            Flexible(
+              child: Container(
+                key: Key(!widget.ready ? 'home-radius-pending' : 'home-radius-ready'),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: !widget.ready ? N11Colors.disabledBg : N11Colors.yellowSoft,
+                  borderRadius: BorderRadius.circular(kRadiusPill),
+                ),
+                child: Text(chip, style: N11Text.caption, softWrap: true),
+              ),
+            ),
+            IconButton(
+              key: const Key('home-radius-info'),
+              tooltip: 'Giải thích bán kính',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => setState(() => _open = !_open),
+              icon: Icon(_open ? Icons.info : Icons.info_outline, color: N11Colors.ink2),
+            ),
+          ],
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(top: N11Space.gap1),
+            child: Text(help, key: const Key('home-radius-help'), style: N11Text.caption),
+          ),
+      ],
+    );
+  }
 }
 
 /// The map with the location label laid over its top-left corner; the (i) opens the explanation right under the map, in the same screen (no dialog).
@@ -751,8 +794,9 @@ class _HomeMapState extends State<_HomeMap> {
   }
 }
 
-/// Unknown until the real activity source is connected in M03.
-class ShipActivityPanel extends StatelessWidget {
+/// The online status block (#392): ONE round power button, the Online/Offline label with its colour dot, and the (i) for the detail. Warnings that
+/// matter (GPS, background location, blocked) and a server refusal stay visible; the long explanation and the disclosure sit behind the (i).
+class ShipActivityPanel extends StatefulWidget {
   const ShipActivityPanel({
     super.key,
     this.online,
@@ -780,111 +824,148 @@ class ShipActivityPanel extends StatelessWidget {
   final Widget? problem;
 
   @override
-  Widget build(BuildContext context) => N11Card(
-    key: const Key('home-activity-panel'),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Container(
-              padding: const EdgeInsets.all(N11Space.gap2),
-              decoration: BoxDecoration(
-                color: online == true && !paused
-                    ? N11Colors.successSoft
-                    : N11Colors.yellowSoft,
-                borderRadius: BorderRadius.circular(N11V5.inputRadius),
-              ),
-              child: Icon(
-                online == true && !paused
-                    ? Icons.wifi_tethering
-                    : Icons.power_settings_new,
-                color: online == true && !paused
-                    ? N11Colors.successInk
-                    : N11Colors.black,
-              ),
-            ),
-            const SizedBox(width: N11Space.gap3),
-            Expanded(
-              child: Text(
-                online == null
-                    ? 'Chưa xác định trạng thái hoạt động'
-                    : online!
-                    ? (paused ? 'Tạm dừng nhận đơn' : 'Bạn đang online')
-                    : 'Bạn đang offline',
-                key: const Key('home-activity-status'),
-                style: N11Text.h2,
-              ),
-            ),
-            // Badge beside the switch while the server does not yet allow turning online (the switch is disabled).
-            if (onToggle == null)
-              Flexible(
-                child: Container(
-                  key: const Key('home-status-badge'),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: N11Colors.yellowSoft,
-                    borderRadius: BorderRadius.circular(kRadiusPill),
+  State<ShipActivityPanel> createState() => _ShipActivityPanelState();
+}
+
+class _ShipActivityPanelState extends State<ShipActivityPanel> {
+  bool _showInfo = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool? online = widget.online;
+    final bool receiving = online == true && !widget.paused;
+    final String label = online == null
+        ? 'Chưa xác định'
+        : online
+        ? 'Online'
+        : 'Offline';
+    final Color dot = online == null
+        ? N11Colors.placeholder
+        : receiving
+        ? N11Colors.successInk
+        : N11Colors.ink2;
+    final String? sub = online == null
+        ? 'Chưa có trạng thái hoạt động'
+        : online && widget.paused
+        ? 'Tạm dừng nhận đơn'
+        : null;
+    return N11Card(
+      key: const Key('home-activity-panel'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Semantics(
+                label: online == true ? 'Tắt online' : 'Bật online',
+                child: SizedBox(
+                  width: 76,
+                  height: 76,
+                  child: FilledButton(
+                    key: const Key('online-button'),
+                    onPressed: online == null || widget.busy ? null : widget.onToggle,
+                    style: FilledButton.styleFrom(
+                      shape: const CircleBorder(),
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size.square(76),
+                      backgroundColor: receiving ? N11Colors.successInk : N11Colors.yellow,
+                      foregroundColor: receiving ? N11Colors.white : N11Colors.black,
+                      disabledBackgroundColor: N11Colors.disabledBg,
+                      disabledForegroundColor: N11Colors.disabledInk,
+                    ),
+                    child: widget.busy
+                        ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : const Icon(Icons.power_settings_new, size: 36),
                   ),
-                  child: const Text('Chưa đủ điều kiện', style: N11Text.caption, softWrap: true),
+                ),
+              ),
+              const SizedBox(width: N11Space.gap3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            label,
+                            key: const Key('home-activity-status'),
+                            style: N11Text.h2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (sub != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(sub, key: const Key('home-activity-sub'), style: N11Text.caption),
+                      ),
+                    // Badge while the server does not yet allow turning online (the button is disabled): visible, not hidden behind the (i).
+                    if (widget.onToggle == null && online != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Container(
+                          key: const Key('home-status-badge'),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: N11Colors.yellowSoft,
+                            borderRadius: BorderRadius.circular(kRadiusPill),
+                          ),
+                          child: const Text('Chưa đủ điều kiện', style: N11Text.caption, softWrap: true),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                key: const Key('home-status-info'),
+                tooltip: 'Chi tiết trạng thái',
+                onPressed: () => setState(() => _showInfo = !_showInfo),
+                icon: Icon(_showInfo ? Icons.info : Icons.info_outline, color: N11Colors.ink2),
+              ),
+            ],
+          ),
+          if (widget.problem != null) Padding(padding: const EdgeInsets.only(top: N11Space.gap2), child: widget.problem!),
+          if (widget.message != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                widget.message!,
+                key: const Key('home-online-message'),
+                style: N11Text.captionInk2,
+              ),
+            ),
+          if (_showInfo) ...<Widget>[
+            const SizedBox(height: N11Space.gap2),
+            Text(
+              widget.reason,
+              key: const Key('home-online-reason'),
+              style: N11Text.caption,
+            ),
+            if (online == false)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Bật online sẽ chia sẻ vị trí của bạn khoảng 1 phút một lần, kể cả khi khóa màn hình, để nhận đơn gần bạn và cho quán biết bạn đang tới. Tắt online để ngừng nhận đơn mới.',
+                  key: Key('home-online-disclosure'),
+                  style: N11Text.caption,
                 ),
               ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          reason,
-          key: const Key('home-online-reason'),
-          style: N11Text.caption,
-        ),
-        if (message != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              message!,
-              key: const Key('home-online-message'),
-              style: N11Text.captionInk2,
-            ),
-          ),
-        if (problem != null) problem!,
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          key: const Key('online-button'),
-          onPressed: online == null || busy ? null : onToggle,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(56),
-            textStyle: N11Text.bodyStrong,
-          ),
-          icon: busy
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.power_settings_new),
-          label: Text(
-            online == null
-                ? 'Bật online · Chưa khả dụng'
-                : busy
-                ? 'Đang xử lý…'
-                : online!
-                ? 'Tắt online'
-                : 'Bật online',
-          ),
-        ),
-        if (online == false)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'Bật online sẽ chia sẻ vị trí của bạn khoảng 1 phút một lần, kể cả khi khóa màn hình, để nhận đơn gần bạn và cho quán biết bạn đang tới. Tắt online để ngừng nhận đơn mới.',
-              key: Key('home-online-disclosure'),
-              style: N11Text.caption,
-            ),
-          ),
-        if (footer != null)
-          Padding(padding: const EdgeInsets.only(top: 8), child: footer),
-      ],
-    ),
-  );
+          if (widget.footer != null)
+            Padding(padding: const EdgeInsets.only(top: 8), child: widget.footer),
+        ],
+      ),
+    );
+  }
 }

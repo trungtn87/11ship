@@ -151,6 +151,7 @@ void main() {
     final e = await entries(tester);
     expect(e.account, isTrue);
     expect(e.income, isTrue);
+    expect(e.home, isFalse, reason: 'Home has no wallet button any more (#392)');
   });
 
   testWidgets('a locked wallet-only driver keeps the wallet entry', (WidgetTester tester) async {

@@ -68,7 +68,7 @@ WidgetBuilder? _settingsBuilder(AppFlows? flows) {
 
 List<TabSpec> buildShipTabs(SessionController session, {AppFlows? flows}) {
   return <TabSpec>[
-    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, ownsConnectionBanner: true, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, driver: flows?.driver, walletSource: buildWalletSource(session: session), reset: flows?.reset, notifications: flows?.notifications, onNotifications: () => actions.goTab('notifications'))),
+    TabSpec(id: 'home', label: 'Trang chủ', icon: Icons.home_outlined, title: 'Trang chủ', fullBleed: true, showAppBar: false, ownsConnectionBanner: true, body: (BuildContext context, ShellActions actions) => ShipHome(session: session, driver: flows?.driver, walletSource: buildWalletSource(session: session), deliverySource: _isShipper(session) ? flows?.shipperDeliveries : null, onOpenOrders: () => actions.goTab('orders'), reset: flows?.reset, notifications: flows?.notifications, onNotifications: () => actions.goTab('notifications'))),
     TabSpec(id: 'orders', label: 'Đơn hàng', icon: Icons.receipt_long_outlined, title: 'Đơn hàng', body: (BuildContext context, ShellActions actions) => _orders(session, flows, actions)),
     TabSpec(id: 'income', label: 'Thu nhập', icon: Icons.bar_chart_outlined, title: 'Thu nhập', body: (BuildContext context, ShellActions actions) => _income(context, actions, session, flows)),
     TabSpec(id: 'notifications', label: 'Thông báo', icon: Icons.notifications_outlined, title: 'Thông báo', fullBleed: true, body: (BuildContext context, ShellActions actions) => _notifications(session, flows, actions)),
@@ -80,10 +80,15 @@ Widget _soonChip() => const Center(child: N11Chip('Sắp có', kind: ChipKind.so
 
 // ---- S02: orders -----------------------------------------------------------------------------------------------------
 
+/// A signed-in account whose shipper profile is ACTIVE or CLOSING: the only accounts that see offers and deliveries.
+bool _isShipper(SessionController session) {
+  final String onboarding = session.identity?.driverOnboarding ?? 'NOT_STARTED';
+  return session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
+}
+
 Widget _orders(SessionController session, AppFlows? flows, ShellActions actions) {
   final ShipperDeliverySource? deliveries = flows?.shipperDeliveries;
-  final String onboarding = session.identity?.driverOnboarding ?? 'NOT_STARTED';
-  final bool shipper = session.status == SessionStatus.signedIn && (onboarding == 'ACTIVE' || onboarding == 'CLOSING');
+  final bool shipper = _isShipper(session);
   if (deliveries != null && shipper) {
     // M07: offers, my deliveries, drop-off and pickup confirmation, result and history.
     return ShipperDeliveryHub(source: deliveries, mapBuilder: shipMapBuilder(), pinPicker: shipPinPicker(), locationSlot: (BuildContext context) => ShipLocationStatusLine(online: shipOnlineFor(session, driver: flows?.driver)..attach()), feedbackSlot: _feedbackSlot(flows));

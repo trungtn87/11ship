@@ -229,7 +229,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Chưa xác định trạng thái hoạt động'), findsOneWidget);
+      expect(find.text('Chưa xác định'), findsOneWidget);
       expect(
         tester
             .widget<FilledButton>(find.byKey(const Key('online-button')))
