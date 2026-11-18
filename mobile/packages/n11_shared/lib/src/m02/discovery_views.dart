@@ -11,6 +11,7 @@ import '../account/account_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'discovery_controller.dart';
+import 'category_icons.dart';
 import 'discovery_models.dart';
 import 'm02_format.dart';
 import 'route_distance.dart';
@@ -595,6 +596,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                 () => c.categoryId == null
                     ? null
                     : c.toggleCategory(c.categoryId!),
+                icon: kCategoryAllIcon,
               ),
               for (final CategoryChoice cat in c.categories)
                 _chip(
@@ -602,6 +604,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                   cat.name,
                   c.categoryId == cat.id,
                   () => c.toggleCategory(cat.id),
+                  icon: categoryIconFor(cat.id),
                 ),
             ],
           ),
@@ -775,7 +778,8 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     return out;
   }
 
-  Widget _chip(String key, String label, bool on, VoidCallback? onTap) =>
+  Widget _chip(String key, String label, bool on, VoidCallback? onTap,
+          {required IconData icon}) =>
       Padding(
         padding: const EdgeInsets.only(right: N11Space.gap2),
         child: Semantics(
@@ -806,9 +810,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     Icon(
-                      label == 'Tất cả'
-                          ? Icons.grid_view_rounded
-                          : Icons.restaurant_menu_rounded,
+                      icon,
                       size: 23,
                       color: on ? N11Colors.accentOrange : N11Colors.black,
                     ),
