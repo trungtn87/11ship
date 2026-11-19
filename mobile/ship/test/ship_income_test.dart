@@ -245,4 +245,56 @@ void main() {
       expect(find.byKey(const Key('income-bar-29')), findsOneWidget);
     });
   });
+
+  group('income tab copy and entries (UI only)', () {
+    Future<void> pumpWith(WidgetTester tester, {double textScale = 1.0, double width = 390}) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.pumpWidget(MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(size: Size(width, 900), textScaler: TextScaler.linear(textScale)),
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: IncomeBody(
+                source: FakeIncomeSource(<IncomeLoad>[IncomeReady(_fixtureSummary())]),
+                now: () => fixedNow,
+                walletEntry: const Text('wallet-entry-stub', key: Key('wallet-entry')),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no "Giao dịch gần đây" card; the wallet entry stays', (tester) async {
+      await pumpWith(tester);
+      expect(find.byKey(const Key('income-recent')), findsNothing);
+      expect(find.text('Giao dịch gần đây'), findsNothing);
+      expect(find.byKey(const Key('income-open-history')), findsNothing);
+      expect(find.byKey(const Key('wallet-entry')), findsOneWidget);
+    });
+
+    testWidgets('the total is labelled as the fee including tip, and the explanation states the new rules', (tester) async {
+      await pumpWith(tester);
+      expect(find.text('Ước tính: phí giao (gồm tip) của đơn đã hoàn tất, nhận ngoài app.'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('income-info')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('income-explain-dialog')), findsOneWidget);
+      expect(find.textContaining('phí giao (gồm tip)'), findsWidgets);
+      expect(find.textContaining('Phí giao khách trả tiền mặt vẫn được tính.'), findsOneWidget);
+      expect(find.textContaining('Tiền hàng khách trả ngoài ứng dụng (COD) không được tính.'), findsOneWidget);
+      expect(find.textContaining('khoản điều chỉnh của quản trị không hiện ở đây'), findsOneWidget);
+      expect(find.textContaining('Mỗi đơn chỉ tính một lần.'), findsOneWidget);
+    });
+
+    for (final double scale in <double>[1.0, 1.3]) {
+      testWidgets('360dp, text scale $scale: no overflow', (tester) async {
+        await pumpWith(tester, textScale: scale, width: 360);
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('income-summary')), findsOneWidget);
+      });
+    }
+  });
 }

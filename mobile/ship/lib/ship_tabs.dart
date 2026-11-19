@@ -142,12 +142,10 @@ Widget _income(BuildContext context, ShellActions actions, SessionController ses
       N11Button(key: const Key('income-guest-register'), label: 'Đăng ký làm shipper', onPressed: () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: shipBrand)))),
     ]);
   }
-  // #395: the income dashboard (period filters, daily chart, statistics, wallet entry, recent transactions), read from the server.
+  // #395: the income dashboard (period filters, daily chart, statistics, wallet entry), read from the server.
   return IncomeBody(
     source: HttpIncomeSource(session: session),
-    wallet: buildWalletSource(session: session),
     walletEntry: WalletEntry(session: session, driver: flows?.driver),
-    onOpenHistory: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session), driver: flows?.driver)),
   );
 }
 
