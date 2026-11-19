@@ -129,7 +129,8 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
        VALUES ($1::uuid, $2, '$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA', now(), 'PHONE_VERIFIED', 'ACTIVE', 1, now(), now())`,
       [userId, phone.normalized],
     );
-    driverId = await createDriverFor(pool, userId);
+    // The scenario is an ACTIVE Shipper; the fixture default is PENDING, which the automatic credit correctly refuses.
+    driverId = await createDriverFor(pool, userId, { status: 'ACTIVE' });
   });
 
   afterAll(async () => {
