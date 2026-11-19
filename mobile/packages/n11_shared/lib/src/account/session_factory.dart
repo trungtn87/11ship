@@ -138,6 +138,7 @@ AppFlows createFlows(
             publicApi: publicApi ?? HttpPublicShopApi(transport: http, base: base),
             discoveryApi: discoveryApi ?? HttpDiscoveryApi(transport: http, base: base),
             picker: picker,
+            feedback: feedback,
           )
         : null,
   );

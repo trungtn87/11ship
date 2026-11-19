@@ -9,6 +9,7 @@ import '../addresses/address_location_picker.dart';
 import '../flows/shop_views.dart' show ShopFormScreen;
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m11/m11_rating_views.dart';
 import 'hours_views.dart';
 import 'm02_flows.dart';
 import 'm02_widgets.dart';
@@ -405,6 +406,17 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
                   ('Địa chỉ', o.addressText),
                 ],
               ),
+              // Owner (Quán -> Hồ sơ quán): the customers' reviews sit with the shop profile, not in the account. Read-only; the edit form does not show it.
+              if (widget.flows.feedback != null)
+                N11List(title: 'Khách hàng', children: <Widget>[
+                  N11ListItem(
+                    key: const Key('open-shop-reviews'),
+                    icon: Icons.star_outline_rounded,
+                    title: 'Đánh giá của khách',
+                    sub: 'Xem đánh giá quán và phản hồi',
+                    onTap: () => Navigator.of(context).push<void>(n11Route(ShopReviewsScreen(source: widget.flows.feedback!, title: 'Đánh giá của khách'))),
+                  ),
+                ]),
             ],
             footer: readOnly ? const <Widget>[] : <Widget>[N11Button(key: const Key('profile-edit'), label: 'Sửa hồ sơ', onPressed: () => setState(() => _editing = true))],
           );
