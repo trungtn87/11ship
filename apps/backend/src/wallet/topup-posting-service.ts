@@ -4,6 +4,7 @@ import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TopupSettlementRepository } from './topup-settlement-repository';
 import { MAX_WALLET_VND } from './wallet-types';
+import { TopupSettler } from './topup-settler';
 
 export interface CreditTopupInput {
   readonly walletId: string;
@@ -16,7 +17,8 @@ export interface CreditTopupInput {
   readonly canonicalTransactionId: string;
   readonly actualAmountVnd: bigint;
   readonly receivedAtIso: string;
-  readonly confirmedByUserId: string;
+  /** Who settles this money: an Administrator, or the automatic bank-evidence path. Stored on the topup; never defaulted. */
+  readonly settledBy: TopupSettler;
 }
 
 export interface CreditedTopup {
@@ -89,7 +91,7 @@ export class TopupPostingService {
       bankRecordId,
       amountVnd: input.actualAmountVnd,
       receivedAtIso: input.receivedAtIso,
-      confirmedByUserId: input.confirmedByUserId,
+      settledBy: input.settledBy,
     });
     const sequenceNo = (last?.sequenceNo ?? 0) + 1;
     await this.repository.insertTopupLedger(context, { entryId: randomUUID(), walletId: input.walletId, sequenceNo, deltaVnd: input.actualAmountVnd, balanceAfterVnd: balanceAfter, topupId });

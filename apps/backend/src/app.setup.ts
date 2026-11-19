@@ -107,6 +107,8 @@ export function configureApp(app: INestApplication): void {
   app.use(`/${GLOBAL_PREFIX}/customer/me/profile`, captureRawBody);
   // M05: the customer address book writes a phone signs (create, edit, delete, default).
   app.use(`/${GLOBAL_PREFIX}/customers/me`, captureRawBody);
+  // M04 SePay webhook: the HMAC is over the exact bytes SePay sent, so they are kept before any parse (sepay-webhook.controller.ts).
+  app.use(`/${GLOBAL_PREFIX}/integrations/sepay`, captureRawBody);
   const pictureParser = express.json({
     limit: '3.5mb',
     verify: (request, _response, buffer) => {

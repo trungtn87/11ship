@@ -27,6 +27,7 @@ import { OrdersModule } from './orders/orders.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ShipperSelfModule } from './shipper-self/shipper-self.module';
 import { WalletTopupModule } from './wallet-topup/wallet-topup.module';
+import { SepayModule } from './sepay/sepay.module';
 import { DriverWalletModule } from './driver-wallet/driver-wallet.module';
 import { DriverIncomeModule } from './driver-income/driver-income.module';
 import { ShopManagementModule } from './shop-management/shop-management.module';
@@ -87,6 +88,7 @@ export class AppModule {
         DatabaseModule,
         TransactionModule,
         HealthModule,
+        SepayModule,
         ...(auth === undefined
           ? []
           : [auth, OnboardingModule.register(auth), ShopSetupModule.register(auth), DiscoveryRouteModule, ShopManagementModule.register(auth), MenuModule.register(auth), CustomerProfileModule.register(auth), CustomersModule.register(auth), ShipperSelfModule.register(auth), WalletTopupModule.register(auth), DriverWalletModule.register(auth), DriverIncomeModule.register(auth), delivery as DynamicModule, OrdersModule.register(auth, delivery as DynamicModule), OrderChatModule.register(auth), FeedbackModule.register(auth), NotificationsModule.register(auth), OpsModule.register(auth), AccountRecoveryModule.register(auth), AccountDeletionModule.register(auth)]),

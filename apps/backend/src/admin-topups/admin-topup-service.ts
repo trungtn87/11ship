@@ -137,7 +137,7 @@ export class AdminTopupService {
         canonicalTransactionId: body.canonicalTransactionId,
         actualAmountVnd: BigInt(body.actualAmountVnd),
         receivedAtIso: body.receivedAtIso,
-        confirmedByUserId: locked.known.userId,
+        settledBy: { kind: 'ADMIN', userId: locked.known.userId },
       });
       const after = await this.#resolve(context, row, body.expectedVersion, 'CONFIRMED', locked);
       await this.#record(context, locked, meta.requestId, OPERATION.confirm, after, { requested_amount_vnd: Number(row.amountRequestedVnd), actual_amount_vnd: body.actualAmountVnd });
@@ -214,7 +214,7 @@ export class AdminTopupService {
   }
 
   async #resolve(context: TransactionContext, row: AdminTopupRow, expectedVersion: number, state: 'CONFIRMED' | 'REJECTED', locked: LockedActor): Promise<AdminTopupRow> {
-    const resolved = await this.requests.resolve(context, row.requestId, expectedVersion, state, locked.known.userId);
+    const resolved = await this.requests.resolve(context, row.requestId, expectedVersion, state, { kind: 'ADMIN', userId: locked.known.userId });
     if (resolved === undefined) {
       // Locked and checked just above: unreachable. Never guess; the whole transaction rolls back.
       throw new AppError('TOPUP_REQUEST_STATE_CONFLICT');

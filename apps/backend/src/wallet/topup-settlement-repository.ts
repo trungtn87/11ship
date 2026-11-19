@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { TransactionContext } from '../transaction/transaction-context';
+import { settlerColumns, TopupSettler } from './topup-settler';
 
 // SQL of the money posted by an administrator's confirmation (M04-B2.2b): the wallet row lock, the receiving account lock, the bank record (IN), the topup, the
 // ledger credit and the balance. Only TopupPostingService calls it, in that order, inside the caller's transaction. Every amount is bound as text and parsed to bigint.
@@ -81,12 +82,12 @@ export class TopupSettlementRepository {
 
   async insertTopup(
     context: TransactionContext,
-    input: { topupId: string; walletId: string; requestId: string; bankRecordId: string; amountVnd: bigint; receivedAtIso: string; confirmedByUserId: string },
+    input: { topupId: string; walletId: string; requestId: string; bankRecordId: string; amountVnd: bigint; receivedAtIso: string; settledBy: TopupSettler },
   ): Promise<void> {
     await context.query(
-      `INSERT INTO app.wallet_topups (topup_id, wallet_id, request_id, bank_record_id, actual_amount_vnd, received_at, confirmed_by_user_id, created_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::bigint, $6::timestamptz, $7::uuid, date_trunc('milliseconds', clock_timestamp()))`,
-      [input.topupId, input.walletId, input.requestId, input.bankRecordId, input.amountVnd.toString(), input.receivedAtIso, input.confirmedByUserId],
+      `INSERT INTO app.wallet_topups (topup_id, wallet_id, request_id, bank_record_id, actual_amount_vnd, received_at, confirmed_by_user_id, confirmed_by_system, created_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::bigint, $6::timestamptz, $7::uuid, $8, date_trunc('milliseconds', clock_timestamp()))`,
+      [input.topupId, input.walletId, input.requestId, input.bankRecordId, input.amountVnd.toString(), input.receivedAtIso, settlerColumns(input.settledBy).userId, settlerColumns(input.settledBy).system],
     );
   }
 

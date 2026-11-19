@@ -53,6 +53,21 @@ export class TopupRequestService {
     });
   }
 
+  /**
+   * A new request id whose transfer code no request holds (any state). The code is 40 bits of the id, so a collision is rare but possible;
+   * a taken code is never reused, because the automatic bank matching (M04 SePay step 1) finds a request by its code alone. The unique
+   * index on transfer_code_key is the final guard; this loop is the normal path.
+   */
+  async #freshRequestId(context: TransactionContext): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = randomUUID();
+      if (!(await this.requests.transferCodeTaken(context, topupTransferCodeOf(candidate)))) {
+        return candidate;
+      }
+    }
+    throw new TechnicalError('internal', 'No free top-up transfer code');
+  }
+
   async list(principal: AuthPrincipal, query: TopupListQuery): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
       const driver = await this.#reader(context, principal);
@@ -111,7 +126,7 @@ export class TopupRequestService {
         }
         const { wallet } = await this.wallets.ensureZeroWallet(context, driver.driverId);
         const row = await this.requests.insertPending(context, {
-          requestId: randomUUID(),
+          requestId: await this.#freshRequestId(context),
           walletId: wallet.walletId,
           driverId: driver.driverId,
           amountVnd: BigInt(amountVnd),
