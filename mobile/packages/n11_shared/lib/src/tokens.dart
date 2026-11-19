@@ -106,6 +106,15 @@ abstract final class N11V5 {
   static const double shipMapMinHeight = 180;
   static const double shipMapMaxHeight = 440;
   static const double homeTitleSize = 22;
+
+  /// Light V5 wash for the 11Ship Home header band (#392): yellow at the top fading to the page background. Same stops as the 11Food home.
+  static const LinearGradient shipHomeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    stops: <double>[0, .32, .70, 1],
+    colors: <Color>[Color(0xFFFFEEA6), Color(0xFFFFF7D8), Color(0xFFFAFAF6), Color(0xFFF7F8FA)],
+  );
+
   /// Figma F01: 180deg background, stops 0 / 32 / 70 / 100 %. A real gradient behind the status bar, never a flat colour.
   static const LinearGradient homeGradient = LinearGradient(
     begin: Alignment.topCenter,
