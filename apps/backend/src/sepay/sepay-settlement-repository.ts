@@ -31,8 +31,8 @@ export class SepaySettlementRepository {
   async finish(context: TransactionContext, webhookEventId: number, state: InboxState, reasonCode: string | null, topupRequestId: string | null): Promise<void> {
     const result = await context.query(
       `UPDATE app.sepay_transfer_inbox
-          SET state = $2, reason_code = $3, topup_request_id = $4::uuid,
-              processed_at = CASE WHEN $2 = 'RECEIVED' THEN NULL ELSE date_trunc('milliseconds', clock_timestamp()) END
+          SET state = $2::varchar, reason_code = $3::varchar, topup_request_id = $4::uuid,
+              processed_at = CASE WHEN $2::varchar = 'RECEIVED' THEN NULL ELSE date_trunc('milliseconds', clock_timestamp()) END
         WHERE webhook_event_id = $1::bigint`,
       [webhookEventId.toString(), state, reasonCode, topupRequestId],
     );

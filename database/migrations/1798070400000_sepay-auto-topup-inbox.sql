@@ -62,6 +62,8 @@ ALTER TABLE app.wallet_topups ADD CONSTRAINT wallet_topups_confirmed_actor_ck CH
 -- ---------------------------------------------------------------------------------------------------
 -- 4. app.sepay_transfer_inbox
 -- ---------------------------------------------------------------------------------------------------
+-- topup_request_id has NO foreign key on purpose: the inbox then depends on no wallet table, so the older migrations' down scripts (which drop
+-- those tables) keep working. The settlement code writes it only for a request it locked and confirmed in the same transaction.
 -- RECEIVED -> CREDITED | NEEDS_ADMIN | IGNORED ; NEEDS_ADMIN -> CREDITED | IGNORED | NEEDS_ADMIN ; CREDITED and IGNORED are final.
 CREATE TABLE app.sepay_transfer_inbox (
   inbox_id uuid NOT NULL,
@@ -91,7 +93,6 @@ CREATE TABLE app.sepay_transfer_inbox (
   CONSTRAINT sepay_transfer_inbox_processed_ck CHECK ((state = 'RECEIVED') = (processed_at IS NULL)),
   CONSTRAINT sepay_transfer_inbox_credit_ck CHECK ((state = 'CREDITED') = (topup_request_id IS NOT NULL)),
   CONSTRAINT sepay_transfer_inbox_reason_ck CHECK (reason_code IS NULL OR reason_code ~ '^[A-Z][A-Z0-9_]{0,63}$'),
-  CONSTRAINT sepay_transfer_inbox_request_fk FOREIGN KEY (topup_request_id) REFERENCES app.wallet_topup_requests (request_id) ON DELETE RESTRICT,
   CONSTRAINT sepay_transfer_inbox_time_ck CHECK (processed_at IS NULL OR processed_at >= received_at)
 );
 CREATE INDEX sepay_transfer_inbox_state_idx ON app.sepay_transfer_inbox (state, received_at);
