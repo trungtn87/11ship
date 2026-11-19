@@ -187,32 +187,23 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
         title: 'Đơn hàng',
         body: (BuildContext context, ShellActions actions) =>
             _orders(session, flows)),
-    // Customer mode only (a guest included): the shop-owner hat keeps calling a Shipper from its own orders.
-    if (!_shopHat(session))
-      TabSpec(
-          id: 'call',
-          label: 'Gọi ship',
-          icon: Icons.two_wheeler_outlined,
-          title: 'Gọi shipper giao hàng',
-          fullBleed: true,
-          body: (BuildContext context, ShellActions actions) =>
-              _callShip(session, flows)),
-    if (session.status == SessionStatus.signedIn &&
-        (session.identity?.availableRoles.contains('SHOP_OWNER') == true ||
-            session.identity?.shopOnboarding == 'INCOMPLETE' ||
-            session.identity?.shopOnboarding == 'COMPLETED'))
-      TabSpec(
-        id: 'shop',
-        label: 'Quán',
-        icon: Icons.storefront_outlined,
-        title: 'Quán',
-        body: (BuildContext context, ShellActions actions) => flows?.m02 == null
-            ? const EmptyState(
-                icon: Icons.storefront_outlined,
-                title: 'Quán của bạn',
-                text: 'Khu vực quản lý quán chưa sẵn sàng trong bản này.')
-            : ShopTab(session: session, flows: flows!.m02!),
-      ),
+    TabSpec(
+        id: 'call',
+        label: 'Gọi ship',
+        icon: Icons.two_wheeler_outlined,
+        title: 'Gọi shipper giao hàng',
+        fullBleed: true,
+        body: (BuildContext context, ShellActions actions) =>
+            _callShip(session, flows)),
+    TabSpec(
+      id: 'shop',
+      label: 'Quán',
+      icon: Icons.storefront_outlined,
+      title: 'Quán',
+      body: (BuildContext context, ShellActions actions) => _shop(session, flows,
+          // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
+          openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows!, orderId)))),
+    ),
     TabSpec(
         id: 'account',
         label: 'Tài khoản',
@@ -280,12 +271,6 @@ VoidCallback? _notifyWhenShopsAction(
 
 // ---- Gọi ship tab (customer mode) -------------------------------------------------------------------------------------
 
-/// The shop-owner hat: a signed-in owner who has not switched to the customer role (the same rule as the Đơn hàng tab).
-bool _shopHat(SessionController session) =>
-    session.status == SessionStatus.signedIn &&
-    session.identity?.availableRoles.contains('SHOP_OWNER') == true &&
-    session.identity?.activeRole != 'CUSTOMER';
-
 Widget _callShip(SessionController session, AppFlows? flows) {
   final CustomerDeliverySource? source = flows?.customerDeliveries;
   if (session.status == SessionStatus.signedIn &&
@@ -312,6 +297,22 @@ Widget _callShip(SessionController session, AppFlows? flows) {
                   title: 'Gọi shipper giao hàng',
                   text: 'Sau khi đăng nhập, bạn có thể gọi shipper lấy và giao đồ.'),
             ]));
+}
+
+Widget _shop(SessionController session, AppFlows? flows,
+    {Future<void> Function(String orderId)? openOrder}) {
+  if (session.status != SessionStatus.signedIn) {
+    return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
+        child: _guestPrompt(session, 'Đăng nhập để mở hoặc quản lý quán.', flows));
+  }
+  if (flows?.m02 == null) {
+    return const EmptyState(
+        icon: Icons.storefront_outlined,
+        title: 'Quán của bạn',
+        text: 'Khu vực quản lý quán chưa sẵn sàng trong bản này.');
+  }
+  return ShopTab(session: session, flows: flows!.m02!, openOrder: openOrder);
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
@@ -371,6 +372,9 @@ Widget _orders(SessionController session, AppFlows? flows) {
   ]);
 }
 
+/// Issue #390: the shop's "Thanh toán và trao đổi" entry in the Account tab. Hidden (not deleted) until Owner wants it back.
+const bool kShopFinanceEntryVisible = false;
+
 // ---- F04: account (guest) --------------------------------------------------------------------------------------------
 
 Widget _account(
@@ -405,7 +409,9 @@ Widget _account(
                 ),
             ],
             entries: <Widget>[
-              if (session.status == SessionStatus.signedIn &&
+              // Owner (Issue #390): hidden for now, not removed. The screen, API and data stay; set the flag to true to show the entry again.
+              if (kShopFinanceEntryVisible &&
+                  session.status == SessionStatus.signedIn &&
                   session.identity?.activeRole == 'SHOP_OWNER')
                 N11ListItem(
                     icon: Icons.payments_outlined,

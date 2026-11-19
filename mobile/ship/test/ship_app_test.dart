@@ -58,7 +58,9 @@ void main() {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
-    expect(images.any((Image i) => i.image is AssetImage && (i.image as AssetImage).assetName == 'assets/brand/logo-11ship-ui.png'), isTrue);
+    // #392: the Home header has no large logo any more; it is one row with the title and the bell.
+    expect(images.any((Image i) => i.image is AssetImage && (i.image as AssetImage).assetName == 'assets/brand/logo-11ship-ui.png'), isFalse, reason: 'no large logo on Home');
+    expect(find.byKey(const Key('ship-home-title')), findsOneWidget);
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
@@ -66,7 +68,10 @@ void main() {
     await pump(tester, healthy());
     final FilledButton button = tester.widget<FilledButton>(find.byKey(const Key('online-button')));
     expect(button.onPressed, isNull);
-    expect(find.text('Chưa xác định trạng thái hoạt động'), findsOneWidget);
+    expect(find.text('Chưa xác định'), findsOneWidget);
+    // The reason is behind the (i) on Home (#392).
+    await tester.tap(find.byKey(const Key('home-status-info')));
+    await tester.pump();
     expect(find.text(kOnlineReason), findsOneWidget);
     expect(find.textContaining('320.000'), findsNothing);
     expect(find.byKey(const Key('home-map-unavailable')), findsOneWidget);
@@ -97,7 +102,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      expect(find.text(online ? 'Bạn đang online' : 'Bạn đang offline'), findsOneWidget);
+      expect(find.text(online ? 'Online' : 'Offline'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.byKey(const Key('online-button'))).onPressed, isNull);
       expect(tester.takeException(), isNull);
     }
@@ -203,7 +208,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Trạng thái tài khoản'), findsNothing);
     expect(find.text('Trạng thái'), findsNothing);
-    expect(find.byKey(const Key('open-profile')), findsOneWidget);
+    expect(find.byKey(const Key('open-profile')), findsNothing, reason: 'the shipper app shows one Thông tin & Hồ sơ entry (#396)');
+    expect(find.byKey(const Key('account-profile-hub')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const Key('open-change-password')));
     await tester.tap(find.byKey(const Key('open-change-password')));
     await tester.pumpAndSettle();
