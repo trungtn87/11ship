@@ -3,6 +3,8 @@ import 'package:n11_shared/n11_shared.dart';
 
 import 'ship_home.dart';
 import 'ship_m07.dart';
+import 'ship_income_data.dart';
+import 'ship_income_view.dart';
 import 'ship_online.dart';
 import 'ship_wallet.dart';
 
@@ -134,42 +136,13 @@ Widget _income(BuildContext context, ShellActions actions, SessionController ses
       N11Button(key: const Key('income-guest-register'), label: 'Đăng ký làm shipper', onPressed: () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: shipBrand)))),
     ]);
   }
-  return vstack(<Widget>[
-    const GatedButton(label: 'Chọn khoảng ngày', reason: 'Chọn ngày sẽ có khi dữ liệu thu nhập sẵn sàng.', kind: ButtonKind.secondary, icon: Icons.schedule),
-    // "Tổng thu nhập" stays on top: no confirmed figure yet, so it reads "-- đ" (never a made-up number) and opens the wallet.
-    N11Card(
-      key: const Key('income-summary'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(children: <Widget>[const Icon(Icons.insights_outlined, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Tổng thu nhập', style: N11Text.h2))]),
-          const SizedBox(height: N11Space.gap2),
-          const Text('-- đ', style: N11Text.title),
-          const SizedBox(height: N11Space.gap2),
-          const ReasonNote('Thu nhập sẽ hiện khi có dữ liệu xác nhận.'),
-          const SizedBox(height: N11Space.gap2),
-          Align(
-            alignment: Alignment.centerRight,
-            child: N11Button(key: const Key('income-open-wallet'), label: 'Xem ví shipper', kind: ButtonKind.secondary, compact: true, onPressed: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session)))),
-          ),
-        ],
-      ),
-    ),
-    // M04: entry to the wallet screens, connected to the server through the session (kept for signed-in people).
-    WalletEntry(session: session),
-    // Replaces the duplicate empty card: recent transactions live in the wallet history.
-    N11Card(
-      key: const Key('income-recent'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(children: <Widget>[const Icon(Icons.history, color: N11Colors.ink2), const SizedBox(width: N11Space.gap2), Expanded(child: Text('Giao dịch gần đây', style: N11Text.h2))]),
-          const SizedBox(height: N11Space.gap2),
-          const Text('Chưa có giao dịch để hiển thị. Lịch sử đầy đủ nằm trong ví.', style: N11Text.body),
-        ],
-      ),
-    ),
-  ]);
+  // #395: the income dashboard (period filters, daily chart, statistics, wallet entry, recent transactions), read from the server.
+  return IncomeBody(
+    source: HttpIncomeSource(session: session),
+    wallet: buildWalletSource(session: session),
+    walletEntry: WalletEntry(session: session),
+    onOpenHistory: () => Navigator.of(context).push(walletHomeRoute(session, buildWalletSource(session: session))),
+  );
 }
 
 /// The process and benefits of a driver, for guests (S03 and S05). Text only: no new screen, no figures.
