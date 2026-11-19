@@ -583,9 +583,14 @@ void main() {
         for (final String n in order.take(2)) {
           expect(find.text(n), findsOneWidget);
         }
+        // Issue #385: two shops per row in the server order: Zeta (first) is left of Alpha on the same row.
+        expect(
+          tester.getTopLeft(find.text('Zeta Ốc Hương')).dx,
+          lessThan(tester.getTopLeft(find.text('Alpha Hải Sản')).dx),
+        );
         expect(
           tester.getTopLeft(find.text('Zeta Ốc Hương')).dy,
-          lessThan(tester.getTopLeft(find.text('Alpha Hải Sản')).dy),
+          tester.getTopLeft(find.text('Alpha Hải Sản')).dy,
         );
         expect(find.text('Đang mở cửa'), findsWidgets);
         expect(find.text('Đã đóng cửa'), findsWidgets);
