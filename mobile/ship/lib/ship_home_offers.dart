@@ -211,10 +211,8 @@ class _OfferTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(offer.code, style: N11Text.bodyStrong),
-                    const SizedBox(height: 2),
                     Text(offer.shopName,
-                        style: N11Text.caption,
+                        style: N11Text.bodyStrong,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     if (distance != null)
