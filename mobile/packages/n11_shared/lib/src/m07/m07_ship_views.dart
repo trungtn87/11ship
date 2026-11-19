@@ -733,6 +733,9 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && widget.mapBuilder != null && pins.isNotEmpty)
         OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
+      // Issue #393: two pins but no stored road: no line, and the screen says so (a legacy record already has its own note below).
+      if (active && widget.mapBuilder != null && pins.isNotEmpty && road.isEmpty && !d.legacyReferenceOnly)
+        const ReasonNote('Chưa có tuyến đường đi.', key: Key('m07-ship-route-missing'), icon: Icons.route_outlined),
       // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
       // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
       if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),

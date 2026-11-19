@@ -297,13 +297,13 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
         return <Widget>[SearchTimerCard(search: d.search), ..._feeNegotiationCards(d), ..._feeAgreementCards(d)];
       case DeliveryState.accepted:
       case DeliveryState.locationConfirmed:
-        return <Widget>[_shipperCard(d), ..._feeNegotiationCards(d), _statusCard(d), if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder)];
+        return <Widget>[_shipperCard(d), ..._feeNegotiationCards(d), _statusCard(d), if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder, route: d.route?.points ?? const <List<double>>[])];
       case DeliveryState.pickedUp:
       case DeliveryState.delivering:
         return <Widget>[
           _shipperCard(d),
           // A DIRECT call is followed by its status only; the Shipper's route is shown for a customer's order.
-          if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder),
+          if (widget.showLocation && d.source == 'ORDER') LocationCard(location: d.location, mapBuilder: widget.mapBuilder, route: d.route?.points ?? const <List<double>>[]),
           ReasonNote(d.allows('cancel_after_pickup')
               ? 'Shipper đã lấy hàng. Bạn là người tạo yêu cầu nên có thể hủy nếu không giao nữa; phí không sửa được. Nếu shipper báo không giao được, hãy gọi để thống nhất.'
               : 'Shipper đã lấy hàng. Phí không sửa được. Đơn này do khách đặt nên chỉ khách mới hủy được; nếu cần, hãy gọi shipper để thống nhất.'),
