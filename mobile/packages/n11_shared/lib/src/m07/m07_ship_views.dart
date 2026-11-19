@@ -717,25 +717,8 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           onAccept: busy ? null : () => _decideAddressChange(d, true, null),
           onReject: busy ? null : (String reason) => _decideAddressChange(d, false, reason),
         ),
-      OrderIncidentGuidance(
-        role: 'SHIPPER',
-        deliveryState: d.state.name,
-        hasShipper: true,
-        customerPhone: d.recipient.phone,
-        shopPhone: d.pickup.phone,
-        onCallCustomer: d.recipient.phone != null ? () => orderPhoneDialer.dial(d.recipient.phone!) : null,
-        onCallShop: d.pickup.phone != null ? () => orderPhoneDialer.dial(d.pickup.phone!) : null,
-        feePending: d.fee.negotiation != null,
-        incident: d.incident,
-        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
-      ),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
-      if (active && widget.mapBuilder != null && pins.isNotEmpty)
-        OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
-      // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
-      // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
-      if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
       if (active && d.legacyReferenceOnly)
         const ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
       if (active && d.needsFee)
@@ -763,19 +746,45 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           text: 'Chỉ cần bấm "Giao thành công" khi đã giao xong. Nếu không giao được, hãy gọi quán để thống nhất; chỉ người tạo đơn mới hủy được.',
           icon: Icons.phone_in_talk_outlined,
         ),
-      // The contacts exist only while this Shipper holds the delivery (the server sends them only then); "Gọi" opens the dialer and never calls by itself.
-      _contactCard('Quán lấy hàng', d.pickup.shopName, <(String, String)>[('Quán', d.pickup.shopName), if (d.pickup.phone != null) ('Điện thoại', d.pickup.phone!), if (d.pickup.addressText != null) ('Địa chỉ', d.pickup.addressText!)], key: 'm07-pickup-card', show: active, phone: d.pickup.phone, who: 'quán'),
-      _contactCard(
-        'Người nhận',
-        d.recipient.name,
-        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—'), if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) ('Hướng dẫn tìm đường', d.dropoffNote!)],
-        key: 'm07-recipient-card',
-        show: active,
-        phone: d.recipient.phone,
-        who: 'người nhận',
+      // #191 (18/11): thẻ 1 "Người gửi & nhận" — mỗi bên một lần tên, một lần số, một nút Gọi ngay cạnh bên đó.
+      if (active)
+        OrderSection(
+          id: 'ship-parties',
+          title: 'Người gửi & nhận',
+          summary: 'Quán lấy hàng · Người nhận',
+          initiallyExpanded: true,
+          builder: (BuildContext _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _partyRow(key: 'm07-pickup-card', role: 'Quán lấy hàng', name: d.pickup.shopName, phone: d.pickup.phone, who: 'quán', lines: <String>[if (d.pickup.addressText != null) 'Địa chỉ: ${d.pickup.addressText}']),
+              const SizedBox(height: N11Space.gap3),
+              const Divider(height: 1, thickness: 1, color: N11Colors.line),
+              const SizedBox(height: N11Space.gap3),
+              _partyRow(key: 'm07-recipient-card', role: 'Người nhận', name: d.recipient.name, phone: d.recipient.phone, who: 'người nhận', lines: <String>['Địa chỉ: ${d.recipient.addressText ?? '—'}', if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) 'Hướng dẫn tìm đường: ${d.dropoffNote!}']),
+            ],
+          ),
+        ),
+      // #191 (18/11): thẻ 2 "Thông tin đơn" — hàng, ghi chú, tiền/phí, rồi bản đồ (mở rộng được) và quãng đường đã lưu.
+      OrderSection(
+        id: 'ship-order-info',
+        title: 'Thông tin đơn',
+        summary: d.goods.description,
+        initiallyExpanded: true,
+        builder: (BuildContext _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            KeyValueRows(<(String, String)>[('Hàng', d.goods.description), if (d.note != null && d.note!.isNotEmpty) ('Ghi chú', d.note!)]),
+            const SizedBox(height: N11Space.gap3),
+            MoneySummary(goods: d.goods, fee: d.fee),
+            const SizedBox(height: N11Space.gap3),
+            if (active && widget.mapBuilder != null && pins.isNotEmpty)
+              OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
+            // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
+            // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
+            if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
+          ],
+        ),
       ),
-      N11Card(child: KeyValueRows(<(String, String)>[('Hàng', d.goods.description), if (d.note != null && d.note!.isNotEmpty) ('Ghi chú', d.note!)])),
-      MoneySummary(goods: d.goods, fee: d.fee),
       if (active || d.state == DeliveryState.completed)
         if (_chatFor(d) case final OrderChatController chat)
           ListenableBuilder(
@@ -783,23 +792,42 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
             builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: chat.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: chat)),
           ),
       if (!active) _result(d),
+      // #191 (18/11): "Xử lý sự cố" là trợ giúp phụ cuối nội dung, đóng mặc định; không có nút "Gọi Khách" (đã có Gọi ở thẻ Người nhận).
+      OrderIncidentGuidance(
+        role: 'SHIPPER',
+        deliveryState: d.state.name,
+        hasShipper: true,
+        customerPhone: d.recipient.phone,
+        shopPhone: d.pickup.phone,
+        onCallShop: d.pickup.phone != null ? () => orderPhoneDialer.dial(d.pickup.phone!) : null,
+        feePending: d.fee.negotiation != null,
+        incident: d.incident,
+        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+      ),
     ];
     return M07PageParts(body, bottom: active ? _bottom(d) : null);
   }
 
-  Widget _contactCard(String title, String name, List<(String, String)> rows, {required String key, required bool show, String? phone, required String who}) {
-    if (!show) {
-      return const SizedBox.shrink();
-    }
+  Widget _partyRow({required String key, required String role, required String name, String? phone, required String who, required List<String> lines}) {
+    final String? shown = phone == null ? null : (dialNumberText(phone) ?? phone);
     return KeyedSubtree(
       key: Key(key),
-      child: OrderSection(
-        id: key,
-        title: title,
-        summary: [name, dialNumberText(phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
-        initiallyExpanded: true,
-        trailing: QuickCall(phone: phone, who: who),
-        builder: (BuildContext _) => KeyValueRows(rows, responsive: true),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(role, style: N11Text.caption),
+                Text(name, style: N11Text.bodyStrong),
+                if (shown != null) Text(shown, key: Key('party-$who-phone'), style: N11Text.body),
+                for (final String line in lines) Text(line, style: N11Text.caption),
+              ],
+            ),
+          ),
+          QuickCall(phone: phone, who: who),
+        ],
       ),
     );
   }
