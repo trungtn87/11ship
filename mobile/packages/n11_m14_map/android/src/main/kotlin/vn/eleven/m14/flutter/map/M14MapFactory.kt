@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Color
 import android.os.*
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -94,7 +95,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                             } }
                             // Regional fallback only. The first valid point/route later replaces it with a viewport-based fit.
                             current.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.665,106.257),12.0))
-                            current.addOnCameraMoveListener { pins.invalidate() }
+                            current.addOnCameraMoveListener { Log.d("M14DBG","cameraMove ${camStr(current)}"); pins.invalidate() }
                             current.addOnCameraMoveStartedListener { reason -> if(reason==MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) userMoved=true }
                             current.addOnCameraIdleListener {
                                 val center=current.cameraPosition.target
@@ -120,6 +121,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
     }
     private fun draw() {
         val current=map?:return
+        Log.d("M14DBG","draw pins=${(data?.get("pins") as? List<*>)?.size} initialCameraApplied=$initialCameraApplied userMoved=$userMoved focus=${data?.get("focus_pin")} center_request=${data?.get("center_request")} camera=${camStr(current)}")
         pins.pins=(data?.get("pins") as? List<*>)?.mapNotNull { item ->
             val p=item as? Map<*,*> ?: return@mapNotNull null
             val lat=(p["lat"] as? Number)?.toDouble()?:return@mapNotNull null
@@ -138,7 +140,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             val important=pins.pins.map { LatLng(it.latitude,it.longitude) } + coords
             if(important.isNotEmpty()) {
                 // A person who already panned/pinched before the first fix keeps their view; the fit is only for a map nobody has touched.
-                if(!userMoved) fitImportant(current, important, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M)
+                if(!userMoved) { fitImportant(current, important, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); redraw(current,"fitImportant") }
                 initialCameraApplied=true
             }
         }
@@ -149,6 +151,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                 focusedPoint=point
                 if(first && !initialCameraApplied) fitRadius(current, LatLng(pin.latitude,pin.longitude), circle?.radiusM ?: DEFAULT_FIT_RADIUS_M)
                 else current.moveCamera(CameraUpdateFactory.newLatLng(LatLng(pin.latitude,pin.longitude)))
+                redraw(current,"focus first=$first")
             }
         }
         val requested=(data?.get("center_request") as? Number)?.toInt()?:0
@@ -156,11 +159,18 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             centerRequest=requested
             // The explicit "back to my position" button: fit the whole area again, wherever the person had panned to.
             val centre=circle?.let { LatLng(it.lat,it.lon) } ?: pins.pins.firstOrNull()?.let { LatLng(it.latitude,it.longitude) }
-            if(centre!=null) { fitRadius(current, centre, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); userMoved=false }
+            if(centre!=null) { fitRadius(current, centre, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); userMoved=false; redraw(current,"centerRequest") }
         }
         current.clear()
         if(coords.size>1) current.addPolyline(PolylineOptions().addAll(coords).color(Color.rgb(25,110,230)).width(5f))
         if(circle!=null) drawRadius(current, circle)
+    }
+    private fun camStr(m: MapLibreMap): String = m.cameraPosition.let { "${it.target?.latitude},${it.target?.longitude} z=${it.zoom}" }
+    /** Temporary #387 diagnosis: redraw the pin overlay right after every camera command (defensive, not a proven fix). */
+    private fun redraw(current: MapLibreMap, tag: String) {
+        Log.d("M14DBG","after $tag camera=${camStr(current)}")
+        pins.invalidate()
+        pins.post { pins.invalidate() }
     }
     /** The receiving area, only when its centre is a usable position (never (0,0), NaN or out of range) and the radius is positive. */
     private fun radiusCircle(): RadiusCircle? {
