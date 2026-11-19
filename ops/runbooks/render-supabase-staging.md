@@ -134,6 +134,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | wallet_topups | SELECT, INSERT (M04-B1/B2.2b: money confirmed as received, append-only; it cannot commit without its ledger credit) |
 | wallet_withdrawals | SELECT, INSERT, UPDATE (M04-C: a withdrawal request with its immutable bank snapshot; the guard trigger allows only the state machine PENDING, PROCESSING, RECONCILIATION, PAID, CANCELLED; never deleted) |
 | wallet_withdrawal_events | SELECT, INSERT (M04-C: the append-only trail of every withdrawal transition; no bank detail) |
+| sepay_transfer_inbox | SELECT, INSERT, UPDATE (M04 SePay step 1: the verified webhook inbox; the runtime records each event and sets its outcome; no DELETE, a trigger refuses it) |
 | wallet_commission_policies | SELECT, INSERT (M04-C: append-only versions of the commission per delivery; an assignment snapshots the amount when accepted) |
 | shipping_fee_policy_versions | SELECT, INSERT (M06-A: one immutable row per applied fee table; a trigger refuses UPDATE, DELETE and TRUNCATE) |
 | shipping_fee_policy_drafts | SELECT, UPDATE (M06-A: the one seeded draft row; UPDATE is the version-checked save/clear and `FOR UPDATE`; never deleted) |
