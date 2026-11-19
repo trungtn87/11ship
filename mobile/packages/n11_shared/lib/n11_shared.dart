@@ -42,6 +42,8 @@ export 'src/m02/m02_format.dart';
 export 'src/m02/m02_widgets.dart';
 export 'src/m02/menu_views.dart';
 export 'src/m02/preview_views.dart';
+export 'src/m02/shop_revenue_data.dart';
+export 'src/m02/shop_revenue_view.dart';
 export 'src/m02/shop_manage_views.dart';
 export 'src/m02/shop_tab.dart';
 export 'src/m06/m06_actions.dart';

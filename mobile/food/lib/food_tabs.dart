@@ -200,7 +200,9 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
       label: 'Quán',
       icon: Icons.storefront_outlined,
       title: 'Quán',
-      body: (BuildContext context, ShellActions actions) => _shop(session, flows),
+      body: (BuildContext context, ShellActions actions) => _shop(session, flows,
+          // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
+          openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows!, orderId)))),
     ),
     TabSpec(
         id: 'account',
@@ -297,7 +299,8 @@ Widget _callShip(SessionController session, AppFlows? flows) {
             ]));
 }
 
-Widget _shop(SessionController session, AppFlows? flows) {
+Widget _shop(SessionController session, AppFlows? flows,
+    {Future<void> Function(String orderId)? openOrder}) {
   if (session.status != SessionStatus.signedIn) {
     return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
@@ -309,7 +312,7 @@ Widget _shop(SessionController session, AppFlows? flows) {
         title: 'Quán của bạn',
         text: 'Khu vực quản lý quán chưa sẵn sàng trong bản này.');
   }
-  return ShopTab(session: session, flows: flows!.m02!);
+  return ShopTab(session: session, flows: flows!.m02!, openOrder: openOrder);
 }
 
 // ---- F03: orders -----------------------------------------------------------------------------------------------------
