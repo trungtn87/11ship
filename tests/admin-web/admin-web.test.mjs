@@ -186,6 +186,53 @@ describe('sidebar modes (F1)', () => {
   });
 });
 
+describe('dense list tables (Owner 2026-11-20: spreadsheet look, small text)', () => {
+  // The rules live in the shared stylesheet, so every list table (orders, deliveries, users, admins, feedback...) gets them.
+  const cssRule = (css, selector) => {
+    const start = css.indexOf(`\n${selector} {`);
+    assert.ok(start >= 0, `missing rule ${selector}`);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  it('the sticky header, thin lines and short rows are shared by every .table', () => {
+    const css = readFileSync(join(real, 'styles.css'), 'utf8');
+    assert.match(cssRule(css, '.table-card'), /max-height: min\(72vh, 760px\)/, 'the card scrolls so the header can stick');
+    assert.match(cssRule(css, '.table th'), /position: sticky;\s*top: 0;/);
+    assert.match(cssRule(css, '.table'), /font-size: 13px;/);
+    assert.match(cssRule(css, '.table'), /font-variant-numeric: tabular-nums;/, 'digits line up for money and codes');
+    assert.match(cssRule(css, '.table td'), /padding: 5px 10px;/);
+    assert.match(cssRule(css, '.table td'), /white-space: nowrap;\s*$/m, 'a code never wraps');
+    assert.match(cssRule(css, '.table td'), /text-overflow: ellipsis;/);
+    assert.match(css, /\.table tbody tr:nth-child\(even\) td \{/, 'zebra rows');
+    assert.match(css, /\.table tbody tr:hover td \{/, 'row hover');
+  });
+  it('the filter bar is one row on wide screens and wraps only when narrow', () => {
+    const css = readFileSync(join(real, 'styles.css'), 'utf8');
+    assert.match(cssRule(css, '.toolbar-filters'), /flex-wrap: nowrap;/);
+    assert.ok(css.includes('@media (max-width: 1100px) {\n  .toolbar-filters {\n    flex-wrap: wrap;'));
+  });
+  it('narrow screens scroll the table instead of turning rows into cards, and keep 44px row actions', () => {
+    const css = readFileSync(join(real, 'styles.css'), 'utf8');
+    const narrow = css.slice(css.indexOf('@media (max-width: 720px) {\n  .table {'), css.indexOf('@media (max-width: 720px) {\n  .table {') + 600);
+    assert.ok(narrow.includes('min-width: 640px'));
+    assert.ok(!/display: block/.test(narrow), 'no one-card-per-row layout');
+    assert.ok(narrow.includes('min-height: 44px'));
+  });
+  it('a text-only cell carries its full value as a hover title, and an explicit title is kept', () => {
+    const dom = readFileSync(join(real, 'js', 'dom', 'dom.js'), 'utf8');
+    assert.ok(dom.includes("setAttribute('title', only)"));
+    assert.ok(dom.includes("attrs.title === undefined"));
+  });
+  it('orders keep one filter row with every control (search, status, dates, shop, refresh)', () => {
+    const orders = readFileSync(join(real, 'js', 'dom', 'orders-view.js'), 'utf8');
+    assert.equal(orders.split("'toolbar toolbar-filters'").length - 1, 1, 'one toolbar row, not two');
+    assert.ok(orders.includes("role: 'search'"));
+    const row = orders.slice(orders.indexOf("'toolbar toolbar-filters'"), orders.indexOf("'toolbar toolbar-filters'") + 400);
+    for (const control of ['this.#search', 'this.#status', 'this.#from', 'this.#to', 'this.#shop', 'refresh']) {
+      assert.ok(row.includes(control), `filter row keeps ${control}`);
+    }
+  });
+});
+
 describe('accounts source', () => {
   it('is not wired: no screen can report data or success', async () => {
     const a = await load(real, 'core/accounts.js');
