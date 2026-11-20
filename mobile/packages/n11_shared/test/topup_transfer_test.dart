@@ -10,10 +10,11 @@ const String _code = 'NAPA1B2C3D4E';
 
 /// A real-looking source: MB receiving account from the server, a request with the NAP code, and the status the test sets.
 class _TopupSource extends SampleWalletSource {
-  _TopupSource({this.status = TopupStatus.pending, this.bankCode = 'MB'});
+  _TopupSource({this.status = TopupStatus.pending, this.bankCode = 'MB', this.reported = false});
 
   final TopupStatus status;
   final String bankCode;
+  final bool reported;
 
   @override
   bool get isSample => false;
@@ -25,7 +26,7 @@ class _TopupSource extends SampleWalletSource {
 
   @override
   Future<WalletLoad<TopupRequest>> topup(String code) async => WalletReady<TopupRequest>(
-        TopupRequest(code: code, amount: 150000, createdAt: DateTime(2026, 11, 20, 9, 0), status: status, transferCode: _code, displayCode: 'NAPA1B2C'),
+        TopupRequest(code: code, amount: 150000, createdAt: DateTime(2026, 11, 20, 9, 0), status: status, transferCode: _code, displayCode: 'NAPA1B2C', reportedAt: reported ? DateTime(2026, 11, 20, 9, 30) : null),
       );
 
   @override
@@ -138,7 +139,7 @@ void main() {
       expect(find.textContaining('đúng nội dung chuyển khoản và đúng số tiền'), findsOneWidget);
     });
 
-    testWidgets('PENDING ends with exactly two buttons, "Hủy yêu cầu" then "Xác nhận đã chuyển tiền" (not yet available), and no exchange with the admin', (WidgetTester tester) async {
+    testWidgets('PENDING, not reported: exactly two closing buttons, "Hủy yêu cầu" then an enabled "Xác nhận đã chuyển tiền"; no exchange with the admin', (WidgetTester tester) async {
       await mount(tester, TopupDetailScreen(source: _TopupSource(), code: 'req-1'));
 
       final Finder cancel = find.byKey(const Key('topup-cancel'));
@@ -146,9 +147,16 @@ void main() {
       expect(find.text('Hủy yêu cầu'), findsOneWidget);
       expect(find.text('Xác nhận đã chuyển tiền'), findsOneWidget);
       expect(tester.getTopLeft(cancel).dy, lessThan(tester.getTopLeft(reported).dy));
-      expect(tester.widget<N11Button>(reported).onPressed, isNull, reason: 'the server has no reported state yet: the button cannot act');
+      expect(tester.widget<N11Button>(reported).onPressed, isNotNull, reason: 'the transfer can be reported while the request is PENDING');
       expect(find.text('Trao đổi với quản trị'), findsNothing);
       expect(find.byType(N11Button), findsNWidgets(2));
+    });
+
+    testWidgets('PENDING, reported: "Chờ xác nhận", the confirm button is gone, and "Hủy yêu cầu" remains', (WidgetTester tester) async {
+      await mount(tester, TopupDetailScreen(source: _TopupSource(reported: true), code: 'req-1'));
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
+      expect(find.byKey(const Key('topup-reported')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
     });
 
     testWidgets('PENDING with a bank that has no VietQR: no QR, a neutral note, and the text fields still copy', (WidgetTester tester) async {

@@ -241,6 +241,22 @@ void main() {
       expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, topupStatusLabel(TopupStatus.cancelled));
     });
 
+    testWidgets('"Xác nhận đã chuyển tiền" marks the request reported: "Chờ xác nhận", the confirm button goes, and the balance never changes', (WidgetTester tester) async {
+      final SampleWalletSource source = SampleWalletSource();
+      final TopupRequest created = (await tester.runAsync(() => source.createTopup(150000)))!;
+      await mount(tester, TopupDetailScreen(source: source, code: created.code));
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ chuyển tiền');
+
+      await tapKey(tester, 'topup-reported');
+
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
+      expect(find.byKey(const Key('topup-reported')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      final Wallet after = await readWallet(tester, source);
+      expect(after.total, 150000);
+      expect(after.held, 2000);
+    });
+
     testWidgets('a confirmed topup has no cancel button; a pending one cancels', (WidgetTester tester) async {
       final SampleWalletSource source = SampleWalletSource();
       await mount(tester, TopupDetailScreen(source: source, code: 'NP202610150001'));

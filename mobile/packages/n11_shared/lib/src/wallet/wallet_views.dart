@@ -606,7 +606,7 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
       if (_closing) const N11Banner(key: Key('topup-closing-banner'), kind: BannerKind.info, title: 'Đang đóng hoạt động', text: 'Đang đóng hoạt động, không thể tạo yêu cầu nạp mới.'),
       // Request first: the request is created here and the transfer content (a code tied to it) is shown on its detail screen, where it can always be reopened.
       if (state is! WalletReady<BankTransferInfo>) walletStateView<BankTransferInfo>(state, retry: _retry) ?? const SizedBox.shrink(),
-      const ReasonNote('Bấm "Tạo yêu cầu nạp" để nhận mã nội dung chuyển khoản. Tiền chỉ được cộng sau khi Admin đối chiếu giao dịch ngân hàng.', key: Key('topup-request-first-note')),
+      const ReasonNote('Bấm "Tạo yêu cầu nạp" để nhận mã nội dung chuyển khoản. Tiền sẽ được cộng khi hệ thống nhận được khoản chuyển khớp mã nạp, hoặc khi quản trị xác nhận.', key: Key('topup-request-first-note')),
       if (_createError != null) N11Banner(key: const Key('topup-create-error'), kind: BannerKind.error, title: 'Chưa tạo được', text: _createError),
       N11Button(key: const Key('topup-continue'), validate: true, label: 'Tạo yêu cầu nạp', loading: _busy, onPressed: source.canWrite && !_closing && !_busy && state is WalletReady<BankTransferInfo> ? _continue : null),
       if (!source.canWrite) ReasonNote(source.notWiredReason),
@@ -759,6 +759,37 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   int _rev = 0;
   bool _busy = false;
   String? _error;
+  bool _reporting = false;
+  String? _reportError;
+
+  /// "Xác nhận đã chuyển tiền": one request in flight at a time (a second tap is ignored). A lost answer keeps its key, so a retry is the same report.
+  Future<void> _report() async {
+    final WalletWrites? writes = widget.source.writes;
+    if (writes == null || _reporting) {
+      return;
+    }
+    setState(() {
+      _reporting = true;
+      _reportError = null;
+    });
+    try {
+      await writes.reportTopup(widget.code);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _reporting = false;
+          _reportError = error is WalletFailure ? error.message : 'Chưa báo được là đã chuyển tiền. Vui lòng thử lại.';
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _reporting = false;
+        _rev++;
+      });
+    }
+  }
 
   Future<void> _cancel() async {
     final WalletWrites? writes = widget.source.writes;
@@ -786,11 +817,20 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
     }
   }
 
-  /// Step 2 of the top-up (the request is open, the transfer is not reported yet). "Chờ xác nhận" belongs to the step after the report.
-  static String _label(TopupRequest r) => r.status == TopupStatus.pending ? 'Chờ chuyển tiền' : topupStatusLabel(r.status);
+  /// Waiting for the transfer: "Chờ chuyển tiền". Reported (still PENDING): "Chờ xác nhận". The settlement or an Administrator decides it.
+  static String _label(TopupRequest r) => r.status == TopupStatus.pending ? (r.reported ? 'Chờ xác nhận' : 'Chờ chuyển tiền') : topupStatusLabel(r.status);
 
   (IconData, _Tone, String) _look(TopupRequest r) => switch (r.status) {
-        TopupStatus.pending => (Icons.hourglass_top, _Tone.warn, 'Chuyển đúng số tiền và nội dung bên dưới. Sau khi chuyển, bấm "Xác nhận đã chuyển tiền".'),
+        TopupStatus.pending when r.reported => (
+            Icons.hourglass_top,
+            _Tone.warn,
+            'Đã báo chuyển tiền. Tiền sẽ được cộng khi hệ thống nhận được khoản chuyển khớp mã nạp, hoặc khi quản trị xác nhận.',
+          ),
+        TopupStatus.pending => (
+            Icons.hourglass_top,
+            _Tone.warn,
+            'Chuyển đúng số tiền và nội dung bên dưới. Sau khi chuyển, bấm "Xác nhận đã chuyển tiền". Tiền sẽ được cộng khi hệ thống nhận được khoản chuyển khớp mã nạp, hoặc khi quản trị xác nhận.',
+          ),
         TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
         TopupStatus.rejected => (Icons.cancel_outlined, _Tone.bad, 'Admin đã từ chối yêu cầu này. Ví không thay đổi.'),
         TopupStatus.cancelled => (Icons.block, _Tone.neutral, 'Yêu cầu đã được hủy. Ví không thay đổi.'),
@@ -819,16 +859,16 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
             ),
             if (r.status == TopupStatus.confirmed) _NewBalance(source: source, request: r),
             if (r.status == TopupStatus.pending) _PendingTransfer(source: source, request: r),
-            // "Trao đổi với quản trị" is not offered while the transfer is only waited for; it appears once the transfer is reported.
-            if (r.status != TopupStatus.pending && source is HttpWalletSource) N11Button(label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
+            // "Trao đổi với quản trị" is not offered while the transfer is only waited for; it appears once the transfer is reported (and for decided requests, as before).
+            if (source is HttpWalletSource && (r.status != TopupStatus.pending || r.reported))
+              N11Button(key: const Key('topup-exchange'), label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
+            if (_reportError != null) N11Banner(key: const Key('topup-report-error'), kind: BannerKind.error, title: 'Chưa báo được', text: _reportError),
             if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
-            if (r.status == TopupStatus.pending) ...<Widget>[
-              const ReasonNote('Bước "Xác nhận đã chuyển tiền" chưa mở.', key: Key('topup-reported-note')),
-            ],
-            if (r.canCancel) N11Button(key: const Key('topup-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite ? _cancel : null),
+            // The two closing actions of a PENDING request: "Hủy yêu cầu", then "Xác nhận đã chuyển tiền" (only until it is reported).
+            if (r.canCancel) N11Button(key: const Key('topup-cancel'), label: 'Hủy yêu cầu', kind: ButtonKind.secondary, loading: _busy, onPressed: source.canWrite && !_reporting ? _cancel : null),
             if (r.canCancel && !source.canWrite) ReasonNote(source.notWiredReason),
-            // Last on a PENDING request: the two closing actions. The confirmation has no server state yet, so it cannot act.
-            if (r.status == TopupStatus.pending) N11Button(key: const Key('topup-reported'), label: 'Xác nhận đã chuyển tiền', onPressed: null),
+            if (r.awaitingTransfer)
+              N11Button(key: const Key('topup-reported'), label: 'Xác nhận đã chuyển tiền', loading: _reporting, onPressed: source.canWrite && !_reporting && !_busy ? _report : null),
           ]);
         },
       ),

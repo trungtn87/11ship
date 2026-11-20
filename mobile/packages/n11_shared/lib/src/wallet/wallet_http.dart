@@ -53,7 +53,7 @@ String _refusalText(String? code) {
     case 'TOPUP_RECEIVING_ACCOUNT_NOT_CONFIGURED':
       return 'Hệ thống chưa có tài khoản nhận tiền nên chưa nạp được. Vui lòng thử lại sau.';
     case 'TOPUP_REQUEST_STATE_CONFLICT':
-      return 'Yêu cầu nạp đã được xử lý nên không hủy được nữa.';
+      return 'Yêu cầu nạp đã được xử lý nên không thể thực hiện thao tác này nữa.';
     case 'TOPUP_REQUEST_NOT_FOUND' || 'WITHDRAWAL_NOT_FOUND':
       return 'Không tìm thấy yêu cầu này.';
     case 'TOPUP_NOT_ALLOWED_WHEN_CLOSING':
@@ -169,7 +169,17 @@ TopupRequest _parseTopup(Object? data) {
     throw const FormatException('amount');
   }
   final Object? transfer = raw['transfer_code'];
-  return TopupRequest(code: id, displayCode: walletShortCode(id), amount: amount, createdAt: _time(raw['created_at']), status: _topupStatus(raw['state']), version: version, transferCode: transfer is String && transfer.isNotEmpty ? transfer : null);
+  final Object? reported = raw['reported_at'];
+  return TopupRequest(
+    code: id,
+    displayCode: walletShortCode(id),
+    amount: amount,
+    createdAt: _time(raw['created_at']),
+    status: _topupStatus(raw['state']),
+    version: version,
+    transferCode: transfer is String && transfer.isNotEmpty ? transfer : null,
+    reportedAt: reported == null ? null : _time(reported),
+  );
 }
 
 WithdrawalRequest _parseWithdrawal(Object? data) {
@@ -217,7 +227,9 @@ WalletTxn _parseTxn(Object? data) {
         amount: amount,
         at: at,
         status: status,
-        title: status == TxnStatus.success ? 'Nạp tiền thành công' : (status == TxnStatus.cancelled ? 'Yêu cầu nạp (không thành công)' : 'Yêu cầu nạp (chờ xác nhận)'),
+        title: status == TxnStatus.success
+            ? 'Nạp tiền thành công'
+            : (status == TxnStatus.cancelled ? 'Yêu cầu nạp (không thành công)' : (raw['reported'] == true ? 'Yêu cầu nạp (chờ xác nhận)' : 'Yêu cầu nạp (chờ chuyển tiền)')),
         requestCode: requestCode,
       );
     case 'withdraw':
@@ -479,6 +491,17 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
     }
     final int version = current.version ?? 0;
     await _write('cancel-topup:$code:$version', 'POST', '/topup-requests/${Uri.encodeComponent(code)}/cancel', <String, Object?>{'expected_version': version}, ok: const <int>{200});
+  }
+
+  @override
+  Future<TopupRequest> reportTopup(String code) async {
+    // The same intent (the same key) while the answer is unknown; the server answers the current state again when it was reported already.
+    final Object? data = await _write('report-topup:$code', 'POST', '/topup-requests/${Uri.encodeComponent(code)}/report', <String, Object?>{}, ok: const <int>{200});
+    try {
+      return _parseTopup(data);
+    } on Object catch (error) {
+      throw WalletFailure(_readText(error));
+    }
   }
 
   @override

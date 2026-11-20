@@ -5,8 +5,9 @@ import { MAX_WALLET_VND } from './wallet-types';
 import { settlerColumns, TopupSettler } from './topup-settler';
 
 // SQL of app.wallet_topup_requests and the READ of the receiving accounts (M04-B2.1). A request asks for money; it never moves any: this
-// file has no statement on a wallet balance, the ledger, a topup or a bank record. The only writes are the INSERT of a PENDING request
-// and the conditional PENDING -> CANCELLED UPDATE. Amounts arrive as text and are parsed to bigint (a malformed value is an internal error).
+// file has no statement on a wallet balance, the ledger, a topup or a bank record. The only writes are the INSERT of a PENDING request,
+// the conditional PENDING -> CANCELLED UPDATE and the one-time report (reported_at, state and version unchanged). Amounts arrive as text
+// and are parsed to bigint (a malformed value is an internal error).
 
 export type TopupRequestState = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
 export const TOPUP_REQUEST_STATES: readonly TopupRequestState[] = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'];
@@ -20,6 +21,8 @@ export interface TopupRequestRow {
   readonly version: number;
   readonly createdAtMs: number;
   readonly resolvedAtMs: number | null;
+  /** When the Shipper reported the transfer ("Xác nhận đã chuyển tiền"); null = not reported. Set only while PENDING; it decides nothing. */
+  readonly reportedAtMs: number | null;
 }
 
 export interface ReceivingAccount {
@@ -42,12 +45,14 @@ interface RawRequest {
   version: string;
   created_ms: string;
   resolved_ms: string | null;
+  reported_ms: string | null;
 }
 
 const COLUMNS = `r.request_id::text AS request_id, r.wallet_id::text AS wallet_id, r.driver_id::text AS driver_id,
   r.amount_requested_vnd::text AS amount_requested_vnd, r.state, r.version::text AS version,
   (extract(epoch FROM r.created_at) * 1000)::bigint::text AS created_ms,
-  (extract(epoch FROM r.resolved_at) * 1000)::bigint::text AS resolved_ms`;
+  (extract(epoch FROM r.resolved_at) * 1000)::bigint::text AS resolved_ms,
+  (extract(epoch FROM r.reported_at) * 1000)::bigint::text AS reported_ms`;
 
 function safeNumber(raw: unknown): number {
   const value = typeof raw === 'string' && /^[0-9]{1,16}$/.test(raw) ? Number(raw) : Number.NaN;
@@ -74,6 +79,7 @@ function toRequest(row: RawRequest): TopupRequestRow {
     version: safeNumber(row.version),
     createdAtMs: safeNumber(row.created_ms),
     resolvedAtMs: row.resolved_ms === null ? null : safeNumber(row.resolved_ms),
+    reportedAtMs: row.reported_ms === null ? null : safeNumber(row.reported_ms),
   };
 }
 
@@ -170,6 +176,27 @@ export class TopupRequestRepository {
             )
        SELECT ${COLUMNS} FROM updated r`,
       [requestId, expectedVersion, actorUserId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : toRequest(row);
+  }
+
+  /**
+   * The one-time report of a transfer: sets reported_at while the request is PENDING and not yet reported. State and version are NOT changed
+   * (the request guard allows exactly this), so the settlement sees the same PENDING request it always did. Undefined when not applicable.
+   */
+  async reportPending(context: TransactionContext, requestId: string): Promise<TopupRequestRow | undefined> {
+    const result = await context.query<RawRequest>(
+      `WITH clock AS (SELECT date_trunc('milliseconds', clock_timestamp()) AS t),
+            updated AS (
+              UPDATE app.wallet_topup_requests r
+                 SET reported_at = clock.t, updated_at = clock.t
+                FROM clock
+               WHERE r.request_id = $1::uuid AND r.state = 'PENDING' AND r.reported_at IS NULL
+               RETURNING r.*
+            )
+       SELECT ${COLUMNS} FROM updated r`,
+      [requestId],
     );
     const row = result.rows[0];
     return row === undefined ? undefined : toRequest(row);

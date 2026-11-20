@@ -103,7 +103,7 @@ class ReceivingAccount {
 }
 
 class TopupRequest {
-  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.transferCode});
+  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.transferCode, this.reportedAt});
 
   /// The identifier the app opens the request by (the server's request id for a real source).
   final String code;
@@ -122,10 +122,19 @@ class TopupRequest {
   /// The record version the server answered (a cancel carries it).
   final int? version;
 
+  /// When the Shipper reported the transfer ("Xác nhận đã chuyển tiền"); null = not reported. Only meaningful while PENDING.
+  final DateTime? reportedAt;
+
   String get shownCode => displayCode ?? code;
 
   /// A topup can be cancelled only while nobody has decided it.
   bool get canCancel => status == TopupStatus.pending;
+
+  /// Waiting for the transfer (PENDING, not reported yet): the step "Chờ chuyển tiền".
+  bool get awaitingTransfer => status == TopupStatus.pending && reportedAt == null;
+
+  /// Reported and still PENDING: the step "Chờ xác nhận" (the settlement or an Administrator decides).
+  bool get reported => status == TopupStatus.pending && reportedAt != null;
 }
 
 class WithdrawalRequest {

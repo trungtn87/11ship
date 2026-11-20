@@ -20,7 +20,7 @@ import { encodeCursor, TopupListQuery } from './topup-request-validation';
 const SCOPE_TYPE = 'user';
 const RESOURCE = 'wallet_topup_request';
 const EVENT_CHANGED = 'wallet.topup_request.changed.v1';
-const OPERATION = { create: 'wallet.topup_request.create.v1', cancel: 'wallet.topup_request.cancel.v1' } as const;
+const OPERATION = { create: 'wallet.topup_request.create.v1', cancel: 'wallet.topup_request.cancel.v1', report: 'wallet.topup_request.report.v1' } as const;
 
 /**
  * The Shipper's own top-up REQUESTS (M04-B2.1). A request asks for money and never moves any: this service writes nothing to the wallet
@@ -173,6 +173,46 @@ export class TopupRequestService {
     return outcome.payload as JsonObject;
   }
 
+  /**
+   * "Xác nhận đã chuyển tiền": the Shipper says the transfer was made. Only the owner, only while PENDING. A second report (same or another
+   * key) answers the current request and writes nothing. State and version never change: the settlement credits a PENDING request whether
+   * or not it was reported, so a report decides nothing. A request already decided is refused with a state conflict.
+   */
+  async report(principal: AuthPrincipal, topupRequestId: string, key: string | readonly string[] | undefined, requestId: string): Promise<JsonObject> {
+    const outcome = await this.executor.execute(
+      {
+        scopeType: SCOPE_TYPE,
+        scopeId: principal.userId,
+        operationId: OPERATION.report,
+        idempotencyKey: key,
+        logicalRequest: { request_id: topupRequestId },
+        replay: this.#replay(principal),
+      },
+      async (context) => {
+        const { actor, driver } = await this.#writer(context, principal);
+        const current = await this.requests.lockOwned(context, topupRequestId, driver.driverId);
+        if (current === undefined) {
+          throw new AppError('TOPUP_REQUEST_NOT_FOUND');
+        }
+        if (current.state !== 'PENDING') {
+          throw new AppError('TOPUP_REQUEST_STATE_CONFLICT');
+        }
+        if (current.reportedAtMs !== null) {
+          // Reported before: the current answer, nothing written, no new audit line or event.
+          return { status: 200, replayGuard: { user_id: actor.userId }, payload: view(current) };
+        }
+        const reported = await this.requests.reportPending(context, topupRequestId);
+        if (reported === undefined) {
+          // The row was locked and checked just above, so this is unreachable; never guess, roll the transaction back.
+          throw new TechnicalError('internal', 'Top-up request changed under its lock');
+        }
+        await this.#record(context, actor, requestId, OPERATION.report, 'reported', reported);
+        return { status: 200, replayGuard: { user_id: actor.userId }, payload: view(reported) };
+      },
+    );
+    return outcome.payload as JsonObject;
+  }
+
   /** A replay answers only after the CURRENT session, role and profile are authorized again under the same locks. */
   #replay(principal: AuthPrincipal) {
     return {
@@ -262,5 +302,6 @@ function view(row: TopupRequestRow): JsonObject {
     version: row.version,
     created_at: new Date(row.createdAtMs).toISOString(),
     resolved_at: row.resolvedAtMs === null ? null : new Date(row.resolvedAtMs).toISOString(),
+    reported_at: row.reportedAtMs === null ? null : new Date(row.reportedAtMs).toISOString(),
   };
 }

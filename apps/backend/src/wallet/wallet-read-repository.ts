@@ -38,6 +38,8 @@ export interface FeedRow {
   readonly orderRef: string | null;
   readonly requestId: string | null;
   readonly requestKind: 'topup' | 'withdrawal' | null;
+  /** A top-up request row only: the Shipper reported the transfer (still PENDING). False for every other row. */
+  readonly reported: boolean;
 }
 
 export interface HoldView {
@@ -152,7 +154,7 @@ export class WalletReadRepository {
   async feed(context: TransactionContext, walletId: string, options: { filter: FeedFilter; limit: number; after: FeedCursor | undefined }): Promise<FeedRow[]> {
     const types: readonly string[] =
       options.filter === 'all' ? [] : options.filter === 'hold' ? ['hold', 'release'] : [options.filter];
-    const result = await context.query<{ row_id: string; at_ms: string; type: string; amount_vnd: string; status: string; order_ref: string | null; request_id: string | null; request_kind: string | null }>(
+    const result = await context.query<{ row_id: string; at_ms: string; type: string; amount_vnd: string; status: string; order_ref: string | null; request_id: string | null; request_kind: string | null; reported: boolean }>(
       `WITH feed AS (
          SELECT 'L:' || l.entry_id::text AS row_id, l.created_at AS at,
                 CASE l.entry_kind WHEN 'TOPUP' THEN 'topup' WHEN 'WITHDRAWAL_DEBIT' THEN 'withdraw' WHEN 'COMMISSION_DEBIT' THEN 'commission' ELSE 'adjustment' END AS type,
@@ -184,11 +186,13 @@ export class WalletReadRepository {
                 CASE w.state WHEN 'PENDING' THEN 'pending' WHEN 'CANCELLED' THEN 'cancelled' ELSE 'processing' END, NULL, w.withdrawal_id::text, 'withdrawal'
            FROM app.wallet_withdrawals w WHERE w.wallet_id = $1::uuid AND w.state <> 'PAID'
        )
-       SELECT row_id, (extract(epoch FROM at) * 1000)::bigint::text AS at_ms, type, amount::text AS amount_vnd, status, order_ref, request_id, request_kind
-         FROM feed
-        WHERE (cardinality($2::text[]) = 0 OR type = ANY($2::text[]))
-          AND ($3::bigint IS NULL OR (at, row_id) < ('epoch'::timestamptz + $3::bigint * interval '1 millisecond', $4::text))
-        ORDER BY at DESC, row_id DESC
+       SELECT f.row_id, (extract(epoch FROM f.at) * 1000)::bigint::text AS at_ms, f.type, f.amount::text AS amount_vnd, f.status, f.order_ref, f.request_id, f.request_kind,
+              (q.reported_at IS NOT NULL) AS reported
+         FROM feed f
+         LEFT JOIN app.wallet_topup_requests q ON f.request_kind = 'topup' AND q.request_id = f.request_id::uuid
+        WHERE (cardinality($2::text[]) = 0 OR f.type = ANY($2::text[]))
+          AND ($3::bigint IS NULL OR (f.at, f.row_id) < ('epoch'::timestamptz + $3::bigint * interval '1 millisecond', $4::text))
+        ORDER BY f.at DESC, f.row_id DESC
         LIMIT $5::int`,
       [walletId, types, options.after?.atMs ?? null, options.after?.rowId ?? null, options.limit],
     );
@@ -201,6 +205,7 @@ export class WalletReadRepository {
       orderRef: row.order_ref,
       requestId: row.request_id,
       requestKind: row.request_kind as 'topup' | 'withdrawal' | null,
+      reported: row.reported === true,
     }));
   }
 

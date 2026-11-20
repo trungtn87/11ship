@@ -108,6 +108,21 @@ class SampleWalletSource extends WalletSource implements WalletWrites {
     _topups[code] = TopupRequest(code: found.code, amount: found.amount, createdAt: found.createdAt, status: TopupStatus.cancelled, transfer: found.transfer, proofName: found.proofName);
   }
 
+  /// The report only marks the time; the request stays PENDING and the balance does not move.
+  @override
+  Future<TopupRequest> reportTopup(String code) async {
+    final TopupRequest? found = _topups[code];
+    if (found == null || found.status != TopupStatus.pending) {
+      throw const WalletFailure('Yêu cầu này không còn chờ chuyển tiền nên không báo được.');
+    }
+    if (found.reported) {
+      return found;
+    }
+    final TopupRequest reported = TopupRequest(code: found.code, amount: found.amount, createdAt: found.createdAt, status: found.status, transfer: found.transfer, proofName: found.proofName, reportedAt: _now);
+    _topups[code] = reported;
+    return reported;
+  }
+
   @override
   Future<void> cancelWithdrawal(String code) async {
     final WithdrawalRequest? found = _withdrawals[code];

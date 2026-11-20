@@ -265,6 +265,7 @@ function view(row: AdminTopupRow): JsonObject {
     version: row.version,
     created_at: iso(row.createdAtMs),
     resolved_at: row.resolvedAtMs === null ? null : iso(row.resolvedAtMs),
+    reported_at: row.reportedAtMs === null ? null : iso(row.reportedAtMs),
     received_at: row.receivedAtMs === null ? null : iso(row.receivedAtMs),
   };
 }

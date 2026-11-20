@@ -10,6 +10,9 @@
 --                                     code identifies at most one request (the webhook matches by exact key, never by amount or time).
 --   * app.sepay_transfer_inbox        one row per verified SePay webhook event (UNIQUE on the integer webhook id). Raw fields only needed to
 --                                     decide and to give an Administrator the evidence. No secret, no signature, no full payload.
+--   * wallet_topup_requests.reported_at  the Shipper's "I have transferred" mark (Owner 2026-11-20). Set once, while PENDING, WITHOUT changing
+--                                     state or version. It decides nothing: a PENDING request is credited by the settlement reported or not.
+--                                     The request guard is REPLACED to allow exactly this change (same rules for every other change).
 --
 -- Money rules are unchanged: every credit still goes through the one posting path (TopupPostingService), and the database still proves
 -- one credit per topup, a CONFIRMED request only with its topup, and balance = SUM(ledger).
@@ -33,6 +36,44 @@ ALTER TABLE app.wallet_topup_requests ADD CONSTRAINT wallet_topup_requests_resol
   (state = 'PENDING' AND resolved_at IS NULL AND resolved_by_user_id IS NULL AND resolved_by_system IS NULL)
   OR (state <> 'PENDING' AND resolved_at IS NOT NULL AND ((resolved_by_user_id IS NULL) <> (resolved_by_system IS NULL)))
 );
+
+-- ---------------------------------------------------------------------------------------------------
+-- 1b. Report of a transfer ("Xác nhận đã chuyển tiền", Owner 2026-11-20). Additive; existing rows get NULL (never reported).
+-- ---------------------------------------------------------------------------------------------------
+ALTER TABLE app.wallet_topup_requests ADD COLUMN reported_at timestamptz;
+ALTER TABLE app.wallet_topup_requests ADD CONSTRAINT wallet_topup_requests_reported_ck CHECK (reported_at IS NULL OR reported_at >= created_at);
+
+-- The request guard, same as in 1793577600000 plus ONE allowed change: reported_at NULL -> a time, while PENDING, with state and version
+-- unchanged and no resolution. Every other rule is kept verbatim. A report never moves money and never changes what the settlement sees.
+CREATE OR REPLACE FUNCTION app.wallet_topup_requests_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'PENDING' OR NEW.version <> 1 OR NEW.resolved_at IS NOT NULL OR NEW.resolved_by_user_id IS NOT NULL OR NEW.reported_at IS NOT NULL THEN
+      RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_MUST_START_PENDING' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.request_id <> OLD.request_id OR NEW.wallet_id <> OLD.wallet_id OR NEW.driver_id <> OLD.driver_id
+     OR NEW.amount_requested_vnd <> OLD.amount_requested_vnd OR NEW.created_by_user_id <> OLD.created_by_user_id OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.reported_at IS DISTINCT FROM OLD.reported_at THEN
+    IF OLD.reported_at IS NOT NULL OR OLD.state <> 'PENDING' OR NEW.state <> 'PENDING' OR NEW.version <> OLD.version
+       OR NEW.resolved_at IS NOT NULL OR NEW.resolved_by_user_id IS NOT NULL OR NEW.resolved_by_system IS NOT NULL THEN
+      RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_REPORT_REFUSED' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD.state <> 'PENDING' OR NEW.state NOT IN ('CONFIRMED', 'REJECTED', 'CANCELLED') THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_TRANSITION_REFUSED: % -> %', OLD.state, NEW.state USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2. Transfer code key of a request (same derivation as topupTransferCodeOf in the backend)
@@ -169,6 +210,13 @@ BEGIN
   END IF;
 END
 $latch_cursor$;
+DO $latch_reported$
+BEGIN
+  IF EXISTS (SELECT 1 FROM app.wallet_topup_requests WHERE reported_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'SEPAY_AUTO_TOPUP_DOWN_REFUSED: transfer reports exist; history is never dropped' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+END
+$latch_reported$;
 DROP TABLE app.sepay_reconciliation_cursor;
 DROP TRIGGER sepay_transfer_inbox_no_delete ON app.sepay_transfer_inbox;
 DROP TRIGGER sepay_transfer_inbox_guard ON app.sepay_transfer_inbox;
@@ -187,3 +235,28 @@ ALTER TABLE app.wallet_topup_requests ADD CONSTRAINT wallet_topup_requests_resol
 );
 ALTER TABLE app.wallet_topup_requests DROP CONSTRAINT wallet_topup_requests_system_actor_ck;
 ALTER TABLE app.wallet_topup_requests DROP COLUMN resolved_by_system;
+-- The request guard of 1793577600000, restored verbatim (no reported_at rule) before the column goes.
+CREATE OR REPLACE FUNCTION app.wallet_topup_requests_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'PENDING' OR NEW.version <> 1 OR NEW.resolved_at IS NOT NULL OR NEW.resolved_by_user_id IS NOT NULL THEN
+      RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_MUST_START_PENDING' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.request_id <> OLD.request_id OR NEW.wallet_id <> OLD.wallet_id OR NEW.driver_id <> OLD.driver_id
+     OR NEW.amount_requested_vnd <> OLD.amount_requested_vnd OR NEW.created_by_user_id <> OLD.created_by_user_id OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.state <> 'PENDING' OR NEW.state NOT IN ('CONFIRMED', 'REJECTED', 'CANCELLED') THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_TRANSITION_REFUSED: % -> %', OLD.state, NEW.state USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'WALLET_TOPUP_REQUEST_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+ALTER TABLE app.wallet_topup_requests DROP CONSTRAINT wallet_topup_requests_reported_ck;
+ALTER TABLE app.wallet_topup_requests DROP COLUMN reported_at;

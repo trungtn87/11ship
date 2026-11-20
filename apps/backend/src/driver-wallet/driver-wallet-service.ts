@@ -93,6 +93,7 @@ export class DriverWalletService {
           order_ref: row.orderRef,
           request_id: row.requestId,
           request_kind: row.requestKind,
+          reported: row.reported,
         })),
         next_cursor: rows.length > query.limit && last !== undefined ? encodeFeedCursor(last.atMs, last.rowId) : null,
       };

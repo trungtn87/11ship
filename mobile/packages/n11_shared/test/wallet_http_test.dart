@@ -249,4 +249,32 @@ void main() {
     expect(info.holder, 'CONG TY 11SHIP');
     expect(info.content, isNull);
   });
+
+  test('report: POST to the report path with an empty body; the answer carries reported_at, state and version unchanged', () async {
+    final t = await signedIn();
+    final HttpWalletSource source = HttpWalletSource(session: t.session);
+    t.api.routes['POST /v1/driver/wallet/topup-requests/$walletId/report'] = (String m, String p, Map<String, String> h, String b) async =>
+        ok(200, <String, Object?>{...topupJson(), 'reported_at': '2026-11-20T09:30:00.000Z'});
+    final TopupRequest reported = await source.reportTopup(walletId);
+    final RecordedRequest sent = t.api.to('POST', '/v1/driver/wallet/topup-requests/$walletId/report').single;
+    expect(jsonDecode(sent.body), <String, Object?>{});
+    expect(sent.headers['idempotency-key'], isNotNull);
+    expect(reported.status, TopupStatus.pending);
+    expect(reported.version, 1);
+    expect(reported.reported, isTrue);
+    expect(reported.reportedAt?.toUtc(), DateTime.utc(2026, 11, 20, 9, 30));
+  });
+
+  test('history: a pending top-up reads "chờ chuyển tiền" until it is reported, then "chờ xác nhận"', () async {
+    final t = await signedIn();
+    final HttpWalletSource source = HttpWalletSource(session: t.session);
+    Map<String, Object?> row(bool reported) => <String, Object?>{
+          'id': 'T:$walletId', 'type': 'topup', 'amount_vnd': 150000, 'at': '2026-10-18T09:30:00.000Z', 'status': 'pending',
+          'order_ref': null, 'request_id': walletId, 'request_kind': 'topup', 'reported': reported,
+        };
+    t.api.routes['GET /v1/driver/wallet/transactions?type=all&limit=3'] = (String m, String p, Map<String, String> h, String b) async =>
+        ok(200, <String, Object?>{'items': <Object?>[row(false), row(true)], 'next_cursor': null});
+    final List<WalletTxn> rows = ((await source.recentTxns()) as WalletReady<List<WalletTxn>>).value;
+    expect(rows.map((WalletTxn r) => r.title), <String>['Yêu cầu nạp (chờ chuyển tiền)', 'Yêu cầu nạp (chờ xác nhận)']);
+  });
 }

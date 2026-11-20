@@ -296,4 +296,44 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
       await c.query('ROLLBACK TO SAVEPOINT final');
     });
   });
+
+  // M04 step 2b (Owner 2026-11-20): the Shipper's report. It keeps the request PENDING and its version, so the settlement still credits it.
+  it('a reported request stays PENDING at the same version; a second report is refused by the database', async () => {
+    await scenario(async (c) => {
+      await receivingAccount();
+      const { requestId } = await pendingRequest(150000n);
+      const first = await requests.reportPending(ctx(), requestId);
+      expect(first).toMatchObject({ state: 'PENDING', version: 1 });
+      expect(first?.reportedAtMs).not.toBeNull();
+      expect(await requests.reportPending(ctx(), requestId)).toBeUndefined();
+      await c.query('SAVEPOINT again');
+      await expect(c.query('UPDATE app.wallet_topup_requests SET reported_at = now() WHERE request_id = $1::uuid', [requestId])).rejects.toThrow(/REPORT_REFUSED/);
+      await c.query('ROLLBACK TO SAVEPOINT again');
+    });
+  });
+
+  it('a request reported by the Shipper is still credited by the bank transfer, and keeps its report time', async () => {
+    await scenario(async (c) => {
+      await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      expect((await requests.reportPending(ctx(), requestId))?.state).toBe('PENDING');
+      const raw = webhook({ code, content: `${code} chuyen tien`, transferAmount: 150000 });
+      expect(await service.receive(signedRequest(raw))).toEqual({ status: 200, body: { success: true } });
+      const request = (await c.query('SELECT state, reported_at IS NOT NULL AS reported FROM app.wallet_topup_requests WHERE request_id = $1::uuid', [requestId])).rows[0];
+      expect(request).toEqual({ state: 'CONFIRMED', reported: true });
+      expect(await balanceOf()).toBe('150000');
+    });
+  });
+
+  it('a request decided by the credit cannot be reported: the database refuses the report, and the report reads as a conflict', async () => {
+    await scenario(async (c) => {
+      await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      await service.receive(signedRequest(webhook({ code, content: `${code} chuyen tien`, transferAmount: 150000 })));
+      await c.query('SAVEPOINT late');
+      await expect(c.query('UPDATE app.wallet_topup_requests SET reported_at = now() WHERE request_id = $1::uuid', [requestId])).rejects.toThrow(/REPORT_REFUSED/);
+      await c.query('ROLLBACK TO SAVEPOINT late');
+      expect(await requests.reportPending(ctx(), requestId)).toBeUndefined();
+    });
+  });
 });
