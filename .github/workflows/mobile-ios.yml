@@ -16,6 +16,7 @@ on:
       - 'mobile/tool/prepare-ios.sh'
       - 'mobile/packages/n11_native_ios/**'
       - 'mobile/packages/n11_m14_map/ios/**'
+      - 'mobile/packages/n11_m14/ios/**'
       - 'mobile/packages/n11_m14_map/lib/**'
 
 permissions:

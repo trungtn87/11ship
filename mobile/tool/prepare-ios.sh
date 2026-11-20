@@ -12,7 +12,7 @@ case "$app" in
         camera_text="11Food cần camera để chụp ảnh gửi kèm (ví dụ ảnh quán hoặc món)."
         photos_text="11Food cần truy cập ảnh để bạn chọn ảnh gửi kèm." ;;
   ship) label="11Ship"; app_id="vn.eleven.ship"
-        location_text="11Ship dùng vị trí hiện tại của bạn để chọn điểm đón, điểm giao và tìm đơn gần bạn."
+        location_text="11Ship dùng vị trí hiện tại của bạn để chọn điểm đón, điểm giao và, khi bạn bật nhận đơn, chia sẻ vị trí của bạn với hệ thống để nhận đơn gần bạn, kể cả khi ứng dụng chạy nền."
         camera_text="11Ship cần camera để chụp ảnh gửi kèm (ví dụ ảnh giấy tờ hoặc kiện hàng)."
         photos_text="11Ship cần truy cập ảnh để bạn chọn ảnh gửi kèm." ;;
   *) echo "usage: $0 <food|ship>" >&2; exit 2 ;;
@@ -31,6 +31,9 @@ trap 'rm -rf "$tmp"' EXIT
 rm -rf "$dest"
 (cd "$tmp" && flutter create --project-name "$app" --org vn.eleven --platforms ios --empty "$app" >/dev/null)
 cp -R "$tmp/$app/ios" "$dest"
+
+# iOS 15 is the floor (instance-level CLLocationManager authorization, MapLibre, background location); the generated Podfile leaves the platform to the project's own target.
+sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/' "$dest/Runner.xcodeproj/project.pbxproj"
 
 # The bundle id must be the App ID the owner registered with Apple, for the app and its test target alike.
 grep -q "PRODUCT_BUNDLE_IDENTIFIER = $app_id;" "$dest/Runner.xcodeproj/project.pbxproj" || { echo "bundle id $app_id not found in the generated project" >&2; exit 1; }
@@ -62,6 +65,12 @@ set_key NSCameraUsageDescription string "$camera_text"
 set_key NSPhotoLibraryUsageDescription string "$photos_text"
 # No custom cryptography beyond the system TLS and Keychain: lets TestFlight skip the export-compliance question.
 set_key ITSAppUsesNonExemptEncryption bool false
+# 11Ship shares the shipper's position while the app runs in the background (started from the open app, "While Using" permission only).
+if [ "$app" = ship ]; then
+  /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$plist"
+fi
 # canOpenURL("tel:") for the dialer; the app opens no other scheme.
 /usr/libexec/PlistBuddy -c "Delete :LSApplicationQueriesSchemes" "$plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes array" "$plist"

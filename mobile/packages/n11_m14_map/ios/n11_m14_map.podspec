@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.resources        = ['caobang']
   s.dependency 'Flutter'
   s.dependency 'MapLibre'
-  s.platform         = :ios, '13.0'
+  s.platform         = :ios, '15.0'
   s.swift_version    = '5.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end
