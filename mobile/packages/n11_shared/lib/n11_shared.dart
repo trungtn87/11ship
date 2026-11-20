@@ -104,6 +104,7 @@ export 'src/wallet/wallet_http.dart';
 export 'src/wallet/wallet_models.dart';
 export 'src/wallet/wallet_sample.dart';
 export 'src/wallet/wallet_source.dart';
+export 'src/wallet/vietqr.dart';
 export 'src/wallet/wallet_views.dart';
 export 'src/widgets/components.dart';
 export 'src/widgets/info_hint.dart';

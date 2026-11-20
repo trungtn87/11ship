@@ -23,6 +23,7 @@ import { M08_DOWN_SQL, M08_MIGRATION_NAME, M08_UP_SQL } from './support/m08-migr
 import { M10_DOWN_SQL, M10_MIGRATION_NAME, M10_UP_SQL } from './support/m10-migration-sql';
 import { M11_DOWN_SQL, M11_MIGRATION_NAME, M11_UP_SQL } from './support/m11-migration-sql';
 import { ADJUSTMENT_DOWN_SQL, ADJUSTMENT_MIGRATION_NAME, ADJUSTMENT_UP_SQL } from './support/adjustment-migration-sql';
+import { SEPAY_DOWN_SQL, SEPAY_UP_SQL } from './support/sepay-migration-sql';
 import { createInvitation, createPayload, systemSession, SystemSession } from './support/provisioning-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
 import { createLegacyDirectDeliveryView } from './support/legacy-direct-delivery';
@@ -64,6 +65,7 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
   let temporaryPasswordSchema = false;
   let temporaryShopRight = false;
   let temporaryOtpPolicy = false;
+  let temporarySepayInbox = false;
   let originalMigrationHistory: Array<{ id: number; name: string; run_on: string }> = [];
   const shippers: Shipper[] = [];
   const pool = (): Pool => admin.pool;
@@ -151,6 +153,10 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
         await pool().query(SHOP_RIGHT_DOWN_SQL);
         temporaryShopRight = false;
       }
+      if (temporarySepayInbox) {
+        await pool().query(SEPAY_DOWN_SQL);
+        temporarySepayInbox = false;
+      }
       if (temporaryPasswordSchema) {
         await pool().query(PASSWORD_SESSION_DOWN_SQL);
         temporaryPasswordSchema = false;
@@ -195,6 +201,9 @@ describe('M07 on top of real M04 TOPUP money (upgrade from main)', () => {
     temporaryShopRight = true;
     await pool().query(OTP_POLICY_UP_SQL);
     temporaryOtpPolicy = true;
+    // M04 SePay step 1 (the newest migration): the schema of main needs its columns for the request path; removed before the runner applies it.
+    await pool().query(SEPAY_UP_SQL);
+    temporarySepayInbox = true;
     await setOtpPolicy(process.env.DATABASE_URL as string);
     system = await systemSession(admin);
     recorder = await activatedAdmin(`Admin ghi ${tag}`);

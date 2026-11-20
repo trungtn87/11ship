@@ -439,7 +439,8 @@ class HttpWalletSource extends WalletSource implements WalletWrites {
       }
       // The first account the system accepts money on; the Admin matches the transfer on the bank statement, so no content to type is invented.
       final Map<String, Object?> first = _map(accounts.first);
-      return WalletReady<BankTransferInfo>(BankTransferInfo(bankName: _bankName(_text(first['bank_id'])), accountNumber: _text(first['account_number']), holder: _text(first['account_holder'])));
+      final String bankCode = _text(first['bank_id']);
+      return WalletReady<BankTransferInfo>(BankTransferInfo(bankName: _bankName(bankCode), accountNumber: _text(first['account_number']), holder: _text(first['account_holder']), bankCode: bankCode));
     } on Object catch (error) {
       return WalletFailed<BankTransferInfo>(_readText(error));
     }
