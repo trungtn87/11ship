@@ -10,6 +10,7 @@ import '../m10/order_chat_view.dart';
 import '../m10/order_sections.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/info_hint.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -362,16 +363,20 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                   children: <Widget>[
                     const Text('Hàng hóa & Thu hộ (COD)', style: N11Text.h2),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-goods'), label: 'Mô tả hàng hóa (*)', controller: _goodsDescription, hint: 'Ví dụ: Quần áo, tài liệu, đồ gia dụng...'),
+                    N11Field(fieldKey: const Key('m07-c-goods'), label: 'Mô tả hàng hóa (*)', controller: _goodsDescription, info: 'Ví dụ: Quần áo, tài liệu, đồ gia dụng...'),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-note'), label: 'Ghi chú cho tài xế (tùy chọn)', controller: _note, hint: 'Ví dụ: Hàng dễ vỡ, hướng dẫn nhận hàng...'),
+                    N11Field(fieldKey: const Key('m07-c-note'), label: 'Ghi chú cho tài xế (tùy chọn)', controller: _note, info: 'Ví dụ: Hàng dễ vỡ, hướng dẫn nhận hàng...'),
                     const SizedBox(height: N11Space.gap3),
                     Material(
                       type: MaterialType.transparency,
                       child: SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Thu hộ tiền hàng (COD)', style: N11Text.bodyStrong),
-                        subtitle: const Text('Shipper thu hộ từ người nhận và đưa lại người gửi', style: N11Text.caption),
+                        title: Row(
+                          children: <Widget>[
+                            const Flexible(child: Text('Thu hộ tiền hàng (COD)', style: N11Text.bodyStrong)),
+                            InfoHint(title: 'Thu hộ tiền hàng (COD)', message: 'Shipper thu hộ từ người nhận và đưa lại người gửi'),
+                          ],
+                        ),
                         value: _enableCod,
                         onChanged: (bool v) => setState(() => _enableCod = v),
                       ),
@@ -435,8 +440,14 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                           const Divider(),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: const Text('Đề xuất mức phí giao', style: N11Text.bodyStrong),
-                            subtitle: Text(_hasGps ? 'Nhập mức phí bạn mong muốn để shipper xem xét' : 'Thiếu GPS: Nhập mức phí đề xuất để shipper nhận chuyến', style: N11Text.caption),
+                            title: Row(
+                              children: <Widget>[
+                                const Flexible(child: Text('Đề xuất mức phí giao', style: N11Text.bodyStrong)),
+                                InfoHint(title: 'Đề xuất mức phí giao', message: 'Nhập mức phí bạn mong muốn để shipper xem xét'),
+                              ],
+                            ),
+                            // Khi thiếu GPS, dòng trạng thái này là điều kiện cần nhập phí nên vẫn hiển thị.
+                            subtitle: _hasGps ? null : const Text('Thiếu GPS: Nhập mức phí đề xuất để shipper nhận chuyến', style: N11Text.caption),
                             value: _customFee || !_hasGps,
                             onChanged: _hasGps ? (bool v) => setState(() => _customFee = v) : null,
                           ),
