@@ -38,6 +38,7 @@ import {
   CLIENT_REGISTER_UNVERIFIED_TEST_SCOPE_TYPE,
   CLIENT_USER_REGISTERED_EVENT_SCHEMA_VERSION,
   CLIENT_USER_REGISTERED_EVENT_TYPE,
+  isPasswordMobilePlatform,
 } from './client-auth-constants';
 import {
   assertConsentSupported,
@@ -406,7 +407,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      ...(nativeProof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
+      ...(nativeProof === undefined && isPasswordMobilePlatform(input.device.platform) ? { authMethod: 'PASSWORD' as const } : {}),
       activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
@@ -512,7 +513,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (nativeProof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof: nativeProof });
-    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
+    } else if (isPasswordMobilePlatform(input.device.platform) && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 
@@ -585,7 +586,7 @@ export class ClientRegistrationService {
       userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      ...(proof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
+      ...(proof === undefined && isPasswordMobilePlatform(input.device.platform) ? { authMethod: 'PASSWORD' as const } : {}),
       activeRole: input.device.app === 'SHIP' ? 'DRIVER' : CUSTOMER_ROLE,
     });
     if (plan !== undefined) {
@@ -679,7 +680,7 @@ export class ClientRegistrationService {
     // Native: the session must still be on the current binding, issued to the key that signs THIS replay.
     if (proof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
-    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
+    } else if (isPasswordMobilePlatform(input.device.platform) && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 
