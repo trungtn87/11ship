@@ -38,11 +38,14 @@ flutter build ios --release --no-codesign \
   --dart-define=SIGNING_MODE="stable" \
   --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT"
 
+# The archive is left unsigned: a signed archive asks for a development profile,
+# which needs a registered device. The export below signs with the cloud-managed
+# distribution certificate and profile.
 cd ios
 xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$work/Runner.xcarchive" \
-  DEVELOPMENT_TEAM="$IOS_TEAM_ID" CODE_SIGN_STYLE=Automatic \
-  "${auth[@]}" archive
+  DEVELOPMENT_TEAM="$IOS_TEAM_ID" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  archive
 
 cat > "$work/ExportOptions.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
