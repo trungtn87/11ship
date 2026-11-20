@@ -1,0 +1,71 @@
+{
+  "_about": "Golden shape of the iOS release job (mobile-ios-release.yml:testflight). Any workflow step change must change this file in the same review. scriptPins mirrors mobile/release/script-pins.sha256. Compared by ci-gate-policy.test.mjs.",
+  "steps": [
+    {
+      "name": "Run only from main",
+      "run": "sha256:b72245ddb6ecb75e6f5a786fc7519702d5f3087b6245d300d18cc49e1214dab6"
+    },
+    {
+      "name": "Check out the exact source commit",
+      "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+      "with": {
+        "ref": "${{ github.sha }}",
+        "persist-credentials": false
+      }
+    },
+    {
+      "name": "Source matches the run commit",
+      "run": "sha256:66978ff09fe8da8dd3db7ff1e2ef3a4fb24be2c9978eaabb86aa8cd2b67a0129"
+    },
+    {
+      "name": "App identity and version (pubspec.yaml)",
+      "run": "sha256:23db5cb95f37d5930479e1788009807e7ca10af196bc29ca52ed3bd675df4455"
+    },
+    {
+      "name": "Central endpoints (config/endpoints.json)",
+      "run": "sha256:b00d0ef4f1d0c3d2f211c625c85d00758fc259ee8d5e9919bad7a778f4435d5c"
+    },
+    {
+      "uses": "subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2",
+      "with": {
+        "flutter-version": "3.47.9",
+        "channel": "stable",
+        "cache": true
+      }
+    },
+    {
+      "name": "Dependencies",
+      "run": "sha256:207a573c49c8a4726e7a33bf0d686373fe4ae4ae38a6258c4133493157910bca"
+    },
+    {
+      "name": "Prepare the iOS project (push must be on for a release)",
+      "env": {
+        "FCM_PROJECT_ID": "${{ vars.FCM_PROJECT_ID }}",
+        "FCM_SENDER_ID": "${{ vars.FCM_SENDER_ID }}",
+        "FCM_APP_ID": "${{ inputs.app == 'ship' && vars.FCM_SHIP_IOS_APP_ID || vars.FCM_FOOD_IOS_APP_ID }}",
+        "FCM_API_KEY": "${{ inputs.app == 'ship' && secrets.FCM_SHIP_IOS_API_KEY || secrets.FCM_FOOD_IOS_API_KEY }}",
+        "IOS_APS_ENVIRONMENT": "production"
+      },
+      "run": "sha256:97b3b16d582228cc9b7702b4c89ea4366a7f66abc3c5284cb155e0f71c09feb6"
+    },
+    {
+      "name": "Build, sign and upload to TestFlight (the only step with the API key)",
+      "env": {
+        "IOS_ASC_KEY_P8_BASE64": "${{ secrets.IOS_ASC_KEY_P8_BASE64 }}",
+        "IOS_ASC_KEY_ID": "${{ vars.IOS_ASC_KEY_ID }}",
+        "IOS_ASC_ISSUER_ID": "${{ vars.IOS_ASC_ISSUER_ID }}",
+        "IOS_TEAM_ID": "${{ vars.IOS_TEAM_ID }}"
+      },
+      "run": "sha256:8acf4997cb1bfca597e602b25f729aed4b0166f3c8ec30f43e696485271ec36f"
+    }
+  ],
+  "scriptPins": {
+    "mobile/tool/app-version.sh": "b6c780e161cba0bbed4e41bc0f0e77ecd97498c363352975d23e180b567226bd",
+    "mobile/tool/prepare-android.sh": "97242ece8bb15661e4e5ec36b77a603cdedfbfaef6eec2bf8a9d91615774ae50",
+    "mobile/tool/sign-aab.sh": "99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc",
+    "mobile/tool/check-aab-release.py": "1fb28c82a2efa23d457bc4593a00187cd8bcb27100fc5ad2a2e9d91a572b7ad2",
+    "mobile/tool/play_versioncode_gate.py": "e1d731538fb037a46537d9881f0870d727d3db66419f44fc2be8c2d5fea35b5b",
+    "mobile/tool/prepare-ios.sh": "7de97ecec43c474763e03e00c4a9193c95e3fee31ac01c6a728732ef2ae60ce3",
+    "mobile/tool/ios-testflight.sh": "3a569e881df24eda5bf7efd0e3a5c60c6ff7b745ccc17f522da02ff2e616303c"
+  }
+}
