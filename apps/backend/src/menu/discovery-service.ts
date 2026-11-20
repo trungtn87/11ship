@@ -1,3 +1,4 @@
+import { AppError } from '../common/app-errors';
 import { ReviewRepository } from '../feedback/review-repository';
 import { Injectable } from '@nestjs/common';
 import { OrderSalesReader } from '../orders/order-sales-reader';
@@ -71,7 +72,29 @@ export class DiscoveryService {
   async categories(): Promise<Record<string, unknown>[]> {
     return this.transactions.withTransaction(async (context) => {
       const rows = await this.menu.listCategories(context);
-      return rows.filter((row) => row.status === 'ACTIVE').map((row) => ({ category_id: row.categoryId, name: row.name }));
+      // image_url / image_version are additions (issue #412): the icon is versioned, so a replaced icon is never shown from cache.
+      return rows
+        .filter((row) => row.status === 'ACTIVE')
+        .map((row) => ({
+          category_id: row.categoryId,
+          name: row.name,
+          image_url: row.hasImage === true ? '/v1/menu-categories/' + row.categoryId + '/image?v=' + (row.version ?? 1) : null,
+          image_version: row.hasImage === true ? (row.version ?? 1) : null,
+        }));
+    });
+  }
+
+  /**
+   * The icon of an ACTIVE dish group (issue #412). Anything else (unknown, inactive, no icon) is the same "not found". `current` says whether
+   * the requested version is the group's current one; an old version may still be served but is never cached as immutable.
+   */
+  async categoryImage(categoryId: string, requestedVersion: number | null): Promise<{ contentType: string; data: Buffer; current: boolean }> {
+    return this.transactions.withTransaction(async (context) => {
+      const row = await this.menu.findCategoryImage(context, categoryId);
+      if (row === undefined || row.status !== 'ACTIVE' || row.image === null) {
+        throw new AppError('MENU_CATEGORY_IMAGE_NOT_FOUND');
+      }
+      return { contentType: row.image.content_type, data: Buffer.from(row.image.data_base64, 'base64'), current: requestedVersion === row.version };
     });
   }
 

@@ -11,6 +11,7 @@ import '../account/account_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'discovery_controller.dart';
+import 'category_chip_icon.dart';
 import 'category_icons.dart';
 import 'discovery_models.dart';
 import 'm02_format.dart';
@@ -635,6 +636,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                       c.categoryId == cat.id,
                       () => c.toggleCategory(cat.id),
                       icon: categoryIconFor(cat.id),
+                      imageUrl: cat.imageUrl,
                     ),
                 ],
               ),
@@ -836,7 +838,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
   }
 
   Widget _chip(String key, String label, bool on, VoidCallback? onTap,
-          {required IconData icon}) =>
+          {required IconData icon, String? imageUrl}) =>
       Padding(
         padding: const EdgeInsets.only(right: N11V5.homeCategoryGap),
         child: Semantics(
@@ -865,10 +867,11 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
-                    Icon(
-                      icon,
+                    CategoryChipIcon(
+                      icon: icon,
                       size: 25,
                       color: on ? N11Colors.accentOrange : N11Colors.black,
+                      imageUrl: imageUrl,
                     ),
                     const SizedBox(height: 9),
                     Text(

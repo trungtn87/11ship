@@ -23,6 +23,7 @@ import {
   EMPTY_CATALOG_FILTER,
   validateCategoryDraft,
 } from './catalog.js';
+import { bytesToBase64, checkCategoryIcon } from './category-icon.js';
 
 export interface CatalogDeps {
   readonly source: CatalogSource;
@@ -178,6 +179,54 @@ export class CatalogController {
     this.#emit();
   }
 
+  /** "Ảnh" of a group (issue #412): the icon popup. Nothing is sent until a valid file is picked and "Lưu ảnh" is pressed. */
+  beginIcon(id: string): void {
+    const row = this.#row(id);
+    if (row === undefined || this.#dialog !== undefined) {
+      return;
+    }
+    this.#notice = undefined;
+    this.#dialog = { kind: 'icon', id, name: row.name, version: row.version, currentUrl: row.imageUrl, phase: 'form' };
+    this.#emit();
+  }
+
+  /** A file was picked: the bytes are checked here (the server checks them again). A refused file is reported and never kept. */
+  pickIcon(bytes: Uint8Array): void {
+    const dialog = this.#dialog;
+    if (dialog === undefined || dialog.kind !== 'icon' || (dialog.phase !== 'form' && dialog.phase !== 'failed') || this.#intent !== undefined) {
+      return;
+    }
+    const checked = checkCategoryIcon(bytes);
+    this.#dialog = checked.ok
+      ? { ...dialog, phase: 'form', message: undefined, picked: { dataBase64: bytesToBase64(bytes), contentType: checked.contentType, byteSize: bytes.length } }
+      : { ...dialog, phase: 'form', message: checked.message, picked: undefined };
+    this.#emit();
+  }
+
+  /** "Lưu ảnh": ONE request with a NEW key for the picked file; the group's version is sent so a newer change is never overwritten. */
+  saveIcon(): void {
+    const dialog = this.#dialog;
+    if (dialog === undefined || dialog.kind !== 'icon' || (dialog.phase !== 'form' && dialog.phase !== 'failed') || this.#intent !== undefined || dialog.picked === undefined) {
+      return;
+    }
+    this.#send({
+      command: { kind: 'icon-set', id: dialog.id, version: dialog.version, dataBase64: dialog.picked.dataBase64, key: this.deps.newKey() },
+      done: `Đã cập nhật ảnh nhóm «${dialog.name}».`,
+    });
+  }
+
+  /** "Xóa ảnh": removes the icon only (the group stays). The app then shows its default icon for the group. */
+  clearIcon(): void {
+    const dialog = this.#dialog;
+    if (dialog === undefined || dialog.kind !== 'icon' || (dialog.phase !== 'form' && dialog.phase !== 'failed') || this.#intent !== undefined || dialog.currentUrl === null) {
+      return;
+    }
+    this.#send({
+      command: { kind: 'icon-remove', id: dialog.id, version: dialog.version, key: this.deps.newKey() },
+      done: `Đã xóa ảnh nhóm «${dialog.name}». Nhóm sẽ dùng icon mặc định.`,
+    });
+  }
+
   /** Typing in the form: the draft changes, nothing is sent, nothing is rewritten. A previous refusal of the name is cleared by typing. */
   edit(draft: CategoryDraft): void {
     const dialog = this.#dialog;
@@ -203,7 +252,7 @@ export class CatalogController {
   /** "Lưu" of the form, "Ngừng dùng" / "Kích hoạt" of the confirmation. A NEW intent with a NEW key. */
   submit(): void {
     const dialog = this.#dialog;
-    if (dialog === undefined || (dialog.phase !== 'form' && dialog.phase !== 'failed') || this.#intent !== undefined) {
+    if (dialog === undefined || dialog.kind === 'icon' || (dialog.phase !== 'form' && dialog.phase !== 'failed') || this.#intent !== undefined) {
       return;
     }
     if (dialog.kind === 'toggle') {
@@ -364,6 +413,9 @@ export class CatalogController {
         return;
       case 'rejected':
         fail(CATALOG_MESSAGE.rejected);
+        return;
+      case 'icon-rejected':
+        fail(result.message);
         return;
     }
   }

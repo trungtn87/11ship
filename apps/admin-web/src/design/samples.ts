@@ -154,7 +154,7 @@ export const SAMPLE_SECRET = 'MINHHOAXEMTHIETKEKHONGDUNG';
 
 // Dish groups (Danh mục › Nhóm món). Obviously sample names; the real page only ever shows what the server sent.
 function category(index: number, name: string, sortOrder: number, status: 'ACTIVE' | 'INACTIVE', itemCount: number): CategoryRow {
-  return { id: `d4000000-0000-4000-8000-0000000000${String(index).padStart(2, '0')}`, name, sortOrder, status, itemCount, version: 1, updatedAt: '2026-10-15T03:00:00.000Z' };
+  return { id: `d4000000-0000-4000-8000-0000000000${String(index).padStart(2, '0')}`, name, sortOrder, status, itemCount, version: 1, updatedAt: '2026-10-15T03:00:00.000Z', imageUrl: null };
 }
 
 export const SAMPLE_CATEGORIES: readonly CategoryRow[] = [

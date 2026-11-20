@@ -209,7 +209,7 @@ describe('admin dish groups (API)', () => {
     const key = randomUUID();
     const first = await made(await create(catalogAdmin, { name: `  ${name('Ốc')}   hương  ` }, { key }));
     expect(first).toMatchObject({ name: `${name('Ốc')} hương`, status: 'ACTIVE', version: 1, item_count: 0 });
-    expect(Object.keys(first).sort()).toEqual(['category_id', 'item_count', 'name', 'sort_order', 'status', 'updated_at', 'version']);
+    expect(Object.keys(first).sort()).toEqual(['category_id', 'image_url', 'item_count', 'name', 'sort_order', 'status', 'updated_at', 'version']);
     const id = String(first.category_id);
     const largest = (await app.pool.query<{ m: number }>('SELECT max(sort_order) AS m FROM app.menu_categories WHERE category_id <> $1::uuid', [id])).rows[0]?.m ?? -1;
     expect(first.sort_order).toBe(Math.max(largest + 1, 0));
@@ -440,5 +440,124 @@ describe('admin dish groups (API)', () => {
     );
     expect(ordered.rows.length).toBeGreaterThan(1);
     expect(await count(app.pool, "SELECT 1 FROM app.menu_categories WHERE name LIKE $1 AND (sort_order < 0 OR sort_order > 100000)", [`%${tag}%`])).toBe(0);
+  });
+
+  // ---- dish group icon (issue #412) -------------------------------------------------------------------------------------------
+
+  const ICON = (id: string): string => `${PATH}/${id}/image`;
+  const ICON_REMOVE = (id: string): string => `${PATH}/${id}/image/remove`;
+  const ICON_SET_ACTION = 'admin.menu_category.image.set.v1';
+  const ICON_REMOVE_ACTION = 'admin.menu_category.image.remove.v1';
+  const PUBLIC = { basePath: '/v1' };
+
+  const pngBytes = (width: number, height: number): Buffer => {
+    const bytes = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
+    bytes.writeUInt32BE(13, 8);
+    bytes.write('IHDR', 12, 'latin1');
+    bytes.writeUInt32BE(width, 16);
+    bytes.writeUInt32BE(height, 20);
+    return bytes;
+  };
+  const hasIcon = async (id: string): Promise<boolean> =>
+    (await app.pool.query<{ has: boolean }>('SELECT (image IS NOT NULL) AS has FROM app.menu_categories WHERE category_id = $1::uuid', [id])).rows[0]?.has === true;
+
+  it('icon: a square PNG is saved at the exact version; the URL carries the new version; a replay returns the stored answer; a different body on the same key is refused', async () => {
+    const id = String((await made(await create(catalogAdmin, { name: name('Icon một') }))).category_id);
+    const key = randomUUID();
+    const body = { expected_version: 1, data_base64: pngBytes(256, 256).toString('base64') };
+    const first = await write(catalogAdmin, ICON(id), body, { key });
+    expect(first.status).toBe(200);
+    expect(adminData(first)).toMatchObject({ category_id: id, version: 2, image_url: `/v1/admin/menu-categories/${id}/image?v=2` });
+    expect(await hasIcon(id)).toBe(true);
+    expect(await audits(id, ICON_SET_ACTION)).toBe(1);
+    const replay = await write(catalogAdmin, ICON(id), body, { key });
+    expect(adminData(replay)).toEqual(adminData(first));
+    expect(await audits(id, ICON_SET_ACTION)).toBe(1);
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: pngBytes(300, 300).toString('base64') }, { key }))).toEqual({
+      status: 409,
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
+  });
+
+  it('icon: refuses JPEG, a picture below 256 px, a picture that is not square, a declared content type and a stale version; the group keeps no icon and its version', async () => {
+    const id = String((await made(await create(catalogAdmin, { name: name('Icon hai') }))).category_id);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).toString('base64');
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: jpeg }))).toEqual({ status: 400, code: 'CATEGORY_IMAGE_INVALID_FORMAT' });
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: pngBytes(255, 255).toString('base64') }))).toEqual({ status: 400, code: 'CATEGORY_IMAGE_TOO_SMALL' });
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: pngBytes(256, 300).toString('base64') }))).toEqual({ status: 400, code: 'CATEGORY_IMAGE_NOT_SQUARE' });
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: pngBytes(256, 256).toString('base64'), content_type: 'image/png' }))).toEqual({
+      status: 400,
+      code: 'ADMIN_INPUT_INVALID',
+    });
+    expect(codeOf(await write(catalogAdmin, ICON(id), { expected_version: 9, data_base64: pngBytes(256, 256).toString('base64') }))).toEqual({
+      status: 409,
+      code: 'MENU_CATEGORY_VERSION_CONFLICT',
+    });
+    expect(await hasIcon(id)).toBe(false);
+    expect((await groupRow(id))?.version).toBe(1);
+  });
+
+  it('icon: only SYSTEM or an ADMIN with the catalog right may write or read a picture; a shop-only administrator and a customer administrator are refused', async () => {
+    const id = String((await made(await create(systemLogin(), { name: name('Icon ba') }))).category_id);
+    const body = { expected_version: 1, data_base64: pngBytes(256, 256).toString('base64') };
+    expect(codeOf(await write(shopOnlyAdmin, ICON(id), body))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(codeOf(await write(customerAdmin, ICON(id), body))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(codeOf(await write(shopOnlyAdmin, ICON_REMOVE(id), { expected_version: 1 }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect((await app.call('GET', ICON(id), { basePath: BASE, cookies: sessionCookies(shopOnlyAdmin) })).status).toBe(403);
+    expect(await hasIcon(id)).toBe(false);
+  });
+
+  it('icon: the administration preview returns the saved bytes (never cached); a group without an icon says so; removing the icon keeps the group, its dishes and state; removing again changes nothing', async () => {
+    const id = String((await made(await create(catalogAdmin, { name: name('Icon bốn') }))).category_id);
+    const bytes = pngBytes(256, 256);
+    expect(codeOf(await app.call('GET', ICON(id), { basePath: BASE, cookies: sessionCookies(catalogAdmin) }))).toEqual({ status: 404, code: 'MENU_CATEGORY_IMAGE_NOT_FOUND' });
+    expect((await write(catalogAdmin, ICON(id), { expected_version: 1, data_base64: bytes.toString('base64') })).status).toBe(200);
+    const preview = await app.call('GET', `${ICON(id)}?v=2`, { basePath: BASE, cookies: sessionCookies(catalogAdmin) });
+    expect(preview.status).toBe(200);
+    expect(preview.headers['content-type']).toBe('image/png');
+    expect(preview.headers['cache-control']).toContain('no-store');
+    expect(Buffer.compare(preview.bytes, bytes)).toBe(0);
+
+    const removed = await write(catalogAdmin, ICON_REMOVE(id), { expected_version: 2 });
+    expect(removed.status).toBe(200);
+    expect(adminData(removed)).toMatchObject({ category_id: id, version: 3, image_url: null });
+    expect(await hasIcon(id)).toBe(false);
+    expect(await groupRow(id)).toMatchObject({ name: name('Icon bốn'), status: 'ACTIVE', version: 3 });
+    expect(await audits(id, ICON_REMOVE_ACTION)).toBe(1);
+    // Nothing to remove: the same answer, no new version, no audit row.
+    const again = await write(catalogAdmin, ICON_REMOVE(id), { expected_version: 3 });
+    expect(adminData(again)).toMatchObject({ version: 3, image_url: null });
+    expect(await audits(id, ICON_REMOVE_ACTION)).toBe(1);
+    expect(codeOf(await write(catalogAdmin, ICON_REMOVE(id), { expected_version: 2 }))).toEqual({ status: 409, code: 'MENU_CATEGORY_VERSION_CONFLICT' });
+  });
+
+  it('discovery: an ACTIVE group with an icon carries image_url and image_version; the public route serves the bytes, immutable only for the current version; an inactive group is not served', async () => {
+    const withIcon = String((await made(await create(catalogAdmin, { name: name('Công khai') }))).category_id);
+    const plain = String((await made(await create(catalogAdmin, { name: name('Không ảnh') }))).category_id);
+    const hidden = String((await made(await create(catalogAdmin, { name: name('Ngừng') }))).category_id);
+    const bytes = pngBytes(256, 256);
+    expect((await write(catalogAdmin, ICON(withIcon), { expected_version: 1, data_base64: bytes.toString('base64') })).status).toBe(200);
+    expect((await write(catalogAdmin, ICON(hidden), { expected_version: 1, data_base64: bytes.toString('base64') })).status).toBe(200);
+    const off = await groupRow(hidden);
+    expect((await update(catalogAdmin, hidden, { expected_version: 2, name: name('Ngừng'), sort_order: off?.sort_order ?? 0, status: 'INACTIVE' })).status).toBe(200);
+
+    const list = (await app.call('GET', '/menu-categories', PUBLIC)).body.data as unknown as Array<Record<string, unknown>>;
+    const shown = list.find((g) => g.category_id === withIcon);
+    expect(shown).toEqual({ category_id: withIcon, name: name('Công khai'), image_url: `/v1/menu-categories/${withIcon}/image?v=2`, image_version: 2 });
+    expect(list.find((g) => g.category_id === plain)).toMatchObject({ image_url: null, image_version: null });
+    expect(list.find((g) => g.category_id === hidden)).toBeUndefined();
+
+    const current = await app.call('GET', `/menu-categories/${withIcon}/image?v=2`, PUBLIC);
+    expect(current.status).toBe(200);
+    expect(current.headers['content-type']).toBe('image/png');
+    expect(current.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(Buffer.compare(current.bytes, bytes)).toBe(0);
+    const stale = await app.call('GET', `/menu-categories/${withIcon}/image?v=1`, PUBLIC);
+    expect(stale.status).toBe(200);
+    expect(stale.headers['cache-control']).toContain('no-store');
+    expect(codeOf(await app.call('GET', `/menu-categories/${hidden}/image?v=2`, PUBLIC))).toEqual({ status: 404, code: 'MENU_CATEGORY_IMAGE_NOT_FOUND' });
+    expect(codeOf(await app.call('GET', `/menu-categories/${plain}/image`, PUBLIC))).toEqual({ status: 404, code: 'MENU_CATEGORY_IMAGE_NOT_FOUND' });
+    expect(codeOf(await app.call('GET', '/menu-categories/not-a-uuid/image', PUBLIC))).toEqual({ status: 404, code: 'MENU_CATEGORY_IMAGE_NOT_FOUND' });
   });
 });

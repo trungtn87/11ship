@@ -660,6 +660,34 @@ void main() {
     );
 
     testWidgets(
+      'issue #412: a group chip with a picture still filters, and "Tất cả" keeps its grid icon',
+      (WidgetTester tester) async {
+        phone(tester);
+        final FakeDiscoveryApi base = seeded();
+        final FakeDiscoveryApi api = FakeDiscoveryApi(
+          shops: base.entries,
+          categories: const <CategoryChoice>[
+            CategoryChoice(id: 'c1', name: 'Ốc', imageUrl: 'https://img.example.test/c1.png?v=2'),
+            CategoryChoice(id: 'c2', name: 'Hải sản'),
+          ],
+        );
+        final DiscoveryController c = DiscoveryController(api: api);
+        addTearDown(c.dispose);
+        await home(tester, c);
+        expect(find.byKey(const Key('home-cat-c1')), findsOneWidget);
+        expect(find.byIcon(Icons.grid_view_rounded), findsOneWidget);
+        await tapKey(tester, 'home-cat-c2');
+        expect(find.text('Zeta Ốc Hương'), findsNothing);
+        expect(find.text('Alpha Hải Sản'), findsOneWidget);
+        await tapKey(tester, 'home-cat-c1');
+        // Alpha also has a group-1 dish (Ốc len xào dừa), so both shops show under group 1.
+        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Alpha Hải Sản'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'V4 layout: brand and bell, area, full-width search with filter, group chips, then shop heading',
       (WidgetTester tester) async {
         phone(tester);

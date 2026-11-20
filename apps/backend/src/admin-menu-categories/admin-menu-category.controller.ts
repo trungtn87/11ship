@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req, Res, StreamableFile } from '@nestjs/common';
+import { parseCategoryImageRemoveBody, parseCategoryImageUploadBody } from '../menu/menu-category-image';
 import { ADMIN_AUTH_CONFIG } from '../admin-auth/admin-auth-config.provider';
 import { ADMIN_SESSION_COOKIE } from '../admin-auth/admin-auth-constants';
 import { isJsonContentType } from '../admin-auth/admin-auth-validation';
@@ -19,6 +20,10 @@ interface AdminRequest {
 
 interface StatusResponse {
   status(code: number): unknown;
+}
+
+interface ImageResponse {
+  setHeader(name: string, value: string): unknown;
 }
 
 /**
@@ -84,6 +89,63 @@ export class AdminMenuCategoryController {
     const input = parseUpdateBody(body);
     const token = readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
     const outcome = await this.categories.update(token, csrf, id, input, idempotencyKey, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
+  }
+
+  /** Icon preview for the administration screen (issue #412): the same session and right as the list; never cached. */
+  @Get(':category_id/image')
+  async image(@Param('category_id') categoryId: string, @Req() request: AdminRequest, @Res({ passthrough: true }) response: ImageResponse) {
+    const origin = request.headers.origin;
+    if (origin !== undefined && (typeof origin !== 'string' || !this.#origins.has(origin))) {
+      throw new AppError('ADMIN_CSRF_INVALID');
+    }
+    const id = parseCategoryId(categoryId);
+    const token = readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
+    const image = await this.categories.readImage(token, id);
+    response.setHeader('Content-Type', image.contentType);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    return new StreamableFile(image.data);
+  }
+
+  /** Icon upload (issue #412): replaces the group's icon. Body { expected_version, data_base64 }; the type is read from the bytes. */
+  @Post(':category_id/image')
+  @HttpCode(200)
+  async setImage(
+    @Param('category_id') categoryId: string,
+    @Body() body: unknown,
+    @Req() request: AdminRequest,
+    @Res({ passthrough: true }) response: StatusResponse,
+    @Headers('x-csrf-token') csrf: string | string[] | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    await this.#ingress(request);
+    const id = parseCategoryId(categoryId);
+    const input = parseCategoryImageUploadBody(body);
+    const token = readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
+    const outcome = await this.categories.setImage(token, csrf, id, input, idempotencyKey, { requestId: request.requestId ?? randomUUID() });
+    response.status(outcome.status);
+    return { data: outcome.payload };
+  }
+
+  /** Icon removal (issue #412): removes the icon only. Body { expected_version }. */
+  @Post(':category_id/image/remove')
+  @HttpCode(200)
+  async removeImage(
+    @Param('category_id') categoryId: string,
+    @Body() body: unknown,
+    @Req() request: AdminRequest,
+    @Res({ passthrough: true }) response: StatusResponse,
+    @Headers('x-csrf-token') csrf: string | string[] | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    await this.#ingress(request);
+    const id = parseCategoryId(categoryId);
+    const input = parseCategoryImageRemoveBody(body);
+    const token = readCookieToken(request.headers.cookie, ADMIN_SESSION_COOKIE);
+    const outcome = await this.categories.removeImage(token, csrf, id, input, idempotencyKey, { requestId: request.requestId ?? randomUUID() });
     response.status(outcome.status);
     return { data: outcome.payload };
   }

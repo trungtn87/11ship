@@ -10,6 +10,7 @@ const row = (n: number, over: Partial<CategoryRow> = {}): CategoryRow => ({
   itemCount: n,
   version: 1,
   updatedAt: '2026-10-16T03:00:00.000Z',
+  imageUrl: null,
   ...over,
 });
 

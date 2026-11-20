@@ -33,10 +33,10 @@ const MIME: Readonly<Record<string, string>> = Object.freeze({
   '.txt': 'text/plain; charset=utf-8',
 });
 
-// Same-origin only: the page loads nothing from anywhere else and talks only to its own API.
+// Same-origin only: the page loads nothing from anywhere else and talks only to its own API. img-src also allows blob: for the local preview of a picked icon (issue #412); blob: is created only by this page.
 const HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'content-security-policy':
-    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; " +
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; " +
     "worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
