@@ -199,8 +199,13 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
       await service.receive(signedRequest(first));
       await service.receive(signedRequest(second));
       expect(await balanceOf()).toBe('150000');
+      const firstId = JSON.parse(first.toString('utf8')).id as number;
       const secondId = JSON.parse(second.toString('utf8')).id as number;
-      expect((await inboxOf(secondId)).reason_code).toBe('REQUEST_NOT_PENDING');
+      // One bank transfer = one bank identity (account, reference, amount, time). The first event is the record; the second is a duplicate
+      // of it and writes no inbox row (the unique key sepay_transfer_inbox_bank_uq makes its insert a no-op). Nothing is credited twice.
+      expect(await inboxOf(firstId)).toMatchObject({ state: 'CREDITED', reason_code: null });
+      expect(await inboxOf(secondId)).toBeUndefined();
+      expect((await c.query("SELECT count(*)::int AS n FROM app.sepay_transfer_inbox WHERE reference_code = 'FTSAME0001'")).rows[0]).toEqual({ n: 1 });
       expect((await c.query('SELECT count(*)::int AS n FROM app.wallet_topups')).rows[0]).toEqual({ n: 1 });
     });
   });
