@@ -5,9 +5,17 @@
 export const CLIENT_APPS = ['FOOD', 'SHIP'] as const;
 export type ClientApp = (typeof CLIENT_APPS)[number];
 
-/** The client platforms of the new API. ANDROID has no proof verifier yet; WEB exists only in the explicit local mode. */
-export const CLIENT_PLATFORMS = ['WEB', 'ANDROID'] as const;
+/** The client platforms of the new API. ANDROID has no proof verifier yet; WEB exists only in the explicit local mode. IOS is password/OTP only. */
+export const CLIENT_PLATFORMS = ['WEB', 'ANDROID', 'IOS'] as const;
 export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
+
+/**
+ * The phone platforms that sign in with password / OTP and a bearer token (PASSWORD sessions). IOS has no native device proof at all
+ * (no key attestation, no peer binding): its sessions are always PASSWORD and never take the native branches, which stay ANDROID-only.
+ */
+export function isPasswordMobilePlatform(platform: string | undefined): boolean {
+  return platform === 'ANDROID' || platform === 'IOS';
+}
 
 export function isClientApp(value: unknown): value is ClientApp {
   return typeof value === 'string' && (CLIENT_APPS as readonly string[]).includes(value);

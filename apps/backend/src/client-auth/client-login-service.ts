@@ -26,6 +26,7 @@ import {
   CLIENT_LOGIN_AUDIT_ACTION,
   CLIENT_LOGIN_OPERATION_ID,
   CLIENT_LOGIN_SCOPE_TYPE,
+  isPasswordMobilePlatform,
 } from './client-auth-constants';
 import { assertDeviceAllowed, CLIENT_AUTH_SETTINGS, ClientAuthSettings } from './client-auth-policy';
 import { IdentityCapture, requireIdentity, responseOf, storedResultOf } from './client-auth-result';
@@ -236,7 +237,7 @@ export class ClientLoginService {
       proof === undefined ? undefined : await this.deviceBinding.prepare(context, { userId: locked.userId, app: input.device.app, proof });
 
     // Serialize replacement under the user root lock; device_id is metadata, never authority.
-    if (proof === undefined && input.device.platform === 'ANDROID') {
+    if (proof === undefined && isPasswordMobilePlatform(input.device.platform)) {
       await this.sessions.revokeAllForUser(context, locked.userId);
     }
 
@@ -245,7 +246,7 @@ export class ClientLoginService {
       userId: locked.userId,
       device: { deviceId: input.device.deviceId, platform: input.device.platform, app: input.device.app },
       ttlSeconds: this.config.sessionTtlSeconds,
-      ...(proof === undefined && input.device.platform === 'ANDROID' ? { authMethod: 'PASSWORD' as const } : {}),
+      ...(proof === undefined && isPasswordMobilePlatform(input.device.platform) ? { authMethod: 'PASSWORD' as const } : {}),
       ...(chosen === null ? {} : { activeRole: storageRoleOf(chosen) }),
     });
 
@@ -343,7 +344,7 @@ export class ClientLoginService {
     // Native: still on the current binding, issued to the key that signs THIS replay, with the grant that created it.
     if (proof !== undefined) {
       capture.binding = await this.deviceBinding.assertReplayable(context, { sessionId, proof });
-    } else if (input.device.platform === 'ANDROID' && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
+    } else if (isPasswordMobilePlatform(input.device.platform) && (await this.sessions.readClientView(context, sessionId))?.authMethod !== 'PASSWORD') {
       throw new AppError('AUTH_RESULT_NOT_REPLAYABLE');
     }
 

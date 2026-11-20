@@ -563,18 +563,20 @@ void main() {
       expect(find.text('Bật chia sẻ vị trí'), findsNothing);
       expect(find.byKey(const Key('m07-share-start')), findsNothing);
       expect(find.byKey(const Key('home-gps-status')), findsNothing, reason: 'nothing to say while offline');
-      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(find.text('Offline'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('home-status-info')));
+      await tester.pump();
       expect(find.byKey(const Key('home-online-disclosure')), findsOneWidget);
       await tester.tap(find.byKey(const Key('online-button')));
       await tester.runAsync(() async { await settle(); await settle(); });
       await tester.pump();
-      expect(find.text('Bạn đang online'), findsOneWidget);
+      expect(find.text('Online'), findsOneWidget);
       expect(find.text('Đang chia sẻ vị trí'), findsOneWidget);
-      expect(find.text('Tắt online'), findsOneWidget);
+      expect(find.bySemanticsLabel('Tắt online'), findsOneWidget);
       await tester.tap(find.byKey(const Key('online-button')));
       await tester.runAsync(() async { await settle(); await settle(); });
       await tester.pump();
-      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(find.text('Offline'), findsOneWidget);
       expect(find.byKey(const Key('home-gps-status')), findsNothing);
     });
 
@@ -588,7 +590,7 @@ void main() {
       await tester.tap(find.byKey(const Key('online-button')));
       await tester.runAsync(() async { await settle(); await settle(); });
       await tester.pump();
-      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(find.text('Offline'), findsOneWidget);
       expect(find.byKey(const Key('ship-alert')), findsOneWidget, reason: 'one alert, not a stack of notices');
       expect(find.text('11Ship chưa được cấp quyền vị trí.'), findsOneWidget);
       expect(find.byKey(const Key('ship-alert-app-settings')), findsOneWidget);
@@ -609,10 +611,11 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: buildN11Theme(), home: Scaffold(body: ShipHome(session: t.session, driver: t.driver, onNotifications: () {}, onlineOverride: t.online))));
       await tester.pump();
       expect(find.byKey(const Key('home-activity-status')), findsOneWidget);
-      expect(tester.widget<Text>(find.byKey(const Key('home-activity-status'))).data, 'Tạm dừng nhận đơn');
+      expect(tester.widget<Text>(find.byKey(const Key('home-activity-status'))).data, 'Online');
+      expect(tester.widget<Text>(find.byKey(const Key('home-activity-sub'))).data, 'Tạm dừng nhận đơn');
       expect(find.byKey(const Key('ship-alert')), findsOneWidget);
       expect(find.text('Tạm dừng nhận đơn — chưa có vị trí mới.'), findsOneWidget);
-      expect(find.text('Tắt online'), findsOneWidget);
+      expect(find.bySemanticsLabel('Tắt online'), findsOneWidget);
       expect(find.byKey(const Key('home-gps-status')), findsNothing, reason: 'the GPS line is merged into the label and the alert');
     });
 
@@ -731,7 +734,7 @@ void main() {
       expect(find.byKey(const Key('ship-alert')), findsNothing);
       expect(find.byKey(const Key('connection-banner')), findsOneWidget);
       expect(find.text('Đã dừng chia sẻ vị trí'), findsOneWidget);
-      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(find.text('Offline'), findsOneWidget);
       await finish(tester, t);
     });
 
@@ -747,7 +750,7 @@ void main() {
       await tester.runAsync(() async { await settle(); await settle(); });
       await tester.pump();
       expect(find.text('Vị trí đang tắt'), findsOneWidget);
-      expect(find.text('Bạn đang offline'), findsOneWidget);
+      expect(find.text('Offline'), findsOneWidget);
       expect(t.driver.profile!.acceptingDeliveries, isFalse);
       await finish(tester, t);
     });

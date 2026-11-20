@@ -108,5 +108,7 @@ describe('assertLegacyDeviceAllowed', () => {
   it('with the gate off keeps the web local compatibility and still refuses the native labels', () => {
     expect(() => assertLegacyDeviceAllowed(device('WEB', 'FOOD'))).not.toThrow();
     expect(() => assertLegacyDeviceAllowed(device('ANDROID', 'SHIP'))).toThrow(AppError);
+    expect(() => assertLegacyDeviceAllowed(device('IOS', 'FOOD'))).toThrow(AppError);
+    expect(() => assertLegacyDeviceAllowed(device('IOS', 'SHIP'))).toThrow(AppError);
   });
 });

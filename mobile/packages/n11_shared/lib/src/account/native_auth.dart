@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'api_client.dart';
 import 'device_bridge.dart';
@@ -12,6 +13,9 @@ enum ClientApp {
   final String peerLabel;
 }
 
+/// The platform label the server records on the session. Both are password/OTP sessions; iOS never takes a native device proof.
+String clientPlatformLabel() => Platform.isIOS ? 'IOS' : 'ANDROID';
+
 /// HTTPS account authentication and opaque Bearer sessions, shared by both APKs.
 /// Keystore is used only for local encrypted token storage; no enrollment or attestation.
 class NativeAuthApi {
@@ -22,7 +26,7 @@ class NativeAuthApi {
   final String environment;
 
   Future<Map<String, Object?>> deviceBlock() async => <String, Object?>{
-    'device_id': await bridge.deviceId(), 'platform': 'ANDROID', 'app': app.label,
+    'device_id': await bridge.deviceId(), 'platform': clientPlatformLabel(), 'app': app.label,
   };
 
   Future<ApiResponse> authCall(String path, String body, String idempotencyKey) =>

@@ -1,0 +1,15 @@
+name: n11_native_ios
+description: The iOS side of the small native doors 11Food and 11Ship use (session token in the Keychain, one-shot location, dialer/link launch, data directory). iOS only; Android keeps its Kotlin templates (mobile/tool/android-templates).
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.24.0'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: N11NativePlugin

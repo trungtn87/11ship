@@ -289,7 +289,7 @@ void main() {
     expect(api.to('PUT', '/v1/driver/location'), isEmpty, reason: 'no position is sent to the server');
     expect(h.writes.length, writesBefore);
     expect(driver.profile?.acceptingDeliveries, isFalse, reason: 'still offline after the button');
-    expect(find.text('Bạn đang offline'), findsOneWidget);
+    expect(find.text('Offline'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

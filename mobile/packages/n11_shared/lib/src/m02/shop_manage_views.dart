@@ -9,6 +9,7 @@ import '../addresses/address_location_picker.dart';
 import '../flows/shop_views.dart' show ShopFormScreen;
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../m11/m11_rating_views.dart';
 import 'hours_views.dart';
 import 'm02_flows.dart';
 import 'm02_widgets.dart';
@@ -16,6 +17,8 @@ import 'menu_views.dart';
 import 'preview_views.dart';
 import 'schedule.dart';
 import 'shop_ops_controller.dart';
+import 'shop_revenue_data.dart';
+import 'shop_revenue_view.dart';
 import 'shop_setup_controller.dart';
 import 'shop_setup_views.dart';
 
@@ -43,12 +46,15 @@ mixin _LeaveWhenSignedOut<T extends StatefulWidget> on State<T> {
 }
 
 class ShopManageScreen extends StatefulWidget {
-  const ShopManageScreen({super.key, required this.flows, this.embedded = false});
+  const ShopManageScreen({super.key, required this.flows, this.embedded = false, this.openOrder});
 
   final M02Flows flows;
 
   /// True inside the "Quán" tab: only the content, the shell supplies the title bar and the bottom navigation.
   final bool embedded;
+
+  /// Opens an order's detail from the revenue screen. Null = the revenue rows are not tappable.
+  final Future<void> Function(String orderId)? openOrder;
 
   @override
   State<ShopManageScreen> createState() => _ShopManageScreenState();
@@ -228,6 +234,8 @@ class _ShopManageScreenState extends State<ShopManageScreen> with WidgetsBinding
         N11ListItem(key: const Key('manage-hours'), icon: Icons.schedule, title: 'Giờ hoạt động', sub: hoursSub, onTap: incomplete ? null : () => _open(HoursScreen(flows: widget.flows)), trailing: incomplete ? const N11Chip('Cần hồ sơ') : null),
         N11ListItem(key: const Key('manage-menu'), icon: Icons.restaurant_menu, title: 'Thực đơn', sub: 'Món, ảnh, nhóm, hiện/ẩn', onTap: incomplete ? null : () => _open(MenuListScreen(flows: widget.flows)), trailing: incomplete ? const N11Chip('Cần hồ sơ') : null),
         N11ListItem(key: const Key('manage-preview'), icon: Icons.visibility_outlined, title: 'Xem trước thực đơn', sub: 'Như khách sẽ thấy', onTap: incomplete ? null : () => _open(PreviewScreen(flows: widget.flows)), trailing: incomplete ? const N11Chip('Cần hồ sơ') : null),
+        // #391: the owner's dish value from completed orders. Shown even before the setup is complete: it reads zeros, never a made-up figure.
+        N11ListItem(key: const Key('manage-revenue'), icon: Icons.bar_chart_outlined, title: 'Doanh thu quán', sub: 'Giá trị món từ đơn đã hoàn tất, theo ngày', onTap: () => _open(ShopRevenueScreen(source: HttpShopRevenueSource(session: ops.session), openOrder: widget.openOrder))),
       ]),
     ];
   }
@@ -405,6 +413,17 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> with _LeaveWhenSi
                   ('Địa chỉ', o.addressText),
                 ],
               ),
+              // Owner (Quán -> Hồ sơ quán): the customers' reviews sit with the shop profile, not in the account. Read-only; the edit form does not show it.
+              if (widget.flows.feedback != null)
+                N11List(title: 'Khách hàng', children: <Widget>[
+                  N11ListItem(
+                    key: const Key('open-shop-reviews'),
+                    icon: Icons.star_outline_rounded,
+                    title: 'Đánh giá của khách',
+                    sub: 'Xem đánh giá quán và phản hồi',
+                    onTap: () => Navigator.of(context).push<void>(n11Route(ShopReviewsScreen(source: widget.flows.feedback!, title: 'Đánh giá của khách'))),
+                  ),
+                ]),
             ],
             footer: readOnly ? const <Widget>[] : <Widget>[N11Button(key: const Key('profile-edit'), label: 'Sửa hồ sơ', onPressed: () => setState(() => _editing = true))],
           );
