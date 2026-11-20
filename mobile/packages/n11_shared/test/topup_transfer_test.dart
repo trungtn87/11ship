@@ -118,7 +118,8 @@ void main() {
       expect(find.text('CONG TY 11SHIP'), findsOneWidget);
       expect(find.text('150.000đ'), findsWidgets);
       expect(find.text(_code), findsOneWidget);
-      expect(find.text('Chờ xác nhận'), findsWidgets);
+      expect(find.text('Chờ chuyển tiền'), findsWidgets);
+      expect(find.text('Chờ xác nhận'), findsNothing, reason: 'the admin-confirmation wording belongs to a later step');
       expect(find.text('Đã cộng vào ví'), findsNothing);
 
       await tapCopy(tester, 'copy-content');
@@ -135,6 +136,19 @@ void main() {
 
       expect(find.byKey(const Key('topup-transfer-note')), findsOneWidget);
       expect(find.textContaining('đúng nội dung chuyển khoản và đúng số tiền'), findsOneWidget);
+    });
+
+    testWidgets('PENDING ends with exactly two buttons, "Hủy yêu cầu" then "Xác nhận đã chuyển tiền" (not yet available), and no exchange with the admin', (WidgetTester tester) async {
+      await mount(tester, TopupDetailScreen(source: _TopupSource(), code: 'req-1'));
+
+      final Finder cancel = find.byKey(const Key('topup-cancel'));
+      final Finder reported = find.byKey(const Key('topup-reported'));
+      expect(find.text('Hủy yêu cầu'), findsOneWidget);
+      expect(find.text('Xác nhận đã chuyển tiền'), findsOneWidget);
+      expect(tester.getTopLeft(cancel).dy, lessThan(tester.getTopLeft(reported).dy));
+      expect(tester.widget<N11Button>(reported).onPressed, isNull, reason: 'the server has no reported state yet: the button cannot act');
+      expect(find.text('Trao đổi với quản trị'), findsNothing);
+      expect(find.byType(N11Button), findsNWidgets(2));
     });
 
     testWidgets('PENDING with a bank that has no VietQR: no QR, a neutral note, and the text fields still copy', (WidgetTester tester) async {
