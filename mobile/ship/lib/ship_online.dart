@@ -305,8 +305,9 @@ class ShipOnline extends ChangeNotifier {
     if (!intent && !work) return null;
     final bool shared = reporter.serverHasPosition;
     // Issue #265: Online off stops the position even while a delivery is held; the delivery itself goes on.
-    if (work && !intent) return 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí';
-    if (work) return shared ? 'Đang giao đơn · Vẫn chia sẻ vị trí' : 'Đang giao đơn · Chưa có vị trí';
+    // "Đang có đơn": the Shipper holds a delivery in any state (accepted, not picked up yet, or on the way), so "giao" would overstate it (Issue #414).
+    if (work && !intent) return 'Đang có đơn · Đã tắt Online, không chia sẻ vị trí';
+    if (work) return shared ? 'Đang có đơn · Vẫn chia sẻ vị trí' : 'Đang có đơn · Chưa có vị trí';
     if (shared) return 'Đang chia sẻ vị trí';
     if (reporter.sharing && reporter.lastUpload == null && problem == LocationProblem.none) return 'Đang lấy vị trí…';
     // Past this app's 100 s but the server has not said otherwise yet (its own limit is 120 s): waiting for the next report, not yet paused.
