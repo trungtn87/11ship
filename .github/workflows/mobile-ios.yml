@@ -78,7 +78,13 @@ jobs:
             (cd "$d" && flutter pub get)
           done
 
+      # Placeholder (not real) Firebase identifiers: this build only proves that the push code, the entitlement and the pods compile and link. It is never installed.
       - name: Prepare the iOS project
+        env:
+          FCM_PROJECT_ID: ci-placeholder-project
+          FCM_SENDER_ID: "123456789012"
+          FCM_APP_ID: "1:123456789012:ios:0123456789abcdef"
+          FCM_API_KEY: AIzaCiPlaceholderKey000000000000000000
         run: mobile/tool/prepare-ios.sh ${{ matrix.app }}
 
       - name: Build for the simulator (no signing)

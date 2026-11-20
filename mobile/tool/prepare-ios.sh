@@ -71,9 +71,41 @@ if [ "$app" = ship ]; then
   /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$plist"
   /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$plist"
 fi
+# M08 push (optional), like Android: FCM_PROJECT_ID, FCM_SENDER_ID, FCM_APP_ID and FCM_API_KEY of THIS app's Firebase iOS client. All four valid = the build carries
+# push (identifiers go to Info.plist, the aps-environment entitlement is added); none = a build without push (the app says so); some or an invalid one stops the build.
+push="off"
+set_count=0
+for v in FCM_PROJECT_ID FCM_SENDER_ID FCM_APP_ID FCM_API_KEY; do
+  if [ -n "${!v:-}" ]; then set_count=$((set_count + 1)); fi
+done
+if [ "$set_count" -gt 0 ]; then
+  bad=""
+  printf '%s' "${FCM_PROJECT_ID:-}" | grep -Eq '^[a-z][a-z0-9-]{3,62}$' || bad="$bad FCM_PROJECT_ID"
+  printf '%s' "${FCM_SENDER_ID:-}" | grep -Eq '^[0-9]{6,20}$' || bad="$bad FCM_SENDER_ID"
+  printf '%s' "${FCM_APP_ID:-}" | grep -Eq '^[0-9]+:[0-9]+:ios:[0-9a-f]{8,64}$' || bad="$bad FCM_APP_ID"
+  printf '%s' "${FCM_API_KEY:-}" | grep -Eq '^[A-Za-z0-9_-]{20,64}$' || bad="$bad FCM_API_KEY"
+  if [ -n "$bad" ]; then
+    echo "push configuration incomplete or invalid (set all four or none):$bad" >&2
+    exit 1
+  fi
+  push="on"
+  set_key N11_FCM_PROJECT_ID string "$FCM_PROJECT_ID"
+  set_key N11_FCM_SENDER_ID string "$FCM_SENDER_ID"
+  set_key N11_FCM_APP_ID string "$FCM_APP_ID"
+  set_key N11_FCM_API_KEY string "$FCM_API_KEY"
+  # Xcode's signing replaces this with the value of the provisioning profile (development for debug, production for TestFlight and the store).
+  aps="${IOS_APS_ENVIRONMENT:-development}"
+  case "$aps" in development|production) ;; *) echo "IOS_APS_ENVIRONMENT must be development or production" >&2; exit 1 ;; esac
+  ent="$dest/Runner/Runner.entitlements"
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict>' "<key>aps-environment</key><string>$aps</string>" '</dict></plist>' > "$ent"
+  perl -0pi -e "s/(PRODUCT_BUNDLE_IDENTIFIER = \Q$app_id\E;)/\$1\n\t\t\t\t CODE_SIGN_ENTITLEMENTS = Runner\/Runner.entitlements;/g" "$dest/Runner.xcodeproj/project.pbxproj"
+  grep -q "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;" "$dest/Runner.xcodeproj/project.pbxproj" || { echo "entitlements were not linked to the project" >&2; exit 1; }
+fi
 # canOpenURL("tel:") for the dialer; the app opens no other scheme.
 /usr/libexec/PlistBuddy -c "Delete :LSApplicationQueriesSchemes" "$plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes array" "$plist"
 /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes:0 string tel" "$plist"
 /usr/libexec/PlistBuddy -c "Print" "$plist" > /dev/null
-echo "prepared $dest ($app_id)"
+echo "prepared $dest ($app_id) push=$push"

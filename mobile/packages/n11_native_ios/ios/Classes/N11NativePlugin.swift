@@ -14,21 +14,20 @@ public class N11NativePlugin: NSObject, FlutterPlugin {
         let launch = FlutterMethodChannel(name: "vn.eleven.n11/launch", binaryMessenger: messenger)
         let dialer = FlutterMethodChannel(name: "vn.eleven.n11/dialer", binaryMessenger: messenger)
         let update = FlutterMethodChannel(name: "vn.eleven.n11/update", binaryMessenger: messenger)
-        let push = FlutterMethodChannel(name: "vn.eleven.n11/push", binaryMessenger: messenger)
         let plugin = N11NativePlugin()
         registrar.addMethodCallDelegate(plugin, channel: device)
         registrar.addMethodCallDelegate(plugin, channel: location)
         registrar.addMethodCallDelegate(plugin, channel: launch)
         registrar.addMethodCallDelegate(plugin, channel: dialer)
         registrar.addMethodCallDelegate(plugin, channel: update)
-        registrar.addMethodCallDelegate(plugin, channel: push)
+        N11Push.register(with: registrar)
         TokenStore.wipeAfterReinstall()
     }
 
     private let locator = OneShotLocator()
 
     // FlutterPlugin gives one handler for every channel; the channel name is not passed, so each method name below is unique per channel
-    // except `dial` (launch and dialer behave the same) and `openSettings`/`state` (push only).
+    // except `dial` (launch and dialer behave the same). Push has its own channel handler (N11Push.swift).
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "deviceId":
@@ -56,11 +55,6 @@ public class N11NativePlugin: NSObject, FlutterPlugin {
             Launch.open(url, result)
         case "dataDirectory":
             result(DataDirectory.path())
-        case "state":
-            // Push is not part of the first iOS build: say so honestly (the inbox and live sync still work).
-            result(["supported": false, "permission": "unknown"])
-        case "requestPermission", "openSettings", "deleteToken":
-            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }
