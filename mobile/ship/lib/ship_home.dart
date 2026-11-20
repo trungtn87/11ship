@@ -36,7 +36,10 @@ const int kShipRadiusBorderColor = 0xFF1565C0;
 
 /// Height the Home keeps for everything that is NOT the map (header, status card, map title, the offers block). The map gets the rest of the
 /// visible area, clamped to the V5 min/max, so on a 390x844 phone the map is large and the offers start near the bottom of the first screen.
-const double kShipHomeReservedHeight = 500;
+const double kShipHomeReservedHeight = 464;
+
+/// Diameter of the one round Online/Offline button (20/11 Owner update: about 56 dp, allowed 52-64). The tap area stays >= 48 dp.
+const double kShipOnlineButtonSize = 56;
 
 /// A GPS position the ring may be drawn around: numbers, finite, in range and not the (0, 0) "no fix" placeholder.
 bool shipRadiusCentreUsable(Map<String, dynamic>? position) {
@@ -898,8 +901,22 @@ class _ShipActivityPanelState extends State<ShipActivityPanel> {
         : online && widget.paused
             ? 'Tạm dừng nhận đơn'
             : null;
-    return N11Card(
+    // 20/11 Owner update: the round button is about 56 dp (hit target >= 48), and the card is slimmer (vertical padding gap2, not gap4).
+    return Container(
       key: const Key('home-activity-panel'),
+      padding: const EdgeInsets.symmetric(
+          horizontal: N11Space.gap4, vertical: N11Space.gap2),
+      decoration: BoxDecoration(
+        color: N11Colors.white,
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+              color: Color(0x0A191919),
+              offset: Offset(0, 4),
+              blurRadius: 16)
+        ],
+        border: Border.all(color: N11Colors.line),
+        borderRadius: BorderRadius.circular(kRadiusCard),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -911,8 +928,8 @@ class _ShipActivityPanelState extends State<ShipActivityPanel> {
                 button: true,
                 enabled: online != null && !widget.busy && widget.onToggle != null,
                 child: SizedBox(
-                  width: 76,
-                  height: 76,
+                  width: kShipOnlineButtonSize,
+                  height: kShipOnlineButtonSize,
                   child: FilledButton(
                     key: const Key('online-button'),
                     onPressed:
@@ -920,7 +937,7 @@ class _ShipActivityPanelState extends State<ShipActivityPanel> {
                     style: FilledButton.styleFrom(
                       shape: const CircleBorder(),
                       padding: EdgeInsets.zero,
-                      minimumSize: const Size.square(76),
+                      minimumSize: const Size.square(kShipOnlineButtonSize),
                       backgroundColor:
                           receiving ? N11Colors.successInk : N11Colors.yellow,
                       foregroundColor:
@@ -930,11 +947,11 @@ class _ShipActivityPanelState extends State<ShipActivityPanel> {
                     ),
                     child: widget.busy
                         ? const SizedBox(
-                            width: 26,
-                            height: 26,
+                            width: 22,
+                            height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2.5),
                           )
-                        : const Icon(Icons.power_settings_new, size: 36),
+                        : const Icon(Icons.power_settings_new, size: 28),
                   ),
                 ),
               ),
