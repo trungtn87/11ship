@@ -1,7 +1,7 @@
 name: Mobile iOS
 
 # Builds the two iOS apps for the SIMULATOR without signing (compile check of the Flutter app and the n11_native_ios plugin). Run it by hand: macOS minutes
-# cost ten times Linux minutes. It makes no IPA, uses no secret and publishes nothing; signing and TestFlight are a later, separate step.
+# cost ten times Linux minutes; a pull request runs it only when an iOS file changes. It makes no IPA, uses no secret and publishes nothing; signing and TestFlight are a later, separate step.
 
 on:
   workflow_dispatch:
@@ -10,6 +10,11 @@ on:
         description: 'Server origin the build talks to (https only). Empty = config/endpoints.json (the VPS).'
         required: false
         default: ''
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-ios.yml'
+      - 'mobile/tool/prepare-ios.sh'
+      - 'mobile/packages/n11_native_ios/**'
 
 permissions:
   contents: read
@@ -38,9 +43,11 @@ jobs:
             label: 11Ship
             app_id: vn.eleven.ship
     env:
-      SOURCE_SHA: ${{ github.sha }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Central endpoints (config/endpoints.json)
         env:
