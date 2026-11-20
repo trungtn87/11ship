@@ -38,8 +38,8 @@ export class OrderTimeoutSweeper {
       deliveries: (
         await c.query<{ delivery_id: string }>(`SELECT d.delivery_id FROM app.deliveries d
         LEFT JOIN app.delivery_assignments a ON a.delivery_id=d.delivery_id AND a.status='ACTIVE'
-        WHERE d.order_id IS NOT NULL AND d.state IN ('waiting_driver','search_stopped','accepted','location_confirmed')
-        AND NOT EXISTS(SELECT 1 FROM app.deliveries n WHERE n.order_id=d.order_id AND (n.created_at,n.delivery_id)>(d.created_at,d.delivery_id))
+        WHERE d.state IN ('waiting_driver','search_stopped','accepted','location_confirmed')
+        AND (d.order_id IS NULL OR NOT EXISTS(SELECT 1 FROM app.deliveries n WHERE n.order_id=d.order_id AND (n.created_at,n.delivery_id)>(d.created_at,d.delivery_id)))
         AND ((d.state IN ('waiting_driver','search_stopped') AND (d.timeout_snapshot->>'cancel_at')::timestamptz<=clock_timestamp())
           OR (a.status='ACTIVE' AND a.picked_up_at IS NULL AND ((a.timeout_snapshot->>'cancel_at')::timestamptz<=clock_timestamp()
             OR (a.timeout_warned_at IS NULL AND (a.timeout_snapshot->>'warning_at')::timestamptz<=clock_timestamp()))))
@@ -109,21 +109,20 @@ export class OrderTimeoutSweeper {
     if (peeked && !(await this.drivers.tryLockById(c, peeked.driverId))) return;
     if ((await c.query('SELECT 1 FROM app.deliveries WHERE delivery_id=$1::uuid FOR UPDATE SKIP LOCKED', [id])).rows.length === 0) return;
     const delivery = await this.deliveries.lockById(c, id);
-    if (
-      !delivery?.orderId ||
-      delivery.pickedUpAtMs !== null ||
-      !['waiting_driver', 'search_stopped', 'accepted', 'location_confirmed'].includes(delivery.state)
-    )
-      return;
+    if (!delivery || delivery.pickedUpAtMs !== null || !['waiting_driver', 'search_stopped', 'accepted', 'location_confirmed'].includes(delivery.state)) return;
     const assignment = await this.deliveries.lockActiveAssignment(c, id);
     if (assignment?.assignmentId !== peeked?.assignmentId) return;
-    const order = await this.orders.lockById(c, delivery.orderId);
-    if (!order || order.status !== 'PREPARING') return;
-    const latest = await c.query<{ delivery_id: string }>(
-      'SELECT delivery_id FROM app.deliveries WHERE order_id=$1::uuid ORDER BY created_at DESC,delivery_id DESC LIMIT 1',
-      [order.orderId],
-    );
-    if (latest.rows[0]?.delivery_id !== id) return;
+    // A delivery of an ORDER also needs its Order PREPARING and to be the newest request of that Order. A call without an Order (DIRECT/CUSTOMER)
+    // is decided by its own snapshot only, with the same marks and cancel time as an ORDER's delivery (Owner 2026-11-20).
+    const order = delivery.orderId ? await this.orders.lockById(c, delivery.orderId) : undefined;
+    if (delivery.orderId) {
+      if (!order || order.status !== 'PREPARING') return;
+      const latest = await c.query<{ delivery_id: string }>(
+        'SELECT delivery_id FROM app.deliveries WHERE order_id=$1::uuid ORDER BY created_at DESC,delivery_id DESC LIMIT 1',
+        [delivery.orderId],
+      );
+      if (latest.rows[0]?.delivery_id !== id) return;
+    }
     if (assignment && (assignment.pickedUpAtMs !== null || !['accepted', 'location_confirmed'].includes(delivery.state))) return;
     if (!assignment && !['waiting_driver', 'search_stopped'].includes(delivery.state)) return;
     const raw = assignment
@@ -146,20 +145,23 @@ export class OrderTimeoutSweeper {
     if (timeoutDue(snapshot, now)) {
       const reason = assignment ? 'QUÁ HẠN SHIPPER LẤY HÀNG' : 'QUÁ HẠN CHỜ SHIPPER NHẬN';
       await this.markTimeout(c, requestId);
-      await this.cancelling.cancel(c, { type: 'SYSTEM', userId: null }, delivery, reason, requestId, true);
-      const after = await this.orders.update(c, order.orderId, order.version, { status: 'CANCELLED_BY_SYSTEM', endedNow: 'SYSTEM', endReason: reason });
-      if (!after) throw new TechnicalError('internal', 'Locked order changed');
-      await this.orderRecorder.record(c, {
-        order: after,
-        type: 'delivery_timeout',
-        actorType: 'SYSTEM',
-        actorId: null,
-        operation: 'order.timeout.v1',
-        requestId,
-        note: reason,
-        details: { before_status: order.status, delivery_id: id, assignment_id: assignment?.assignmentId ?? null, ...snapshot },
-        metadata: { source: 'timeout', delivery_id: id, assignment_id: assignment?.assignmentId ?? null, ...snapshot },
-      });
+      // The same ending as a shop's or an admin's cancel (assignment, commission hold released, audit, outbox, transition). Goods are never picked up here.
+      await this.cancelling.cancel(c, { type: 'SYSTEM', userId: null }, delivery, reason, requestId, delivery.orderId !== null);
+      if (order) {
+        const after = await this.orders.update(c, order.orderId, order.version, { status: 'CANCELLED_BY_SYSTEM', endedNow: 'SYSTEM', endReason: reason });
+        if (!after) throw new TechnicalError('internal', 'Locked order changed');
+        await this.orderRecorder.record(c, {
+          order: after,
+          type: 'delivery_timeout',
+          actorType: 'SYSTEM',
+          actorId: null,
+          operation: 'order.timeout.v1',
+          requestId,
+          note: reason,
+          details: { before_status: order.status, delivery_id: id, assignment_id: assignment?.assignmentId ?? null, ...snapshot },
+          metadata: { source: 'timeout', delivery_id: id, assignment_id: assignment?.assignmentId ?? null, ...snapshot },
+        });
+      }
     } else if (assignment && raw.timeout_warned_at === null && now >= Date.parse(snapshot.warning_at)) {
       await c.query(
         'UPDATE app.delivery_assignments SET timeout_warned_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1::uuid',

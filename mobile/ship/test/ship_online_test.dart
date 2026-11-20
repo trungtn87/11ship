@@ -328,7 +328,7 @@ void main() {
       expect(t.reporter.sharing, isFalse, reason: 'Online off ends the collection even while a delivery is held');
       expect(t.feed.stops, 1);
       expect(t.driver.profile!.presence!.hasActiveWork, isTrue, reason: 'the duty to the delivery does not change');
-      expect(t.online.statusLine, 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí');
+      expect(t.online.statusLine, 'Đang có đơn · Đã tắt Online, không chia sẻ vị trí');
       // Later reports do not bring the service back, and nothing switches the account on by itself.
       t.advance(const Duration(minutes: 1));
       await settle();
@@ -443,7 +443,7 @@ void main() {
       await settle();
       expect(t.feed.starts, 0);
       expect(t.accepting, isEmpty);
-      expect(t.online.statusLine, 'Đang giao đơn · Đã tắt Online, không chia sẻ vị trí');
+      expect(t.online.statusLine, 'Đang có đơn · Đã tắt Online, không chia sẻ vị trí');
     });
 
     test('permission taken away meanwhile: one clear problem, no prompt loop; "Thử lại" tries again', () async {
