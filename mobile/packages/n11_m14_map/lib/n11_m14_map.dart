@@ -33,7 +33,7 @@ class M14OfflineMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return const Center(child: Text('Bản đồ offline M14 dành cho Android'));
+      return const Center(child: Text('Bản đồ offline Cao Bằng hiện chỉ có trên Android'));
     }
     return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError, focusPin: focusPin, centerRequest: centerRequest, radiusCircle: radiusCircle);
   }

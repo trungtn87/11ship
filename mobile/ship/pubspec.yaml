@@ -11,6 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  n11_native_ios:
+    path: ../packages/n11_native_ios
   n11_shared:
     path: ../packages/n11_shared
   n11_m14:

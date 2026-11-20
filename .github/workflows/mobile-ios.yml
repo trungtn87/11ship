@@ -1,0 +1,86 @@
+name: Mobile iOS
+
+# Builds the two iOS apps for the SIMULATOR without signing (compile check of the Flutter app and the n11_native_ios plugin). Run it by hand: macOS minutes
+# cost ten times Linux minutes. It makes no IPA, uses no secret and publishes nothing; signing and TestFlight are a later, separate step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Server origin the build talks to (https only). Empty = config/endpoints.json (the VPS).'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ios:
+    name: ${{ matrix.label }} iOS (simulator)
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: food
+            label: 11Food
+            app_id: vn.eleven.food
+          - app: ship
+            label: 11Ship
+            app_id: vn.eleven.ship
+    env:
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Central endpoints (config/endpoints.json)
+        env:
+          INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
+          VAR_DEVICE_ENVIRONMENT: ${{ vars.N11_DEVICE_ENVIRONMENT }}
+        run: |
+          set -euo pipefail
+          api="${INPUT_API_BASE_URL:-$(jq -er .api_origin config/endpoints.json)}"
+          device="${VAR_DEVICE_ENVIRONMENT:-$(jq -er .device_environment config/endpoints.json)}"
+          if ! printf '%s' "$api" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+            echo "::error title=API_BASE_URL::must be a plain https origin (no path, query or credentials)"; exit 1
+          fi
+          echo "API_BASE_URL=$api" >> "$GITHUB_ENV"
+          echo "DEVICE_ENVIRONMENT=$device" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: |
+          for d in mobile/packages/n11_shared mobile/${{ matrix.app }}; do
+            (cd "$d" && flutter pub get)
+          done
+
+      - name: Prepare the iOS project
+        run: mobile/tool/prepare-ios.sh ${{ matrix.app }}
+
+      - name: Build for the simulator (no signing)
+        run: |
+          cd mobile/${{ matrix.app }}
+          flutter build ios --simulator --debug --no-codesign \
+            --dart-define=M14_OFFLINE_MAP=false \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=APP_ID="${{ matrix.app_id }}" \
+            --dart-define=APP_VERSION="0.0.0-ios-check" \
+            --dart-define=BUILD_NUMBER="1" \
+            --dart-define=CI_RUN="${{ github.run_id }}" \
+            --dart-define=SOURCE_SHA="$SOURCE_SHA" \
+            --dart-define=SIGNING_MODE="unsigned" \
+            --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT"
