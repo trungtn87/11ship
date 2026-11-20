@@ -400,6 +400,26 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     if (mounted) await c.freshness.reload();
   }
 
+  /// Issue #411: "Xem tất cả" of "Quán gần bạn" opens the full list (no 5-card limit). Coming back keeps Home's scroll position
+  /// and the loaded pages (no reload here).
+  Future<void> _openNearbyAll() async {
+    await Navigator.of(context).push(
+      n11Route(
+        NearbyShopsAllScreen(
+          controller: c,
+          position: _position,
+          onOpenShop: (ShopCardData s) => _openShop(
+            context,
+            widget.publicApi,
+            s,
+            ratings: widget.ratings,
+            onReturn: c.freshness.reload,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -784,52 +804,31 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
             );
           }
         } else {
-          // Issue #385: two shops per row, in the server order. One row is one list item, so the list still scrolls once.
-          final List<ShopCardData> shops = c.shops;
-          for (int i = 0; i < shops.length; i += 2) {
-            HomeShopTile tile(ShopCardData s) => HomeShopTile(
-                  key: Key('shop-${s.shopId}'),
-                  shop: s,
-                  stale: c.stale,
-                  customerLocation: _position.fix,
-                  distance: c.distances.of(s, _position.fix),
-                  locating: _position.loading,
-                  onTap: () => _openShop(
-                    context,
-                    widget.publicApi,
-                    s,
-                    ratings: widget.ratings,
-                    onReturn: c.freshness.reload,
-                  ),
-                );
-            out.add(
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: tile(shops[i])),
-                    const SizedBox(width: N11Space.gap3),
-                    Expanded(
-                      child: i + 1 < shops.length
-                          ? tile(shops[i + 1])
-                          : const SizedBox.shrink(),
-                    ),
-                  ],
-                ),
+          // Issue #411: one horizontal row of at most 5 cards, then "Xem tất cả" (the full list opens with every loaded shop).
+          out.add(
+            HomeShopSection(
+              sectionId: 'home-nearby',
+              shops: nearbyByRoadDistance(
+                c.shops,
+                (ShopCardData s) => c.distances.of(s, _position.fix),
               ),
-            );
-          }
-          if (c.hasMore) {
-            out.add(
-              N11Button(
-                key: const Key('home-more'),
-                label: c.loadingMore ? 'Đang tải…' : 'Xem thêm',
-                kind: ButtonKind.secondary,
-                loading: c.loadingMore,
-                onPressed: c.loadingMore ? null : c.loadMore,
+              distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
+              customerLocation: _position.fix,
+              locating: _position.loading,
+              stale: c.stale,
+              note: _position.fix == null && !_position.loading
+                  ? 'Bật vị trí để xem quán theo khoảng cách đường đi.'
+                  : null,
+              onOpenShop: (ShopCardData s) => _openShop(
+                context,
+                widget.publicApi,
+                s,
+                ratings: widget.ratings,
+                onReturn: c.freshness.reload,
               ),
-            );
-          }
+              onSeeAll: _openNearbyAll,
+            ),
+          );
         }
     }
     return out;
@@ -1044,6 +1043,297 @@ class HomeShopTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Issue #411: a Home carousel shows at most this many shop cards; the card after them is "Xem tất cả" (the full list of that section).
+const int kHomeCarouselCardLimit = 5;
+
+/// Issue #411: "Quán nổi bật" is NOT shown yet. No featured / ranking criterion exists in the backend or the app (Owner question in the issue).
+/// The shared [HomeShopSection] is ready for it; turn this on only with the approved criterion and its data.
+const bool kHomeFeaturedShopsEnabled = false;
+
+/// Issue #411 "Quán gần bạn": shops with a known ROAD distance come first, nearest first; the rest keep the server order. Ties and unknown
+/// distances keep the server order (stable), and no straight-line distance is used.
+List<ShopCardData> nearbyByRoadDistance(
+  List<ShopCardData> shops,
+  RouteDistance Function(ShopCardData shop) distanceOf,
+) {
+  final List<RouteDistance> distances = <RouteDistance>[for (final ShopCardData s in shops) distanceOf(s)];
+  int? metersAt(int i) => distances[i].kind == RouteDistanceKind.route ? distances[i].meters : null;
+  final List<int> order = List<int>.generate(shops.length, (int i) => i);
+  order.sort((int a, int b) {
+    final int? ma = metersAt(a);
+    final int? mb = metersAt(b);
+    if (ma != null && mb != null && ma != mb) return ma.compareTo(mb);
+    if ((ma == null) != (mb == null)) return ma == null ? 1 : -1;
+    return a.compareTo(b);
+  });
+  return <ShopCardData>[for (final int i in order) shops[i]];
+}
+
+/// Issue #411: one Home section of "Quán gần bạn" / "Quán nổi bật" — ONE horizontal row of at most [kHomeCarouselCardLimit] shop cards, then the
+/// "Xem tất cả" card. The next card peeks past the edge so the row reads as scrollable. It never grows downward; the full list opens with "Xem tất cả".
+/// The title belongs to the caller (Home), so the same widget serves every section.
+class HomeShopSection extends StatelessWidget {
+  const HomeShopSection({
+    super.key,
+    required this.sectionId,
+    required this.shops,
+    required this.onOpenShop,
+    required this.onSeeAll,
+    this.distanceOf,
+    this.customerLocation,
+    this.locating = false,
+    this.stale = false,
+    this.note,
+  });
+
+  /// Keys only: `<sectionId>-carousel`, `<sectionId>-see-all`, `<sectionId>-note`.
+  final String sectionId;
+  final List<ShopCardData> shops;
+  final void Function(ShopCardData shop) onOpenShop;
+  final VoidCallback onSeeAll;
+  final RouteDistance Function(ShopCardData shop)? distanceOf;
+  final LocationFix? customerLocation;
+  final bool locating;
+  final bool stale;
+
+  /// A short honest line above the row (for example "turn on location"), or null.
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ShopCardData> shown = shops.take(kHomeCarouselCardLimit).toList();
+    return Column(
+      key: Key('$sectionId-section'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: N11Space.gap2),
+            child: Text(note!, key: Key('$sectionId-note'), style: N11Text.caption),
+          ),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            // Two cards and a peek of the third on a 320-390 px phone; the width stays inside the page padding.
+            final double cardWidth = (box.maxWidth * 0.56).clamp(150.0, 190.0).toDouble();
+            return SingleChildScrollView(
+              key: Key('$sectionId-carousel'),
+              scrollDirection: Axis.horizontal,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final ShopCardData s in shown) ...<Widget>[
+                      SizedBox(
+                        width: cardWidth,
+                        child: HomeShopTile(
+                          key: Key('shop-${s.shopId}'),
+                          shop: s,
+                          stale: stale,
+                          customerLocation: customerLocation,
+                          locating: locating,
+                          distance: distanceOf?.call(s) ?? RouteDistance.noPosition,
+                          onTap: () => onOpenShop(s),
+                        ),
+                      ),
+                      const SizedBox(width: N11Space.gap3),
+                    ],
+                    SizedBox(
+                      width: 120,
+                      child: _SeeAllCard(key: Key('$sectionId-see-all'), onTap: onSeeAll),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// The last card of a Home carousel: a plain white card with the yellow arrow, same border and radius as a shop tile.
+class _SeeAllCard extends StatelessWidget {
+  const _SeeAllCard({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Xem tất cả',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Material(
+        color: N11Colors.white,
+        borderRadius: BorderRadius.circular(N11V5.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(N11V5.cardRadius),
+          child: Container(
+            padding: const EdgeInsets.all(N11Space.gap2),
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle),
+                  child: const Icon(Icons.arrow_forward, size: 22, color: N11Colors.black),
+                ),
+                const SizedBox(height: N11Space.gap2),
+                Text(
+                  'Xem tất cả',
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: N11Text.caption.copyWith(fontSize: 13, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue #411 "Xem tất cả" of "Quán gần bạn": every loaded shop of the same list as Home, two per row, scrolling DOWN (no 5-card limit).
+/// The next page loads near the end of the list or with "Xem thêm". "Quay lại" returns to Home, which keeps its scroll position.
+class NearbyShopsAllScreen extends StatefulWidget {
+  const NearbyShopsAllScreen({
+    super.key,
+    required this.controller,
+    required this.position,
+    required this.onOpenShop,
+  });
+
+  final DiscoveryController controller;
+  final DiscoveryPosition position;
+  final void Function(ShopCardData shop) onOpenShop;
+
+  @override
+  State<NearbyShopsAllScreen> createState() => _NearbyShopsAllScreenState();
+}
+
+class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
+  final ScrollController _scroll = ScrollController();
+  DiscoveryController get c => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_maybeLoadMore);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _maybeLoadMore() {
+    if (!_scroll.hasClients) return;
+    final ScrollPosition p = _scroll.position;
+    if (p.pixels >= p.maxScrollExtent - 240) unawaited(c.loadMore());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: const Key('nearby-all-screen'),
+      backgroundColor: N11Colors.white,
+      appBar: AppBar(
+        title: const Text('Quán gần bạn'),
+        backgroundColor: N11Colors.white,
+        foregroundColor: N11Colors.black,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: Listenable.merge(<Listenable>[c, widget.position, c.distances]),
+          builder: (BuildContext context, Widget? child) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) unawaited(c.distances.want(c.shops, widget.position.fix));
+            });
+            final List<ShopCardData> shops = nearbyByRoadDistance(
+              c.shops,
+              (ShopCardData s) => c.distances.of(s, widget.position.fix),
+            );
+            if (shops.isEmpty && c.listState == DiscoveryLoad.ready) {
+              return const EmptyState(
+                key: Key('nearby-all-empty'),
+                icon: Icons.place_outlined,
+                title: 'Chưa có quán nào',
+                text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn.',
+              );
+            }
+            final int rows = (shops.length + 1) ~/ 2;
+            return ListView.builder(
+              key: const Key('nearby-all-list'),
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, N11Space.gap8),
+              itemCount: rows + 1,
+              itemBuilder: (BuildContext context, int index) {
+                if (index == rows) return _footer();
+                final int i = index * 2;
+                HomeShopTile tile(ShopCardData s) => HomeShopTile(
+                      key: Key('shop-${s.shopId}'),
+                      shop: s,
+                      stale: c.stale,
+                      customerLocation: widget.position.fix,
+                      distance: c.distances.of(s, widget.position.fix),
+                      locating: widget.position.loading,
+                      onTap: () => widget.onOpenShop(s),
+                    );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(child: tile(shops[i])),
+                        const SizedBox(width: N11Space.gap3),
+                        Expanded(child: i + 1 < shops.length ? tile(shops[i + 1]) : const SizedBox.shrink()),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _footer() {
+    if (c.loadingMore) {
+      return const Padding(
+        key: Key('nearby-all-loading'),
+        padding: EdgeInsets.symmetric(vertical: N11Space.gap3),
+        child: Center(child: Text('Đang tải…', style: N11Text.caption)),
+      );
+    }
+    if (c.hasMore) {
+      return N11Button(
+        key: const Key('nearby-all-more'),
+        label: 'Xem thêm',
+        kind: ButtonKind.secondary,
+        onPressed: c.loadMore,
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
