@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../account/account_views.dart';
 import '../account/session_guard.dart';
 import '../tokens.dart';
 import '../m07/m07_widgets.dart' show KeyValueRows;
 import '../widgets/components.dart';
+import 'vietqr.dart';
 import 'wallet_models.dart';
 import 'wallet_http.dart';
 import '../finance/finance_views.dart';
@@ -593,10 +595,12 @@ class _TopupAmountScreenState extends State<TopupAmountScreen> {
   }
 }
 
+/// The typed-by-hand transfer details. Every field has its own copy button; the transfer content is copied character for character.
 class _TransferCard extends StatelessWidget {
-  const _TransferCard({required this.info});
+  const _TransferCard({required this.info, required this.amount});
 
   final BankTransferInfo info;
+  final int amount;
 
   @override
   Widget build(BuildContext context) {
@@ -605,9 +609,10 @@ class _TransferCard extends StatelessWidget {
         key: const Key('topup-transfer-card'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _KV('Ngân hàng', info.bankName),
+          _CopyRow(label: 'Ngân hàng', value: info.bankName, copyKey: const Key('copy-bank')),
           _CopyRow(label: 'Số tài khoản', value: info.accountNumber, copyKey: const Key('copy-account')),
-          _KV('Chủ tài khoản', info.holder),
+          _CopyRow(label: 'Chủ tài khoản', value: info.holder, copyKey: const Key('copy-holder')),
+          _CopyRow(label: 'Số tiền', value: amount.toString(), display: formatWalletVnd(amount), copyKey: const Key('copy-amount')),
           if (info.content != null) _CopyRow(label: 'Nội dung chuyển khoản', value: info.content!, copyKey: const Key('copy-content')),
         ],
       ),
@@ -616,11 +621,16 @@ class _TransferCard extends StatelessWidget {
 }
 
 class _CopyRow extends StatelessWidget {
-  const _CopyRow({required this.label, required this.value, required this.copyKey});
+  const _CopyRow({required this.label, required this.value, required this.copyKey, this.display});
 
   final String label;
+
+  /// The exact text copied to the clipboard (no spaces or formatting added).
   final String value;
   final Key copyKey;
+
+  /// What is drawn when it differs from [value], for example a grouped amount; the copy always uses [value].
+  final String? display;
 
   @override
   Widget build(BuildContext context) {
@@ -633,7 +643,7 @@ class _CopyRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(label, style: N11Text.caption),
-                Text(value, style: N11Text.bodyStrong),
+                Text(display ?? value, style: N11Text.bodyStrong),
               ],
             ),
           ),
@@ -873,6 +883,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
                 ],
               ),
             ),
+            if (r.status == TopupStatus.confirmed) _NewBalance(source: source, request: r),
             if (r.status == TopupStatus.pending) _PendingTransfer(source: source, request: r),
             if (source is HttpWalletSource) N11Button(label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),
             if (_error != null) N11Banner(kind: BannerKind.error, title: 'Chưa hủy được', text: _error),
@@ -902,13 +913,61 @@ class _PendingTransfer extends StatelessWidget {
         WalletLoader<BankTransferInfo>(
           key: ValueKey<String>('transfer-${request.code}'),
           load: source.transferInfo,
-          builder: (BankTransferInfo info) => _TransferCard(
-            info: BankTransferInfo(bankName: info.bankName, accountNumber: info.accountNumber, holder: info.holder, content: request.transferCode ?? info.content),
-          ),
+          builder: (BankTransferInfo info) {
+            final String? content = request.transferCode ?? info.content;
+            final String? payload = vietQrForTopup(info, request);
+            return vstack(<Widget>[
+              if (source.isSample) const _QrPlaceholder() else if (payload != null) _VietQrImage(payload: payload) else const ReasonNote('Chưa tạo được mã QR cho tài khoản này. Hãy chuyển khoản theo thông tin bên dưới.', key: Key('topup-no-qr')),
+              _TransferCard(info: BankTransferInfo(bankName: info.bankName, accountNumber: info.accountNumber, holder: info.holder, content: content, bankCode: info.bankCode), amount: request.amount),
+              if (request.transferCode != null)
+                const ReasonNote(
+                  'Phải nhập đúng nội dung chuyển khoản và đúng số tiền thì hệ thống mới nhận diện được. Không ghi số điện thoại hay thông tin cá nhân vào nội dung.',
+                  key: Key('topup-transfer-note'),
+                ),
+            ]);
+          },
         ),
-        if (request.transferCode != null) const ReasonNote('Nhập đúng nội dung chuyển khoản ở trên để Admin đối chiếu nhanh. Không ghi số điện thoại hay thông tin cá nhân vào nội dung.', key: Key('topup-transfer-note')),
-        source.isSample ? const _QrPlaceholder() : const ReasonNote('Mã QR chưa được hỗ trợ ở phiên bản này. Hãy chuyển khoản theo thông tin ở trên.', key: Key('topup-no-qr')),
       ],
+    );
+  }
+}
+
+/// The VietQR of a pending top-up, drawn from the payload built on the real account, amount and NAP code.
+class _VietQrImage extends StatelessWidget {
+  const _VietQrImage({required this.payload});
+
+  final String payload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('topup-vietqr'),
+      padding: const EdgeInsets.all(N11Space.gap4),
+      decoration: BoxDecoration(color: N11Colors.white, border: Border.all(color: N11Colors.lineStrong), borderRadius: BorderRadius.circular(kRadiusCard)),
+      child: Column(
+        children: <Widget>[
+          QrImageView(data: payload, version: QrVersions.auto, size: 220, backgroundColor: N11Colors.white),
+          const SizedBox(height: N11Space.gap2),
+          const Text('Quét bằng app ngân hàng, hoặc chép tay các dòng bên dưới.', textAlign: TextAlign.center, style: N11Text.caption),
+        ],
+      ),
+    );
+  }
+}
+
+/// The balance after a confirmed top-up, read from the wallet so the screen shows the figure the server now holds.
+class _NewBalance extends StatelessWidget {
+  const _NewBalance({required this.source, required this.request});
+
+  final WalletSource source;
+  final TopupRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return WalletLoader<Wallet>(
+      key: ValueKey<String>('balance-after-${request.code}'),
+      load: source.wallet,
+      builder: (Wallet wallet) => N11Card(child: _KV('Số dư ví hiện tại', formatWalletVnd(wallet.available), valueKey: const Key('topup-new-balance'))),
     );
   }
 }

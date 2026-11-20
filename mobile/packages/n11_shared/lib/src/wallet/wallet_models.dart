@@ -79,11 +79,14 @@ String withdrawalStatusLabel(WithdrawalStatus status) => switch (status) {
 
 /// Where the shipper sends money when topping up (the system account) and the content to type.
 class BankTransferInfo {
-  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, this.content});
+  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, this.content, this.bankCode});
 
   final String bankName;
   final String accountNumber;
   final String holder;
+
+  /// The server's bank code of the receiving account (for example "MB"), used to choose the VietQR bank; null when the source has none.
+  final String? bankCode;
 
   /// The transfer content to type, ONLY when the server defines one. A real server defines none today (the Admin matches the transfer by
   /// the bank statement), so a real build shows no content row rather than an invented code.
