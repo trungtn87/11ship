@@ -40,11 +40,6 @@ class MapPinsView(context: Context, private val map: () -> MapLibreMap?): View(c
             paint.style=Paint.Style.FILL; paint.color=Color.rgb(38,60,70)
             canvas.drawText(label.text,p.x,p.y,paint)
         }
-        if(pins.isNotEmpty()) {
-            val f=projection.toScreenLocation(LatLng(pins[0].latitude,pins[0].longitude))
-            val off=f.x < -50*scale || f.x>width+50*scale || f.y < -50*scale || f.y>height+50*scale
-            android.util.Log.d("M14DBG","pinsDraw n=${pins.size} first=(${f.x},${f.y}) view=${width}x${height} skippedOffscreen=$off zoom=${zoom}")
-        }
         for(pin in pins) {
             val p=projection.toScreenLocation(LatLng(pin.latitude,pin.longitude))
             if(p.x < -50*scale || p.x>width+50*scale || p.y < -50*scale || p.y>height+50*scale) continue
