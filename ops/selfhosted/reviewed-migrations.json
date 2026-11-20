@@ -100,6 +100,10 @@
     "1797897600000_route-snapshots-review-round2": {
       "sha256": "8f4ec0967859ac543f68094eaecc6f58659c393fc9ac13fd1068c25e4365cf62",
       "review": "PR #346 (P6-2 review rounds 2 and 3; Codex MEDIUM-1, MEDIUM-2, MEDIUM-3, LOW-4, LOW-5); compatibility review 2026-11-14, drafted by the implementer for Lead confirmation: Up adds a unique content_key to app.route_snapshots (backfilled once inside the migration with the append-only trigger disabled for that statement; precondition: no duplicate content in an existing database), a BEFORE INSERT trigger that sets it, a retention function app.purge_unreferenced_route_snapshots (SECURITY DEFINER, EXECUTE only for the runtime role, PUBLIC revoked, fixed 7-day floor), a row guard that refuses to delete a referenced snapshot, and replaces the pointer guard of Orders and deliveries with a guard that checks the pointer before any early return: a non-NULL pointer may change only in an approved session; clearing it to NULL is allowed only inside a session together with the distance (text-only address change and edit to an unpinned address). Existing rows and distances are unchanged; the previous backend neither writes these pointers nor changes distances. Down is for disposable databases only."
+    },
+    "1797984000000_ios-password-client-sessions": {
+      "sha256": "7503e0ecf4037e3f4f61934a0d163a947b6cb679ed1b3a2678c4914447f08681",
+      "review": "PR #410 (G1 iOS). Replaces only the CHECK sessions_password_client_ck so PASSWORD sessions may also carry platform IOS (apps FOOD/SHIP); it widens the rule, adds no column or data, and existing rows all satisfy it. The previous backend never writes platform IOS, so it is unaffected. Down revokes live IOS PASSWORD sessions and restores the old rule as NOT VALID; for disposable databases only."
     }
   }
 }
