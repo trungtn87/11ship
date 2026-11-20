@@ -32,8 +32,8 @@ class M14OfflineMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return const Center(child: Text('Bản đồ offline Cao Bằng hiện chỉ có trên Android'));
+    if (kIsWeb || (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS)) {
+      return const Center(child: Text('Bản đồ offline Cao Bằng chỉ có trên điện thoại'));
     }
     return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError, focusPin: focusPin, centerRequest: centerRequest, radiusCircle: radiusCircle);
   }
@@ -72,13 +72,15 @@ class _NativeMapState extends State<_NativeMap> {
     super.dispose();
   }
   @override
-  Widget build(BuildContext context) => AndroidView(
-    viewType: 'vn.eleven/m14/map',
+  Widget build(BuildContext context) {
     // A bounded map card must receive pan/pinch gestures even when embedded in a ScrollView.
-    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)},
-    creationParams: _data,
-    creationParamsCodec: const StandardMessageCodec(),
-    onPlatformViewCreated: (int id) {
+    final Set<Factory<OneSequenceGestureRecognizer>> gestures = <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)};
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? UiKitView(viewType: 'vn.eleven/m14/map', gestureRecognizers: gestures, creationParams: _data, creationParamsCodec: const StandardMessageCodec(), onPlatformViewCreated: _created)
+        : AndroidView(viewType: 'vn.eleven/m14/map', gestureRecognizers: gestures, creationParams: _data, creationParamsCodec: const StandardMessageCodec(), onPlatformViewCreated: _created);
+  }
+
+  void _created(int id) {
       _channel = MethodChannel('vn.eleven/m14/map/$id');
       _channel!.setMethodCallHandler((MethodCall call) async {
         if (!mounted) return;
@@ -95,6 +97,5 @@ class _NativeMapState extends State<_NativeMap> {
         if (state?['error'] is String) { widget.onError?.call(state!['error'] as String); }
         else if (state?['ready'] == true) { widget.onReady?.call(); }
       }).catchError((Object error) { if (mounted) widget.onError?.call('Không mở được bản đồ Cao Bằng'); });
-    },
-  );
+  }
 }

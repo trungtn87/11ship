@@ -15,6 +15,8 @@ on:
       - '.github/workflows/mobile-ios.yml'
       - 'mobile/tool/prepare-ios.sh'
       - 'mobile/packages/n11_native_ios/**'
+      - 'mobile/packages/n11_m14_map/ios/**'
+      - 'mobile/packages/n11_m14_map/lib/**'
 
 permissions:
   contents: read
@@ -82,7 +84,7 @@ jobs:
         run: |
           cd mobile/${{ matrix.app }}
           flutter build ios --simulator --debug --no-codesign \
-            --dart-define=M14_OFFLINE_MAP=false \
+            --dart-define=M14_OFFLINE_MAP=true \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=APP_ID="${{ matrix.app_id }}" \
             --dart-define=APP_VERSION="0.0.0-ios-check" \

@@ -35,6 +35,21 @@ cp -R "$tmp/$app/ios" "$dest"
 # The bundle id must be the App ID the owner registered with Apple, for the app and its test target alike.
 grep -q "PRODUCT_BUNDLE_IDENTIFIER = $app_id;" "$dest/Runner.xcodeproj/project.pbxproj" || { echo "bundle id $app_id not found in the generated project" >&2; exit 1; }
 
+# The Cao Bang offline map package: ONE committed copy (gps-test assets), copied into the map plugin so CocoaPods bundles it. Checked against its manifest first.
+map_src="$root/gps-test/app/src/main/assets/caobang"
+map_dst="$root/packages/n11_m14_map/ios/caobang"
+python3 - "$map_src" <<'PYCODE'
+import hashlib, json, os, sys
+root = sys.argv[1]
+manifest = json.load(open(os.path.join(root, 'manifest.json')))
+for name, digest in manifest['sha256'].items():
+    assert hashlib.sha256(open(os.path.join(root, name), 'rb').read()).hexdigest() == digest, name + ' differs from the manifest'
+for name in ('map.geojson', 'style.json'):
+    assert name in manifest['sha256'], name + ' missing checksum'
+PYCODE
+rm -rf "$map_dst"
+cp -R "$map_src" "$map_dst"
+
 plist="$dest/Runner/Info.plist"
 set_key() { # key type value
   /usr/libexec/PlistBuddy -c "Delete :$1" "$plist" 2>/dev/null || true

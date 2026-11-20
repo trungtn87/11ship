@@ -18,3 +18,5 @@ flutter:
       android:
         package: vn.eleven.m14.flutter.map
         pluginClass: M14MapPlugin
+      ios:
+        pluginClass: M14MapPlugin
