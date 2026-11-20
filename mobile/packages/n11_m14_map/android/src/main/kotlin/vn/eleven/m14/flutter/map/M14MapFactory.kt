@@ -138,7 +138,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             val important=pins.pins.map { LatLng(it.latitude,it.longitude) } + coords
             if(important.isNotEmpty()) {
                 // A person who already panned/pinched before the first fix keeps their view; the fit is only for a map nobody has touched.
-                if(!userMoved) fitImportant(current, important, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M)
+                if(!userMoved) { fitImportant(current, important, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); redraw(current) }
                 initialCameraApplied=true
             }
         }
@@ -149,6 +149,7 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
                 focusedPoint=point
                 if(first && !initialCameraApplied) fitRadius(current, LatLng(pin.latitude,pin.longitude), circle?.radiusM ?: DEFAULT_FIT_RADIUS_M)
                 else current.moveCamera(CameraUpdateFactory.newLatLng(LatLng(pin.latitude,pin.longitude)))
+                redraw(current)
             }
         }
         val requested=(data?.get("center_request") as? Number)?.toInt()?:0
@@ -156,11 +157,16 @@ private class M14MapView(context: Context, id: Int, messenger: BinaryMessenger, 
             centerRequest=requested
             // The explicit "back to my position" button: fit the whole area again, wherever the person had panned to.
             val centre=circle?.let { LatLng(it.lat,it.lon) } ?: pins.pins.firstOrNull()?.let { LatLng(it.latitude,it.longitude) }
-            if(centre!=null) { fitRadius(current, centre, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); userMoved=false }
+            if(centre!=null) { fitRadius(current, centre, circle?.radiusM ?: DEFAULT_FIT_RADIUS_M); userMoved=false; redraw(current) }
         }
         current.clear()
         if(coords.size>1) current.addPolyline(PolylineOptions().addAll(coords).color(Color.rgb(25,110,230)).width(5f))
         if(circle!=null) drawRadius(current, circle)
+    }
+    /** Redraw the pin overlay right after a camera command so pins are drawn for the new viewport on the first tap. */
+    private fun redraw(current: MapLibreMap) {
+        pins.invalidate()
+        pins.post { pins.invalidate() }
     }
     /** The receiving area, only when its centre is a usable position (never (0,0), NaN or out of range) and the radius is positive. */
     private fun radiusCircle(): RadiusCircle? {

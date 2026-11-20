@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:food/food_m14.dart';
@@ -175,5 +177,147 @@ void main() {
       expect(find.text('Đã ghim (22.900, 106.900)'), findsOneWidget);
       expect(find.text('Đã ghim (22.700, 106.300)'), findsOneWidget);
     });
+
+    testWidgets('pickup GPS sets only the pickup point, and the form still needs its confirm', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _FakeLocation location = _FakeLocation(<Object>[_fix(22.668, 106.26)]);
+      M07PinPickerBuilder withLocation() => (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) =>
+          FoodPinPickScreen(title: label ?? 'Ghim', initialLat: lat, initialLng: lng, onPick: onPick, mapBuilder: _fakeMap(probe), location: location);
+      await _mount(tester, CustomerCallScreen(source: SampleCustomerDeliverySource(), pinPicker: withLocation()));
+      await tester.tap(find.text('Ghim vị trí lấy hàng (tùy chọn)'));
+      await _nav(tester);
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(probe.pins.single['lat'], 22.668);
+      expect(find.text('Ghim điểm lấy hàng'), findsOneWidget); // still the picker: nothing saved yet
+      await tester.tap(find.byKey(const Key('pin-confirm')));
+      await _nav(tester);
+      expect(find.text('Đã ghim (22.668, 106.260)'), findsOneWidget);
+      expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
+    });
   });
+
+  group('Vị trí hiện tại (one foreground fix, only on the press)', () {
+    testWidgets('no GPS on open; a fix moves only the preview pin; nothing saved until confirm', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _FakeLocation location = _FakeLocation(<Object>[_fix(22.668, 106.26)]);
+      final List<(double, double)> picked = <(double, double)>[];
+      await _mount(tester, FoodPinPickScreen(title: 'Ghim điểm lấy hàng', onPick: (double a, double b) => picked.add((a, b)), location: location, mapBuilder: _fakeMap(probe)));
+      expect(location.calls, 0);
+      expect(probe.pins, isEmpty);
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(location.calls, 1);
+      expect(probe.pins.single['lat'], 22.668);
+      expect(probe.pins.single['lon'], 106.26);
+      expect(find.textContaining('22.66800, 106.26000'), findsOneWidget);
+      expect(_confirm(tester).onPressed, isNotNull);
+      expect(picked, isEmpty);
+      await tester.tap(find.byKey(const Key('pin-confirm')));
+      await tester.pump();
+      expect(picked, <(double, double)>[(22.668, 106.26)]);
+    });
+
+    testWidgets('a refusal shows its reason, saves nothing, keeps the map usable, and a retry can succeed', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _FakeLocation location = _FakeLocation(<Object>[const LocationException(LocationFailure.denied), _fix(22.668, 106.26)]);
+      int picked = 0;
+      await _mount(tester, FoodPinPickScreen(title: 'Ghim', onPick: (double a, double b) => picked++, location: location, mapBuilder: _fakeMap(probe)));
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Chưa được cấp quyền vị trí'), findsOneWidget);
+      expect(probe.pins, isEmpty);
+      expect(_confirm(tester).onPressed, isNull);
+      expect(probe.builds, 1);
+      // A manual tap still works after the refusal.
+      probe.onPoint!(22.7, 106.3, true);
+      await tester.pump();
+      expect(probe.pins.single['lat'], 22.7);
+      expect(find.textContaining('Chưa được cấp quyền vị trí'), findsNothing);
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(probe.pins.single['lat'], 22.668);
+      expect(picked, 0);
+    });
+
+    testWidgets('disabled, timeout and unavailable each say what happened and never invent a point', (WidgetTester tester) async {
+      final List<(LocationFailure, String)> cases = <(LocationFailure, String)>[
+        (LocationFailure.disabled, 'Hãy bật định vị'),
+        (LocationFailure.timeout, 'Chưa lấy được vị trí'),
+        (LocationFailure.unavailable, 'chưa cung cấp vị trí hợp lệ'),
+      ];
+      for (int i = 0; i < cases.length; i++) {
+        final _Probe probe = _Probe();
+        final _FakeLocation location = _FakeLocation(<Object>[LocationException(cases[i].$1)]);
+        await _mount(tester, FoodPinPickScreen(key: ValueKey<int>(i), title: 'Ghim', onPick: (double a, double b) {}, location: location, mapBuilder: _fakeMap(probe)));
+        await tester.tap(find.byKey(const Key('pin-current-location')));
+        await tester.pumpAndSettle();
+        expect(find.textContaining(cases[i].$2), findsOneWidget, reason: cases[i].$1.name);
+        expect(probe.pins, isEmpty, reason: cases[i].$1.name);
+        expect(_confirm(tester).onPressed, isNull, reason: cases[i].$1.name);
+      }
+    });
+
+    testWidgets('a fix outside the Cao Bằng coverage is refused with a message, not pinned', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _FakeLocation location = _FakeLocation(<Object>[_fix(21.0, 105.8)]);
+      await _mount(tester, FoodPinPickScreen(title: 'Ghim', onPick: (double a, double b) {}, location: location, mapBuilder: _fakeMap(probe)));
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('nằm ngoài vùng bản đồ Cao Bằng'), findsOneWidget);
+      expect(probe.pins, isEmpty);
+      expect(_confirm(tester).onPressed, isNull);
+    });
+
+    testWidgets('an existing point is never overwritten on open; only the press replaces the preview', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _FakeLocation location = _FakeLocation(<Object>[_fix(22.668, 106.26)]);
+      await _mount(tester, FoodPinPickScreen(title: 'Ghim', initialLat: 22.65, initialLng: 106.2, onPick: (double a, double b) {}, location: location, mapBuilder: _fakeMap(probe)));
+      expect(location.calls, 0);
+      expect(probe.pins.single['lat'], 22.65);
+      expect(find.textContaining('22.65000, 106.20000'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pumpAndSettle();
+      expect(probe.pins.single['lat'], 22.668);
+    });
+
+    testWidgets('a tap made while the fix is pending wins over the late fix', (WidgetTester tester) async {
+      final _Probe probe = _Probe();
+      final _DelayedLocation location = _DelayedLocation();
+      await _mount(tester, FoodPinPickScreen(title: 'Ghim', onPick: (double a, double b) {}, location: location, mapBuilder: _fakeMap(probe)));
+      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.pump();
+      expect(find.text('Đang lấy vị trí…'), findsOneWidget);
+      probe.onPoint!(22.7, 106.3, true);
+      await tester.pump();
+      location.complete(_fix(22.668, 106.26));
+      await tester.pumpAndSettle();
+      expect(probe.pins.single['lat'], 22.7);
+      expect(find.text('Vị trí hiện tại'), findsOneWidget);
+    });
+  });
+}
+
+LocationFix _fix(double lat, double lng) => LocationFix(latitude: lat, longitude: lng, accuracyMeters: 8, takenAt: DateTime(2026, 11, 19));
+
+/// Answers each call in order (the last answer repeats); records the number of calls.
+class _FakeLocation implements LocationProvider {
+  _FakeLocation(this.answers);
+  final List<Object> answers;
+  int calls = 0;
+  @override
+  Future<LocationFix> currentFix() async {
+    final Object next = answers[calls < answers.length ? calls : answers.length - 1];
+    calls++;
+    if (next is LocationException) throw next;
+    return next as LocationFix;
+  }
+}
+
+/// A fix that arrives only when the test completes it.
+class _DelayedLocation implements LocationProvider {
+  final Completer<LocationFix> _fix = Completer<LocationFix>();
+  void complete(LocationFix fix) => _fix.complete(fix);
+  @override
+  Future<LocationFix> currentFix() => _fix.future;
 }
