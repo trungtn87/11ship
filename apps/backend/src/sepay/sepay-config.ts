@@ -10,6 +10,8 @@ export const SEPAY_BANK_ID = 'MB';
 export interface SepayConfig {
   /** Null when SEPAY_WEBHOOK_SECRET is empty: every webhook is refused. */
   readonly webhookSecret: string | null;
+  /** Null when SEPAY_API_KEY is empty: the reconciliation job does not call SePay at all. */
+  readonly apiKey: string | null;
   /** Automatic credit is OFF unless the variable is exactly "true". */
   readonly autoTopupEnabled: boolean;
   /**
@@ -21,9 +23,11 @@ export interface SepayConfig {
 
 export function readSepayConfig(env: NodeJS.ProcessEnv): SepayConfig {
   const secret = (env.SEPAY_WEBHOOK_SECRET ?? '').trim();
+  const apiKey = (env.SEPAY_API_KEY ?? '').trim();
   const prefix = (env.SEPAY_TRANSFER_PREFIX ?? SEPAY_TRANSFER_PREFIX).trim();
   return {
     webhookSecret: secret.length > 0 ? secret : null,
+    apiKey: apiKey.length > 0 ? apiKey : null,
     autoTopupEnabled: env.SEPAY_AUTO_TOPUP_ENABLED === 'true',
     misconfiguration: prefix === SEPAY_TRANSFER_PREFIX ? null : 'SEPAY_TRANSFER_PREFIX must be NAP',
   };

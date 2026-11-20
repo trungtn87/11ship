@@ -66,6 +66,7 @@ WITH expected(table_name, privileges) AS (
     ('wallet_withdrawals', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('wallet_withdrawal_events', ARRAY['SELECT', 'INSERT']::text[]),
     ('sepay_transfer_inbox', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+    ('sepay_reconciliation_cursor', ARRAY['SELECT', 'UPDATE']::text[]),
     ('wallet_commission_policies', ARRAY['SELECT', 'INSERT']::text[]),
     ('admin_finance_grants', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('shipping_fee_policy_versions', ARRAY['SELECT', 'INSERT']::text[]),

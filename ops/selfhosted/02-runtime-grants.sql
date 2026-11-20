@@ -86,6 +86,8 @@ GRANT SELECT, INSERT ON app.wallet_topups TO ship11_app;
 -- M04 SePay automatic top-up (step 1): the verified webhook inbox. The runtime role records each event (INSERT) and sets its outcome (UPDATE, a trigger
 -- refuses any change of identity and any move off CREDITED or IGNORED). Never DELETE: a trigger refuses it for every role.
 GRANT SELECT, INSERT, UPDATE ON app.sepay_transfer_inbox TO ship11_app;
+-- M04 SePay reconciliation (step 2): the runtime reads and advances the one cursor row (the migration seeds it; no INSERT, no DELETE).
+GRANT SELECT, UPDATE ON app.sepay_reconciliation_cursor TO ship11_app;
 -- M04-B2.2a: finance rights of the administration. SYSTEM gives (INSERT) and takes back (UPDATE) each right; never DELETE. Default deny: no row = no right.
 GRANT SELECT, INSERT, UPDATE ON app.admin_finance_grants TO ship11_app;
 -- M04-C: the withdrawal. The Shipper creates a request (INSERT) and the Admin / the Shipper move it along the state machine (UPDATE, guarded by a trigger; never DELETE). The

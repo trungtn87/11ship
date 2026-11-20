@@ -1,125 +1,8 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from '@jest/globals';
 import { AppError, TechnicalError } from '../common/app-errors';
-import { TransactionContext } from '../transaction/transaction-context';
 import { SepayWebhookService } from './sepay-webhook.service';
-
-// The webhook service is driven against an in-memory store that behaves like the tables it stands for: a request is PENDING until it is
-// resolved, a bank record is unique per (bank, account, canonical id), an inbox event is unique per webhook id. The real SQL and its
-// constraints are proven by the integration spec on a real schema; this spec proves the decisions and the order of the calls.
-
-const SECRET = 'test-only-secret-not-a-real-key';
-const NOW = 1_800_000_000;
-const CODE = 'NAPA1B2C3D4E5';
-const REQUEST_ID = 'a1b2c3d4-e5f6-4789-8abc-0123456789ab';
-const WALLET_ID = '11111111-1111-4111-8111-111111111111';
-const DRIVER_ID = '22222222-2222-4222-8222-222222222222';
-const ACCOUNT_ID = '33333333-3333-4333-8333-333333333333';
-
-interface Store {
-  requestState: 'PENDING' | 'CONFIRMED';
-  requestVersion: number;
-  requestAmount: bigint;
-  driverStatus: string;
-  accountCanReceive: boolean;
-  accountExists: boolean;
-  bankRecords: Set<string>;
-  inbox: Map<number, { state: string; reason: string | null; topupRequestId: string | null }>;
-  topups: number;
-  resolvedBy: unknown[];
-  auditRows: number;
-  outboxRows: number;
-  creditCalls: unknown[];
-  creditError?: unknown;
-}
-
-function freshStore(overrides: Partial<Store> = {}): Store {
-  return {
-    requestState: 'PENDING',
-    requestVersion: 1,
-    requestAmount: 150000n,
-    driverStatus: 'ACTIVE',
-    accountCanReceive: true,
-    accountExists: true,
-    bankRecords: new Set(),
-    inbox: new Map(),
-    topups: 0,
-    resolvedBy: [],
-    auditRows: 0,
-    outboxRows: 0,
-    creditCalls: [],
-    ...overrides,
-  };
-}
-
-function buildService(store: Store): { service: SepayWebhookService; transactions: { count: number } } {
-  const transactions = { count: 0 };
-  const context = {} as TransactionContext;
-  const service = new SepayWebhookService(
-    {
-      withTransaction: async (work: (c: TransactionContext) => Promise<unknown>) => {
-        transactions.count += 1;
-        // A real transaction: a throw from inside the work rolls every change of this call back, so the store is restored from a snapshot.
-        const snapshot = {
-          inbox: new Map(store.inbox),
-          bankRecords: new Set(store.bankRecords),
-          topups: store.topups,
-          requestState: store.requestState,
-          requestVersion: store.requestVersion,
-          resolvedBy: [...store.resolvedBy],
-          auditRows: store.auditRows,
-          outboxRows: store.outboxRows,
-        };
-        try {
-          return await work(context);
-        } catch (error) {
-          Object.assign(store, snapshot);
-          throw error;
-        }
-      },
-    } as never,
-    {
-      insertReceived: async (_c: unknown, event: { webhookEventId: number }) => {
-        if (store.inbox.has(event.webhookEventId)) return false;
-        store.inbox.set(event.webhookEventId, { state: 'RECEIVED', reason: null, topupRequestId: null });
-        return true;
-      },
-      finish: async (_c: unknown, id: number, state: string, reason: string | null, topupRequestId: string | null) => {
-        store.inbox.set(id, { state, reason, topupRequestId });
-      },
-    } as never,
-    {
-      findReceivingAccount: async () => (store.accountExists ? { systemAccountId: ACCOUNT_ID, canReceive: store.accountCanReceive } : undefined),
-      findRequestByCode: async (_c: unknown, code: string) => (code === CODE ? { requestId: REQUEST_ID, walletId: WALLET_ID, driverId: DRIVER_ID } : undefined),
-      bankRecordExists: async (_c: unknown, _bank: string, _account: string, canonical: string) => store.bankRecords.has(canonical),
-    } as never,
-    { lockById: async () => ({ driverId: DRIVER_ID, status: store.driverStatus }) } as never,
-    {
-      lockWalletOf: async () => true,
-      creditTopup: async (_c: unknown, input: { settledBy: unknown; canonicalTransactionId: string; actualAmountVnd: bigint }) => {
-        store.creditCalls.push(input);
-        if (store.creditError !== undefined) throw store.creditError;
-        if (store.bankRecords.has(input.canonicalTransactionId)) throw new AppError('BANK_TRANSACTION_ALREADY_RECORDED');
-        store.bankRecords.add(input.canonicalTransactionId);
-        store.topups += 1;
-        return { topupId: 't', sequenceNo: 1, balanceAfterVnd: input.actualAmountVnd };
-      },
-    } as never,
-    {
-      lockById: async () => ({ requestId: REQUEST_ID, walletId: WALLET_ID, driverId: DRIVER_ID, state: store.requestState, version: store.requestVersion, amountRequestedVnd: store.requestAmount }),
-      resolve: async (_c: unknown, _id: string, expected: number, state: string, settler: unknown) => {
-        if (store.requestState !== 'PENDING' || store.requestVersion !== expected) return undefined;
-        store.requestState = state as 'CONFIRMED';
-        store.requestVersion += 1;
-        store.resolvedBy.push(settler);
-        return { state, version: store.requestVersion };
-      },
-    } as never,
-    { append: async () => { store.auditRows += 1; } } as never,
-    { append: async () => { store.outboxRows += 1; } } as never,
-  );
-  return { service, transactions };
-}
+import { buildService, CODE, freshStore, NOW, REQUEST_ID, SECRET } from './sepay-test-harness';
 
 function body(overrides: Record<string, unknown> = {}): Buffer {
   return Buffer.from(
@@ -175,13 +58,14 @@ describe('SePay webhook service: the automatic credit decision', () => {
     expect(store.topups).toBe(1);
   });
 
-  it('a DIFFERENT webhook id for the same bank transaction cannot credit twice (the request is no longer pending)', async () => {
+  it('a DIFFERENT webhook id for the same bank transfer is the same transfer: no second inbox row and no second credit', async () => {
     const store = freshStore();
     const { service } = buildService(store);
     await receive(service, body({ id: 1001 }));
-    await receive(service, body({ id: 1002 }));
+    const again = await receive(service, body({ id: 1002 }));
+    expect(again).toEqual({ status: 200, body: { success: true } });
     expect(store.topups).toBe(1);
-    expect(store.inbox.get(1002)).toEqual({ state: 'NEEDS_ADMIN', reason: 'REQUEST_NOT_PENDING', topupRequestId: null });
+    expect(store.inbox.has(1002)).toBe(false);
   });
 
   it('a second request sharing the bank transaction identity is held as a duplicate, never credited', async () => {

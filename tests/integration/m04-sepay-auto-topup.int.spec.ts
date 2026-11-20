@@ -5,6 +5,7 @@ import { AuditWriter } from '../../apps/backend/src/audit/audit-writer';
 import { DriverRepository } from '../../apps/backend/src/driver/driver-repository';
 import { OutboxWriter } from '../../apps/backend/src/outbox/outbox-writer';
 import { SepaySettlementRepository } from '../../apps/backend/src/sepay/sepay-settlement-repository';
+import { SepaySettlementService } from '../../apps/backend/src/sepay/sepay-settlement-service';
 import { SepayWebhookService } from '../../apps/backend/src/sepay/sepay-webhook.service';
 import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
 import { topupTransferCodeOf } from '../../apps/backend/src/wallet-topup/topup-transfer-code';
@@ -42,8 +43,7 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
   function serviceOver(connection: PoolClient): SepayWebhookService {
     const context = { query: (sql: string, params?: unknown[]) => connection.query(sql, params as unknown[]) } as unknown as TransactionContext;
     const transactions = { withTransaction: (work: (c: TransactionContext) => Promise<unknown>) => work(context) };
-    return new SepayWebhookService(
-      transactions as never,
+    const settlement = new SepaySettlementService(
       new SepaySettlementRepository(),
       new TopupAutoLookupRepository(),
       new DriverRepository(),
@@ -52,6 +52,7 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
       new AuditWriter(),
       new OutboxWriter(),
     );
+    return new SepayWebhookService(transactions as never, settlement);
   }
 
   function ctx(): TransactionContext {

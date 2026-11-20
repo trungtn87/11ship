@@ -67,7 +67,9 @@ ALTER TABLE app.wallet_topups ADD CONSTRAINT wallet_topups_confirmed_actor_ck CH
 -- RECEIVED -> CREDITED | NEEDS_ADMIN | IGNORED ; NEEDS_ADMIN -> CREDITED | IGNORED | NEEDS_ADMIN ; CREDITED and IGNORED are final.
 CREATE TABLE app.sepay_transfer_inbox (
   inbox_id uuid NOT NULL,
-  webhook_event_id bigint NOT NULL,
+  -- Exactly one source identifies an event: the webhook id (webhook path) or the transactions-API UUID (reconciliation path). Both may be
+  -- present for the same event later; they are never compared with each other.
+  webhook_event_id bigint,
   sepay_transaction_uuid uuid,
   gateway varchar(64) NOT NULL,
   account_number varchar(40) NOT NULL,
@@ -86,6 +88,7 @@ CREATE TABLE app.sepay_transfer_inbox (
   CONSTRAINT sepay_transfer_inbox_pkey PRIMARY KEY (inbox_id),
   CONSTRAINT sepay_transfer_inbox_event_uq UNIQUE (webhook_event_id),
   CONSTRAINT sepay_transfer_inbox_transaction_uq UNIQUE (sepay_transaction_uuid),
+  CONSTRAINT sepay_transfer_inbox_source_ck CHECK (webhook_event_id IS NOT NULL OR sepay_transaction_uuid IS NOT NULL),
   CONSTRAINT sepay_transfer_inbox_event_ck CHECK (webhook_event_id >= 1),
   CONSTRAINT sepay_transfer_inbox_type_ck CHECK (transfer_type IN ('in', 'out')),
   CONSTRAINT sepay_transfer_inbox_amount_ck CHECK (transfer_amount_vnd > 0 AND transfer_amount_vnd <= 9007199254740991),
@@ -96,6 +99,25 @@ CREATE TABLE app.sepay_transfer_inbox (
   CONSTRAINT sepay_transfer_inbox_time_ck CHECK (processed_at IS NULL OR processed_at >= received_at)
 );
 CREATE INDEX sepay_transfer_inbox_state_idx ON app.sepay_transfer_inbox (state, received_at);
+-- The bank identity of one transfer (account, bank reference, amount, transaction time). A webhook and a reconciliation read of the same
+-- transfer carry different identifiers but the same bank identity, so this unique key makes the second arrival a no-op. An empty bank
+-- reference is not a key (it is held for an Administrator anyway), so it is excluded.
+CREATE UNIQUE INDEX sepay_transfer_inbox_bank_uq ON app.sepay_transfer_inbox (account_number, reference_code, transfer_amount_vnd, transaction_at)
+  WHERE reference_code <> '';
+
+-- Cursor of the reconciliation job (one row for the company's SePay account). Written only after a whole run is committed; never reset silently.
+CREATE TABLE app.sepay_reconciliation_cursor (
+  cursor_key varchar(32) NOT NULL,
+  last_transaction_uuid uuid,
+  last_outcome varchar(32),
+  last_run_at timestamptz,
+  not_before_at timestamptz,
+  updated_at timestamptz NOT NULL,
+  CONSTRAINT sepay_reconciliation_cursor_pkey PRIMARY KEY (cursor_key),
+  CONSTRAINT sepay_reconciliation_cursor_key_ck CHECK (cursor_key = 'SEPAY_COMPANY'),
+  CONSTRAINT sepay_reconciliation_cursor_outcome_ck CHECK (last_outcome IS NULL OR last_outcome ~ '^[A-Z][A-Z0-9_]{0,31}$')
+);
+INSERT INTO app.sepay_reconciliation_cursor (cursor_key, updated_at) VALUES ('SEPAY_COMPANY', date_trunc('milliseconds', clock_timestamp()));
 
 CREATE FUNCTION app.sepay_transfer_inbox_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
@@ -103,7 +125,9 @@ BEGIN
   IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
     RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IS_EVIDENCE: rows are never deleted' USING ERRCODE = 'restrict_violation';
   END IF;
-  IF NEW.inbox_id <> OLD.inbox_id OR NEW.webhook_event_id <> OLD.webhook_event_id OR NEW.transfer_amount_vnd <> OLD.transfer_amount_vnd
+  IF NEW.inbox_id IS DISTINCT FROM OLD.inbox_id OR NEW.webhook_event_id IS DISTINCT FROM OLD.webhook_event_id
+     OR NEW.sepay_transaction_uuid IS DISTINCT FROM OLD.sepay_transaction_uuid
+     OR NEW.transfer_amount_vnd <> OLD.transfer_amount_vnd
      OR NEW.account_number <> OLD.account_number OR NEW.transaction_at <> OLD.transaction_at OR NEW.received_at <> OLD.received_at
      OR NEW.content <> OLD.content OR NEW.reference_code <> OLD.reference_code THEN
     RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
@@ -138,9 +162,18 @@ BEGIN
   END IF;
 END
 $latch$;
+DO $latch_cursor$
+BEGIN
+  IF EXISTS (SELECT 1 FROM app.sepay_reconciliation_cursor WHERE last_transaction_uuid IS NOT NULL) THEN
+    RAISE EXCEPTION 'SEPAY_AUTO_TOPUP_DOWN_REFUSED: the reconciliation cursor has advanced; history is never dropped' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+END
+$latch_cursor$;
+DROP TABLE app.sepay_reconciliation_cursor;
 DROP TRIGGER sepay_transfer_inbox_no_delete ON app.sepay_transfer_inbox;
 DROP TRIGGER sepay_transfer_inbox_guard ON app.sepay_transfer_inbox;
 DROP FUNCTION app.sepay_transfer_inbox_guard();
+DROP INDEX app.sepay_transfer_inbox_bank_uq;
 DROP TABLE app.sepay_transfer_inbox;
 ALTER TABLE app.wallet_topups DROP CONSTRAINT wallet_topups_confirmed_actor_ck;
 ALTER TABLE app.wallet_topups DROP COLUMN confirmed_by_system;
