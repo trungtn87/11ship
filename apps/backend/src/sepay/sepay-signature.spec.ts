@@ -26,6 +26,13 @@ describe('SePay webhook signature (HMAC-SHA256 over timestamp.raw body)', () => 
     expect(verdict()).toBe('VALID');
   });
 
+  // Independent vector (Python hmac over "1800000000." + the raw body, computed outside this code). It pins the documented format
+  // sha256={hex of HMAC-SHA256("{X-SePay-Timestamp}.{raw body}")} against a value this code did not produce; the other cases above
+  // compute the expectation with the same formula. developer.sepay.vn/vi/sepay-webhooks/xac-thuc, section "Cách SePay ký".
+  it('matches an independently computed vector of the documented signing format', () => {
+    expect(verdict({ signature: 'sha256=d39c7af9370ecb4bedc370b39b8acca7a12534d3ccfd04b9110d043e96c23639' })).toBe('VALID');
+  });
+
   it('accepts uppercase hex in the signature header', () => {
     const timestamp = String(NOW);
     const upper = `sha256=${sign(timestamp, BODY).slice('sha256='.length).toUpperCase()}`;
