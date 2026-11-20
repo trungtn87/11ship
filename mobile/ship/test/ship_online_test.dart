@@ -761,7 +761,7 @@ void main() {
       await tester.tap(find.byKey(const Key('home-location-info')));
       await tester.pump();
       expect(find.textContaining('Cập nhật lần cuối ${clockText(t.now)} · độ chính xác ~12 m'), findsOneWidget);
-      expect(find.textContaining('khoảng 1 phút/lần'), findsOneWidget);
+      expect(find.textContaining('Khi Online, vị trí được gửi 1 phút/lần'), findsOneWidget);
       expect(find.textContaining('Máy chủ nhận vị trí lần cuối'), findsNothing, reason: 'the long facts stay behind the small (i)');
       await tester.tap(find.byKey(const Key('home-location-detail')));
       await tester.pump();

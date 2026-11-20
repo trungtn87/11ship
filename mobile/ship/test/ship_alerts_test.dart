@@ -129,8 +129,7 @@ void main() {
       expect(v.facts, contains('Máy chủ nhận vị trí lần cuối: ${clockText(t0)}'));
       expect(v.facts, contains('Độ chính xác ước tính: ~12 m'));
       expect(v.facts, isNot(contains('Vị trí trên điện thoại — chưa gửi lên máy chủ')));
-      expect(v.paragraphs.first, contains('khoảng 1 phút/lần'));
-      expect(v.paragraphs.first, contains('kể cả khi khóa màn hình'));
+      expect(v.paragraphs.first, 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.');
       expect(v.showPin, isTrue);
     });
 
@@ -171,19 +170,24 @@ void main() {
     test('switched off but a delivery remains: says it is still shared for that order', () {
       final ShipLocationView v = view(intent: false, hasWork: true, ackAt: t0, fixAt: t0, hasFix: true);
       expect(v.label, 'Đang chia sẻ vị trí');
-      expect(v.paragraphs.first, contains('Bạn đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý.'));
+      expect(v.paragraphs.first, 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý');
     });
 
     test('opened by default: at most three short lines; the last update and accuracy in one line', () {
       final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 30, hasFix: true, now: const Duration(seconds: 30));
       expect(v.brief.length, lessThanOrEqualTo(3));
       expect(v.brief.first, 'Cập nhật lần cuối ${clockText(t0)} · độ chính xác ~30 m');
-      expect(v.brief[1], contains('khoảng 1 phút/lần'));
-      expect(v.brief[1], contains('kể cả khi khóa màn hình'));
-      expect(v.brief[1], contains('người có quyền theo dõi đơn'));
-      expect(v.brief[2], contains('không gửi vị trí'));
-      expect(v.brief[2], contains('chỉ máy chủ quyết định nhận đơn'));
+      expect(v.brief[1], 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.');
+      expect(v.brief[2], 'Nút định vị chỉ dời bản đồ về GPS của máy');
       expect(v.warnings, isEmpty);
+    });
+
+    test('the five owner sentences, word for word, by state', () {
+      final ShipLocationView offline = view(intent: false, hasWork: false, sharing: false);
+      expect(offline.brief, <String>['Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình.', 'Nút định vị chỉ dời bản đồ về GPS của máy']);
+      final ShipLocationView handedOff = view(intent: false, hasWork: true, ackAt: t0, fixAt: t0, hasFix: true);
+      expect(handedOff.brief[1], 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý');
+      expect(handedOff.brief.length, 3, reason: 'last update line, sharing line, recenter line');
     });
 
     test('a phone-only fix and an old server time are warnings, kept apart from the short lines', () {

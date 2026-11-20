@@ -143,19 +143,17 @@ ShipLocationView buildLocationView({
   final bool wants = intent || hasWork;
   final bool ackFresh = sharing && ackAt != null && now.difference(ackAt) < kLocationLiveWindow;
   final bool fixLive = hasFix && fixAt != null && now.difference(fixAt) >= Duration.zero && now.difference(fixAt) < kLocationLiveWindow;
-  final String first = !wants
-      ? 'Bạn đang offline và không có đơn nên 11Ship không chia sẻ vị trí. Khi bật Online, vị trí được cập nhật khoảng 1 phút/lần, kể cả khi khóa màn hình.'
+  // Owner copy (#392, 2026-11-20 rewrite): these exact sentences are used in the opened panel and in the long text behind the (i).
+  const String sharingOnline = 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.';
+  const String sharingOffline = 'Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình.';
+  const String sharingHandedOff = 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý';
+  const String recenterNote = 'Nút định vị chỉ dời bản đồ về GPS của máy';
+  final String sharingLine = !wants
+      ? sharingOffline
       : intent
-          ? 'Khi bật Online, 11Ship cập nhật vị trí khoảng 1 phút/lần, kể cả khi khóa màn hình. Khi có đơn, người có quyền theo dõi đơn có thể xem vị trí shipper.'
-          : 'Bạn đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý. Việc chia sẻ chỉ dừng khi máy chủ xác nhận không còn việc cần theo dõi.';
+          ? sharingOnline
+          : sharingHandedOff;
   const String second = 'Vị trí trên điện thoại (GPS) và vị trí đã gửi lên máy chủ là hai việc khác nhau. Chỉ máy chủ quyết định bạn có nhận được đơn; nút “Về vị trí hiện tại” chỉ dời bản đồ về GPS của máy, không gửi vị trí.';
-  // Short wording for the opened panel (at most three lines). The long text above stays behind the (i).
-  final String briefSharing = !wants
-      ? 'Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi khoảng 1 phút/lần, kể cả khi khóa màn hình.'
-      : intent
-          ? 'Khi Online, vị trí được gửi khoảng 1 phút/lần, kể cả khi khóa màn hình; người có quyền theo dõi đơn xem được vị trí shipper khi có đơn.'
-          : 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý; dừng khi máy chủ xác nhận không còn việc.';
-  const String briefLocate = 'Nút định vị chỉ dời bản đồ về GPS của máy, không gửi vị trí; chỉ máy chủ quyết định nhận đơn.';
   final bool stale = wants && ackAt != null && !ackFresh;
   final bool phoneOnly = wants && fixLive && (ackAt == null || fixAt.difference(ackAt) > const Duration(seconds: 20));
   final List<String> warnings = <String>[
@@ -195,10 +193,10 @@ ShipLocationView buildLocationView({
   return ShipLocationView(
     label: label,
     tone: tone,
-    paragraphs: <String>[first, second],
+    paragraphs: <String>[sharingLine, second],
     facts: facts,
     showPin: wants && fixLive,
-    brief: <String>[if (summaryParts.isNotEmpty) summaryParts.join(' · '), briefSharing, briefLocate],
+    brief: <String>[if (summaryParts.isNotEmpty) summaryParts.join(' · '), sharingLine, recenterNote],
     warnings: warnings,
   );
 }
