@@ -13,6 +13,8 @@ export interface ManagedCategory {
   readonly sortOrder: number;
   readonly version: number;
   readonly updatedAtMs: number;
+  /** Whether the group has an icon picture (the bytes are read only by findImage). Issue #412. */
+  readonly hasImage: boolean;
 }
 
 export interface ManagedCategoryListed extends ManagedCategory {
@@ -35,9 +37,10 @@ interface RawCategory {
   sort_order: number;
   version: string;
   updated_ms: string;
+  has_image: boolean;
 }
 
-const COLUMNS = `category_id, name, status, sort_order, version, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms`;
+const COLUMNS = `category_id, name, status, sort_order, version, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms, (image IS NOT NULL) AS has_image`;
 
 function toCategory(row: RawCategory): ManagedCategory {
   return {
@@ -47,6 +50,7 @@ function toCategory(row: RawCategory): ManagedCategory {
     sortOrder: row.sort_order,
     version: toSafeInteger(row.version),
     updatedAtMs: toSafeInteger(row.updated_ms),
+    hasImage: row.has_image === true,
   };
 }
 
@@ -77,7 +81,8 @@ export class MenuCategoryAdminRepository {
   async list(context: TransactionContext, params: CategoryListParams): Promise<ManagedCategoryListed[]> {
     const result = await context.query<RawCategory & { item_count: string }>(
       `SELECT c.category_id, c.name, c.status, c.sort_order, c.version, (extract(epoch from c.updated_at) * 1000)::bigint AS updated_ms,
-              (SELECT count(*) FROM app.menu_items i WHERE i.category_id = c.category_id AND i.status <> 'DELETED') AS item_count
+              (SELECT count(*) FROM app.menu_items i WHERE i.category_id = c.category_id AND i.status <> 'DELETED') AS item_count,
+              (c.image IS NOT NULL) AS has_image
          FROM app.menu_categories c
         WHERE ($1::text IS NULL OR app.fold_vi(c.name) LIKE $1::text)
           AND ($2::text IS NULL OR c.status = $2::text)
@@ -150,4 +155,40 @@ export class MenuCategoryAdminRepository {
     }
     return toCategory(row);
   }
+
+  /** The icon bytes of a group (no lock: a read). null when the group has no icon. */
+  async findImage(context: TransactionContext, categoryId: string): Promise<{ image: StoredCategoryImage | null; version: number; status: CategoryStatus } | undefined> {
+    const result = await context.query<{ image: StoredCategoryImage | null; version: string; status: CategoryStatus }>(
+      `SELECT image, version, status FROM app.menu_categories WHERE category_id = $1::uuid`,
+      [categoryId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { image: row.image, version: toSafeInteger(row.version), status: row.status };
+  }
+
+  /**
+   * The caller holds the row FOR UPDATE and has compared the version: this replaces (or removes, image = null) the icon in the same
+   * statement and bumps the version, so the icon URL changes with it. A failed write changes nothing: the old icon stays.
+   */
+  async writeImage(context: TransactionContext, current: ManagedCategory, image: StoredCategoryImage | null): Promise<ManagedCategory> {
+    const result = await context.query<RawCategory>(
+      `UPDATE app.menu_categories
+          SET image = $3::jsonb, version = version + 1,
+              updated_at = GREATEST(updated_at, date_trunc('milliseconds', clock_timestamp()))
+        WHERE category_id = $1::uuid AND version = $2::bigint
+       RETURNING ${COLUMNS}`,
+      [current.categoryId, current.version, image === null ? null : JSON.stringify(image)],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new TechnicalError('internal', 'Dish group icon was not written');
+    }
+    return toCategory(row);
+  }
+}
+
+/** The stored form of a group icon (jsonb): the same shape as the shop logo. */
+export interface StoredCategoryImage {
+  readonly content_type: 'image/png' | 'image/webp';
+  readonly data_base64: string;
 }

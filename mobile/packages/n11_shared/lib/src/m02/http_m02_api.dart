@@ -225,7 +225,7 @@ class HttpDiscoveryApi implements DiscoveryApi {
 
   @override
   Future<List<CategoryChoice>> categories() async => <CategoryChoice>[
-        for (final Object? c in _list(await _publicGet(transport, '/v1/menu-categories'))) CategoryChoice(id: _str(_obj(c)['category_id']), name: _str(_obj(c)['name'])),
+        for (final Object? c in _list(await _publicGet(transport, '/v1/menu-categories'))) CategoryChoice(id: _str(_obj(c)['category_id']), name: _str(_obj(c)['name']), imageUrl: _obj(c)['image_url'] == null ? null : base.resolve(_str(_obj(c)['image_url'])).toString()),
       ];
 
   @override

@@ -261,6 +261,11 @@ export const APP_ERROR_DEFINITIONS = {
   MENU_CATEGORY_NAME_TAKEN: { status: 409, message: 'A dish group with this name already exists' },
   MENU_CATEGORY_NAME_TAKEN_INACTIVE: { status: 409, message: 'An inactive dish group with this name already exists; activate it again instead' },
   MENU_CATEGORY_VERSION_CONFLICT: { status: 409, message: 'The dish group was changed by another request' },
+  MENU_CATEGORY_IMAGE_NOT_FOUND: { status: 404, message: 'The dish group has no icon' },
+  CATEGORY_IMAGE_INVALID_FORMAT: { status: 400, message: 'The icon must be a real PNG or WebP picture' },
+  CATEGORY_IMAGE_TOO_LARGE: { status: 413, message: 'The icon exceeds 1 MiB' },
+  CATEGORY_IMAGE_TOO_SMALL: { status: 400, message: 'The icon must be at least 256 x 256 pixels' },
+  CATEGORY_IMAGE_NOT_SQUARE: { status: 400, message: 'The icon must be square' },
 
   // Customer address book (M05). Fixed message that echoes nothing the client sent. An address of another account is never told apart
   // from one that does not exist (or was deleted). ROLE_NOT_AVAILABLE, VERSION_CONFLICT and INVALID_PHONE (above) are reused.

@@ -28,6 +28,20 @@ Future<({SessionController session, FakeApiTransport api, HttpMenuApi menu})> si
 }
 
 void main() {
+  test('issue #412: a group carries its picture URL resolved against the API base, or null when it has none', () async {
+    final FakeApiTransport transport = FakeApiTransport();
+    transport.routes['GET /v1/menu-categories'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{
+          'data': <Object?>[
+            <String, Object?>{'category_id': 'c1', 'name': 'Ốc', 'image_url': '/v1/menu-categories/c1/image?v=2'},
+            <String, Object?>{'category_id': 'c2', 'name': 'Hải sản', 'image_url': null},
+          ],
+        });
+    final List<CategoryChoice> categories = await HttpDiscoveryApi(transport: transport, base: base).categories();
+    expect(categories.map((CategoryChoice c) => c.id), <String>['c1', 'c2']);
+    expect(categories[0].imageUrl, 'https://api.example.test/v1/menu-categories/c1/image?v=2');
+    expect(categories[1].imageUrl, isNull);
+  });
+
   test('GPS resolve parses configured area and explicit outside-coverage null', () async {
     final FakeApiTransport transport = FakeApiTransport();
     final HttpDiscoveryApi api = HttpDiscoveryApi(transport: transport, base: base);

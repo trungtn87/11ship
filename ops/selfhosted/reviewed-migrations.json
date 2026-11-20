@@ -104,6 +104,10 @@
     "1797984000000_ios-password-client-sessions": {
       "sha256": "7503e0ecf4037e3f4f61934a0d163a947b6cb679ed1b3a2678c4914447f08681",
       "review": "PR #410 (G1 iOS). Replaces only the CHECK sessions_password_client_ck so PASSWORD sessions may also carry platform IOS (apps FOOD/SHIP); it widens the rule, adds no column or data, and existing rows all satisfy it. The previous backend never writes platform IOS, so it is unaffected. Down revokes live IOS PASSWORD sessions and restores the old rule as NOT VALID; for disposable databases only."
+    },
+    "1798070400000_menu-category-images": {
+      "sha256": "a740836f54e80eb36194fbf2495613a441bd06688fea74b2d44e77c06261bb7f",
+      "review": "Issue #412 (PR #417); compatibility review 2026-11-20: Up adds one nullable column image jsonb with a CHECK (PNG or WebP, base64 length limit) to app.menu_categories. Existing rows get NULL and nothing is written. The previous backend names its columns in every INSERT, SELECT and RETURNING of this table, so it keeps working and ignores the column. Down refuses while stored icons exist, then drops the CHECK and the column."
     }
   }
 }

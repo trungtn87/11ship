@@ -6,6 +6,7 @@ import { Failure } from './accounts.js';
 import { CsrfPort, failureOf } from './accounts-api.js';
 import { ApiClient, ApiResult, record, str } from './api.js';
 import { CATALOG_PAGE_SIZE, CatalogCommand, CatalogQuery, CatalogRead, CatalogSaveResult, CatalogSource, CategoryRow } from './catalog.js';
+import { ICON_MESSAGE } from './category-icon.js';
 
 /** The transport's base: this client's paths start with /admin. */
 export const CATALOG_BASE = '/v1';
@@ -41,11 +42,12 @@ export function parseCategoryRow(value: unknown): CategoryRow | undefined {
     !whole(raw.sort_order) ||
     !whole(raw.item_count) ||
     !whole(raw.version) ||
-    raw.version < 1
+    raw.version < 1 ||
+    (raw.image_url !== null && typeof raw.image_url !== 'string')
   ) {
     return undefined;
   }
-  return { id, name, sortOrder: raw.sort_order, status, itemCount: raw.item_count, version: raw.version, updatedAt };
+  return { id, name, sortOrder: raw.sort_order, status, itemCount: raw.item_count, version: raw.version, updatedAt, imageUrl: typeof raw.image_url === 'string' ? raw.image_url : null };
 }
 
 export function parseCategoryPage(data: Record<string, unknown>): CategoryPage | undefined {
@@ -95,6 +97,18 @@ export class AdminCatalogApi extends ApiClient {
         parseCategoryRow,
         // 201 for the first answer; a replay of the same key answers with the stored 201 too, 200 is accepted for safety.
         [201, 200],
+      );
+    }
+    if (command.kind === 'icon-set') {
+      return this.call(
+        { method: 'POST', path: `${PATH}/${encodeURIComponent(command.id)}/image`, body: { expected_version: command.version, data_base64: command.dataBase64 }, csrf, idempotencyKey: command.key },
+        parseCategoryRow,
+      );
+    }
+    if (command.kind === 'icon-remove') {
+      return this.call(
+        { method: 'POST', path: `${PATH}/${encodeURIComponent(command.id)}/image/remove`, body: { expected_version: command.version }, csrf, idempotencyKey: command.key },
+        parseCategoryRow,
       );
     }
     return this.call(
@@ -155,7 +169,16 @@ export function createCatalogSource(api: AdminCatalogApi, session?: CsrfPort): C
         case 'MENU_CATEGORY_NAME_TAKEN_INACTIVE':
           return { kind: 'name-taken', inactive: true };
         case 'MENU_CATEGORY_NOT_FOUND':
+        case 'MENU_CATEGORY_IMAGE_NOT_FOUND':
           return { kind: 'not-found' };
+        case 'CATEGORY_IMAGE_INVALID_FORMAT':
+          return { kind: 'icon-rejected', message: ICON_MESSAGE.format };
+        case 'CATEGORY_IMAGE_TOO_LARGE':
+          return { kind: 'icon-rejected', message: ICON_MESSAGE.tooLarge };
+        case 'CATEGORY_IMAGE_TOO_SMALL':
+          return { kind: 'icon-rejected', message: ICON_MESSAGE.tooSmall };
+        case 'CATEGORY_IMAGE_NOT_SQUARE':
+          return { kind: 'icon-rejected', message: ICON_MESSAGE.notSquare };
         case 'IDEMPOTENCY_BUSY':
           return { kind: 'unknown' };
         case 'ADMIN_AUTH_RATE_LIMITED':

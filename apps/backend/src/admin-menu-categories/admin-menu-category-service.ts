@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { SessionLookup } from '../admin-auth/admin-session-repository';
 import { AdminRole } from '../admin-auth/admin-auth-constants';
@@ -16,10 +16,13 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { CategoryListQuery, CreateCategoryBody, UpdateCategoryBody } from './admin-menu-category-validation';
+import { CategoryImageRemoveInput, CategoryImageUploadInput } from '../menu/menu-category-image';
 
 const CREATE_OPERATION = 'admin.menu_category.create.v1';
 const UPDATE_OPERATION = 'admin.menu_category.update.v1';
 const RESOURCE = 'menu_category';
+const SET_IMAGE_OPERATION = 'admin.menu_category.image.set.v1';
+const REMOVE_IMAGE_OPERATION = 'admin.menu_category.image.remove.v1';
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
@@ -32,11 +35,14 @@ function view(category: ManagedCategory, itemCount: number): JsonObject {
     version: category.version,
     item_count: itemCount,
     updated_at: iso(category.updatedAtMs),
+    // The icon is served by the administration route; ?v= changes with every version, so a replaced icon is never shown from cache.
+    image_url: category.hasImage ? `/v1/admin/menu-categories/${category.categoryId}/image?v=${category.version}` : null,
   };
 }
 
 interface Authorized {
   readonly role: AdminRole;
+  readonly userId: string;
 }
 
 /**
@@ -207,6 +213,144 @@ export class AdminMenuCategoryService {
     );
   }
 
+  /**
+   * Icon upload (issue #412): replaces the group's icon in one write with the version bump. The type comes from the bytes (checked by
+   * the parser), the bytes themselves are kept only in the row. A conflict or a failure leaves the previous icon in place.
+   */
+  async setImage(
+    sessionToken: string | undefined,
+    csrfHeader: unknown,
+    categoryId: string,
+    body: CategoryImageUploadInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    meta: { requestId: string },
+  ): Promise<IdempotentOutcome> {
+    const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
+    const sha256 = createHash('sha256').update(body.image.bytes).digest('hex');
+    return this.executor.execute(
+      {
+        scopeType: PROVISIONING_SCOPE_TYPE,
+        scopeId: known.userId,
+        operationId: SET_IMAGE_OPERATION,
+        idempotencyKey,
+        logicalRequest: { category_id: categoryId, expected_version: body.expectedVersion, content_type: body.image.contentType, byte_size: body.image.bytes.length, sha256 },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, known) },
+      },
+      async (context) => {
+        const auth = await this.#authorize(context, known);
+        await this.categories.lockWrites(context);
+        const current = await this.categories.lockById(context, categoryId);
+        if (current === undefined) {
+          throw new AppError('MENU_CATEGORY_NOT_FOUND');
+        }
+        if (current.version !== body.expectedVersion) {
+          throw new AppError('MENU_CATEGORY_VERSION_CONFLICT');
+        }
+        const updated = await this.categories.writeImage(context, current, { content_type: body.image.contentType, data_base64: body.image.bytes.toString('base64') });
+        const itemCount = await this.categories.itemCount(context, categoryId);
+        await this.#auditImage(context, meta, auth, SET_IMAGE_OPERATION, categoryId, updated.version, {
+          category_id: categoryId,
+          content_type: body.image.contentType,
+          byte_size: body.image.bytes.length,
+          sha256,
+          had_image: current.hasImage,
+          version: updated.version,
+        });
+        return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: view(updated, itemCount) };
+      },
+    );
+  }
+
+  /** Icon removal (issue #412): removes the icon only; the group, its dishes and its status stay. Removing when there is none changes nothing. */
+  async removeImage(
+    sessionToken: string | undefined,
+    csrfHeader: unknown,
+    categoryId: string,
+    body: CategoryImageRemoveInput,
+    idempotencyKey: string | readonly string[] | undefined,
+    meta: { requestId: string },
+  ): Promise<IdempotentOutcome> {
+    const known = await this.actor.precheck(sessionToken, { required: true, header: csrfHeader });
+    return this.executor.execute(
+      {
+        scopeType: PROVISIONING_SCOPE_TYPE,
+        scopeId: known.userId,
+        operationId: REMOVE_IMAGE_OPERATION,
+        idempotencyKey,
+        logicalRequest: { category_id: categoryId, expected_version: body.expectedVersion },
+        replay: { kind: 'sensitive', authorize: (context, guard) => this.#authorizeReplay(context, guard, known) },
+      },
+      async (context) => {
+        const auth = await this.#authorize(context, known);
+        await this.categories.lockWrites(context);
+        const current = await this.categories.lockById(context, categoryId);
+        if (current === undefined) {
+          throw new AppError('MENU_CATEGORY_NOT_FOUND');
+        }
+        if (current.version !== body.expectedVersion) {
+          throw new AppError('MENU_CATEGORY_VERSION_CONFLICT');
+        }
+        const itemCount = await this.categories.itemCount(context, categoryId);
+        if (!current.hasImage) {
+          return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: view(current, itemCount) };
+        }
+        const updated = await this.categories.writeImage(context, current, null);
+        await this.#auditImage(context, meta, auth, REMOVE_IMAGE_OPERATION, categoryId, updated.version, {
+          category_id: categoryId,
+          version: updated.version,
+        });
+        return { status: 200, replayGuard: { actor_user_id: known.userId }, payload: view(updated, itemCount) };
+      },
+    );
+  }
+
+  /** The icon bytes for the administration preview (cookie session, same authorization as the list). */
+  async readImage(sessionToken: string | undefined, categoryId: string): Promise<{ contentType: string; data: Buffer }> {
+    const known = await this.actor.precheck(sessionToken, { required: false });
+    return this.transactions.withTransaction(async (context): Promise<{ contentType: string; data: Buffer }> => {
+      await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+      await this.#authorize(context, known);
+      const row = await this.categories.findImage(context, categoryId);
+      if (row === undefined) {
+        throw new AppError('MENU_CATEGORY_NOT_FOUND');
+      }
+      if (row.image === null) {
+        throw new AppError('MENU_CATEGORY_IMAGE_NOT_FOUND');
+      }
+      return { contentType: row.image.content_type, data: Buffer.from(row.image.data_base64, 'base64') };
+    });
+  }
+
+  async #auditImage(
+    context: TransactionContext,
+    meta: { requestId: string },
+    auth: Authorized,
+    action: string,
+    categoryId: string,
+    version: number,
+    metadata: JsonObject,
+  ): Promise<void> {
+    await this.audit.append(context, {
+      requestId: meta.requestId,
+      actorType: auth.role,
+      actorId: auth.userId,
+      action,
+      resourceType: RESOURCE,
+      resourceId: categoryId,
+      resourceVersion: version,
+      outcome: 'SUCCESS',
+      metadata,
+    });
+    await this.outbox.append(context, {
+      eventType: 'menu.category.updated.v1',
+      eventSchemaVersion: 1,
+      resourceType: RESOURCE,
+      resourceId: categoryId,
+      resourceVersion: version,
+      payload: { category_id: categoryId, version },
+    });
+  }
+
   /** The same name (ignoring case, white space and composition, NOT marks) on another group: an inactive one is named as such. */
   async #assertNameFree(context: TransactionContext, name: string, exceptId: string | null): Promise<void> {
     const same = await this.categories.findSameName(context, name, exceptId);
@@ -228,7 +372,7 @@ export class AdminMenuCategoryService {
     if (role === 'ADMIN' && !rows.some((row) => row.app === 'SHOP' && row.canView && row.canManageCatalog === true)) {
       throw new AppError('ADMIN_FORBIDDEN');
     }
-    return { role };
+    return { role, userId: known.userId };
   }
 
   async #authorizeReplay(context: TransactionContext, guard: JsonObject, known: SessionLookup): Promise<true> {

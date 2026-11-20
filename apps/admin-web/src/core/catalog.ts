@@ -26,6 +26,8 @@ export interface CategoryRow {
   readonly version: number;
   /** ISO timestamp. */
   readonly updatedAt: string;
+  /** The group's icon (administration route, versioned), or null when it has none (issue #412). */
+  readonly imageUrl: string | null;
 }
 
 export interface CatalogFilter {
@@ -114,6 +116,19 @@ export type CatalogPhase = 'form' | 'working' | 'unknown' | 'conflict' | 'failed
 
 export type CatalogDialog =
   | {
+      readonly kind: 'icon';
+      readonly id: string;
+      readonly name: string;
+      /** The group's version when the popup opened: the icon write is refused when it has changed. */
+      readonly version: number;
+      /** The icon now stored (null = none). */
+      readonly currentUrl: string | null;
+      /** A file that passed the client check: base64 for the request, its type and size for the screen. */
+      readonly picked?: { readonly dataBase64: string; readonly contentType: string; readonly byteSize: number };
+      readonly phase: CatalogPhase;
+      readonly message?: string;
+    }
+  | {
       readonly kind: 'form';
       readonly mode: 'create' | 'edit';
       /** The group being edited (edit only). */
@@ -149,7 +164,9 @@ export interface CatalogScreen {
 
 export type CatalogCommand =
   | { readonly kind: 'create'; readonly name: string; readonly sortOrder: number | null; readonly status: CatalogStatus; readonly key: string }
-  | { readonly kind: 'update'; readonly id: string; readonly version: number; readonly name: string; readonly sortOrder: number; readonly status: CatalogStatus; readonly key: string };
+  | { readonly kind: 'update'; readonly id: string; readonly version: number; readonly name: string; readonly sortOrder: number; readonly status: CatalogStatus; readonly key: string }
+  | { readonly kind: 'icon-set'; readonly id: string; readonly version: number; readonly dataBase64: string; readonly key: string }
+  | { readonly kind: 'icon-remove'; readonly id: string; readonly version: number; readonly key: string };
 
 export type CatalogSaveResult =
   | { readonly kind: 'ok' }
@@ -162,6 +179,8 @@ export type CatalogSaveResult =
   | { readonly kind: 'session-expired' }
   | { readonly kind: 'rate-limited'; readonly retryAfterSec?: number }
   | { readonly kind: 'rejected' }
+  /** The icon was refused by the server or by the rules (size, type, shape); `message` says what to change. Nothing was written. */
+  | { readonly kind: 'icon-rejected'; readonly message: string }
   /** The answer was lost: the save MAY have been executed. Retry with the same key only. */
   | { readonly kind: 'unknown' }
   | { readonly kind: 'not-wired' };

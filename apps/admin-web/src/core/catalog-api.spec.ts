@@ -7,7 +7,7 @@ import { parsePermissions, scopeLabels } from './accounts-api';
 const ID = '11111111-1111-4111-8111-111111111111';
 const reply = (status: number, body: unknown, headers: Record<string, string> = {}): TransportResponse => ({ status, header: (name) => headers[name.toLowerCase()] ?? null, json: () => Promise.resolve(body) });
 const errorBody = (code: string) => ({ error: { code, message: 'x', request_id: 'r', details: {} } });
-const row = (over: Record<string, unknown> = {}) => ({ category_id: ID, name: 'Ốc', status: 'ACTIVE', sort_order: 1, version: 2, item_count: 4, updated_at: '2026-10-16T03:00:00.000Z', ...over });
+const row = (over: Record<string, unknown> = {}) => ({ category_id: ID, name: 'Ốc', status: 'ACTIVE', sort_order: 1, version: 2, item_count: 4, updated_at: '2026-10-16T03:00:00.000Z', image_url: null, ...over });
 
 function scripted(...answers: (TransportResponse | 'throw')[]): { transport: Transport; requests: TransportRequest[] } {
   const requests: TransportRequest[] = [];
@@ -27,7 +27,9 @@ const session = (csrf: string | null = 'csrf-1') => {
 
 describe('admin web dish groups - parsers', () => {
   it('maps a row and a page', () => {
-    expect(parseCategoryRow(row())).toEqual({ id: ID, name: 'Ốc', sortOrder: 1, status: 'ACTIVE', itemCount: 4, version: 2, updatedAt: '2026-10-16T03:00:00.000Z' });
+    expect(parseCategoryRow(row())).toEqual({ id: ID, name: 'Ốc', sortOrder: 1, status: 'ACTIVE', itemCount: 4, version: 2, updatedAt: '2026-10-16T03:00:00.000Z', imageUrl: null });
+    expect(parseCategoryRow(row({ image_url: '/v1/admin/menu-categories/' + ID + '/image?v=2' }))?.imageUrl).toBe('/v1/admin/menu-categories/' + ID + '/image?v=2');
+    expect(parseCategoryRow(row({ image_url: 7 }))).toBeUndefined();
     expect(parseCategoryPage({ items: [row(), row({ category_id: '22222222-2222-4222-8222-222222222222', status: 'INACTIVE' })], total: 2, next_sort_order: 7 })).toMatchObject({ total: 2, nextSortOrder: 7 });
   });
 
@@ -140,5 +142,40 @@ describe('admin web - the catalog right', () => {
 
   it('shows the right in the scope of an administrator', () => {
     expect(scopeLabels([{ app: 'SHOP', canView: true, canReviewProfile: false, canLock: false, canManageCatalog: true }])).toEqual(['Chủ quán: Xem, Nhóm món']);
+  });
+});
+
+describe('admin web dish group icon - requests', () => {
+  const PNG_B64 = 'iVBORw0KGgo=';
+
+  it('uploads with one POST to the icon route: version, base64 bytes, CSRF token and key; no content type is sent', async () => {
+    const { transport, requests } = scripted(reply(200, { data: row({ version: 3, image_url: '/v1/admin/menu-categories/' + ID + '/image?v=3' }) }));
+    const result = await createCatalogSource(new AdminCatalogApi(transport), session().port).save({ kind: 'icon-set', id: ID, version: 2, dataBase64: PNG_B64, key: 'k-icon-1' });
+    expect(result).toEqual({ kind: 'ok' });
+    expect(requests).toEqual([{ method: 'POST', path: '/admin/menu-categories/' + ID + '/image', body: { expected_version: 2, data_base64: PNG_B64 }, csrf: 'csrf-1', idempotencyKey: 'k-icon-1' }]);
+  });
+
+  it('removes with one POST to the remove route with the version and the key', async () => {
+    const { transport, requests } = scripted(reply(200, { data: row({ version: 4 }) }));
+    const result = await createCatalogSource(new AdminCatalogApi(transport), session().port).save({ kind: 'icon-remove', id: ID, version: 3, key: 'k-icon-2' });
+    expect(result).toEqual({ kind: 'ok' });
+    expect(requests).toEqual([{ method: 'POST', path: '/admin/menu-categories/' + ID + '/image/remove', body: { expected_version: 3 }, csrf: 'csrf-1', idempotencyKey: 'k-icon-2' }]);
+  });
+
+  it('turns each picture refusal of the server into one plain sentence and keeps the other refusals', async () => {
+    const cases = [
+      ['CATEGORY_IMAGE_INVALID_FORMAT', 'Chỉ chấp nhận ảnh PNG hoặc WebP thật. Tệp này không phải PNG hoặc WebP.'],
+      ['CATEGORY_IMAGE_TOO_LARGE', 'Ảnh vượt quá 1 MB. Hãy chọn ảnh nhỏ hơn hoặc nén lại.'],
+      ['CATEGORY_IMAGE_TOO_SMALL', 'Ảnh phải có kích thước tối thiểu 256 × 256 px.'],
+      ['CATEGORY_IMAGE_NOT_SQUARE', 'Ảnh phải vuông (chiều rộng bằng chiều cao).'],
+    ];
+    for (const [code, text] of cases) {
+      const { transport } = scripted(reply(400, errorBody(code)));
+      expect(await createCatalogSource(new AdminCatalogApi(transport), session().port).save({ kind: 'icon-set', id: ID, version: 1, dataBase64: PNG_B64, key: 'k' })).toEqual({ kind: 'icon-rejected', message: text });
+    }
+    const conflict = scripted(reply(409, errorBody('MENU_CATEGORY_VERSION_CONFLICT')));
+    expect(await createCatalogSource(new AdminCatalogApi(conflict.transport), session().port).save({ kind: 'icon-set', id: ID, version: 1, dataBase64: PNG_B64, key: 'k' })).toEqual({ kind: 'conflict' });
+    const lost = scripted('throw');
+    expect(await createCatalogSource(new AdminCatalogApi(lost.transport), session().port).save({ kind: 'icon-set', id: ID, version: 1, dataBase64: PNG_B64, key: 'k' })).toEqual({ kind: 'unknown' });
   });
 });

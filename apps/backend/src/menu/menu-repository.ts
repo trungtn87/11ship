@@ -9,6 +9,9 @@ export interface MenuCategoryRow {
   readonly categoryId: string;
   readonly name: string;
   readonly status: 'ACTIVE' | 'INACTIVE';
+  /** Set by listCategories only: the group's version (versions the icon URL) and whether it has an icon (issue #412). */
+  readonly version?: number;
+  readonly hasImage?: boolean;
 }
 
 export interface MenuItemRow {
@@ -72,10 +75,20 @@ export class MenuRepository {
   }
 
   async listCategories(context: TransactionContext): Promise<MenuCategoryRow[]> {
-    const result = await context.query<{ category_id: string; name: string; status: 'ACTIVE' | 'INACTIVE' }>(
-      `SELECT category_id, name, status FROM app.menu_categories ORDER BY sort_order, app.fold_vi(name) COLLATE "C", name COLLATE "C", category_id`,
+    const result = await context.query<{ category_id: string; name: string; status: 'ACTIVE' | 'INACTIVE'; version: string; has_image: boolean }>(
+      `SELECT category_id, name, status, version::text AS version, (image IS NOT NULL) AS has_image FROM app.menu_categories ORDER BY sort_order, app.fold_vi(name) COLLATE "C", name COLLATE "C", category_id`,
     );
-    return result.rows.map((row) => ({ categoryId: row.category_id, name: row.name, status: row.status }));
+    return result.rows.map((row) => ({ categoryId: row.category_id, name: row.name, status: row.status, version: Number(row.version), hasImage: row.has_image === true }));
+  }
+
+  /** The icon of one group, for the public picture route (issue #412). The caller decides whether the group is public. */
+  async findCategoryImage(context: TransactionContext, categoryId: string): Promise<{ image: { content_type: 'image/png' | 'image/webp'; data_base64: string } | null; version: number; status: 'ACTIVE' | 'INACTIVE' } | undefined> {
+    const result = await context.query<{ image: { content_type: 'image/png' | 'image/webp'; data_base64: string } | null; version: string; status: 'ACTIVE' | 'INACTIVE' }>(
+      'SELECT image, version::text AS version, status FROM app.menu_categories WHERE category_id = $1::uuid',
+      [categoryId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { image: row.image, version: Number(row.version), status: row.status };
   }
 
   /** The dishes of a shop that are not deleted, newest first inside a stable order. */

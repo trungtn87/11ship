@@ -22,10 +22,12 @@ class AreaChoice {
 
 @immutable
 class CategoryChoice {
-  const CategoryChoice({required this.id, required this.name});
+  const CategoryChoice({required this.id, required this.name, this.imageUrl});
 
   final String id;
   final String name;
+  /// The picture the administration set for this group (absolute URL, versioned), or null: the app then shows its fallback icon (issue #412).
+  final String? imageUrl;
 }
 
 @immutable

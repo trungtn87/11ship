@@ -3,6 +3,7 @@ import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Req,
 import { actorOf, AuthenticatedRequest } from '../auth/auth-principal';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
+import { isCanonicalUuid } from '../shared/identifiers';
 import { DiscoveryService } from './discovery-service';
 import { parseAreaPosition, parseDiscoveryQuery } from './discovery-validation';
 import { MenuService } from './menu-service';
@@ -152,6 +153,21 @@ export class DiscoveryController {
   async categories(@Res({ passthrough: true }) response: NoStore) {
     response.setHeader('Cache-Control', 'no-store');
     return { data: await this.discovery.categories() };
+  }
+
+  /** Public icon of an ACTIVE dish group (issue #412). The URL carries the version: a matching version is immutable, anything else is not cached. */
+  @Get('menu-categories/:categoryId/image')
+  async categoryImage(@Param('categoryId') categoryId: string, @Query('v') version: unknown, @Res({ passthrough: true }) response: NoStore) {
+    if (!isCanonicalUuid(categoryId)) {
+      throw new AppError('MENU_CATEGORY_IMAGE_NOT_FOUND');
+    }
+    const requested = typeof version === 'string' && /^[1-9][0-9]{0,15}$/.test(version) ? Number(version) : null;
+    const image = await this.discovery.categoryImage(categoryId, requested);
+    response.setHeader('Content-Type', image.contentType);
+    response.setHeader('Cache-Control', image.current ? 'public, max-age=31536000, immutable' : 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    return new StreamableFile(image.data);
   }
 
   @Get('discovery/shops')

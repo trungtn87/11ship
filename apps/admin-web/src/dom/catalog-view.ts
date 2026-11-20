@@ -11,6 +11,7 @@ import {
   deactivateText,
   NAME_MAX,
 } from '../core/catalog.js';
+import { ICON_ACCEPT, ICON_MAX_BYTES } from '../core/category-icon.js';
 import { DialogHandle, openDialog } from './dialog.js';
 import { h, message, primary, secondary, setMessage } from './dom.js';
 import { icon } from './icons.js';
@@ -30,6 +31,11 @@ export interface CatalogHooks {
   create(): void;
   edit(id: string): void;
   toggle(id: string): void;
+  /** The icon popup of a group (issue #412). */
+  icon(id: string): void;
+  pickIcon(bytes: Uint8Array): void;
+  saveIcon(): void;
+  clearIcon(): void;
   /** The form changed (no request). */
   draft(draft: CategoryDraft): void;
   submit(): void;
@@ -48,7 +54,7 @@ interface Column {
   readonly numeric?: boolean;
 }
 
-const COLUMNS: readonly Column[] = [{ label: 'Tên nhóm' }, { label: 'Thứ tự', numeric: true }, { label: 'Số món', numeric: true }, { label: 'Trạng thái' }, { label: 'Thao tác', end: true }];
+const COLUMNS: readonly Column[] = [{ label: 'Tên nhóm' }, { label: 'Ảnh' }, { label: 'Thứ tự', numeric: true }, { label: 'Số món', numeric: true }, { label: 'Trạng thái' }, { label: 'Thao tác', end: true }];
 
 function tableCard(caption: string, body: { readonly rows: readonly HTMLElement[] } | { readonly panel: HTMLElement }): HTMLElement {
   const head = h('tr', {}, ...COLUMNS.map((column) => h('th', { scope: 'col', class: [column.end ? 'cell-end' : '', column.numeric ? 'cell-num' : ''].join(' ').trim() }, column.label)));
@@ -69,7 +75,8 @@ function signature(dialog: CatalogDialog | undefined): string {
     return '';
   }
   const common = [dialog.kind, dialog.phase, dialog.message ?? '', dialog.kind === 'form' ? (dialog.id ?? dialog.mode) : dialog.id];
-  return JSON.stringify(dialog.kind === 'form' ? [...common, dialog.mode] : [...common, dialog.to]);
+  const detail = dialog.kind === 'form' ? dialog.mode : dialog.kind === 'toggle' ? dialog.to : `${dialog.currentUrl ?? ''}|${String(dialog.picked?.byteSize ?? '')}`;
+  return JSON.stringify([...common, detail]);
 }
 
 interface FormParts {
@@ -127,6 +134,7 @@ export class CatalogView {
 
   /** Closes the popup (the page is left). */
   dispose(): void {
+    this.#revokePreview();
     this.#handle?.close();
     this.#handle = undefined;
   }
@@ -173,16 +181,22 @@ export class CatalogView {
   #row(row: CategoryRow): HTMLElement {
     const edit = h('button', { type: 'button', class: 'table-link table-action', 'aria-label': `Sửa nhóm ${row.name}` }, 'Sửa');
     edit.addEventListener('click', () => this.hooks.edit(row.id));
+    const picture = h('button', { type: 'button', class: 'table-link table-action', 'aria-label': `Đổi ảnh nhóm ${row.name}` }, 'Ảnh');
+    picture.addEventListener('click', () => this.hooks.icon(row.id));
+    const thumb = row.imageUrl === null
+      ? h('span', { class: 'hint' }, 'Mặc định')
+      : h('img', { class: 'category-icon-thumb', src: row.imageUrl, alt: `Ảnh nhóm ${row.name}`, width: '32', height: '32', loading: 'lazy' });
     const toggle = h('button', { type: 'button', class: 'table-link table-action', 'aria-label': `${row.status === 'ACTIVE' ? 'Ngừng dùng' : 'Kích hoạt'} nhóm ${row.name}` }, row.status === 'ACTIVE' ? 'Ngừng dùng' : 'Kích hoạt');
     toggle.addEventListener('click', () => this.hooks.toggle(row.id));
     return h(
       'tr',
       {},
       h('td', { 'data-label': 'Tên nhóm', class: 'cell-name' }, row.name),
+      h('td', { 'data-label': 'Ảnh' }, thumb),
       h('td', { 'data-label': 'Thứ tự', class: 'cell-num' }, String(row.sortOrder)),
       h('td', { 'data-label': 'Số món', class: 'cell-num' }, String(row.itemCount)),
       h('td', { 'data-label': 'Trạng thái' }, statusBadge(row.status)),
-      h('td', { 'data-label': 'Thao tác', class: 'cell-end' }, h('span', { class: 'table-actions' }, edit, toggle)),
+      h('td', { 'data-label': 'Thao tác', class: 'cell-end' }, h('span', { class: 'table-actions' }, edit, picture, toggle)),
     );
   }
 
@@ -220,7 +234,10 @@ export class CatalogView {
     if (dialog === undefined) {
       return;
     }
-    this.#handle = dialog.kind === 'form' ? this.#form(dialog) : this.#toggleDialog(dialog);
+    if (dialog.kind === 'icon' && dialog.picked === undefined) {
+      this.#revokePreview();
+    }
+    this.#handle = dialog.kind === 'form' ? this.#form(dialog) : dialog.kind === 'icon' ? this.#iconDialog(dialog) : this.#toggleDialog(dialog);
   }
 
   /** The popup stays; only what the controller says about the fields (errors, the inactive twin) changes. */
@@ -320,6 +337,83 @@ export class CatalogView {
       orderInput.focus();
     }
     return handle;
+  }
+
+  /** The object URL of the picked file (preview only, this page's own blob: URL). Released when the pick is dropped or the view ends. */
+  #previewUrl: string | undefined;
+
+  #revokePreview(): void {
+    if (this.#previewUrl !== undefined) {
+      URL.revokeObjectURL(this.#previewUrl);
+      this.#previewUrl = undefined;
+    }
+  }
+
+  #iconDialog(dialog: Extract<CatalogDialog, { kind: 'icon' }>): DialogHandle {
+    const working = dialog.phase === 'working';
+    const locked = working || dialog.phase === 'unknown';
+    const status = message(dialog.phase === 'unknown' || dialog.phase === 'conflict' ? 'warning' : 'error', 'category-icon-message');
+    setMessage(status, dialog.message);
+    const current: HTMLElement =
+      dialog.currentUrl === null
+        ? h('p', { class: 'hint', id: 'category-icon-none' }, 'Nhóm chưa có ảnh. App dùng icon mặc định của nhóm.')
+        : h('img', { class: 'category-icon-current', src: dialog.currentUrl, alt: `Ảnh hiện tại của nhóm ${dialog.name}`, width: '96', height: '96' });
+    const preview =
+      dialog.picked !== undefined && this.#previewUrl !== undefined
+        ? h('img', { class: 'category-icon-preview', src: this.#previewUrl, alt: `Ảnh chọn cho nhóm ${dialog.name}`, width: '96', height: '96' })
+        : undefined;
+    const input = h('input', { type: 'file', id: 'category-icon-file', accept: ICON_ACCEPT });
+    input.disabled = locked;
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (file === undefined) {
+        return;
+      }
+      // Only the first bytes past the limit are read: a huge file is refused without loading it whole.
+      void file.slice(0, ICON_MAX_BYTES + 1).arrayBuffer().then((buffer) => {
+        this.#revokePreview();
+        this.#previewUrl = URL.createObjectURL(file);
+        this.hooks.pickIcon(new Uint8Array(buffer));
+      });
+    });
+    const cancel = secondary('Hủy');
+    cancel.disabled = locked;
+    cancel.addEventListener('click', () => this.hooks.cancel());
+    const remove = secondary('Xóa ảnh');
+    remove.disabled = locked || dialog.currentUrl === null;
+    remove.addEventListener('click', () => this.hooks.clearIcon());
+    const extra: HTMLElement[] = [];
+    let save: HTMLButtonElement;
+    if (dialog.phase === 'unknown') {
+      save = primary('Thử lại', 'button');
+      save.addEventListener('click', () => this.hooks.retrySave());
+      const recheck = secondary('Kiểm tra lại danh sách');
+      recheck.addEventListener('click', () => this.hooks.recheck());
+      extra.push(recheck);
+    } else if (dialog.phase === 'conflict') {
+      save = primary('Tải lại danh sách', 'button');
+      save.addEventListener('click', () => this.hooks.reload());
+    } else {
+      save = primary(working ? 'Đang lưu…' : 'Lưu ảnh', 'button');
+      save.disabled = working || dialog.picked === undefined;
+      save.setAttribute('aria-busy', String(working));
+      save.addEventListener('click', () => this.hooks.saveIcon());
+    }
+    const pickedText = dialog.picked === undefined ? undefined : `Đã chọn: ${dialog.picked.contentType === 'image/png' ? 'PNG' : 'WebP'}, ${String(Math.ceil(dialog.picked.byteSize / 1024))} KB`;
+    return openDialog({
+      host: this.dialogHost,
+      title: 'Ảnh nhóm món',
+      onDismiss: locked ? undefined : () => this.hooks.cancel(),
+      body: [
+        h('p', { class: 'hint' }, `Nhóm «${dialog.name}». Ảnh hiện ở hàng danh mục trên Trang chủ 11Food. PNG hoặc WebP, vuông, tối thiểu 256 × 256 px, tối đa 1 MB.`),
+        h('div', { class: 'category-icon-pair' }, h('figure', {}, current, h('figcaption', {}, 'Hiện tại')), ...(preview === undefined ? [] : [h('figure', {}, preview, h('figcaption', {}, 'Xem trước'))])),
+        h('label', { for: 'category-icon-file' }, 'Chọn ảnh'),
+        input,
+        pickedText === undefined ? undefined : h('p', { class: 'hint', id: 'category-icon-picked' }, pickedText),
+        status,
+      ].filter((node): node is HTMLElement => node !== undefined),
+      actions: [cancel, remove, ...extra, save],
+    });
   }
 
   #toggleDialog(dialog: Extract<CatalogDialog, { kind: 'toggle' }>): DialogHandle {
