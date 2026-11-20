@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_m14_map/n11_m14_map.dart';
 
 void main() {
-  testWidgets('off Android the map says so and starts nothing (no GPS, no route, no channel call)', (WidgetTester tester) async {
+  testWidgets('off phones the map says so and starts nothing (no GPS, no route, no channel call)', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
       await tester.pumpWidget(const MaterialApp(home: Scaffold(body: M14OfflineMap())));
-      expect(find.textContaining('Android'), findsOneWidget);
+      expect(find.textContaining('chỉ có trên điện thoại'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

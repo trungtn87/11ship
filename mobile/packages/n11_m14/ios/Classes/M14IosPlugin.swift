@@ -147,7 +147,7 @@ final class M14Recorder: NSObject, CLLocationManagerDelegate {
 
     // MARK: start / stop
 
-    func start(base: String?, done: @escaping ((String, String))? -> Void) {
+    func start(base: String?, done: @escaping (((String, String))?) -> Void) {
         guard UIApplication.shared.applicationState == .active else {
             done(("FOREGROUND", "Mở ứng dụng để bắt đầu cập nhật vị trí")); return
         }
