@@ -49,6 +49,12 @@ describe('parseClientRegisterBody', () => {
     expect(parsed.password).toBe('Correct-Horse-Battery-9');
   });
 
+  it('accepts the IOS platform for both apps', () => {
+    for (const app of ['FOOD', 'SHIP']) {
+      expect(parseClientRegisterBody({ ...valid(), device: { ...valid().device, platform: 'IOS', app } }).device).toMatchObject({ platform: 'IOS', app });
+    }
+  });
+
   it('keeps the password untouched (no trim)', () => {
     expect(parseClientRegisterBody({ ...valid(), password: '  spaced pass  ' }).password).toBe('  spaced pass  ');
   });
@@ -58,7 +64,7 @@ describe('parseClientRegisterBody', () => {
       { ...valid(), role: 'ADMIN' },
       { ...valid(), device: { ...valid().device, x: 1 } },
       { ...valid(), consent: { ...valid().consent, accepted_at: 'now' } },
-      { ...valid(), device: { ...valid().device, platform: 'IOS' } },
+      { ...valid(), device: { ...valid().device, platform: 'WINDOWS' } },
       { ...valid(), device: { ...valid().device, app: 'SHIP11' } },
       { ...valid(), consent: { terms_version: 'bad value', privacy_version: 'ok' } },
       { ...valid(), verification_token: 'x'.repeat(257) },
@@ -88,6 +94,12 @@ describe('parseClientLoginBody', () => {
     expect(parsed.device).toEqual({ deviceId: 'web-device-0001', platform: 'WEB', app: 'SHIP' });
   });
 
+  it('accepts the IOS platform for both apps', () => {
+    for (const app of ['FOOD', 'SHIP']) {
+      expect(parseClientLoginBody({ ...login(), device: { ...login().device, platform: 'IOS', app } }).device).toMatchObject({ platform: 'IOS', app });
+    }
+  });
+
   it('does not apply the registration length policy (a short password is just a wrong password)', () => {
     expect(parseClientLoginBody({ ...login(), password: 'x' }).password).toBe('x');
   });
@@ -96,7 +108,7 @@ describe('parseClientLoginBody', () => {
     const cases: unknown[] = [
       { ...login(), role: 'DRIVER' },
       { ...login(), device: { ...login().device, x: 1 } },
-      { ...login(), device: { ...login().device, platform: 'IOS' } },
+      { ...login(), device: { ...login().device, platform: 'WINDOWS' } },
       { ...login(), device: { ...login().device, app: 'SHIP11' } },
       { ...login(), password: '\ud800' },
       { ...login(), password: 'x'.repeat(1025) },

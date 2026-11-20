@@ -1,0 +1,133 @@
+name: Mobile iOS release (TestFlight)
+
+# G3 (iOS). Builds ONE iOS app from the commit that is main at dispatch time, signs it with Apple's cloud-managed automatic signing and uploads it to
+# TestFlight (App Store Connect). Nothing is submitted for App Review, released to the store, deployed or tagged here.
+#
+# Only manual dispatch, only from refs/heads/main, only inside the protected environment ios-release (required reviewers). The App Store Connect API
+# key secret exists ONLY in that environment and ONLY on the upload step; no other workflow may name it (tests/deploy guard). Key id, issuer id and team
+# id are public identifiers (repository variables). The release script is pinned by SHA-256 in mobile/release/script-pins.sha256.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Which app to build: food = 11Food (vn.eleven.food), ship = 11Ship (vn.eleven.ship)'
+        required: true
+        type: choice
+        options:
+          - food
+          - ship
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios-release-${{ inputs.app }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  testflight:
+    name: TestFlight ${{ inputs.app }} (signed by Apple cloud signing)
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 75
+    environment: ios-release
+    steps:
+      - name: Run only from main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error title=wrong ref::the TestFlight build is made only from main, not $GITHUB_REF"; exit 1
+          fi
+
+      - name: Check out the exact source commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Source matches the run commit
+        run: |
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$GITHUB_SHA" ]; then
+            echo "::error title=source mismatch::checked out $actual, the run is $GITHUB_SHA"; exit 1
+          fi
+          reject_ctl SOURCE_SHA "$actual"
+          echo "SOURCE_SHA=$actual" >> "$GITHUB_ENV"
+
+      - name: App identity and version (pubspec.yaml)
+        run: |
+          set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
+          identity="$(bash mobile/tool/app-version.sh "${{ inputs.app }}")"
+          read -r name code label_version <<< "$identity"
+          case "${{ inputs.app }}" in
+            food) app_id=vn.eleven.food ;;
+            ship) app_id=vn.eleven.ship ;;
+          esac
+          reject_ctl APP_VERSION_NAME "$name"
+          reject_ctl APP_VERSION_CODE "$code"
+          reject_ctl APP_ID "$app_id"
+          {
+            echo "APP_VERSION_NAME=$name"
+            echo "APP_VERSION_CODE=$code"
+            echo "APP_ID=$app_id"
+          } >> "$GITHUB_ENV"
+          echo "$app_id $name+$code -> $label_version"
+
+      - name: Central endpoints (config/endpoints.json)
+        run: |
+          set -euo pipefail
+          api="$(jq -er .api_origin config/endpoints.json)"
+          device="$(jq -er .device_environment config/endpoints.json)"
+          reject_ctl() { [[ "$2" == *[[:cntrl:]]* ]] && { echo "::error title=refused::$1 holds a control character (CR, LF or tab); nothing was written to GITHUB_ENV"; exit 1; }; return 0; }
+          reject_ctl API_BASE_URL "$api"
+          reject_ctl DEVICE_ENVIRONMENT "$device"
+          if ! printf '%s' "$api" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+            echo "::error title=API_BASE_URL::must be a plain https origin (no path, query or credentials)"; exit 1
+          fi
+          printf '%s' "$device" | grep -Eq '^[A-Za-z0-9._-]{1,64}$' || { echo "::error::device_environment is not a valid identifier"; exit 1; }
+          echo "API_BASE_URL=$api" >> "$GITHUB_ENV"
+          echo "DEVICE_ENVIRONMENT=$device" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: |
+          for d in mobile/packages/n11_shared "mobile/${{ inputs.app }}"; do
+            (cd "$d" && flutter pub get) || { echo "::error title=pub get failed in $d::see the log"; exit 1; }
+          done
+
+      - name: Prepare the iOS project (push must be on for a release)
+        env:
+          FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          FCM_SENDER_ID: ${{ vars.FCM_SENDER_ID }}
+          FCM_APP_ID: ${{ inputs.app == 'ship' && vars.FCM_SHIP_IOS_APP_ID || vars.FCM_FOOD_IOS_APP_ID }}
+          FCM_API_KEY: ${{ inputs.app == 'ship' && secrets.FCM_SHIP_IOS_API_KEY || secrets.FCM_FOOD_IOS_API_KEY }}
+          IOS_APS_ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
+          bash mobile/tool/prepare-ios.sh "${{ inputs.app }}" | tee "$RUNNER_TEMP/prepare.log"
+          grep -q 'push=on' "$RUNNER_TEMP/prepare.log" || { echo "::error title=push off::a TestFlight build must carry push; the Firebase iOS identifiers of this app are missing"; exit 1; }
+
+      # The only step with the App Store Connect API key. The script writes it to a temporary file, signs through Apple's cloud signing, uploads, and deletes it.
+      - name: Build, sign and upload to TestFlight (the only step with the API key)
+        env:
+          IOS_ASC_KEY_P8_BASE64: ${{ secrets.IOS_ASC_KEY_P8_BASE64 }}
+          IOS_ASC_KEY_ID: ${{ vars.IOS_ASC_KEY_ID }}
+          IOS_ASC_ISSUER_ID: ${{ vars.IOS_ASC_ISSUER_ID }}
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          sha256sum -c mobile/release/script-pins.sha256 || { echo "::error title=script pin::a release script does not match mobile/release/script-pins.sha256; update the pin in the same change"; exit 1; }
+          bash mobile/tool/ios-testflight.sh "${{ inputs.app }}"

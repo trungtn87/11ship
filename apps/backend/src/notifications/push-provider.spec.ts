@@ -82,7 +82,9 @@ describe('FcmPushProvider', () => {
       notification: { title: message.title, body: message.body },
       data: { notification_id: message.notificationId, kind: 'NEW_OFFERS', target_type: 'DELIVERY_LIST' },
       android: { priority: 'HIGH', ttl: '90s', collapse_key: 'new_offers', notification: { channel_id: 'n11_qv' } },
+      apns: { headers: { 'apns-priority': '10', 'apns-collapse-id': 'new_offers' }, payload: { aps: {} } },
     });
+    expect(Number((sent.body.message as { apns: { headers: Record<string, string> } }).apns.headers['apns-expiration'])).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(Object.keys(sent.body.message.data)).not.toContain('target_id');
   });
 

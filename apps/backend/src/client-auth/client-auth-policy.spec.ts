@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { AppError, TechnicalError } from '../common/app-errors';
+import { isNativeSession } from '../client-device/client-device-constants';
 import { AppConfig } from '../config/app-config';
+import { CLIENT_PLATFORMS, isClientPlatform, isPasswordMobilePlatform } from './client-auth-constants';
 import {
   assertConsentSupported,
   assertDeviceAllowed,
@@ -48,7 +50,18 @@ describe('assertPlatformAllowed (the platform recorded on a session)', () => {
     expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb: false }, 'WEB')).toThrow(AppError);
     for (const localWeb of [true, false]) {
       expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, 'ANDROID')).not.toThrow();
+      expect(() => assertPlatformAllowed({ consent: PAIR, phoneVerificationMode: 'REQUIRED', localWeb }, 'IOS')).not.toThrow();
     }
+  });
+  it('knows IOS as a password phone platform that never takes the native branches', () => {
+    expect(CLIENT_PLATFORMS).toContain('IOS');
+    expect(isClientPlatform('IOS')).toBe(true);
+    expect(isPasswordMobilePlatform('IOS')).toBe(true);
+    expect(isPasswordMobilePlatform('ANDROID')).toBe(true);
+    expect(isPasswordMobilePlatform('WEB')).toBe(false);
+    expect(isPasswordMobilePlatform(undefined)).toBe(false);
+    expect(isNativeSession('IOS', 'FOOD')).toBe(false);
+    expect(isNativeSession('IOS', 'SHIP')).toBe(false);
   });
 });
 
