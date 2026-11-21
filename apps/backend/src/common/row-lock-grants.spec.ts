@@ -18,16 +18,9 @@ const LOCK = /\bFOR\s+(?:NO\s+KEY\s+UPDATE|KEY\s+SHARE|UPDATE|SHARE)\b/;
 const NOT_ALIAS = new Set(['where', 'on', 'left', 'right', 'inner', 'outer', 'join', 'order', 'group', 'limit', 'set', 'for', 'lateral', 'cross', 'using', 'as', 'natural', 'and', 'or', 'union', 'having', 'returning']);
 
 /** Accepted, reviewed exceptions: a table that is locked but not granted UPDATE. Each entry must still be a real gap (the test fails when it is fixed, so the entry is removed). */
-const KNOWN_GAPS: ReadonlyArray<{ readonly table: string; readonly file: string; readonly reason: string }> = [
-  {
-    table: 'wallet_commission_policies',
-    file: 'apps/backend/src/wallet/commission-policy-repository.ts',
-    reason:
-      'VERIFIED 2026-11-21 on local PostgreSQL 17.11: the SYSTEM commission change (admin-finance-read-service.changeCommission) cannot run with the runtime grants SELECT, INSERT. ' +
-      '(1) CommissionPolicyRepository.lockCurrent takes FOR UPDATE: permission denied. (2) Even without it, insertNext fires the guard trigger wallet_commission_policies_guard, which runs LOCK TABLE ... SHARE ROW EXCLUSIVE: permission denied (LOCK needs UPDATE). ' +
-      'The table is append-only (UPDATE refused by trigger), so a plain SELECT fix would not restore the write. Needs a Claude Lead decision (grant UPDATE, or redesign the guard lock with an advisory lock by migration). Not fixed in PR #423.',
-  },
-];
+// Empty: wallet_commission_policies was fixed by migration 1798070400000 (advisory lock, no row lock, no LOCK TABLE) and
+// CommissionPolicyRepository.lockCurrent (PR #427). Add an entry only with a documented, owner-approved gap.
+const KNOWN_GAPS: ReadonlyArray<{ readonly table: string; readonly file: string; readonly reason: string }> = [];
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
