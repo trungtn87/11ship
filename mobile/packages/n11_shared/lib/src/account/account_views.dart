@@ -30,8 +30,6 @@ import 'legal_policy_draft.dart';
 // docs/ui/m01-ship-web.md S05/S10/S11): guest, login, register, signed-in account, own profile and the logout dialog. They reuse
 // the shell, the components and the tokens; nothing here knows a role as an authority, every value comes from [SessionController].
 
-const String kNoServerReason = 'Bản dựng này thiếu địa chỉ máy chủ HTTPS (API_BASE_URL).';
-
 /// A refusal in words (Vietnamese, fixed): never the server's text.
 String failureMessage(AuthFailure failure) => withRequestTrace(_failureMessage(failure), failure.requestId);
 
@@ -160,7 +158,7 @@ class GuestPrompt extends StatelessWidget {
           text: text,
           trailing: session.ready
               ? N11Button(key: const Key('guest-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, compact: true, onPressed: () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))))
-              : const ReasonNote(kNoServerReason),
+              : const ReasonNote(kUnavailableReason),
         );
       },
     );
@@ -317,7 +315,7 @@ class AccountTab extends StatelessWidget {
           title: 'Đã đăng xuất trên máy này',
           text: 'Chưa xác nhận được với máy chủ rằng phiên đã bị thu hồi (không có kết nối).',
         ),
-      if (!session.ready) const ReasonNote(kNoServerReason),
+      if (!session.ready) const ReasonNote(kUnavailableReason),
       if (ended)
         N11Button(key: const Key('open-login'), label: 'Đăng nhập lại', onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null)
       else ...<Widget>[
@@ -537,7 +535,7 @@ class _LoginScreenState extends State<LoginScreen> {
             if (widget.reset != null)
               N11Link('Quên mật khẩu?', key: const Key('to-reset'), onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))))
             else
-              ReasonNote(kNotOnAndroidReason),
+              ReasonNote(kUnavailableReason),
             const SizedBox(height: N11Space.gap2),
             N11Button(
               key: const Key('login-submit'), validate: true,
@@ -545,7 +543,7 @@ class _LoginScreenState extends State<LoginScreen> {
               loading: busy,
               onPressed: busy || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
-            if (!session.ready) const ReasonNote(kNoServerReason),
+            if (!session.ready) const ReasonNote(kUnavailableReason),
             N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
               // The login form's refusal must not show on the register form.
               session.dismissNotices();
@@ -851,7 +849,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           if (_step == 1) ...<Widget>[
             for (final bool owner in <bool>[false, true])
               N11Card(child: Material(color: Colors.transparent, child: ListTile(key: Key(owner ? 'purpose-owner' : 'purpose-customer'), selected: _owner == owner, selectedTileColor: N11Colors.yellow.withValues(alpha: 0.2), leading: Icon(owner ? Icons.storefront_outlined : Icons.person_outline), title: Text(owner ? 'Chủ quán' : 'Khách hàng'), subtitle: Text(owner ? 'Gửi hồ sơ đăng ký quán sau khi xác minh. Chỉ bán hàng sau khi được duyệt.' : 'Tìm quán và đặt món khi tính năng sẵn sàng.'), trailing: Icon(_owner == owner ? Icons.radio_button_checked : Icons.radio_button_off), onTap: locked ? null : () => setState(() => _owner = owner)))),
-            const ReasonNote('Bạn luôn là khách hàng và có thể đăng ký mở quán trong mục Tài khoản theo luồng hồ sơ hiện có.'),
+            const ReasonNote('Bạn là khách hàng. Muốn mở quán, đăng ký trong mục Tài khoản.'),
             if (_purposeAttempted && _owner == null) const Text('Chọn Khách hàng hoặc Chủ quán để tiếp tục.', style: TextStyle(color: N11Colors.error)),
             N11Button(key: const Key('purpose-next'), label: 'Tiếp tục', onPressed: locked ? null : () => setState(() { _purposeAttempted = true; if (_owner != null) _step = 2; })),
           ],
@@ -995,7 +993,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 }
               },
             ),
-            if (!session.ready) const ReasonNote(kNoServerReason),
+            if (!session.ready) const ReasonNote(kUnavailableReason),
           ],
         );
       },

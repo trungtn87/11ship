@@ -214,7 +214,7 @@ void main() {
     await pump(tester, (Uri uri, Duration t) async => const RawHealthResponse(status: 200, body: ''), cfg: const AppConfig());
     await openTab(tester, 'account');
     expect(tester.widget<N11Button>(find.byKey(const Key('open-login'))).onPressed, isNull);
-    expect(find.text(kNoServerReason), findsWidgets);
+    expect(find.text(kUnavailableReason), findsWidgets);
   });
 
   testWidgets('register (SMS code) -> signed-in account -> profile -> logout, all on the shell', (WidgetTester tester) async {

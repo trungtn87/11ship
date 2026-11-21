@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/info_hint.dart';
 import 'm02_format.dart';
 import 'm02_widgets.dart';
 import 'shop_revenue_data.dart';
@@ -248,7 +249,10 @@ class _ShopRevenueScreenState extends State<ShopRevenueScreen> {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(selected == null ? 'Chạm một cột để xem số của ngày đó.' : _dayLine(summary.daily[selected]), key: const Key('revenue-bar-detail'), style: N11Text.caption),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            Expanded(child: Text(selected == null ? '' : _dayLine(summary.daily[selected]), key: const Key('revenue-bar-detail'), style: N11Text.caption)),
+            const InfoHint(title: 'Biểu đồ theo ngày', message: 'Chạm một cột để xem số của ngày đó.'),
+          ]),
           const SizedBox(height: N11Space.gap2),
           _RevenueBars(days: summary.daily, selected: selected, onSelect: (int index) => setState(() => _selected = index)),
         ],
