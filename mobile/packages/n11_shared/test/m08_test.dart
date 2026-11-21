@@ -134,6 +134,27 @@ class FakeSource extends NotificationSource {
   Future<void> reportPushPermissionDenied() async => deniedReports++;
 }
 
+/// Counts how many long polls are in flight at once; a second live loop would show as 2.
+class _CountingSource extends FakeSource {
+  _CountingSource(super.session);
+
+  int inFlight = 0;
+  int maxInFlight = 0;
+
+  @override
+  Future<NotificationPage> changes({required int after, Duration wait = Duration.zero}) async {
+    inFlight += 1;
+    if (inFlight > maxInFlight) {
+      maxInFlight = inFlight;
+    }
+    try {
+      return await super.changes(after: after, wait: wait);
+    } finally {
+      inFlight -= 1;
+    }
+  }
+}
+
 class FakePush implements PushPort {
   PushState current = const PushState(supported: true, permission: PushPermission.granted, token: 'tok-aaaaaaaaaaaaaaaaaaaa');
   int deleted = 0;
@@ -525,6 +546,130 @@ void main() {
       expect(port.settingsOpened, 1);
       push.dispose();
       await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('#431: a refused answer shows its own error with a retry, never the lost-connection banner; the rows stay; the retry clears it', (WidgetTester tester) async {
+      final t = await tester.runAsync(signedIn) as ({SessionController session, FakeApiTransport api});
+      final FakeSource source = FakeSource(t.session)..items = <NotificationItem>[item('n1', 1)];
+      final NotificationController c = await pumpInbox(tester, source, t.session);
+      source.fail = const NotificationFailure(NotificationFailureKind.server);
+      await tester.runAsync(c.load);
+      await tester.pump();
+      expect(find.byKey(const Key('inbox-error')), findsOneWidget);
+      expect(find.byKey(const Key('inbox-offline')), findsNothing);
+      expect(find.text(kOfflineText), findsNothing);
+      expect(find.text('Quán đã xác nhận đơn'), findsOneWidget);
+      source.fail = null;
+      await tester.tap(find.byKey(const Key('inbox-error-retry')));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump();
+      expect(find.byKey(const Key('inbox-error')), findsNothing);
+      expect(find.text('Quán đã xác nhận đơn'), findsOneWidget);
+      c.dispose();
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('#431 connection state and reads', () {
+    test('a long poll gets more time than the server holds it; a normal call keeps the default', () async {
+      final t = await signedIn();
+      t.api.routes['GET /v1/notifications/changes?after=0&wait=20'] = (String m, String p, Map<String, String> h, String b) async =>
+          json(200, <String, Object?>{'data': pageJson(<Map<String, Object?>>[], unread: 0, latest: 0)});
+      await HttpNotificationSource(session: t.session).changes(after: 0, wait: const Duration(seconds: 20));
+      expect(t.api.timeouts.last, const Duration(seconds: 20) + kLongPollMargin);
+      expect(t.api.timeouts.last! > const Duration(seconds: 20), isTrue);
+      t.api.routes['GET /v1/notifications/unread-count'] = (String m, String p, Map<String, String> h, String b) async => json(200, <String, Object?>{'data': <String, Object?>{'unread_count': 2}});
+      await HttpNotificationSource(session: t.session).unreadCount();
+      expect(t.api.timeouts.last, isNull);
+    });
+
+    test('an idle long poll that the server answers is not a lost connection', () async {
+      final t = await signedIn();
+      // The server answers a poll only after its wait; a route that answers at once would spin the loop on microtasks and starve the test's timer.
+      t.api.routes['GET /v1/notifications/changes?after=0&wait=20'] = (String m, String p, Map<String, String> h, String b) async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return json(200, <String, Object?>{'data': pageJson(<Map<String, Object?>>[], unread: 0, latest: 0)});
+      };
+      final NotificationController c = NotificationController(session: t.session, source: HttpNotificationSource(session: t.session), delay: (Duration d) async {});
+      c.startLive();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      c.stopLive();
+      expect(c.offline, isFalse);
+      expect(c.failure, isNull);
+      c.dispose();
+    });
+
+    test('a lost connection is stated; a server error is its own state; a success clears both', () async {
+      final t = await signedIn();
+      final FakeSource source = FakeSource(t.session);
+      final NotificationController c = NotificationController(session: t.session, source: source, delay: (Duration d) => Future<void>.delayed(const Duration(milliseconds: 1)));
+      source.fail = const NotificationFailure(NotificationFailureKind.offline);
+      c.startLive();
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(c.offline, isTrue);
+      expect(c.failure, isNull);
+      source.fail = const NotificationFailure(NotificationFailureKind.server);
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(c.offline, isFalse, reason: 'the latest answer decides: a 5xx is not a lost connection');
+      expect(c.failure, NotificationFailureKind.server);
+      source.fail = null;
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(c.offline, isFalse);
+      expect(c.failure, isNull);
+      c.stopLive();
+      c.dispose();
+    });
+
+    test('a single failed load on a shown list keeps the rows and states the error; a lost connection is stated instead', () async {
+      final t = await signedIn();
+      final FakeSource source = FakeSource(t.session)..items = <NotificationItem>[item('n1', 1)];
+      final NotificationController c = NotificationController(session: t.session, source: source);
+      await c.load();
+      source.fail = const NotificationFailure(NotificationFailureKind.server);
+      await c.load();
+      expect(c.items.single.id, 'n1');
+      expect(c.failure, NotificationFailureKind.server);
+      expect(c.offline, isFalse);
+      source.fail = const NotificationFailure(NotificationFailureKind.offline);
+      await c.load();
+      expect(c.offline, isTrue);
+      expect(c.failure, isNull);
+      expect(c.items.single.id, 'n1');
+      c.dispose();
+    });
+
+    test('an older answer that arrives late never puts back what the newer answer replaced', () async {
+      final t = await signedIn();
+      final FakeSource source = FakeSource(t.session);
+      final NotificationController c = NotificationController(session: t.session, source: source);
+      final Completer<NotificationPage> slow = Completer<NotificationPage>();
+      source.hold = slow;
+      final Future<void> first = c.load();
+      source.hold = null;
+      source.items = <NotificationItem>[item('fresh', 3)];
+      await c.load();
+      slow.complete(NotificationPage(items: <NotificationItem>[item('stale', 1)], unreadCount: 1, latestSeq: 1, serverNow: base));
+      await first;
+      expect(c.items.map((NotificationItem i) => i.id), <String>['fresh']);
+      expect(c.state, InboxLoad.ready);
+      c.dispose();
+    });
+
+    test('resync and reconnects keep one live loop: never two long polls at once', () async {
+      final t = await signedIn();
+      final _CountingSource source = _CountingSource(t.session);
+      final NotificationController c = NotificationController(session: t.session, source: source);
+      c.startLive();
+      c.startLive();
+      for (int i = 0; i < 4; i++) {
+        unawaited(c.resync());
+        c.stopLive();
+        unawaited(c.resync());
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      c.stopLive();
+      expect(source.maxInFlight, 1);
+      c.dispose();
     });
   });
 

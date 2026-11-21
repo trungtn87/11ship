@@ -102,12 +102,15 @@ class FakeApiTransport implements ApiTransport {
 
   final Map<String, FakeHandler> routes = <String, FakeHandler>{};
   final List<RecordedRequest> requests = <RecordedRequest>[];
+  /// The per-call timeout each request was sent with (null = the transport default).
+  final List<Duration?> timeouts = <Duration?>[];
   AuthFailure? failNext;
 
   @override
-  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body}) async {
+  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body, Duration? timeout}) async {
     final String text = body == null ? '' : utf8.decode(body);
     requests.add(RecordedRequest(method, pathAndQuery, headers, text));
+    timeouts.add(timeout);
     final AuthFailure? failure = failNext;
     if (failure != null) {
       failNext = null;

@@ -42,8 +42,13 @@ class NotificationController extends ChangeNotifier {
   int _latestSeq = 0;
   int? _nextBefore;
   bool _offline = false;
+  // The last failure that is NOT a lost connection (a refused or failed answer): shown on its own, with a retry.
+  NotificationFailureKind? _failure;
+  int _loadSeq = 0;
   bool _live = false;
-  int _liveGen = 0;
+  // True while the one live loop runs (it may still be inside a long poll after stopLive).
+  bool _loopActive = false;
+  Duration _backoff = const Duration(seconds: 2);
   int _epoch = 0;
   String? _userId;
   String? _pendingOpen;
@@ -59,6 +64,9 @@ class NotificationController extends ChangeNotifier {
 
   /// The server could not be reached: what is shown may be out of date.
   bool get offline => _offline;
+
+  /// The kind of the last answer that failed for another reason than a lost connection; null after a successful answer.
+  NotificationFailureKind? get failure => _failure;
 
   /// A tap on a push waits here until the app can route it (signed in, shell on screen).
   String? takePendingOpen() {
@@ -108,10 +116,11 @@ class NotificationController extends ChangeNotifier {
     _latestSeq = 0;
     _nextBefore = null;
     _offline = false;
+    _failure = null;
+    _loadSeq += 1;
     _pendingOpen = null;
     _pendingOpenUser = null;
     _live = false;
-    _liveGen += 1;
     _tell();
   }
 
@@ -123,11 +132,13 @@ class NotificationController extends ChangeNotifier {
       return;
     }
     final int epoch = _epoch;
+    // Only the newest load may write: an older answer that arrives late must not put back rows the person already read.
+    final int seq = ++_loadSeq;
     _state = InboxLoad.loading;
     _tell();
     try {
       final NotificationPage page = await source.list(unreadOnly: _unreadOnly);
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _loadSeq) {
         return;
       }
       _items = _merge(const <NotificationItem>[], page.items);
@@ -135,12 +146,14 @@ class NotificationController extends ChangeNotifier {
       _latestSeq = page.latestSeq;
       _nextBefore = page.nextBefore;
       _offline = false;
+      _failure = null;
       _state = InboxLoad.ready;
     } on NotificationFailure catch (failure) {
-      if (epoch != _epoch) {
+      if (epoch != _epoch || seq != _loadSeq) {
         return;
       }
       _offline = failure.kind == NotificationFailureKind.offline;
+      _failure = _offline ? null : failure.kind;
       _state = _items.isEmpty ? InboxLoad.failed : InboxLoad.ready;
     }
     _tell();
@@ -280,68 +293,79 @@ class NotificationController extends ChangeNotifier {
       return;
     }
     _live = true;
-    _liveGen += 1;
-    unawaited(_liveLoop(_epoch, _liveGen));
+    // One loop for the whole life of the controller: a start while the previous long poll is still in flight does not add a second one;
+    // that loop reads the current flags on every round and carries on.
+    if (!_loopActive) {
+      _loopActive = true;
+      unawaited(_liveLoop());
+    }
   }
 
   void stopLive() {
     _live = false;
-    _liveGen += 1;
   }
 
-  Future<void> _liveLoop(int epoch, int gen) async {
-    var backoff = const Duration(seconds: 2);
-    while (_live &&
-        gen == _liveGen &&
-        !_disposed &&
-        epoch == _epoch &&
-        _signedIn) {
-      try {
-        final NotificationPage page = await source.changes(
-          after: _latestSeq,
-          wait: kLiveWait,
-        );
-        if (!_live || gen != _liveGen || epoch != _epoch) {
-          return;
-        }
-        final bool wasOffline = _offline;
-        _offline = false;
-        backoff = const Duration(seconds: 2);
-        if (page.items.isNotEmpty) {
-          final Set<String> known = <String>{
-            for (final NotificationItem item in _items)
-              if (!item.read) item.id,
-          };
-          _items = _merge(_items, page.items);
-          _latestSeq = page.latestSeq;
-          // Only rows that were not already known unread are announced: a refreshed card or a retried event never repeats the notice.
-          onLiveItems?.call(<NotificationItem>[
-            for (final NotificationItem item in page.items)
-              if (!item.read && !known.contains(item.id)) item,
-          ]);
-        }
-        _unread = page.unreadCount;
-        if (wasOffline || page.items.isNotEmpty) {
-          _tell();
-        }
-      } on NotificationFailure catch (failure) {
-        if (failure.kind == NotificationFailureKind.sessionEnded) {
-          _live = false;
-          return;
-        }
-        if (epoch != _epoch || gen != _liveGen) {
-          return;
-        }
-        if (failure.kind == NotificationFailureKind.offline && !_offline) {
-          _offline = true;
-          _tell();
-        }
-        await _delay(backoff);
-        backoff = backoff * 2 > const Duration(seconds: 30)
-            ? const Duration(seconds: 30)
-            : backoff * 2;
-        continue;
+  Future<void> _liveLoop() async {
+    try {
+      while (_live && !_disposed && _signedIn) {
+        await _liveRound();
       }
+    } finally {
+      _loopActive = false;
+    }
+  }
+
+  /// One long poll: an answer is merged; a failure is stated, then the loop waits the backoff before it asks again.
+  Future<void> _liveRound() async {
+    final int epoch = _epoch;
+    try {
+      final NotificationPage page = await source.changes(
+        after: _latestSeq,
+        wait: kLiveWait,
+      );
+      if (!_live || epoch != _epoch) {
+        return;
+      }
+      final bool wasOffline = _offline;
+      _offline = false;
+      _failure = null;
+      _backoff = const Duration(seconds: 2);
+      if (page.items.isNotEmpty) {
+        final Set<String> known = <String>{
+          for (final NotificationItem item in _items)
+            if (!item.read) item.id,
+        };
+        _items = _merge(_items, page.items);
+        _latestSeq = page.latestSeq;
+        // Only rows that were not already known unread are announced: a refreshed card or a retried event never repeats the notice.
+        onLiveItems?.call(<NotificationItem>[
+          for (final NotificationItem item in page.items)
+            if (!item.read && !known.contains(item.id)) item,
+        ]);
+      }
+      _unread = page.unreadCount;
+      if (wasOffline || page.items.isNotEmpty) {
+        _tell();
+      }
+    } on NotificationFailure catch (failure) {
+      if (failure.kind == NotificationFailureKind.sessionEnded) {
+        _live = false;
+        return;
+      }
+      if (epoch != _epoch) {
+        return;
+      }
+      // The banner follows the LATEST answer: a lost connection states it, any other refusal clears it and is shown as its own error.
+      final bool lost = failure.kind == NotificationFailureKind.offline;
+      if (lost != _offline || (!lost && _failure != failure.kind)) {
+        _offline = lost;
+        _failure = lost ? null : failure.kind;
+        _tell();
+      }
+      await _delay(_backoff);
+      _backoff = _backoff * 2 > const Duration(seconds: 30)
+          ? const Duration(seconds: 30)
+          : _backoff * 2;
     }
   }
 
