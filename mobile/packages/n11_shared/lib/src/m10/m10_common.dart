@@ -17,6 +17,8 @@ import 'm10_source.dart';
 const String kFeeEstimateNote = 'Phí giao chỉ là tạm tính, có thể chưa phải giá chính thức.';
 const String kScheduleNote = 'Giờ hẹn là thời gian mong muốn, món có thể đến sớm hoặc muộn hơn.';
 const String kDirectPayNote = 'Bạn thanh toán trực tiếp cho quán hoặc shipper, không qua ứng dụng.';
+/// Tip levels offered by the checkout dropdown (VND). Owner decision 21/11: fixed list, no free-form amount.
+const List<int> kTipLevelsVnd = <int>[5000, 10000, 15000, 20000, 30000, 50000];
 const String kNoFeeNote = 'Chưa có phí giao nên chưa tính được tổng tiền.';
 const String kM10SampleLabel = 'Dữ liệu minh họa';
 

@@ -99,17 +99,23 @@ void main() {
     await addresses.load();
     addTearDown(addresses.dispose);
     await screen(CheckoutScreen(runtime: runtime, addresses: addresses), 'review-01-checkout-no-tip', focus: const Key('checkout-summary'));
-    await tester.ensureVisible(find.byKey(const Key('checkout-tip-20000')));
+    await tester.ensureVisible(find.byKey(const Key('checkout-tip-on')));
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('checkout-tip-20000')));
+    await tester.tap(find.byKey(const Key('checkout-tip-on')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('checkout-tip-level')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('20.000đ').last);
     for (int i = 0; i < 8; i++) { await tester.pump(const Duration(milliseconds: 30)); }
     await tester.ensureVisible(find.byKey(const Key('checkout-summary')));
     await tester.pump(const Duration(milliseconds: 100));
     await shot(tester, 'review-02-checkout-tip-20000-total-485000');
     customer.hold = true;
-    await tester.ensureVisible(find.byKey(const Key('checkout-tip-10000')));
+    await tester.ensureVisible(find.byKey(const Key('checkout-tip-level')));
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('checkout-tip-10000')));
+    await tester.tap(find.byKey(const Key('checkout-tip-level')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('10.000đ').last);
     await tester.pump(const Duration(milliseconds: 100));
     await tester.ensureVisible(find.byKey(const Key('checkout-summary')));
     await tester.pump(const Duration(milliseconds: 100));

@@ -485,7 +485,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _note = TextEditingController();
   final TextEditingController _deliveryNote = TextEditingController();
   final TextEditingController _typed = TextEditingController();
-  final TextEditingController _customTip = TextEditingController();
   DraftAddress? _address;
   bool _typedMode = false;
   DateTime? _scheduled;
@@ -510,8 +509,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
+  // Tip is off by default ("Không tip"). _tipVnd stays 0 until a level is picked while _tipOn is true.
+  bool _tipOn = false;
   int _tipVnd = 0;
-  bool _tipValid = true;
   int? _baseFee;
   Timer? _tipDebounce;
   CheckoutDraft? _sendingDraft;
@@ -551,7 +551,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _note.dispose();
     _deliveryNote.dispose();
     _typed.dispose();
-    _customTip.dispose();
     _freshness.dispose();
     super.dispose();
   }
@@ -854,36 +853,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  void _onCustomTipChanged() {
+  /// "Không tip": tip goes back to 0 and the level dropdown is hidden. Re-prices only when an amount was actually removed.
+  void _chooseNoTip() {
     if (_locked) return;
-    final String value = _customTip.text.trim();
-    final int? amount = value.isEmpty ? 0 : int.tryParse(value);
-    final bool valid = amount != null &&
-        amount >= 0 &&
-        amount <= 10000000 &&
-        (_baseFee == null || amount + _baseFee! <= 10000000);
-
-    _tipDebounce?.cancel();
-    _previewEpoch++;
-    setState(() {
-      _tipValid = valid;
-      if (valid) {
-        _tipVnd = amount;
-      }
-      _previewFresh = false;
-      _clientRef = newIdempotencyKey();
-      _key = newIdempotencyKey();
-      _attempt = _Attempt.none;
-      _failure = null;
-      _changed = false;
-    });
-
-    if (valid) {
-      _tipDebounce = Timer(const Duration(milliseconds: 300), () {
-        if (!mounted || _locked) return;
-        unawaited(_check());
-      });
+    if (_tipVnd == 0) {
+      setState(() => _tipOn = false);
+      return;
     }
+    _tipOn = false;
+    _tipVnd = 0;
+    _touch();
+  }
+
+  /// "Tip": shows the level dropdown. The amount stays 0 until a level is picked, so the price does not change yet.
+  void _chooseTip() {
+    if (_locked || _baseFee == null) return;
+    setState(() => _tipOn = true);
+  }
+
+  void _chooseTipLevel(int value) {
+    if (_locked || _baseFee == null) return;
+    _tipOn = true;
+    _tipVnd = value;
+    _touch();
   }
 
   void _done(OrderView order) {
@@ -901,7 +893,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final CheckoutPreview? confirmed = _previewFresh && !_previewing ? p : null;
     final bool blocked = confirmed != null && (!confirmed.ok || confirmed.blockers.isNotEmpty);
     final bool tipConfirmed = _tipVnd == 0 || (confirmed?.feeEstimateVnd != null && confirmed?.tipVnd == _tipVnd);
-    final bool ready = _tipValid && tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && !_locked;
+    final bool ready = tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && !_locked;
     final int items = confirmed?.itemsVnd ?? cart.itemsVnd;
     final int? estimateFee = confirmed?.feeEstimateVnd;
     final int? expectedTotal = confirmed?.expectedTotalVnd;
@@ -984,40 +976,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
             const Text('Thêm tiền cảm ơn shipper · Không bắt buộc', style: N11Text.label),
             const SizedBox(height: 4),
-            const Text('Hoàn toàn tự nguyện, ví dụ khi thời tiết xấu. Khoản này không cam kết giao nhanh hay ưu tiên.', style: N11Text.caption),
-            const SizedBox(height: N11Space.gap2),
             Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
-              for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
-                if (canTip || value == 0)
-                ChoiceChip(
-                  key: Key('checkout-tip-$value'),
-                  label: Text(label),
-                  selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
-                  onSelected: _locked || (!canTip && value > 0) ? null : (_) {
-                    _tipDebounce?.cancel();
-                    _customTip.clear();
-                    _tipVnd = value;
-                    _tipValid = true;
-                    _touch();
-                  },
-                ),
+              ChoiceChip(
+                key: const Key('checkout-tip-none'),
+                label: const Text('Không tip'),
+                selected: !_tipOn,
+                onSelected: _locked ? null : (_) => _chooseNoTip(),
+              ),
+              ChoiceChip(
+                key: const Key('checkout-tip-on'),
+                label: const Text('Tip'),
+                selected: _tipOn,
+                onSelected: _locked || !canTip ? null : (_) => _chooseTip(),
+              ),
             ]),
-            const SizedBox(height: N11Space.gap2),
-            N11Field(
-              fieldKey: const Key('checkout-tip-custom'),
-              label: 'Nhập số khác',
-              controller: _customTip,
-              keyboard: TextInputType.number,
-              enabled: canTip && !_locked,
-              validator: (String value) {
-                if (value.isEmpty) return null;
-                final int? amount = int.tryParse(value);
-                if (amount == null || amount < 0 || amount > 10000000 || _baseFee == null || amount + _baseFee! > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
-                return null;
-              },
-              onChanged: _onCustomTipChanged,
-              hint: canTip ? 'Số VND nguyên, tối đa theo giới hạn phí giao' : 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.',
-            ),
+            if (_tipOn) ...<Widget>[
+              const SizedBox(height: N11Space.gap2),
+              InputDecorator(
+                decoration: const InputDecoration(labelText: 'Mức tip', border: OutlineInputBorder(), isDense: true),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    key: const Key('checkout-tip-level'),
+                    isExpanded: true,
+                    value: _tipVnd == 0 ? null : _tipVnd,
+                    hint: const Text('Chọn mức tip'),
+                    onChanged: _locked || !canTip ? null : (int? value) {
+                      if (value != null) _chooseTipLevel(value);
+                    },
+                    items: <DropdownMenuItem<int>>[
+                      for (final int level in kTipLevelsVnd) DropdownMenuItem<int>(value: level, child: Text(m10Money(level))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (!canTip) ...<Widget>[
+              const SizedBox(height: 4),
+              const Text('Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.', style: N11Text.caption),
+            ],
           ]),
         ),
         if (road != null && roadPoints.isNotEmpty && widget.runtime.mapBuilder != null)
