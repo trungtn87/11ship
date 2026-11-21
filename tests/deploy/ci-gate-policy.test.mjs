@@ -386,7 +386,7 @@ function aabReleaseViolations(text, jobs) {
 
 // Owner-approved narrow exception (G3, iOS): the manual TestFlight build may declare environment ios-release. Same discipline as the AAB release: one file,
 // one job, exact trigger/ref/runner/environment, pinned actions, a golden of every step, secrets only on the two steps that need them.
-const IOS_RELEASE = { file: 'mobile-ios-release.yml', job: 'testflight', environment: 'ios-release', runsOn: 'macos-15', ifRef: "github.ref == 'refs/heads/main'" };
+const IOS_RELEASE = { file: 'mobile-ios-release.yml', job: 'testflight', environment: 'ios-release', runsOn: 'macos-26', ifRef: "github.ref == 'refs/heads/main'" };
 const IOS_GOLDEN = JSON.parse(readFileSync(join(ROOT, 'tests/deploy/fixtures/mobile-ios-release.golden.json'), 'utf8'));
 const IOS_UPLOAD_STEP = 'Build, sign and upload to TestFlight (the only step with the API key)';
 const IOS_PREPARE_STEP = 'Prepare the iOS project (push must be on for a release)';
@@ -1201,7 +1201,7 @@ test('iOS release (negative): another file name, job, environment, trigger, ref 
   failsWith(IOS_FILE, iosMutate('environment: ios-release', 'environment: vps-production'), /environment must be exactly ios-release|vps-production/);
   failsWith(IOS_FILE, iosMutate('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'), /only trigger is workflow_dispatch/);
   failsWith(IOS_FILE, iosMutate("    if: github.ref == 'refs/heads/main'", "    if: always()"), /restricted to/);
-  failsWith(IOS_FILE, iosMutate('runs-on: macos-15', 'runs-on: [self-hosted]'), /runs-on must be macos-15|self-hosted/);
+  failsWith(IOS_FILE, iosMutate('runs-on: macos-26', 'runs-on: [self-hosted]'), /runs-on must be macos-26|self-hosted/);
   failsWith(IOS_FILE, iosMutate('permissions:\n  contents: read', 'permissions:\n  contents: write'), /permissions must be exactly contents: read/);
 });
 
