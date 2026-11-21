@@ -5,6 +5,8 @@ export 'src/account/account_views.dart';
 export 'src/addresses/address_controller.dart';
 export 'src/addresses/address_models.dart';
 export 'src/addresses/address_location_picker.dart';
+export 'src/addresses/coverage.dart';
+export 'src/addresses/shared_address_flow.dart';
 export 'src/addresses/place_index.dart';
 export 'src/addresses/place_search.dart';
 export 'src/addresses/address_views.dart';

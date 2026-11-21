@@ -692,6 +692,11 @@ class _MapWithLocationState extends State<_MapWithLocation> {
               ),
             ],
           ),
+          if (!_open && widget.view.defaultLine != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Text(widget.view.defaultLine!, key: const Key('home-location-default'), style: N11Text.caption),
+            ),
           if (_open) ShipLocationExplainer(view: widget.view),
         ],
       );

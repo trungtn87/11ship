@@ -100,10 +100,13 @@ enum ShipLocationTone { sharing, acquiring, problem, stale, stopped }
 
 /// The small label on the home map and the text behind its (i).
 class ShipLocationView {
-  const ShipLocationView({required this.label, required this.tone, required this.paragraphs, required this.facts, required this.showPin, this.brief = const <String>[], this.warnings = const <String>[]});
+  const ShipLocationView({required this.label, required this.tone, required this.paragraphs, required this.facts, required this.showPin, this.brief = const <String>[], this.warnings = const <String>[], this.defaultLine});
 
   final String label;
   final ShipLocationTone tone;
+
+  /// One short line shown under the map by default (#194 Owner 20/11): the server time of the last valid ACK and the accuracy, only when they are live. Null when neither is.
+  final String? defaultLine;
 
   /// The full long explanation: shown only behind the small (i) inside the opened panel (#392 follow-up: too much text by default).
   final List<String> paragraphs;
@@ -169,6 +172,10 @@ ShipLocationView buildLocationView({
     if (wants && fixLive && (ackAt == null || fixAt.difference(ackAt) > const Duration(seconds: 20))) 'Vị trí trên điện thoại — chưa gửi lên máy chủ',
     if (accuracyMetres != null && fixLive) 'Độ chính xác ước tính: ~${accuracyMetres.round()} m',
   ];
+  final List<String> defaultParts = <String>[
+    if (ackAt != null && ackFresh) 'Máy chủ nhận vị trí: ${clockText(ackAt)}',
+    if (accuracyMetres != null && fixLive) 'Độ chính xác GPS: ~${accuracyMetres.round()} m',
+  ];
   final ShipLocationTone tone;
   final String label;
   if (!wants) {
@@ -198,6 +205,7 @@ ShipLocationView buildLocationView({
     showPin: wants && fixLive,
     brief: <String>[if (summaryParts.isNotEmpty) summaryParts.join(' · '), sharingLine, recenterNote],
     warnings: warnings,
+    defaultLine: defaultParts.isEmpty ? null : defaultParts.join(' · '),
   );
 }
 
