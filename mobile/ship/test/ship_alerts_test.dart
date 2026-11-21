@@ -129,8 +129,7 @@ void main() {
       expect(v.facts, contains('Máy chủ nhận vị trí lần cuối: ${clockText(t0)}'));
       expect(v.facts, contains('Độ chính xác ước tính: ~12 m'));
       expect(v.facts, isNot(contains('Vị trí trên điện thoại — chưa gửi lên máy chủ')));
-      expect(v.paragraphs.first, contains('khoảng 1 phút/lần'));
-      expect(v.paragraphs.first, contains('kể cả khi khóa màn hình'));
+      expect(v.paragraphs.first, 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.');
       expect(v.showPin, isTrue);
     });
 
@@ -171,7 +170,46 @@ void main() {
     test('switched off but a delivery remains: says it is still shared for that order', () {
       final ShipLocationView v = view(intent: false, hasWork: true, ackAt: t0, fixAt: t0, hasFix: true);
       expect(v.label, 'Đang chia sẻ vị trí');
-      expect(v.paragraphs.first, contains('Bạn đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý.'));
+      expect(v.paragraphs.first, 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý');
+    });
+
+    test('opened by default: at most three short lines; the last update and accuracy in one line', () {
+      final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 30, hasFix: true, now: const Duration(seconds: 30));
+      expect(v.brief.length, lessThanOrEqualTo(3));
+      expect(v.brief.first, 'Cập nhật lần cuối ${clockText(t0)} · độ chính xác ~30 m');
+      expect(v.brief[1], 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.');
+      expect(v.brief[2], 'Nút định vị chỉ dời bản đồ về GPS của máy');
+      expect(v.warnings, isEmpty);
+    });
+
+    test('the five owner sentences, word for word, by state', () {
+      final ShipLocationView offline = view(intent: false, hasWork: false, sharing: false);
+      expect(offline.brief, <String>['Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình.', 'Nút định vị chỉ dời bản đồ về GPS của máy']);
+      final ShipLocationView handedOff = view(intent: false, hasWork: true, ackAt: t0, fixAt: t0, hasFix: true);
+      expect(handedOff.brief[1], 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý');
+      expect(handedOff.brief.length, 3, reason: 'last update line, sharing line, recenter line');
+    });
+
+    test('a phone-only fix and an old server time are warnings, kept apart from the short lines', () {
+      final ShipLocationView phone = view(ackAt: null, fixAt: t0, hasFix: true, accuracy: 20, now: const Duration(seconds: 5), uploadFailed: true);
+      expect(phone.warnings, contains('Vị trí trên điện thoại — chưa gửi lên máy chủ'));
+      expect(phone.brief.join(' '), isNot(contains('chưa gửi lên máy chủ')));
+      final ShipLocationView old = view(ackAt: t0, fixAt: t0, hasFix: true, accuracy: 9, now: const Duration(seconds: 101));
+      expect(old.warnings, contains('Vị trí lần cuối lúc ${clockText(t0)} — chưa được cập nhật'));
+      expect(old.brief.first, isNot(contains('độ chính xác')), reason: 'an old sample\'s accuracy is not shown as current');
+    });
+
+    test('#194 20/11: the default line under the map keeps only a live ACK time and accuracy', () {
+      final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 30));
+      expect(v.defaultLine, 'Máy chủ nhận vị trí: ${clockText(t0)} · Độ chính xác GPS: ~12 m');
+      expect(view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 101)).defaultLine, isNull, reason: 'stale ACK and sample are never shown as current');
+      expect(view(intent: false, sharing: false).defaultLine, isNull, reason: 'no ACK and no fix: nothing is invented');
+    });
+
+    test('the long text still carries the full facts for the (i)', () {
+      final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 30));
+      expect(v.facts, contains('Độ chính xác ước tính: ~12 m'));
+      expect(v.paragraphs.join(' '), contains('hai việc khác nhau'));
     });
 
     test('the explanation separates the phone\'s GPS from what the server received, and says the recenter button sends nothing', () {
@@ -209,11 +247,42 @@ void main() {
       await tester.tap(find.byKey(const Key('home-location-info')));
       await tester.pump();
       expect(find.byKey(const Key('home-location-explainer')), findsOneWidget);
+      expect(find.textContaining('độ chính xác ~15 m'), findsOneWidget);
+      expect(find.byKey(const Key('home-location-long')), findsNothing, reason: 'the long text is closed by default');
+      expect(find.byKey(const Key('home-location-brief')), findsNWidgets(3));
+      await tester.tap(find.byKey(const Key('home-location-detail')));
+      await tester.pump();
       expect(find.textContaining('Độ chính xác ước tính: ~15 m'), findsOneWidget);
+      expect(find.byKey(const Key('home-location-long')), findsNWidgets(2));
+      await tester.tap(find.byKey(const Key('home-location-detail')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('home-location-info')));
       await tester.pump();
       expect(find.byKey(const Key('home-location-explainer')), findsNothing);
       expect(find.text('Đang chia sẻ vị trí'), findsOneWidget);
+    });
+    testWidgets('opened panel: warnings show without the (i); font 1.5x on 320 wide does not overflow', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final ShipLocationView v = view(ackAt: null, fixAt: t0, hasFix: true, accuracy: 20, now: const Duration(seconds: 5), uploadFailed: true);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildN11Theme(),
+        builder: (BuildContext context, Widget? w) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.5)), child: w!),
+        home: Scaffold(body: SingleChildScrollView(child: ShipHomeLayoutProbe(view: v))),
+      ));
+      await tester.ensureVisible(find.byKey(const Key('home-location-info')));
+      await tester.tap(find.byKey(const Key('home-location-info')));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('home-location-warning')), findsOneWidget);
+      expect(find.text('Vị trí trên điện thoại — chưa gửi lên máy chủ'), findsOneWidget);
+      expect(find.byKey(const Key('home-location-long')), findsNothing);
+      await tester.tap(find.byKey(const Key('home-location-detail')));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('home-location-warning')), findsOneWidget, reason: 'the warning stays when the long text is open too');
     });
   });
 }

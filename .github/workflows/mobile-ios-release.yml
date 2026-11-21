@@ -33,7 +33,7 @@ jobs:
   testflight:
     name: TestFlight ${{ inputs.app }} (signed by Apple cloud signing)
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 75
     environment: ios-release
     steps:

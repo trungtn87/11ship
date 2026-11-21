@@ -224,8 +224,7 @@ void main() {
       expect(tester.widget<N11Button>(key('checkout-send')).onPressed, isNull);
 
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-no-gps'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-no-gps'));
       customer.pending[1].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'stale-tip', tip: 20000));
       await settle(tester);
       customer.pending[2].complete(const CheckoutPreview(ok: true, blockers: <String>[], lines: <PreviewLine>[], itemsVnd: 45000, feeEstimateVnd: null, feeDistanceM: null, expectedTotalVnd: null, tipVnd: 20000, feeStatus: 'UNAVAILABLE', feeReason: 'DROPOFF_PIN_MISSING', quoteSnapshot: 'no-gps'));
@@ -241,8 +240,7 @@ void main() {
       await settle(tester);
       expect(find.text('Tiền cảm ơn'), findsNothing);
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-pinned'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-pinned'));
       customer.pending[4].complete(pricedPreview(fee: 10000, distance: 2500, snapshot: 'recovered'));
       await settle(tester);
       expect(find.text('55.000đ'), findsWidgets);
@@ -364,8 +362,7 @@ void main() {
       // Test switching between two addresses that both have GPS but different delivery fees:
       // Address 1 had base fee = 10k. Switch to Address 2 which has base fee = 25k.
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-pinned-2'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-pinned-2'));
       await settle(tester);
       await settle(tester);
 
@@ -387,8 +384,7 @@ void main() {
 
       // Test lost GPS / null fee: user switches to address without pin
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-no-gps'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-no-gps'));
       await settle(tester);
       await settle(tester);
 
@@ -427,8 +423,7 @@ void main() {
       await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
       expect(tester.widget<TextField>(key('checkout-name')).controller!.text, 'Người A');
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-b'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-b'));
       expect(tester.widget<TextField>(key('checkout-name')).controller!.text, isEmpty, reason: 'B has no name, so A must be cleared');
       expect(tester.widget<TextField>(key('checkout-phone')).controller!.text, '0902222222');
       expect(tester.widget<TextField>(key('checkout-delivery-note')).controller!.text, 'Cổng B');
@@ -464,8 +459,7 @@ void main() {
       await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
       expect(customer.drafts.map((CheckoutDraft d) => d.address.addressId), <String?>['a']);
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-b'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-b'));
       expect(customer.drafts, hasLength(1), reason: 'B waits for the one in-flight preview instead of starting a duplicate request');
 
       customer.pending.single.completeError(const M07Failure(M07FailureKind.offline));
@@ -505,12 +499,10 @@ void main() {
 
       await mount(tester, CheckoutScreen(runtime: runtime, addresses: book));
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-b'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-b'));
       await tester.pump(const Duration(milliseconds: 500));
       await tap(tester, key('checkout-pick'));
-      await tap(tester, key('picker-c'));
-      await tap(tester, key('picker-confirm'));
+      await tap(tester, key('pick-saved-c'));
       expect(customer.drafts, hasLength(1));
 
       customer.pending.single.complete(pricedPreview(fee: 99000, distance: 9900, snapshot: 'stale-a'));
@@ -574,7 +566,7 @@ void main() {
 
     testWidgets('"Dùng vị trí hiện tại": one explicit fix becomes the pin of the Order; a refusal leaves the Order without a pin and says so (never a made-up point)', (WidgetTester tester) async {
       final SampleOrderStore store = SampleOrderStore();
-      final FakeLocationProvider gps = FakeLocationProvider();
+      final FakeLocationProvider gps = FakeLocationProvider()..next = LocationFix(latitude: 22.66, longitude: 106.25, accuracyMeters: 12, takenAt: DateTime.utc(2026, 10, 13));
       final OrderRuntime runtime = OrderRuntime(customer: SampleCustomerOrders(store), shop: SampleShopOrders(store), cart: CartController(source: SampleCustomerOrders(store)), location: gps);
       await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
       await mount(tester, CheckoutScreen(runtime: runtime));
@@ -582,6 +574,7 @@ void main() {
       expect(gps.calls, 0, reason: 'nothing is read until the person presses the button');
       gps.failure = LocationFailure.denied;
       await tap(tester, key('checkout-address'));
+      await tap(tester, key('pick-open-map'));
       await tap(tester, key('location-current'));
       expect(gps.calls, 1);
       expect(containing('Chưa được cấp quyền'), findsOneWidget);
@@ -591,7 +584,7 @@ void main() {
       expect(containing('Đã lấy vị trí hiện tại'), findsOneWidget);
       await tap(tester, key('location-save'));
       await tap(tester, key('checkout-send'));
-      expect(store.lastPin, (10.0123, 106.0456));
+      expect(store.lastPin, (22.66, 106.25));
       await unmount(tester);
     });
 
@@ -611,6 +604,7 @@ void main() {
       await mount(tester, CheckoutScreen(runtime: runtime));
       await fill(tester);
       await tap(tester, key('checkout-address'));
+      await tap(tester, key('pick-open-map'));
       expect(find.text('pin:none'), findsOneWidget);
       await tap(tester, key('picker-a'));
       expect(find.text('pin:22.66,106.25'), findsOneWidget);
@@ -620,6 +614,36 @@ void main() {
       expect(key('checkout-use-gps'), findsNothing);
       await tap(tester, key('checkout-send'));
       expect(store.lastPin, (22.67, 106.26));
+      await unmount(tester);
+    });
+
+    testWidgets('#413 checkout: the typed address and its optional description show on the confirm block and travel as the delivery note', (WidgetTester tester) async {
+      final SampleOrderStore store = SampleOrderStore();
+      final OrderRuntime runtime = OrderRuntime(
+        customer: SampleCustomerOrders(store),
+        shop: SampleShopOrders(store),
+        cart: CartController(source: SampleCustomerOrders(store)),
+        pinPicker: (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) => TextButton(
+          key: const Key('picker-a'),
+          onPressed: () => onPick(22.66, 106.25),
+          child: const Text('A'),
+        ),
+      );
+      await runtime.cart.add(shopId: kSampleShopId, shopName: 'Quán', itemId: pho.id, name: pho.name, priceVnd: 45000);
+      await mount(tester, CheckoutScreen(runtime: runtime));
+      await fill(tester);
+      await tap(tester, key('checkout-address'));
+      expect(find.text('Chỉnh sửa'), findsWidgets);
+      await tap(tester, key('pick-open-map'));
+      await tester.enterText(key('location-address-text'), 'Tổ 3, Cao Bằng');
+      await tester.enterText(key('location-extra-note'), 'Nhà số 12, tầng 2');
+      await tap(tester, key('picker-a'));
+      await tap(tester, key('location-save'));
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: key('checkout-address'), matching: find.text('Tổ 3, Cao Bằng')), findsOneWidget);
+      expect(tester.widget<TextField>(key('checkout-delivery-note')).controller!.text, 'Nhà số 12, tầng 2');
+      await tap(tester, key('checkout-send'));
+      expect(store.lastPin, (22.66, 106.25));
       await unmount(tester);
     });
 

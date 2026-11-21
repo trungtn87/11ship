@@ -100,11 +100,22 @@ enum ShipLocationTone { sharing, acquiring, problem, stale, stopped }
 
 /// The small label on the home map and the text behind its (i).
 class ShipLocationView {
-  const ShipLocationView({required this.label, required this.tone, required this.paragraphs, required this.facts, required this.showPin});
+  const ShipLocationView({required this.label, required this.tone, required this.paragraphs, required this.facts, required this.showPin, this.brief = const <String>[], this.warnings = const <String>[], this.defaultLine});
 
   final String label;
   final ShipLocationTone tone;
+
+  /// One short line shown under the map by default (#194 Owner 20/11): the server time of the last valid ACK and the accuracy, only when they are live. Null when neither is.
+  final String? defaultLine;
+
+  /// The full long explanation: shown only behind the small (i) inside the opened panel (#392 follow-up: too much text by default).
   final List<String> paragraphs;
+
+  /// The opened panel by default: at most three short lines (last update and accuracy; sharing; the recenter button sends nothing).
+  final List<String> brief;
+
+  /// Position problems (not yet on the server; last update is old). Shown whenever the panel is open, never folded into the long text.
+  final List<String> warnings;
 
   /// "Máy chủ nhận vị trí lần cuối: HH:mm", "Độ chính xác ước tính: ~N m", "Vị trí trên điện thoại — chưa gửi lên máy chủ": only fields the data supports.
   final List<String> facts;
@@ -135,16 +146,35 @@ ShipLocationView buildLocationView({
   final bool wants = intent || hasWork;
   final bool ackFresh = sharing && ackAt != null && now.difference(ackAt) < kLocationLiveWindow;
   final bool fixLive = hasFix && fixAt != null && now.difference(fixAt) >= Duration.zero && now.difference(fixAt) < kLocationLiveWindow;
-  final String first = !wants
-      ? 'Bạn đang offline và không có đơn nên 11Ship không chia sẻ vị trí. Khi bật Online, vị trí được cập nhật khoảng 1 phút/lần, kể cả khi khóa màn hình.'
+  // Owner copy (#392, 2026-11-20 rewrite): these exact sentences are used in the opened panel and in the long text behind the (i).
+  const String sharingOnline = 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.';
+  const String sharingOffline = 'Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình.';
+  const String sharingHandedOff = 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý';
+  const String recenterNote = 'Nút định vị chỉ dời bản đồ về GPS của máy';
+  final String sharingLine = !wants
+      ? sharingOffline
       : intent
-          ? 'Khi bật Online, 11Ship cập nhật vị trí khoảng 1 phút/lần, kể cả khi khóa màn hình. Khi có đơn, người có quyền theo dõi đơn có thể xem vị trí shipper.'
-          : 'Bạn đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý. Việc chia sẻ chỉ dừng khi máy chủ xác nhận không còn việc cần theo dõi.';
+          ? sharingOnline
+          : sharingHandedOff;
   const String second = 'Vị trí trên điện thoại (GPS) và vị trí đã gửi lên máy chủ là hai việc khác nhau. Chỉ máy chủ quyết định bạn có nhận được đơn; nút “Về vị trí hiện tại” chỉ dời bản đồ về GPS của máy, không gửi vị trí.';
+  final bool stale = wants && ackAt != null && !ackFresh;
+  final bool phoneOnly = wants && fixLive && (ackAt == null || fixAt.difference(ackAt) > const Duration(seconds: 20));
+  final List<String> warnings = <String>[
+    if (phoneOnly) 'Vị trí trên điện thoại — chưa gửi lên máy chủ',
+    if (stale) 'Vị trí lần cuối lúc ${clockText(ackAt)} — chưa được cập nhật',
+  ];
+  final List<String> summaryParts = <String>[
+    if (ackAt != null) 'Cập nhật lần cuối ${clockText(ackAt)}',
+    if (accuracyMetres != null && fixLive) 'độ chính xác ~${accuracyMetres.round()} m',
+  ];
   final List<String> facts = <String>[
     if (ackAt != null) ackFresh || !wants ? 'Máy chủ nhận vị trí lần cuối: ${clockText(ackAt)}' : 'Vị trí lần cuối lúc ${clockText(ackAt)} — chưa được cập nhật',
     if (wants && fixLive && (ackAt == null || fixAt.difference(ackAt) > const Duration(seconds: 20))) 'Vị trí trên điện thoại — chưa gửi lên máy chủ',
     if (accuracyMetres != null && fixLive) 'Độ chính xác ước tính: ~${accuracyMetres.round()} m',
+  ];
+  final List<String> defaultParts = <String>[
+    if (ackAt != null && ackFresh) 'Máy chủ nhận vị trí: ${clockText(ackAt)}',
+    if (accuracyMetres != null && fixLive) 'Độ chính xác GPS: ~${accuracyMetres.round()} m',
   ];
   final ShipLocationTone tone;
   final String label;
@@ -167,7 +197,16 @@ ShipLocationView buildLocationView({
     tone = ShipLocationTone.problem;
     label = 'Chưa gửi được vị trí mới';
   }
-  return ShipLocationView(label: label, tone: tone, paragraphs: <String>[first, second], facts: facts, showPin: wants && fixLive);
+  return ShipLocationView(
+    label: label,
+    tone: tone,
+    paragraphs: <String>[sharingLine, second],
+    facts: facts,
+    showPin: wants && fixLive,
+    brief: <String>[if (summaryParts.isNotEmpty) summaryParts.join(' · '), sharingLine, recenterNote],
+    warnings: warnings,
+    defaultLine: defaultParts.isEmpty ? null : defaultParts.join(' · '),
+  );
 }
 
 /// The alert, drawn once at the top of the home screen. The explanation can be folded; the alert itself cannot be dismissed.
@@ -260,24 +299,59 @@ class ShipLocationBadge extends StatelessWidget {
   }
 }
 
-/// What the (i) opens: the real facts first (server ACK time, accuracy, "only on the phone"), then the plain explanation. Neutral colours: it is
-/// information, not an alarm.
-class ShipLocationExplainer extends StatelessWidget {
+/// What the map (i) opens: at most three short lines by default (last update and accuracy, sharing, the recenter button), then any position
+/// warning in red (never folded away). The long text with the facts sits behind a small (i) inside, closed by default (#392 follow-up).
+class ShipLocationExplainer extends StatefulWidget {
   const ShipLocationExplainer({super.key, required this.view});
 
   final ShipLocationView view;
 
   @override
-  Widget build(BuildContext context) => Container(
-        key: const Key('home-location-explainer'),
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: N11Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: N11Colors.line)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          for (final String f in view.facts) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(f, style: N11Text.bodyStrong)),
-          for (final String p in view.paragraphs) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(p, style: N11Text.caption)),
+  State<ShipLocationExplainer> createState() => _ShipLocationExplainerState();
+}
+
+class _ShipLocationExplainerState extends State<ShipLocationExplainer> {
+  bool _detail = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ShipLocationView v = widget.view;
+    final TextStyle small = N11Text.caption.copyWith(fontSize: 12, height: 16 / 12);
+    return Container(
+      key: const Key('home-location-explainer'),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(color: N11Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: N11Colors.line)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              for (final String line in v.brief)
+                Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(line, key: const Key('home-location-brief'), style: small)),
+            ]),
+          ),
+          IconButton(
+            key: const Key('home-location-detail'),
+            tooltip: _detail ? 'Thu gọn chi tiết vị trí' : 'Chi tiết vị trí',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            onPressed: () => setState(() => _detail = !_detail),
+            icon: Icon(_detail ? Icons.info : Icons.info_outline, size: 18, color: N11Colors.ink2),
+          ),
         ]),
-      );
+        for (final String w in v.warnings)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, right: 8),
+            child: Text(w, key: const Key('home-location-warning'), style: N11Text.bodyStrong.copyWith(fontSize: 12, color: N11Colors.errorInk)),
+          ),
+        if (_detail) ...<Widget>[
+          const SizedBox(height: 6),
+          for (final String f in v.facts) Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(f, key: const Key('home-location-fact'), style: small)),
+          for (final String p in v.paragraphs) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(p, key: const Key('home-location-long'), style: small)),
+        ],
+      ]),
+    );
+  }
 }
 
 /// The one retry of the home alert: asks the server again, re-reads the phone's GPS/network state, and retries what the shipper wanted. It never turns

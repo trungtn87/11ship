@@ -1607,8 +1607,16 @@ select {
   text-decoration: none;
 }
 
+/* Filter bars stay on one row (Owner 2026-11-20); they wrap only when the screen is too narrow for it. */
 .toolbar-filters {
   align-items: center;
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .toolbar-filters {
+    flex-wrap: wrap;
+  }
 }
 
 .search {
@@ -1656,17 +1664,27 @@ select {
   cursor: not-allowed;
 }
 
+/* Dense "spreadsheet" tables (Owner 2026-11-20): small text, short rows, a sticky header, thin grid lines.
+   The card scrolls on both axes so the sticky header can stick; wide tables scroll sideways on narrow screens. */
 .table-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  overflow-x: auto;
+  overflow: auto;
+  max-height: min(72vh, 760px);
   background: var(--white);
 }
 
 .table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.table tbody tr:nth-child(even) td {
+  background: #faf9f6;
 }
 
 .table tbody tr:hover td {
@@ -1674,9 +1692,13 @@ select {
 }
 
 .table th {
-  padding: 12px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 10px;
   background: var(--yellow-subtle);
   border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -1685,9 +1707,19 @@ select {
 }
 
 .table td {
-  padding: 14px 20px;
+  padding: 5px 10px;
   border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   vertical-align: middle;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table th:last-child,
+.table td:last-child {
+  border-right: 0;
 }
 
 .table tbody tr:last-child td {
@@ -1700,6 +1732,20 @@ select {
 
 .table .row-panel td {
   padding: 0;
+  max-width: none;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+/* Row actions inside dense tables keep a short row; the phone layout below restores the full touch target. */
+.table td .table-link {
+  min-height: 28px;
+  padding: 0 6px;
+}
+
+.table td .table-link:focus-visible {
+  outline: 3px solid var(--charcoal);
+  outline-offset: 1px;
 }
 
 .more {
@@ -2077,58 +2123,20 @@ select {
   margin: 8px 0 0;
 }
 
-/* Tables on narrow screens: one card per row, the column name in front of each value. */
+/* Narrow screens (Owner 2026-11-20): the table keeps its columns and scrolls sideways inside its card, the header stays readable. */
 @media (max-width: 720px) {
-  .table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  .table {
+    min-width: 640px;
   }
 
-  .table,
-  .table tbody,
-  .table tr,
-  .table td {
-    display: block;
-    width: 100%;
-  }
-
-  .table tr {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .table tbody tr:last-child {
-    border-bottom: 0;
-  }
-
-  .table td {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 6px 0;
-    border: 0;
-    text-align: right;
-  }
-
-  .table td::before {
-    content: attr(data-label);
-    flex: none;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
-    text-align: left;
+  .table td .table-link {
+    min-height: 44px;
+    padding: 0 8px;
   }
 
   .table .row-panel td {
-    display: block;
+    display: table-cell;
     text-align: center;
-  }
-
-  .table .row-panel td::before {
-    content: none;
   }
 
   .toolbar-filters .select {
