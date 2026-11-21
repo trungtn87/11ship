@@ -301,11 +301,13 @@ class AccountTab extends StatelessWidget {
         _hero(),
       // OD-26: the account was deleted (or locked for deletion) from this device; the sign-in actions below stay available for other accounts.
       if (session.accountDeletedNotice)
-        const N11Banner(
-          key: Key('account-deleted'),
+        N11Banner(
+          key: const Key('account-deleted'),
           kind: BannerKind.info,
           title: 'Đã xác nhận xóa tài khoản',
-          text: 'Tài khoản đã bị khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn không đăng nhập lại được bằng tài khoản này. Dữ liệu được xử lý theo quy định của pháp luật.',
+          text: session.accountDeletedWalletOnly
+              ? 'Tài khoản đã được khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn vẫn đăng nhập lại 11Ship được, chỉ để rút toàn bộ số dư ví.'
+              : 'Tài khoản đã bị khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn không đăng nhập lại được bằng tài khoản này. Dữ liệu được xử lý theo quy định của pháp luật.',
         ),
       // A confirmed logout shows nothing; only an unconfirmed revoke keeps a short warning.
       if (session.loggedOutNotice && session.logoutUnconfirmed)
@@ -1143,10 +1145,9 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
         kind: BannerKind.warn,
         title: 'Xóa tài khoản không thể hoàn tác',
         text: 'Sau khi xác nhận:\n'
-            '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'
+            '${shipper ? '• Bạn bị đăng xuất ngay. Bạn vẫn đăng nhập lại 11Ship được, chỉ để rút toàn bộ số dư ví; sau đó tài khoản được đóng.\n' : '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'}'
             '• Phiên đăng nhập trên mọi thiết bị bị thu hồi.\n'
             '• Dữ liệu được giữ hoặc xử lý theo quy định của pháp luật.\n'
-            '${shipper ? '• Là shipper, bạn chỉ còn rút được toàn bộ số dư ví.\n' : ''}'
             '• Đơn hoặc việc đang chạy sẽ hoàn tất trước; tài khoản bị khóa sau đó. Trong thời gian này bạn không nhận việc mới.',
       ),
       if (c.outcome == AccountDeletionOutcome.pending)

@@ -73,7 +73,9 @@ class AccountDeletionController extends ChangeNotifier {
       _outcome = outcome;
       _notify();
       if (outcome != AccountDeletionOutcome.pending) {
-        await session.endAfterAccountDeletion();
+        // A driver whose account is only LOCKED (records kept) can still sign in to 11Ship for the wallet; an erased account cannot.
+        final bool walletOnly = outcome == AccountDeletionOutcome.locked && (session.identity?.availableRoles.contains('DRIVER') ?? false);
+        await session.endAfterAccountDeletion(walletOnly: walletOnly);
       }
       return true;
     } on AuthFailure catch (failure) {

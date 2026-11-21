@@ -84,6 +84,7 @@ class SessionController extends ChangeNotifier {
   bool _sessionEndedNotice = false;
   bool _logoutUnconfirmed = false;
   bool _accountDeletedNotice = false;
+  bool _accountDeletedWalletOnly = false;
   RegistrationMode _registrationMode = RegistrationMode.unknown;
   int _epoch = 0;
   /// Counts every login / register / retry request sent; a stale attempt clears its stored token only while it is still the latest (P5-6d).
@@ -116,6 +117,10 @@ class SessionController extends ChangeNotifier {
 
   /// True after the owner's own deletion (OD-26) was confirmed on this device; cleared by the next sign-in or [dismissNotices].
   bool get accountDeletedNotice => _accountDeletedNotice;
+
+  /// True when the deleted-account notice is for a driver whose account is LOCKED (not erased): the 11Ship app can sign in again for the
+  /// wallet balance only (server: a driver of the SHIP app gets limited access, see client-login-service).
+  bool get accountDeletedWalletOnly => _accountDeletedWalletOnly;
 
   @override
   void dispose() {
@@ -287,7 +292,7 @@ class SessionController extends ChangeNotifier {
 
   /// OD-26: the server deleted or locked this account at its owner's request and revoked its sessions. This device only forgets its token
   /// and personal values (no revoke call: the server already did it) and the guest screen says what happened.
-  Future<void> endAfterAccountDeletion() async {
+  Future<void> endAfterAccountDeletion({bool walletOnly = false}) async {
     ++_epoch;
     _busy = false;
     _pending = null;
@@ -301,6 +306,7 @@ class SessionController extends ChangeNotifier {
     _logoutUnconfirmed = false;
     _sessionEndedNotice = false;
     _accountDeletedNotice = true;
+    _accountDeletedWalletOnly = walletOnly;
     _notify();
   }
 
@@ -308,6 +314,7 @@ class SessionController extends ChangeNotifier {
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
     _accountDeletedNotice = false;
+    _accountDeletedWalletOnly = false;
     _logoutUnconfirmed = false;
     _lastFailure = null;
     _notify();
@@ -381,6 +388,7 @@ class SessionController extends ChangeNotifier {
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
     _accountDeletedNotice = false;
+    _accountDeletedWalletOnly = false;
     _setBusy(true);
     try {
       final String deviceBody = build(await api.deviceBlock());
@@ -474,6 +482,7 @@ class SessionController extends ChangeNotifier {
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
     _accountDeletedNotice = false;
+    _accountDeletedWalletOnly = false;
     _setIdentity(identity);
     _setProfile(identity.profile);
     _pending = null;
