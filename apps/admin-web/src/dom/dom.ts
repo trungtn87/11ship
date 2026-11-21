@@ -18,6 +18,11 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
       element.append(child);
     }
   }
+  // Dense tables cut long text with an ellipsis (styles.css): a text-only cell keeps its full value in the hover title.
+  const [only] = children;
+  if ((tag === 'td' || tag === 'th') && children.length === 1 && typeof only === 'string' && attrs.title === undefined) {
+    element.setAttribute('title', only);
+  }
   return element;
 }
 
