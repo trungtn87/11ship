@@ -83,6 +83,7 @@ export 'src/m11/m11_source.dart';
 export 'src/m11/m11_widgets.dart';
 export 'src/m08/m08_controller.dart';
 export 'src/m10/m10_cart.dart';
+export 'src/m10/customer_order_progress.dart';
 export 'src/m10/m10_common.dart';
 export 'src/m10/m10_customer_views.dart';
 export 'src/m10/m10_http.dart';
