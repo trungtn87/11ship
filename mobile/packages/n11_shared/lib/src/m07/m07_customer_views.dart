@@ -469,7 +469,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                         fieldKey: const Key('m07-c-fee-note'),
                         label: 'Lý do đề xuất phí (tùy chọn)',
                         controller: _feeNote,
-                        hint: 'Ví dụ: Hàng cồng kềnh, cần giao gấp...',
+                        info: 'Ví dụ: Hàng cồng kềnh, cần giao gấp...',
                       ),
                     ],
                   ],

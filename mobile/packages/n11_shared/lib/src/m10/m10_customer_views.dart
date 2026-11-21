@@ -920,7 +920,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (confirmed != null && confirmed.blockers.isNotEmpty) N11Banner(key: const Key('checkout-blockers'), kind: BannerKind.error, title: 'Chưa gửi được đơn', text: confirmed.blockers.map(_blockerText).join('\n')),
         const Text('Người nhận', style: N11Text.h2),
         N11Field(requiredInput: true, fieldKey: const Key('checkout-name'), label: 'Tên người nhận', controller: _name, maxLength: 80, enabled: !_locked, onChanged: _touch),
-        N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, enabled: !_locked, onChanged: _touch, hint: 'Người nhận có thể khác người đặt.'),
+        N11Field(validator: phoneError, fieldKey: const Key('checkout-phone'), label: 'Số điện thoại người nhận', controller: _phone, keyboard: TextInputType.phone, maxLength: 15, enabled: !_locked, onChanged: _touch, info: 'Người nhận có thể khác người đặt.'),
         N11Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -969,7 +969,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
         N11Field(fieldKey: const Key('checkout-note'), label: 'Ghi chú cho đơn', controller: _note, maxLength: 200, optionalLabel: true, enabled: !_locked, onChanged: _touch),
-        N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, enabled: !_locked, onChanged: _touch, hint: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
+        N11Field(fieldKey: const Key('checkout-delivery-note'), label: 'Hướng dẫn tìm đường cho shipper', controller: _deliveryNote, maxLength: 200, optionalLabel: true, enabled: !_locked, onChanged: _touch, info: 'Chỉ áp dụng cho đơn này, không tự cập nhật sổ địa chỉ.'),
         N11Card(
           key: const Key('checkout-tip'),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[

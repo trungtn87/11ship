@@ -199,6 +199,13 @@ void main() {
       expect(old.brief.first, isNot(contains('độ chính xác')), reason: 'an old sample\'s accuracy is not shown as current');
     });
 
+    test('#194 20/11: the default line under the map keeps only a live ACK time and accuracy', () {
+      final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 30));
+      expect(v.defaultLine, 'Máy chủ nhận vị trí: ${clockText(t0)} · Độ chính xác GPS: ~12 m');
+      expect(view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 101)).defaultLine, isNull, reason: 'stale ACK and sample are never shown as current');
+      expect(view(intent: false, sharing: false).defaultLine, isNull, reason: 'no ACK and no fix: nothing is invented');
+    });
+
     test('the long text still carries the full facts for the (i)', () {
       final ShipLocationView v = view(ackAt: t0, fixAt: t0, accuracy: 12.4, hasFix: true, now: const Duration(seconds: 30));
       expect(v.facts, contains('Độ chính xác ước tính: ~12 m'));
