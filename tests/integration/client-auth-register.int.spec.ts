@@ -38,6 +38,7 @@ const CONSENT = { terms_version: TERMS, privacy_version: PRIVACY };
 const WEB_FOOD = { device_id: 'web-device-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-device-0002', platform: 'WEB', app: 'SHIP' };
 const ANDROID_FOOD = { device_id: 'android-device-0001', platform: 'ANDROID', app: 'FOOD' };
+const IOS_FOOD = { device_id: 'ios-device-0001', platform: 'IOS', app: 'FOOD' };
 const STALL_KEY: readonly [number, number] = [20261011, 3];
 
 function body(phone: Phone, proofToken: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -311,7 +312,7 @@ describe('M01.03 — client register', () => {
         body(phone, proof.proofToken, { permissions: ['x'] }),
         body(phone, proof.proofToken, { device: { ...WEB_FOOD, extra: 1 } }),
         body(phone, proof.proofToken, { consent: { ...CONSENT, accepted_at: '2020-01-01T00:00:00Z' } }),
-        body(phone, proof.proofToken, { device: { ...WEB_FOOD, platform: 'IOS' } }),
+        body(phone, proof.proofToken, { device: { ...WEB_FOOD, platform: 'WINDOWS' } }),
         body(phone, proof.proofToken, { device: { ...WEB_FOOD, app: 'SHIP11' } }),
         { phone: phone.local },
         '[]',
@@ -679,6 +680,24 @@ describe('M01.03 — client register', () => {
         expect(repeated.status).toBe(201);
         expect(dataOf(repeated).access_token).toBe(token);
         expect((await app.pool.query('SELECT auth_method FROM app.sessions WHERE user_id = $1', [dataOf(response).user_id])).rows[0].auth_method).toBe('PASSWORD');
+      }
+    });
+
+    it('iOS registration needs OTP but no attestation, creates a PASSWORD session and safely replays', async () => {
+      for (const appLabel of ['FOOD', 'SHIP']) {
+        const phone = randomPhone();
+        const proof = await obtainProof(app, phone);
+        const key = randomUUID();
+        const request = body(phone, proof.proofToken, { device: { ...IOS_FOOD, app: appLabel } });
+        const response = await call(request, key);
+        expect(response.status).toBe(201);
+        const token = String(dataOf(response).access_token);
+        expect((await app.call('GET', '/client-auth/me', { bearer: token })).status).toBe(200);
+        const repeated = await call(request, key);
+        expect(repeated.status).toBe(201);
+        expect(dataOf(repeated).access_token).toBe(token);
+        const row = (await app.pool.query('SELECT auth_method, platform FROM app.sessions WHERE user_id = $1', [dataOf(response).user_id])).rows[0];
+        expect([row.auth_method, row.platform]).toEqual(['PASSWORD', 'IOS']);
       }
     });
 

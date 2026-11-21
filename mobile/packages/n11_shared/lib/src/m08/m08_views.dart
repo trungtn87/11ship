@@ -313,6 +313,21 @@ class _NotificationInboxBodyState extends State<NotificationInboxBody> {
               kind: BannerKind.warn,
               title: kOfflineText,
             ),
+          // A refused or failed answer is not a lost connection: say that, and offer to load again. The list shown stays as it is.
+          if (!c.offline && c.failure != null && c.state != InboxLoad.failed)
+            N11Banner(
+              key: const Key('inbox-error'),
+              kind: BannerKind.error,
+              title: 'Không tải được thông báo',
+              text: 'Máy chủ chưa trả về dữ liệu mới. Danh sách hiện có vẫn giữ nguyên.',
+              trailing: N11Button(
+                key: const Key('inbox-error-retry'),
+                label: 'Thử lại',
+                compact: true,
+                kind: ButtonKind.secondary,
+                onPressed: () => unawaited(c.load()),
+              ),
+            ),
           _filters(),
         ];
         switch (c.state) {

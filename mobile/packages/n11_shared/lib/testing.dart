@@ -102,12 +102,15 @@ class FakeApiTransport implements ApiTransport {
 
   final Map<String, FakeHandler> routes = <String, FakeHandler>{};
   final List<RecordedRequest> requests = <RecordedRequest>[];
+  /// The per-call timeout each request was sent with (null = the transport default).
+  final List<Duration?> timeouts = <Duration?>[];
   AuthFailure? failNext;
 
   @override
-  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body}) async {
+  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body, Duration? timeout}) async {
     final String text = body == null ? '' : utf8.decode(body);
     requests.add(RecordedRequest(method, pathAndQuery, headers, text));
+    timeouts.add(timeout);
     final AuthFailure? failure = failNext;
     if (failure != null) {
       failNext = null;
@@ -689,7 +692,7 @@ class FakeDiscoveryApi implements DiscoveryApi {
 }
 
 class FakeShopEntry {
-  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[], this.latitude, this.longitude});
+  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[], this.latitude, this.longitude, this.ratingAverage, this.ratingCount = 0, this.createdAt});
 
   final String id;
   final String name;
@@ -699,8 +702,11 @@ class FakeShopEntry {
   final List<FakeDishEntry> dishes;
   final double? latitude;
   final double? longitude;
+  final double? ratingAverage;
+  final int ratingCount;
+  final DateTime? createdAt;
 
-  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason, latitude: latitude, longitude: longitude);
+  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason, latitude: latitude, longitude: longitude, ratingAverage: ratingAverage, ratingCount: ratingCount, createdAt: createdAt);
 }
 
 class FakeDishEntry {

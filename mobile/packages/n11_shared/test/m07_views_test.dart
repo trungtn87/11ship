@@ -549,13 +549,13 @@ void main() {
     testWidgets('CustomerCallScreen: creates delivery without GPS and calculates recipient total', (WidgetTester tester) async {
       final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
       await mount(tester, CustomerCallScreen(source: source));
-      expect(find.text('Ghim vị trí lấy hàng (tùy chọn)'), findsOneWidget);
-      expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
+      // #413: both points use the shared block; the pin is optional and says so.
+      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsNWidgets(2));
       await tester.enterText(key('m07-c-sender-phone'), '0901234567');
-      await tester.enterText(key('m07-c-pickup-addr'), 'Số 1 Phố Huế');
+      await tapSharedAddress(tester, 'm07-c-pickup-addr', 'Số 1 Phố Huế');
       await tester.enterText(key('m07-c-recip-name'), 'Người nhận A');
       await tester.enterText(key('m07-c-recip-phone'), '0987654321');
-      await tester.enterText(key('m07-c-dropoff-addr'), 'Số 10 Phố Trúc');
+      await tapSharedAddress(tester, 'm07-c-dropoff-addr', 'Số 10 Phố Trúc');
       await tester.enterText(key('m07-c-goods'), 'Hộp quà');
       // Toggle COD
       await tap(tester, find.text('Thu hộ tiền hàng (COD)'));
@@ -808,4 +808,16 @@ class _NegotiationShop extends SampleShopSource {
     answers.add(accept);
     return get(id);
   }
+}
+
+/// #413: a Gọi ship point through the shared flow: the block opens the saved list, "Thêm địa chỉ mới" opens the map, Save returns the text.
+Future<void> tapSharedAddress(WidgetTester tester, String fieldKey, String text) async {
+  await tester.ensureVisible(find.byKey(Key(fieldKey)));
+  await tester.tap(find.byKey(Key(fieldKey)));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('pick-add-new')));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('location-address-text')), text);
+  await tester.tap(find.byKey(const Key('location-save')));
+  await tester.pumpAndSettle();
 }

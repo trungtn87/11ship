@@ -677,7 +677,7 @@ class _QrPlaceholder extends StatelessWidget {
           SizedBox(height: N11Space.gap2),
           Text('QR sẽ hiển thị khi kết nối ngân hàng', textAlign: TextAlign.center, style: N11Text.caption),
           SizedBox(height: 2),
-          Text('Vui lòng chuyển khoản đúng nội dung đã được xác nhận nhanh chóng.', textAlign: TextAlign.center, style: N11Text.caption),
+          Text('Chuyển khoản đúng nội dung mã đã tạo.', textAlign: TextAlign.center, style: N11Text.caption),
         ],
       ),
     );
@@ -758,7 +758,7 @@ class _TopupConfirmScreenState extends State<TopupConfirmScreen> {
           ],
         ),
       ),
-      const ReasonNote('Đính kèm ảnh chưa dùng được ở giai đoạn giao diện; bạn vẫn gửi được yêu cầu không kèm ảnh.'),
+      const ReasonNote('Chưa đính kèm ảnh được; bạn vẫn gửi yêu cầu không kèm ảnh.'),
       const N11Banner(
         key: Key('topup-confirm-notice'),
         kind: BannerKind.info,

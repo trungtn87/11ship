@@ -2,20 +2,98 @@ name: CI
 
 on:
   pull_request:
+    # ready_for_review starts the full run for a PR that was drafted (drafts run quick checks only, see "changes").
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Decides how much of this workflow a run needs (scripts/ci/ci-plan.mjs, tests/ci/ci-plan.test.mjs).
+  # Fail-closed: any doubt selects the full run. The required check "Verify" below always runs and always reports.
+  changes:
+    name: Plan CI scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      integration: ${{ steps.plan.outputs.integration }}
+      heavy: ${{ steps.plan.outputs.heavy }}
+      reason: ${{ steps.plan.outputs.reason }}
+      tree: ${{ steps.facts.outputs.tree }}
+    steps:
+      - name: Check out (two parents of the merge ref, or the commit and its parent)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Planner policy tests
+        run: node --test tests/ci/ci-plan.test.mjs
+
+      # Facts for the planner. Any failure here leaves the fact false/empty, which the planner treats as "run everything".
+      - name: Collect facts
+        id: facts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "tree=${tree}" >> "$GITHUB_OUTPUT"
+          : > "${RUNNER_TEMP}/changed-files.txt"
+          if [ "${EVENT_NAME}" = "pull_request" ] || [ "${EVENT_NAME}" = "push" ]; then
+            git diff --name-only HEAD^1 HEAD > "${RUNNER_TEMP}/changed-files.txt" || : > "${RUNNER_TEMP}/changed-files.txt"
+          fi
+          # Reuse: an earlier run uploaded ci-full-verified-<tree> only after a green full integration run on this exact tree.
+          reuse=false
+          found="$(gh api "repos/${REPO}/actions/artifacts?name=ci-full-verified-${tree}&per_page=20" --jq '[.artifacts[] | select(.expired == false)] | length' 2>/dev/null || echo 0)"
+          if [ "${found}" -gt 0 ] 2>/dev/null; then reuse=true; fi
+          echo "reuse=${reuse}" >> "$GITHUB_OUTPUT"
+          # A docs-only push may skip integration only if its parent commit passed CI on main.
+          parent_green=false
+          if [ "${EVENT_NAME}" = "push" ]; then
+            parent="$(git rev-parse HEAD^1 2>/dev/null || true)"
+            if [ -n "${parent}" ]; then
+              ok="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${parent}&event=push&branch=main&status=success&per_page=5" --jq '.workflow_runs | length' 2>/dev/null || echo 0)"
+              if [ "${ok}" -gt 0 ] 2>/dev/null; then parent_green=true; fi
+            fi
+          fi
+          echo "parent_green=${parent_green}" >> "$GITHUB_OUTPUT"
+
+      - name: Plan
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          REUSE: ${{ steps.facts.outputs.reuse }}
+          PARENT_GREEN: ${{ steps.facts.outputs.parent_green }}
+        run: |
+          export CHANGED_FILES_FILE="${RUNNER_TEMP}/changed-files.txt"
+          node scripts/ci/ci-plan.mjs
+          {
+            echo "### CI scope"
+            echo "- integration: \`$(grep '^integration=' "$GITHUB_OUTPUT" | cut -d= -f2)\`"
+            echo "- reason: $(grep '^reason=' "$GITHUB_OUTPUT" | cut -d= -f2-)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   verify:
     name: Verify (Node 24, PostgreSQL 17)
+    needs: changes
+    # Runs even if the planner failed so that the check always reports; the first step then fails the job (never "skipped").
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 50
 
@@ -40,6 +118,12 @@ jobs:
           --log-opt max-file=1
 
     steps:
+      - name: CI scope must have been planned
+        env:
+          PLAN_RESULT: ${{ needs.changes.result }}
+        run: |
+          test "${PLAN_RESULT}" = "success" || { echo "::error::CI scope planner result: ${PLAN_RESULT}"; exit 1; }
+
       - name: Check out
         uses: actions/checkout@v4
 
@@ -216,6 +300,7 @@ jobs:
       # Local mode: exactly what the README tells a developer to run. No CI admin credential and no
       # wrong-user fixture. Only the real wrong-user test may be skipped; nothing else.
       - name: Integration tests, local mode (no CI-only credentials)
+        if: ${{ needs.changes.outputs.integration == 'both' }}
         timeout-minutes: 22
         env:
           NODE_ENV: test
@@ -237,6 +322,7 @@ jobs:
 
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
+        if: ${{ needs.changes.outputs.integration == 'ci' || needs.changes.outputs.integration == 'both' }}
         timeout-minutes: 22
         env:
           NODE_ENV: test
@@ -323,6 +409,26 @@ jobs:
           name: ship-driver-shots
           path: .test-results/ship-driver-shots
           retention-days: 14
+
+      # Proof that this exact git tree passed the full integration run. Later runs (the push to main after a squash merge,
+      # a re-run) reuse it instead of running the suite again. Uploaded only when every step above succeeded.
+      - name: Record full verification of this tree
+        if: ${{ success() && needs.changes.outputs.integration != 'none' }}
+        env:
+          TREE: ${{ needs.changes.outputs.tree }}
+          MODE: ${{ needs.changes.outputs.integration }}
+        run: |
+          mkdir -p .ci-proof
+          printf 'tree=%s\nintegration=%s\nrun=%s\nsha=%s\n' "${TREE}" "${MODE}" "${GITHUB_RUN_ID}" "${GITHUB_SHA}" > .ci-proof/proof.txt
+
+      - name: Upload full-verification proof
+        if: ${{ success() && needs.changes.outputs.integration != 'none' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-verified-${{ needs.changes.outputs.tree }}
+          path: .ci-proof/proof.txt
+          retention-days: 30
+
   # M00-VPS-01 package A: the self-hosted staging path on a THROWAWAY PostgreSQL 17 with TLS. It builds the same private CA
   # and server certificate as ops/selfhosted/make-pki.sh (the certificate names only localhost), starts postgres:17.11 with
   # TLS 1.3 and an hba file that mirrors ops/selfhosted/pg_hba.conf (hostssl + SCRAM only), prepares roles, database and schema
@@ -330,6 +436,8 @@ jobs:
   # here and discarded with the runner: no repository secret, no real database, no Supabase.
   selfhosted-postgres:
     name: Self-hosted PostgreSQL 17 over TLS (M00-VPS-01)
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -458,6 +566,8 @@ jobs:
   # no secret, no deployment: nothing here touches the VPS.
   ubuntu-artifact:
     name: Ubuntu/VinaHost artifact (M00-VPS-01)
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -531,6 +641,8 @@ jobs:
   # passwords from the original files, the wrapper's refusals, and both certificate procedures (renew-leaf, CA rotation).
   selfhosted-os-prep:
     name: Self-hosted preparation on Ubuntu (M00-VPS-01)
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -579,6 +691,8 @@ jobs:
   # cleanly. No database, no real unit, no real data.
   systemd-restart-probe:
     name: systemd restart limit probe (M00-VPS-01)
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -615,6 +729,8 @@ jobs:
   # starts them. No database and no secrets: Docker and npm are faked inside the suite.
   launcher-windows:
     name: Launcher behaviour (Windows PowerShell 5.1)
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: windows-2022
     # The launcher suite keeps its own 14-minute deadlock timeout. Allow setup/build plus
     # the governance regressions to finish without the job-level limit cancelling it first.

@@ -9,6 +9,9 @@ import 'm08_source.dart';
 // The HTTP side of the M08 source: signed requests of the session (Bearer + device proof). Every answer is parsed strictly. None of these writes is a
 // business command (read marks, settings, the push link), so repeating one is harmless and none needs an Idempotency-Key.
 
+/// Extra time a long poll gets beyond its server-side wait (the answer can be late by a network round trip).
+const Duration kLongPollMargin = Duration(seconds: 15);
+
 NotificationFailure _failureOf(Object error) {
   if (error is NotificationFailure) {
     return error;
@@ -32,9 +35,9 @@ class HttpNotificationSource extends NotificationSource {
 
   final SessionController session;
 
-  Future<Object?> _call(String method, String path, {Object? body}) async {
+  Future<Object?> _call(String method, String path, {Object? body, Duration? timeout}) async {
     try {
-      final ApiResponse response = await session.protectedCall(method, path, body: body == null ? null : jsonEncode(body));
+      final ApiResponse response = await session.protectedCall(method, path, body: body == null ? null : jsonEncode(body), timeout: timeout);
       if (response.status != 200) {
         throw failureOf(response);
       }
@@ -60,7 +63,8 @@ class HttpNotificationSource extends NotificationSource {
 
   @override
   Future<NotificationPage> changes({required int after, Duration wait = Duration.zero}) async {
-    final Object? data = await _call('GET', '/v1/notifications/changes?after=$after&wait=${wait.inSeconds}');
+    // The server holds the request up to [wait]; the transport must outlive that wait, or an idle poll is reported as a lost connection.
+    final Object? data = await _call('GET', '/v1/notifications/changes?after=$after&wait=${wait.inSeconds}', timeout: wait + kLongPollMargin);
     return _parse(() => NotificationPage.fromJson(data));
   }
 

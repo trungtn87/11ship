@@ -17,6 +17,9 @@ import 'availability_refresh.dart';
 
 enum DiscoveryLoad { idle, loading, ready, failed, notConnected }
 
+/// Issue #411: the ranking pool stops after the page that reaches this many shops. Pages are 30 (server max 50), so the pool holds at most 210.
+const int kRankingPoolCap = 200;
+
 class DiscoveryController extends ChangeNotifier {
   DiscoveryController({required this.api, DiscoveryPosition? position, RouteDistanceController? distances})
       : position = position ?? DiscoveryPosition(),
@@ -279,6 +282,20 @@ class DiscoveryController extends ChangeNotifier {
     if (epoch == _epoch) {
       _loadingMore = false;
       _notify();
+    }
+  }
+
+  /// Issue #411: "Quán nổi bật" and the no-GPS "Quán gần bạn" rank by the rating of the WHOLE list, so the next pages are read up to
+  /// [kRankingPoolCap] shops (a stated limit, not the whole area). Stops when the list ends, when the cap is reached, or when a page adds
+  /// nothing (failure or another load in progress), so it never loops.
+  Future<void> fillRankingPool() async {
+    final int epoch = _epoch;
+    while (epoch == _epoch && _hasMore && _shops.length < kRankingPoolCap) {
+      final int before = _shops.length;
+      await loadMore();
+      if (epoch != _epoch || _shops.length == before) {
+        break;
+      }
     }
   }
 

@@ -240,11 +240,16 @@ class _IncomeBodyState extends State<IncomeBody> {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            selected == null ? kIncomeBarHint : _dayLine(summary.daily[selected]),
-            key: const Key('income-bar-detail'),
-            style: N11Text.caption,
-          ),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            Expanded(
+              child: Text(
+                selected == null ? '' : _dayLine(summary.daily[selected]),
+                key: const Key('income-bar-detail'),
+                style: N11Text.caption,
+              ),
+            ),
+            const InfoHint(title: 'Biểu đồ theo ngày', message: kIncomeBarHint),
+          ]),
           const SizedBox(height: N11Space.gap2),
           _DailyBars(days: summary.daily, selected: selected, onSelect: (int index) => setState(() => _selected = index)),
         ],

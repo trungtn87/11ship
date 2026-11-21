@@ -15,7 +15,7 @@ class _FakeTransport implements ApiTransport {
   final List<String> paths = <String>[];
 
   @override
-  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body}) async {
+  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body, Duration? timeout}) async {
     paths.add(pathAndQuery);
     return answer(pathAndQuery);
   }

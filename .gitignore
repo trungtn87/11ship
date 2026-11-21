@@ -37,3 +37,7 @@ graphify-out/
 google-services.json
 *firebase-adminsdk*.json
 service-account*.json
+
+# The map package copied into the map plugin by mobile/tool/prepare-ios.sh (the committed copy lives in gps-test).
+mobile/packages/n11_m14_map/ios/caobang/
+mobile/*/ios/

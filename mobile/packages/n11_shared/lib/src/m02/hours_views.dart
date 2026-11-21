@@ -346,9 +346,7 @@ class _HourEditorScreenState extends State<HourEditorScreen> {
       onWillLeave: _leave,
       content: <Widget>[
         if (_all)
-          const N11Banner(kind: BannerKind.info, title: 'Công cụ nhập nhanh', text: 'Áp dụng sẽ thay lịch nháp của cả 7 ngày. Bạn vẫn sửa riêng từng ngày sau đó, và lịch chỉ được ghi khi bấm Lưu lịch.')
-        else
-          const Text('Giờ Việt Nam. Ca qua đêm thuộc ngày bắt đầu.', style: N11Text.caption),
+          const N11Banner(kind: BannerKind.info, title: 'Công cụ nhập nhanh', text: 'Áp dụng sẽ thay lịch nháp của cả 7 ngày. Bạn vẫn sửa riêng từng ngày sau đó, và lịch chỉ được ghi khi bấm Lưu lịch.'),
         for (int i = 0; i < _ranges.length; i++) _rangeCard(i, errorOf(i)),
         if (_ranges.isEmpty)
           N11InfoCard(

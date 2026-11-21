@@ -60,6 +60,9 @@ class DeliveryAddress {
   String get phoneText => formatVnPhone(contactPhone);
 }
 
+/// The longest "Mô tả bổ sung" / delivery note of an address (the same limit as the address form and the order's delivery note).
+const int kAddressNoteMaxLength = 200;
+
 String formatVnPhone(String e164) => e164.startsWith('+84') ? '0${e164.substring(3)}' : e164;
 
 /// Address text and the point chosen by the person. Legacy text-only addresses remain readable.

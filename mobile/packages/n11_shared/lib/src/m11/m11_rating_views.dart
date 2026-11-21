@@ -166,7 +166,7 @@ class CustomerOrderRatingScreen extends StatelessWidget {
                 onRate: () => rate('Đánh giá shipper', state.shipper!.name, state.shipper, (int s, String? c, String k) => source.customerRateShipper(orderId, stars: s, comment: c, key: k)),
               )
             else
-              const N11Card(child: Text('Đơn này chưa có shipper giao hoặc không giao qua shipper nên không có phần đánh giá shipper.', style: N11Text.caption)),
+              const N11Card(child: Text('Đơn này không giao qua shipper nên không có phần đánh giá shipper.', style: N11Text.caption)),
             N11Button(
               key: const Key('m11-order-complain'),
               label: 'Gửi phản ánh về đơn này',
@@ -199,7 +199,7 @@ class ShopDeliveryRatingScreen extends StatelessWidget {
           return vstack(<Widget>[
             Text('Yêu cầu giao ${state.deliveryCode}', style: N11Text.caption),
             if (shipper == null)
-              const N11Card(child: Text('Yêu cầu giao này chưa có shipper thực hiện nên chưa có gì để đánh giá.', key: Key('m11-shop-no-shipper'), style: N11Text.caption))
+              const N11Card(child: Text('Chưa có shipper nên chưa có gì để đánh giá.', key: Key('m11-shop-no-shipper'), style: N11Text.caption))
             else
               _RateTarget(
                 keyPrefix: 'm11-shop-rate',
@@ -247,7 +247,7 @@ class CustomerDeliveryRatingScreen extends StatelessWidget {
           return vstack(<Widget>[
             Text('Chuyến giao ${state.deliveryCode}', style: N11Text.caption),
             if (shipper == null)
-              const N11Card(child: Text('Chuyến giao này chưa có shipper hoàn thành nên chưa có gì để đánh giá.', key: Key('m11-customer-no-shipper'), style: N11Text.caption))
+              const N11Card(child: Text('Chưa có shipper hoàn thành nên chưa có gì để đánh giá.', key: Key('m11-customer-no-shipper'), style: N11Text.caption))
             else
               _RateTarget(
                 keyPrefix: 'm11-customer-rate',

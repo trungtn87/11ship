@@ -20,3 +20,5 @@ flutter:
       android:
         package: vn.eleven.m14.flutter
         pluginClass: M14Plugin
+      ios:
+        pluginClass: M14IosPlugin

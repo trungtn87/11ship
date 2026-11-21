@@ -44,7 +44,7 @@ export function assertDeviceAllowed(settings: ClientAuthSettings, device: Client
 
 /** Platform routing is separate from token validation and live account/role authorization. */
 export function assertPlatformAllowed(settings: ClientAuthSettings, platform: ClientPlatform): void {
-  if (platform === 'ANDROID') {
+  if (platform === 'ANDROID' || platform === 'IOS') {
     return;
   }
   if (platform === 'WEB' && settings.localWeb) {

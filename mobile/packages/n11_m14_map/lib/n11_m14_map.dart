@@ -32,8 +32,8 @@ class M14OfflineMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return const Center(child: Text('Bản đồ offline M14 dành cho Android'));
+    if (kIsWeb || (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS)) {
+      return const Center(child: Text('Bản đồ offline Cao Bằng chỉ có trên điện thoại'));
     }
     return _NativeMap(pins: pins, route: route, onPoint: onPoint, onReady: onReady, onError: onError, focusPin: focusPin, centerRequest: centerRequest, radiusCircle: radiusCircle);
   }
@@ -54,17 +54,26 @@ class _NativeMap extends StatefulWidget {
 }
 class _NativeMapState extends State<_NativeMap> {
   MethodChannel? _channel;
-  late String _sent = jsonEncode(_data);
+  // Signature of the data the native view was last sent. Null until the channel exists (#387): a change made before that is kept, not dropped,
+  // and is sent as soon as the view is created.
+  String? _sent;
   Map<String, dynamic> get _data => <String, dynamic>{'pins': widget.pins, 'route': widget.route, 'focus_pin': widget.focusPin,
     'select_points': widget.onPoint != null, 'center_request': widget.centerRequest, if (widget.radiusCircle != null) 'radius_circle': widget.radiusCircle};
   @override
   void didUpdateWidget(covariant _NativeMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // The screen around the map rebuilds this widget with identical data (typing); redraw natively only when something changed (#299).
+    _pushChanged();
+  }
+  /// Redraws natively only when the data changed: the screen around the map rebuilds with identical data while typing (#299).
+  void _pushChanged() {
+    final MethodChannel? channel = _channel;
+    if (channel == null) return;
     final String signature = jsonEncode(_data);
     if (signature == _sent) return;
     _sent = signature;
-    _channel?.invokeMethod<void>('update', _data);
+    channel.invokeMethod<void>('update', _data).catchError((Object _) {
+      if (mounted) widget.onError?.call('Không cập nhật được ghim trên bản đồ. Hãy thử chạm lại.');
+    });
   }
   @override
   void dispose() {
@@ -72,15 +81,19 @@ class _NativeMapState extends State<_NativeMap> {
     super.dispose();
   }
   @override
-  Widget build(BuildContext context) => AndroidView(
-    viewType: 'vn.eleven/m14/map',
+  Widget build(BuildContext context) {
     // A bounded map card must receive pan/pinch gestures even when embedded in a ScrollView.
-    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)},
-    creationParams: _data,
-    creationParamsCodec: const StandardMessageCodec(),
-    onPlatformViewCreated: (int id) {
-      _channel = MethodChannel('vn.eleven/m14/map/$id');
-      _channel!.setMethodCallHandler((MethodCall call) async {
+    final Set<Factory<OneSequenceGestureRecognizer>> gestures = <Factory<OneSequenceGestureRecognizer>>{Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)};
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? UiKitView(viewType: 'vn.eleven/m14/map', gestureRecognizers: gestures, creationParams: _data, creationParamsCodec: const StandardMessageCodec(), onPlatformViewCreated: _created)
+        : AndroidView(viewType: 'vn.eleven/m14/map', gestureRecognizers: gestures, creationParams: _data, creationParamsCodec: const StandardMessageCodec(), onPlatformViewCreated: _created);
+  }
+
+  void _created(int id) {
+      if (!mounted) return;
+      final MethodChannel channel = MethodChannel('vn.eleven/m14/map/$id');
+      _channel = channel;
+      channel.setMethodCallHandler((MethodCall call) async {
         if (!mounted) return;
         if (call.method == 'ready') widget.onReady?.call();
         if (call.method == 'error') widget.onError?.call(call.arguments as String);
@@ -89,12 +102,15 @@ class _NativeMapState extends State<_NativeMap> {
           widget.onPoint?.call((p['lat'] as num).toDouble(), (p['lon'] as num).toDouble(), p['inside'] as bool);
         }
       });
+      // The native view was created with the params of the build before this moment: send the CURRENT pins/route/mode once, so nothing set
+      // before the channel existed is lost (#387).
+      _sent = null;
+      _pushChanged();
       // Recover readiness/errors emitted before Dart installed its handler.
-      _channel!.invokeMapMethod<String, dynamic>('state').then((Map<String, dynamic>? state) {
+      channel.invokeMapMethod<String, dynamic>('state').then((Map<String, dynamic>? state) {
         if (!mounted) return;
         if (state?['error'] is String) { widget.onError?.call(state!['error'] as String); }
         else if (state?['ready'] == true) { widget.onReady?.call(); }
       }).catchError((Object error) { if (mounted) widget.onError?.call('Không mở được bản đồ Cao Bằng'); });
-    },
-  );
+  }
 }
