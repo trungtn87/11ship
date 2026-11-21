@@ -88,7 +88,7 @@ void main() {
     expect(road, isEmpty);
     expect(find.byKey(const Key('m10-route-summary')), findsNothing);
     expect(find.byKey(const Key('m10-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('không có đường đi đã lưu'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

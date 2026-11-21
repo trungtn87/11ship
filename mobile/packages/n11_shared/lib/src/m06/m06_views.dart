@@ -20,13 +20,13 @@ import 'm06_source.dart';
 const String kFeeUnknownText = 'Chưa xác định phí';
 const String kOutOfRangeText = 'Ngoài bảng giá';
 const String kAgreementReason =
-    'Việc gửi và trả lời đề xuất phí do M07 thực hiện; chưa sẵn sàng nên chưa gửi được.';
+    'Chưa gửi được đề xuất phí lúc này.';
 const String kFeeNotePrivacyHint = 'Không ghi số điện thoại hoặc địa chỉ chi tiết: shipper nhìn thấy ghi chú trước khi nhận đơn.';
 const String kActionFailed = 'Chưa gửi được. Hãy thử lại.';
 const String kContinueReason =
     'Việc tạo yêu cầu giao do M07 thực hiện; chưa sẵn sàng nên chưa tiếp tục được.';
 const String kAcceptReason =
-    'Việc nhận đơn do M07 thực hiện; chưa sẵn sàng nên chưa nhận được đơn.';
+    'Chưa nhận được đơn lúc này.';
 
 /// "Dữ liệu minh họa" banner of every screen fed by sample data.
 class M06SampleBanner extends StatelessWidget {

@@ -422,7 +422,7 @@ class OfferCard extends StatelessWidget {
           if (!offer.destinationKnown)
             const Padding(
               padding: EdgeInsets.only(top: N11Space.gap2),
-              child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim điểm giao. Đơn này chỉ shipper chưa có đơn khác nhận được.'),
+              child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim. Chỉ shipper chưa có đơn khác nhận được.'),
             ),
           if (a != null) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
@@ -720,7 +720,7 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
       if (active && d.legacyReferenceOnly)
-        const ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
+        const ReasonNote('Đơn cũ không có đường đi đã lưu. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
       if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),

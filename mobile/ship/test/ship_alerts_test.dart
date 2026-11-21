@@ -178,16 +178,17 @@ void main() {
       expect(v.brief.length, lessThanOrEqualTo(3));
       expect(v.brief.first, 'Cập nhật lần cuối ${clockText(t0)} · độ chính xác ~30 m');
       expect(v.brief[1], 'Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình; người theo dõi đơn xem được vị trí shipper khi có đơn.');
-      expect(v.brief[2], 'Nút định vị chỉ dời bản đồ về GPS của máy');
+      expect(v.paragraphs[2], 'Nút định vị chỉ dời bản đồ về GPS của máy');
       expect(v.warnings, isEmpty);
     });
 
     test('the five owner sentences, word for word, by state', () {
       final ShipLocationView offline = view(intent: false, hasWork: false, sharing: false);
-      expect(offline.brief, <String>['Offline, không có đơn: không chia sẻ vị trí. Khi Online, vị trí được gửi 1 phút/lần, kể cả khi khóa màn hình.', 'Nút định vị chỉ dời bản đồ về GPS của máy']);
+      expect(offline.brief, <String>['Offline, không có đơn: không chia sẻ vị trí.']);
       final ShipLocationView handedOff = view(intent: false, hasWork: true, ackAt: t0, fixAt: t0, hasFix: true);
       expect(handedOff.brief[1], 'Đã tắt nhận đơn mới nhưng vẫn chia sẻ vị trí cho đơn đang xử lý');
-      expect(handedOff.brief.length, 3, reason: 'last update line, sharing line, recenter line');
+      expect(handedOff.brief.length, 2, reason: 'last update line and sharing line; the recenter line is in the detail (paragraphs)');
+      expect(handedOff.paragraphs[2], 'Nút định vị chỉ dời bản đồ về GPS của máy');
     });
 
     test('a phone-only fix and an old server time are warnings, kept apart from the short lines', () {
@@ -249,11 +250,11 @@ void main() {
       expect(find.byKey(const Key('home-location-explainer')), findsOneWidget);
       expect(find.textContaining('độ chính xác ~15 m'), findsOneWidget);
       expect(find.byKey(const Key('home-location-long')), findsNothing, reason: 'the long text is closed by default');
-      expect(find.byKey(const Key('home-location-brief')), findsNWidgets(3));
+      expect(find.byKey(const Key('home-location-brief')), findsNWidgets(2));
       await tester.tap(find.byKey(const Key('home-location-detail')));
       await tester.pump();
       expect(find.textContaining('Độ chính xác ước tính: ~15 m'), findsOneWidget);
-      expect(find.byKey(const Key('home-location-long')), findsNWidgets(2));
+      expect(find.byKey(const Key('home-location-long')), findsNWidgets(3));
       await tester.tap(find.byKey(const Key('home-location-detail')));
       await tester.pump();
       await tester.tap(find.byKey(const Key('home-location-info')));

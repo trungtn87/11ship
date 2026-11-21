@@ -120,7 +120,7 @@ void main() {
     expect(map.road, isEmpty);
     expect(find.byKey(const Key('m07-ship-route')), findsNothing);
     expect(find.byKey(const Key('m07-ship-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('không có đường đi đã lưu'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
