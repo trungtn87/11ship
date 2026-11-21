@@ -278,6 +278,7 @@ Widget _callShip(SessionController session, AppFlows? flows) {
       source != null) {
     return CustomerCallTab(
         source: source,
+        addresses: flows?.addresses,
         mapBuilder: foodMapBuilder(),
         pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));

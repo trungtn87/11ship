@@ -129,71 +129,73 @@ void main() {
     });
   });
 
-  group('Gọi ship form with the picker', () {
-    M07PinPickerBuilder builder(_Probe probe) => (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) =>
-        FoodPinPickScreen(title: label ?? 'Ghim', initialLat: lat, initialLng: lng, onPick: onPick, mapBuilder: _fakeMap(probe));
+  // #413: Gọi ship uses the shared address flow (block -> saved list -> map), not the old pin-only screen.
+  group('Gọi ship form with the shared address flow', () {
+    AddressMapBuilder sharedMap() => (BuildContext context, double? lat,
+            double? lng, void Function(double, double) onPick) =>
+        Column(children: <Widget>[
+          Text('$lat,$lng', key: const Key('test-pin')),
+          TextButton(
+              key: const Key('test-move-pin'),
+              onPressed: () => onPick(22.661, 106.251),
+              child: const Text('move')),
+        ]);
 
-    testWidgets('pickup and drop-off stay separate; Back keeps the value; confirm overwrites', (WidgetTester tester) async {
-      final _Probe probe = _Probe();
-      await _mount(tester, CustomerCallScreen(source: SampleCustomerDeliverySource(), pinPicker: builder(probe)));
-      // Pickup: pin, confirm.
-      await tester.tap(find.text('Ghim vị trí lấy hàng (tùy chọn)'));
+    testWidgets(
+        'pickup: text from the map, description joined after a comma, pin shown in the block',
+        (WidgetTester tester) async {
+      await _mount(
+          tester,
+          CustomerCallScreen(
+              source: SampleCustomerDeliverySource(),
+              addressMapBuilder: sharedMap()));
+      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsNWidgets(2));
+      await tester.tap(find.byKey(const Key('m07-c-pickup-addr')));
       await _nav(tester);
-      expect(find.text('Ghim điểm lấy hàng'), findsOneWidget);
-      probe.onPoint!(22.661, 106.251, true);
+      expect(find.byKey(const Key('pick-add-new')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('pick-add-new')));
+      await _nav(tester);
+      await tester.enterText(
+          find.byKey(const Key('location-address-text')), 'Số 1 Phố Huế');
+      await tester.enterText(
+          find.byKey(const Key('location-extra-note')), 'Tầng 2');
+      await tester.tap(find.byKey(const Key('test-move-pin')));
       await tester.pump();
-      expect(find.text('Ghim vị trí lấy hàng (tùy chọn)'), findsNothing); // still on the picker, not the form
-      await tester.tap(find.byKey(const Key('pin-confirm')));
+      await tester.tap(find.byKey(const Key('location-save')));
       await _nav(tester);
+      expect(find.text('Số 1 Phố Huế, Tầng 2'), findsOneWidget);
       expect(find.text('Đã ghim (22.661, 106.251)'), findsOneWidget);
-      // Drop-off: starts empty (not the pickup point), pin, confirm.
-      await tester.tap(find.text('Ghim vị trí giao hàng (tùy chọn)'));
-      await _nav(tester);
-      expect(find.text('Ghim điểm giao hàng'), findsOneWidget);
-      expect(probe.pins, isEmpty);
-      probe.onPoint!(22.7, 106.3, true);
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('pin-confirm')));
-      await _nav(tester);
-      expect(find.text('Đã ghim (22.661, 106.251)'), findsOneWidget);
-      expect(find.text('Đã ghim (22.700, 106.300)'), findsOneWidget);
-      // Reopen pickup: old pin visible; move it, then Back => unchanged.
-      await tester.tap(find.text('Đã ghim (22.661, 106.251)'));
-      await _nav(tester);
-      expect(probe.pins.single['lat'], 22.661);
-      probe.onPoint!(22.9, 106.9, true);
-      await tester.pump();
-      await tester.pageBack();
-      await _nav(tester);
-      expect(find.text('Đã ghim (22.661, 106.251)'), findsOneWidget);
-      expect(find.text('Đã ghim (22.900, 106.900)'), findsNothing);
-      // Reopen and confirm a new point => overwritten.
-      await tester.tap(find.text('Đã ghim (22.661, 106.251)'));
-      await _nav(tester);
-      probe.onPoint!(22.9, 106.9, true);
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('pin-confirm')));
-      await _nav(tester);
-      expect(find.text('Đã ghim (22.900, 106.900)'), findsOneWidget);
-      expect(find.text('Đã ghim (22.700, 106.300)'), findsOneWidget);
+      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsOneWidget,
+          reason: 'the drop-off point is still unpinned');
     });
 
-    testWidgets('pickup GPS sets only the pickup point, and the form still needs its confirm', (WidgetTester tester) async {
-      final _Probe probe = _Probe();
-      final _FakeLocation location = _FakeLocation(<Object>[_fix(22.668, 106.26)]);
-      M07PinPickerBuilder withLocation() => (BuildContext context, {required void Function(double lat, double lng) onPick, double? lat, double? lng, String? label}) =>
-          FoodPinPickScreen(title: label ?? 'Ghim', initialLat: lat, initialLng: lng, onPick: onPick, mapBuilder: _fakeMap(probe), location: location);
-      await _mount(tester, CustomerCallScreen(source: SampleCustomerDeliverySource(), pinPicker: withLocation()));
-      await tester.tap(find.text('Ghim vị trí lấy hàng (tùy chọn)'));
+    testWidgets(
+        'Vị trí hiện tại inside the area pins the drop-off; a refusal outside pins nothing',
+        (WidgetTester tester) async {
+      final _FakeLocation location =
+          _FakeLocation(<Object>[_fix(10.0, 106.0), _fix(22.668, 106.26)]);
+      await _mount(
+          tester,
+          CustomerCallScreen(
+              source: SampleCustomerDeliverySource(),
+              addressMapBuilder: sharedMap(),
+              location: location));
+      await tester.ensureVisible(find.byKey(const Key('m07-c-dropoff-addr')));
+      await tester.tap(find.byKey(const Key('m07-c-dropoff-addr')));
       await _nav(tester);
-      await tester.tap(find.byKey(const Key('pin-current-location')));
+      await tester.tap(find.byKey(const Key('pick-add-new')));
+      await _nav(tester);
+      await tester.enterText(
+          find.byKey(const Key('location-address-text')), 'Số 10 Phố Trúc');
+      await tester.tap(find.byKey(const Key('location-current')));
       await tester.pumpAndSettle();
-      expect(probe.pins.single['lat'], 22.668);
-      expect(find.text('Ghim điểm lấy hàng'), findsOneWidget); // still the picker: nothing saved yet
-      await tester.tap(find.byKey(const Key('pin-confirm')));
+      expect(find.text(kOutsideCoverageMessage), findsOneWidget);
+      await tester.tap(find.byKey(const Key('location-current')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('location-save')));
       await _nav(tester);
+      expect(find.text('Số 10 Phố Trúc'), findsOneWidget);
       expect(find.text('Đã ghim (22.668, 106.260)'), findsOneWidget);
-      expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
     });
   });
 
