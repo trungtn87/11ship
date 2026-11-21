@@ -45,7 +45,7 @@ Future<SharedAddressSelection?> pickSharedAddress(
   PlaceSearchApi? searchApi,
   bool mapOnly = false,
 }) {
-  final _Deps deps = _Deps(
+  final SharedAddressDeps deps = SharedAddressDeps(
       book: book,
       session: session,
       location: location,
@@ -61,8 +61,8 @@ Future<SharedAddressSelection?> pickSharedAddress(
   ));
 }
 
-class _Deps {
-  const _Deps(
+class SharedAddressDeps {
+  const SharedAddressDeps(
       {this.book,
       this.session,
       this.location,
@@ -76,8 +76,8 @@ class _Deps {
 }
 
 /// C, with the shared rules (no pin required, a pin must stay inside the covered area).
-Future<SharedAddressSelection?> _openMap(
-    BuildContext context, _Deps deps, AddressLocation initial) async {
+Future<SharedAddressSelection?> _openMap(BuildContext context,
+    SharedAddressDeps deps, AddressLocation initial) async {
   final AddressLocation? picked = await Navigator.of(context)
       .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
     builder: (_) => AddressLocationPicker(
@@ -94,8 +94,9 @@ Future<SharedAddressSelection?> _openMap(
 }
 
 String savedAddressTitle(DeliveryAddress a) {
-  if (a.displayName != null && a.displayName!.trim().isNotEmpty)
+  if (a.displayName != null && a.displayName!.trim().isNotEmpty) {
     return a.displayName!;
+  }
   return switch (a.label) {
     AddressLabel.home => 'Nhà',
     AddressLabel.office => 'Công ty',
@@ -108,7 +109,7 @@ class SavedAddressListScreen extends StatefulWidget {
   const SavedAddressListScreen(
       {super.key, required this.deps, required this.initial, this.selectedId});
 
-  final _Deps deps;
+  final SharedAddressDeps deps;
   final AddressLocation initial;
   final String? selectedId;
 
@@ -318,12 +319,14 @@ class _SavedAddressListScreenState extends State<SavedAddressListScreen> {
             .any((DeliveryAddress a) => a.label == AddressLabel.home);
         final bool hasOffice = b.addresses
             .any((DeliveryAddress a) => a.label == AddressLabel.office);
-        if (!hasHome)
+        if (!hasHome) {
           rows.add(_addButton('pick-add-home', 'Thêm địa chỉ Nhà',
               () => _addSaved(AddressLabel.home), b));
-        if (!hasOffice)
+        }
+        if (!hasOffice) {
           rows.add(_addButton('pick-add-office', 'Thêm địa chỉ Công ty',
               () => _addSaved(AddressLabel.office), b));
+        }
         return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
       },
