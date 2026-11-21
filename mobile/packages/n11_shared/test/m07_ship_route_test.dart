@@ -132,6 +132,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('issue #393: a holding Shipper with two pins and no stored road sees "Chưa có tuyến đường đi" and no line', (WidgetTester tester) async {
+    final ({int calls, List<List<double>>? road}) map = await _openMap(tester, _view());
+    expect(map.road, isEmpty);
+    expect(find.byKey(const Key('m07-ship-route-missing')), findsOneWidget);
+    expect(find.textContaining('Chưa có tuyến đường đi'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: with a stored road the "chưa có tuyến" status is not shown', (WidgetTester tester) async {
+    await _openMap(tester, _view(route: _route()));
+    expect(find.byKey(const Key('m07-ship-route-missing')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a Shipper who no longer holds the delivery draws no road, even if a road was stored', (WidgetTester tester) async {
     // Searching again: the server sends the route summary without geometry, and the screen must not draw or show a distance from it.
     await mount(tester, ShipperDeliveryDetailScreen(source: _Holding(_view(state: DeliveryState.waitingDriver, route: _route(geometry: false))), deliveryId: 'r-1'));

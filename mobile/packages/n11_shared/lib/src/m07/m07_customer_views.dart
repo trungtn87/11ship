@@ -768,9 +768,14 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                           if (d.location != null)
                             M07MapPin(lat: d.location!.lat, lng: d.location!.lng, label: 'Shipper', color: 0xFF2A2A2E),
                         ],
+                        // The stored road the server sent to the customer (issue #393): drawn as saved, never recomputed.
+                        d.route?.points ?? const <List<double>>[],
                       ),
                     ),
                   ),
+                  const SizedBox(height: N11Space.gap2),
+                  if ((d.route?.points ?? const <List<double>>[]).isEmpty)
+                    const ReasonNote('Chưa có tuyến đường đi.', key: Key('m07-c-route-missing'), icon: Icons.route_outlined),
                   const SizedBox(height: N11Space.gap3),
                 ] else if (!hasBothPins) ...<Widget>[
                   Container(

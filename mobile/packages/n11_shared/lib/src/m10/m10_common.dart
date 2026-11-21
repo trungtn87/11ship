@@ -314,6 +314,12 @@ class OrderMapCard extends StatelessWidget {
             padding: EdgeInsets.only(top: N11Space.gap2),
             child: ReasonNote('Đơn cũ không có đường đi đã lưu. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
           ),
+        // Issue #393: pins without a stored road draw no line; the screen says so in words instead of inventing a road.
+        if (!legacyReferenceOnly && mapBuilder != null && pins.isNotEmpty && (route == null || route!.points.isEmpty))
+          const Padding(
+            padding: EdgeInsets.only(top: N11Space.gap2),
+            child: ReasonNote('Chưa có tuyến đường đi.', key: Key('m10-route-missing'), icon: Icons.route_outlined),
+          ),
       ],
     );
   }
