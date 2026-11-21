@@ -366,7 +366,8 @@ void main() {
     await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tab-search')), findsNothing);
-    expect(find.text('Ốc 11'), findsOneWidget);
+    // Issue #411: a featured shop is shown in the "Quán nổi bật" row and again in "Quán gần bạn".
+    expect(find.text('Ốc 11'), findsWidgets);
     await tester.tap(find.byKey(const Key('home-search')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('search-field')), 'oc 11');

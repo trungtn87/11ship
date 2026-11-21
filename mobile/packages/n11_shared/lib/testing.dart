@@ -689,7 +689,7 @@ class FakeDiscoveryApi implements DiscoveryApi {
 }
 
 class FakeShopEntry {
-  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[], this.latitude, this.longitude});
+  FakeShopEntry(this.id, this.name, {this.areaId = 'a1', this.reason = 'ONLINE', this.address = '12 Phố Kim Đồng', this.dishes = const <FakeDishEntry>[], this.latitude, this.longitude, this.ratingAverage, this.ratingCount = 0, this.createdAt});
 
   final String id;
   final String name;
@@ -699,8 +699,11 @@ class FakeShopEntry {
   final List<FakeDishEntry> dishes;
   final double? latitude;
   final double? longitude;
+  final double? ratingAverage;
+  final int ratingCount;
+  final DateTime? createdAt;
 
-  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason, latitude: latitude, longitude: longitude);
+  ShopCardData get card => ShopCardData(shopId: id, name: name, address: address, reason: reason, latitude: latitude, longitude: longitude, ratingAverage: ratingAverage, ratingCount: ratingCount, createdAt: createdAt);
 }
 
 class FakeDishEntry {
