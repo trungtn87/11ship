@@ -8,22 +8,32 @@ import 'package:n11_shared/testing.dart';
 void main() {
   addressPickerUxTests();
   // #299: typing (and the keyboard resizing the viewport) must not rebuild, dispose or re-create the map; the old lazy ListView did.
-  testWidgets('typing for a long time and locating repeatedly never rebuilds or recreates the map', (WidgetTester tester) async {
+  testWidgets(
+      'typing for a long time and locating repeatedly never rebuilds or recreates the map',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 760);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     int builds = 0, created = 0, disposed = 0;
     final FakeLocationProvider gps = FakeLocationProvider();
-    await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
-      initial: const AddressLocation(''), requirePoint: false, location: gps,
+    await tester.pumpWidget(MaterialApp(
+        home: AddressLocationPicker(
+      initial: const AddressLocation(''),
+      requirePoint: false,
+      location: gps,
       searchApi: _FixedSearch(const <PlaceSearchResult>[]),
-      mapBuilder: (_, lat, lng, onPick) { builds++; return _MapProbe(onCreate: () => created++, onDispose: () => disposed++); },
+      mapBuilder: (_, lat, lng, onPick) {
+        builds++;
+        return _MapProbe(
+            onCreate: () => created++, onDispose: () => disposed++);
+      },
     )));
     expect((builds, created), (1, 1));
     String text = '';
     for (int i = 0; i < 120; i++) {
       text += 'a';
-      await tester.enterText(find.byKey(const Key('location-address-text')), text);
+      await tester.enterText(
+          find.byKey(const Key('location-address-text')), text);
       await tester.pump(const Duration(milliseconds: 500));
       if (i % 40 == 0) {
         // The keyboard opens and closes: the body shrinks and grows again.
@@ -44,54 +54,128 @@ void main() {
     expect(disposed, 0);
   });
 
-  testWidgets('place search debounces and a late older response cannot replace the latest results', (WidgetTester tester) async {
+  testWidgets(
+      'place search debounces and a late older response cannot replace the latest results',
+      (WidgetTester tester) async {
     final _PendingSearch search = _PendingSearch();
-    await tester.pumpWidget(MaterialApp(home: AddressLocationPicker(
-      initial: const AddressLocation(''), requirePoint: false, searchApi: search,
+    await tester.pumpWidget(MaterialApp(
+        home: AddressLocationPicker(
+      initial: const AddressLocation(''),
+      requirePoint: false,
+      searchApi: search,
       mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
     )));
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'Cao');
+    await tester.enterText(
+        find.byKey(const Key('location-address-text')), 'Cao');
     await tester.pump(const Duration(milliseconds: 499));
     expect(search.queries, isEmpty);
     await tester.pump(const Duration(milliseconds: 1));
     expect(search.queries, <String>['Cao']);
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'Bệnh viện');
+    await tester.enterText(
+        find.byKey(const Key('location-address-text')), 'Bệnh viện');
     await tester.pump(const Duration(milliseconds: 500));
     expect(search.queries, <String>['Cao', 'Bệnh viện']);
     search.answers[1].complete(const <PlaceSearchResult>[
-      PlaceSearchResult(id: 'new', name: 'Bệnh viện Cao Bằng', address: 'Bệnh viện Cao Bằng, Cao Bằng', latitude: 22.66, longitude: 106.25, inCaoBang: true),
+      PlaceSearchResult(
+          id: 'new',
+          name: 'Bệnh viện Cao Bằng',
+          address: 'Bệnh viện Cao Bằng, Cao Bằng',
+          latitude: 22.66,
+          longitude: 106.25,
+          inCaoBang: true),
     ]);
     await tester.pump();
     search.answers[0].complete(const <PlaceSearchResult>[
-      PlaceSearchResult(id: 'old', name: 'Kết quả cũ', address: 'Cũ', latitude: 21, longitude: 105, inCaoBang: false),
+      PlaceSearchResult(
+          id: 'old',
+          name: 'Kết quả cũ',
+          address: 'Cũ',
+          latitude: 21,
+          longitude: 105,
+          inCaoBang: false),
     ]);
     await tester.pump();
     expect(find.text('Bệnh viện Cao Bằng'), findsOneWidget);
     expect(find.text('Kết quả cũ'), findsNothing);
   });
 
-  testWidgets('editing text never silently keeps a stale pin', (WidgetTester tester) async {
+  // #413: the typed text is only a description. Editing it never asks "Giữ ghim / Bỏ ghim" and never blocks Save; the pin stays until
+  // the person drags it, taps the map, uses "Vị trí hiện tại" or clears it.
+  testWidgets(
+      'editing the text keeps the pin with no keep/clear dialog and no red confirmation',
+      (WidgetTester tester) async {
     AddressLocation? saved;
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
-      child: const Text('Open'),
-      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
-        initial: const AddressLocation('A', latitude: 22.66, longitude: 106.25), requirePoint: false,
-        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
-      ))),
-    ))));
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (BuildContext context) => TextButton(
+                  child: const Text('Open'),
+                  onPressed: () async => saved = await Navigator.of(context)
+                      .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                                initial: const AddressLocation('A',
+                                    latitude: 22.66, longitude: 106.25),
+                                requirePoint: false,
+                                mapBuilder: (_, lat, lng, onPick) =>
+                                    const SizedBox.shrink(),
+                              ))),
+                ))));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('location-address-text')), 'B');
     await tester.pump();
-    expect(find.byKey(const Key('pin-text-confirmation')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('location-save')));
-    await tester.pump();
-    expect(saved, isNull);
-    await tester.tap(find.text('Bỏ ghim – đổi địa điểm'));
+    expect(find.byKey(const Key('pin-text-confirmation')), findsNothing);
+    expect(find.text('Giữ ghim – chỉ bổ sung mô tả'), findsNothing);
+    expect(find.text('Bỏ ghim – đổi địa điểm'), findsNothing);
+    expect(find.byKey(const Key('location-picker-error')), findsNothing);
     await tester.tap(find.byKey(const Key('location-save')));
     await tester.pumpAndSettle();
     expect(saved?.text, 'B');
-    expect(saved?.latitude, isNull);
+    expect(saved?.latitude, 22.66);
+    expect(saved?.longitude, 106.25);
+  });
+
+  testWidgets(
+      'the optional description is separate, capped and returned with the address',
+      (WidgetTester tester) async {
+    AddressLocation? saved;
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (BuildContext context) => TextButton(
+                  child: const Text('Open'),
+                  onPressed: () async => saved = await Navigator.of(context)
+                      .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                                initial: const AddressLocation('Tổ 3'),
+                                requirePoint: false,
+                                mapBuilder: (_, lat, lng, onPick) =>
+                                    const SizedBox.shrink(),
+                              ))),
+                ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    // Empty description is fine.
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'Tổ 3');
+    expect(saved?.note, '');
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-extra-note')),
+        'Nhà số 12, tầng 2, cổng xanh');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'Tổ 3');
+    expect(saved?.note, 'Nhà số 12, tầng 2, cổng xanh');
+    // Over the limit the field refuses more characters (the same 200 as the delivery note).
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-extra-note')),
+        'x' * (kAddressNoteMaxLength + 30));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.note.length, kAddressNoteMaxLength);
   });
 
   testWidgets('typing and moving the pin returns one address; GPS is opt-in', (
@@ -110,17 +194,17 @@ void main() {
                     builder: (_) => AddressLocationPicker(
                       initial: const AddressLocation(''),
                       location: gps,
-                      mapBuilder:
-                          (
-                            BuildContext context,
-                            double? lat,
-                            double? lng,
-                            void Function(double, double) onPick,
-                          ) => TextButton(
-                            key: const Key('map-pick'),
-                            onPressed: () => onPick(22.67, 106.26),
-                            child: Text('$lat,$lng'),
-                          ),
+                      mapBuilder: (
+                        BuildContext context,
+                        double? lat,
+                        double? lng,
+                        void Function(double, double) onPick,
+                      ) =>
+                          TextButton(
+                        key: const Key('map-pick'),
+                        onPressed: () => onPick(22.67, 106.26),
+                        child: Text('$lat,$lng'),
+                      ),
                     ),
                   ),
                 );
@@ -135,8 +219,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(gps.calls, 0);
     // #194: the screen says the pinned point is fixed and that opening it shares nothing.
-    expect(find.byKey(const Key('location-picker-fixed-note'), skipOffstage: false), findsOneWidget);
-    expect(find.textContaining('Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này.', skipOffstage: false), findsOneWidget);
+    expect(
+        find.byKey(const Key('location-picker-fixed-note'),
+            skipOffstage: false),
+        findsOneWidget);
+    expect(
+        find.textContaining(
+            'Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này.',
+            skipOffstage: false),
+        findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('location-address-text')),
       'Tổ 16, Cao Bằng',
@@ -169,17 +260,17 @@ void main() {
               longitude: 106.25,
             ),
             location: gps,
-            mapBuilder:
-                (
-                  BuildContext context,
-                  double? lat,
-                  double? lng,
-                  void Function(double, double) onPick,
-                ) => TextButton(
-                  key: const Key('map-pick'),
-                  onPressed: () => onPick(22.67, 106.26),
-                  child: Text('$lat,$lng'),
-                ),
+            mapBuilder: (
+              BuildContext context,
+              double? lat,
+              double? lng,
+              void Function(double, double) onPick,
+            ) =>
+                TextButton(
+              key: const Key('map-pick'),
+              onPressed: () => onPick(22.67, 106.26),
+              child: Text('$lat,$lng'),
+            ),
           ),
         ),
       );
@@ -215,16 +306,16 @@ void main() {
                           latitude: 22.66,
                           longitude: 106.25,
                         ),
-                        mapBuilder:
-                            (
-                              BuildContext context,
-                              double? lat,
-                              double? lng,
-                              void Function(double, double) onPick,
-                            ) => TextButton(
-                              onPressed: () => onPick(22.67, 106.26),
-                              child: const Text('Move'),
-                            ),
+                        mapBuilder: (
+                          BuildContext context,
+                          double? lat,
+                          double? lng,
+                          void Function(double, double) onPick,
+                        ) =>
+                            TextButton(
+                          onPressed: () => onPick(22.67, 106.26),
+                          child: const Text('Move'),
+                        ),
                       ),
                     ),
                   );
@@ -262,7 +353,8 @@ void main() {
     await tester.tap(find.byKey(const Key('location-current')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Hết thời gian chờ'), findsOneWidget);
-    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'), findsOneWidget);
+    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'),
+        findsOneWidget);
     expect(find.text('22.66,106.25'), findsOneWidget);
     gps.failure = null;
     gps.next = LocationFix(
@@ -299,7 +391,8 @@ void main() {
         takenAt: DateTime.now()));
     await tester.pumpAndSettle();
     expect(find.text('22.67,106.26'), findsOneWidget);
-    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'), findsOneWidget);
+    expect(find.text('Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.'),
+        findsOneWidget);
   });
 }
 
@@ -311,12 +404,14 @@ class _PendingLocation implements LocationProvider {
 
 class _PendingSearch implements PlaceSearchApi {
   final List<String> queries = <String>[];
-  final List<Completer<List<PlaceSearchResult>>> answers = <Completer<List<PlaceSearchResult>>>[];
+  final List<Completer<List<PlaceSearchResult>>> answers =
+      <Completer<List<PlaceSearchResult>>>[];
 
   @override
   Future<List<PlaceSearchResult>> search(String query) {
     queries.add(query);
-    final Completer<List<PlaceSearchResult>> answer = Completer<List<PlaceSearchResult>>();
+    final Completer<List<PlaceSearchResult>> answer =
+        Completer<List<PlaceSearchResult>>();
     answers.add(answer);
     return answer.future;
   }
@@ -336,46 +431,77 @@ class _FixedSearch implements PlaceSearchApi {
 }
 
 void addressPickerUxTests() {
-  Future<AddressLocation?> openPicker(WidgetTester tester, PlaceSearchApi? search, {AddressLocation initial = const AddressLocation('')}) async {
+  Future<AddressLocation?> openPicker(
+      WidgetTester tester, PlaceSearchApi? search,
+      {AddressLocation initial = const AddressLocation('')}) async {
     AddressLocation? saved;
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
-      child: const Text('Open'),
-      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
-        initial: initial, requirePoint: false, searchApi: search,
-        mapBuilder: (_, lat, lng, onPick) => const SizedBox(key: Key('test-map'), height: 320),
-      ))),
-    ))));
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (BuildContext context) => TextButton(
+                  child: const Text('Open'),
+                  onPressed: () async => saved = await Navigator.of(context)
+                      .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                                initial: initial,
+                                requirePoint: false,
+                                searchApi: search,
+                                mapBuilder: (_, lat, lng, onPick) =>
+                                    const SizedBox(
+                                        key: Key('test-map'), height: 320),
+                              ))),
+                ))));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     return saved;
   }
 
   List<PlaceSearchResult> many() => <PlaceSearchResult>[
-        for (int i = 0; i < 6; i++) PlaceSearchResult(id: 'p$i', name: 'Nhà $i', address: 'Nhà $i, Cao Bằng', latitude: 22.66 + i / 1000, longitude: 106.25, inCaoBang: true),
+        for (int i = 0; i < 6; i++)
+          PlaceSearchResult(
+              id: 'p$i',
+              name: 'Nhà $i',
+              address: 'Nhà $i, Cao Bằng',
+              latitude: 22.66 + i / 1000,
+              longitude: 106.25,
+              inCaoBang: true),
       ];
 
-  testWidgets('free text is saved as typed with no pin, without choosing any suggestion', (WidgetTester tester) async {
+  testWidgets(
+      'free text is saved as typed with no pin, without choosing any suggestion',
+      (WidgetTester tester) async {
     AddressLocation? saved;
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
-      child: const Text('Open'),
-      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
-        initial: const AddressLocation(''), requirePoint: false, searchApi: _FixedSearch(many()),
-        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
-      ))),
-    ))));
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (BuildContext context) => TextButton(
+                  child: const Text('Open'),
+                  onPressed: () async => saved = await Navigator.of(context)
+                      .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                                initial: const AddressLocation(''),
+                                requirePoint: false,
+                                searchApi: _FixedSearch(many()),
+                                mapBuilder: (_, lat, lng, onPick) =>
+                                    const SizedBox.shrink(),
+                              ))),
+                ))));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà số 12, ngõ 8, Cao Bằng');
+    await tester.enterText(find.byKey(const Key('location-address-text')),
+        'nhà số 12, ngõ 8, Cao Bằng');
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.byKey(const Key('place-result-p0')), findsOneWidget, reason: 'suggestions appear but are not chosen for the person');
-    expect(find.text('Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.'), findsOneWidget);
+    expect(find.byKey(const Key('place-result-p0')), findsOneWidget,
+        reason: 'suggestions appear but are not chosen for the person');
+    expect(
+        find.text(
+            'Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.'),
+        findsOneWidget);
     await tester.tap(find.byKey(const Key('location-save')));
     await tester.pumpAndSettle();
     expect(saved?.text, 'nhà số 12, ngõ 8, Cao Bằng');
@@ -383,13 +509,19 @@ void addressPickerUxTests() {
     expect(saved?.longitude, isNull);
   });
 
-  testWidgets('six suggestions never push the map and Save out of reach; they can be hidden', (WidgetTester tester) async {
+  testWidgets(
+      'six suggestions never push the map and Save out of reach; they can be hidden',
+      (WidgetTester tester) async {
     await openPicker(tester, _FixedSearch(many()));
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà');
+    await tester.enterText(
+        find.byKey(const Key('location-address-text')), 'nhà');
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(tester.getSize(find.byKey(const Key('place-suggestions-box'))).height, lessThanOrEqualTo(208));
-    expect(find.byKey(const Key('location-save')).hitTestable(), findsOneWidget);
+    expect(
+        tester.getSize(find.byKey(const Key('place-suggestions-box'))).height,
+        lessThanOrEqualTo(208));
+    expect(
+        find.byKey(const Key('location-save')).hitTestable(), findsOneWidget);
     await tester.tap(find.byKey(const Key('place-suggestions-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('place-suggestions-box')), findsNothing);
@@ -399,9 +531,12 @@ void addressPickerUxTests() {
     expect(find.byKey(const Key('place-suggestions-box')), findsOneWidget);
   });
 
-  testWidgets('choosing a suggestion pins its point and saves it; a failed search does not stop typing or Save', (WidgetTester tester) async {
+  testWidgets(
+      'choosing a suggestion pins its point and saves it; a failed search does not stop typing or Save',
+      (WidgetTester tester) async {
     await openPicker(tester, _FixedSearch(many()));
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'nhà');
+    await tester.enterText(
+        find.byKey(const Key('location-address-text')), 'nhà');
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
     await tester.tap(find.byKey(const Key('place-result-p2')));
@@ -409,22 +544,38 @@ void addressPickerUxTests() {
     expect(find.text('Sẽ lưu địa chỉ cùng vị trí đã ghim.'), findsOneWidget);
   });
 
-  testWidgets('a failed search keeps the typed draft and Save still works', (WidgetTester tester) async {
+  testWidgets('a failed search keeps the typed draft and Save still works',
+      (WidgetTester tester) async {
     AddressLocation? saved;
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
-      child: const Text('Open'),
-      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
-        initial: const AddressLocation(''), requirePoint: false, searchApi: _FixedSearch(const <PlaceSearchResult>[], fail: true),
-        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
-      ))),
-    ))));
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (BuildContext context) => TextButton(
+                  child: const Text('Open'),
+                  onPressed: () async => saved = await Navigator.of(context)
+                      .push<AddressLocation>(MaterialPageRoute<AddressLocation>(
+                          builder: (_) => AddressLocationPicker(
+                                initial: const AddressLocation(''),
+                                requirePoint: false,
+                                searchApi: _FixedSearch(
+                                    const <PlaceSearchResult>[],
+                                    fail: true),
+                                mapBuilder: (_, lat, lng, onPick) =>
+                                    const SizedBox.shrink(),
+                              ))),
+                ))));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('location-address-text')), 'xóm Nà Lạn');
+    await tester.enterText(
+        find.byKey(const Key('location-address-text')), 'xóm Nà Lạn');
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
     expect(find.byKey(const Key('place-search-error')), findsOneWidget);
-    expect(tester.widget<TextField>(find.byKey(const Key('location-address-text'))).controller!.text, 'xóm Nà Lạn');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('location-address-text')))
+            .controller!
+            .text,
+        'xóm Nà Lạn');
     await tester.tap(find.byKey(const Key('location-save')));
     await tester.pumpAndSettle();
     expect(saved?.text, 'xóm Nà Lạn');

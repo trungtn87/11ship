@@ -62,8 +62,10 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
                   requestId: target.id));
         case TargetType.delivery:
           final ShopDeliverySource? source = flows.shopDeliveries;
-          final CustomerDeliverySource? customerSource = flows.customerDeliveries;
-          final bool shopHat = flows.session.identity?.activeRole == 'SHOP_OWNER';
+          final CustomerDeliverySource? customerSource =
+              flows.customerDeliveries;
+          final bool shopHat =
+              flows.session.identity?.activeRole == 'SHOP_OWNER';
           if (shopHat && source != null && target.id != null) {
             // One page per food order: a delivery that belongs to an order opens that order (the server already answers with the order for such a notice; this
             // keeps any other way in from showing a second page). The delivery's own link decides, never a code. A direct delivery opens as itself.
@@ -144,9 +146,11 @@ M07FeedbackSlot? _feedbackSlot(AppFlows? flows) => flows?.feedback == null
     ? null
     : shopDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
 
-M07FeedbackSlot? _customerFeedbackSlot(AppFlows? flows) => flows?.feedback == null
-    ? null
-    : customerDeliveryFeedbackSlot(source: flows!.feedback!, picker: flows.picker);
+M07FeedbackSlot? _customerFeedbackSlot(AppFlows? flows) =>
+    flows?.feedback == null
+        ? null
+        : customerDeliveryFeedbackSlot(
+            source: flows!.feedback!, picker: flows.picker);
 
 /// The bell at the top of the Food home and the page it opens (no new bottom tab).
 Widget? _bell(BuildContext context, AppFlows? flows, ShellActions actions) {
@@ -200,9 +204,11 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
       label: 'Quán',
       icon: Icons.storefront_outlined,
       title: 'Quán',
-      body: (BuildContext context, ShellActions actions) => _shop(session, flows,
+      body: (BuildContext context, ShellActions actions) => _shop(
+          session, flows,
           // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
-          openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows!, orderId)))),
+          openOrder: (String orderId) => Navigator.of(context)
+              .push(n11Route(_orderPage(flows!, orderId)))),
     ),
     TabSpec(
         id: 'account',
@@ -278,6 +284,7 @@ Widget _callShip(SessionController session, AppFlows? flows) {
       source != null) {
     return CustomerCallTab(
         source: source,
+        addresses: flows?.addresses,
         mapBuilder: foodMapBuilder(),
         pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));
@@ -291,11 +298,13 @@ Widget _callShip(SessionController session, AppFlows? flows) {
               title: 'Chưa gọi ship được',
               text: 'Tài khoản này chưa dùng được chức năng gọi shipper.')
           : vstack(<Widget>[
-              _guestPrompt(session, 'Đăng nhập để gọi shipper giao hàng.', flows),
+              _guestPrompt(
+                  session, 'Đăng nhập để gọi shipper giao hàng.', flows),
               const EmptyState(
                   icon: Icons.two_wheeler_outlined,
                   title: 'Gọi shipper giao hàng',
-                  text: 'Sau khi đăng nhập, bạn có thể gọi shipper lấy và giao đồ.'),
+                  text:
+                      'Sau khi đăng nhập, bạn có thể gọi shipper lấy và giao đồ.'),
             ]));
 }
 
@@ -303,8 +312,10 @@ Widget _shop(SessionController session, AppFlows? flows,
     {Future<void> Function(String orderId)? openOrder}) {
   if (session.status != SessionStatus.signedIn) {
     return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
-        child: _guestPrompt(session, 'Đăng nhập để mở hoặc quản lý quán.', flows));
+        padding: const EdgeInsets.fromLTRB(
+            N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
+        child:
+            _guestPrompt(session, 'Đăng nhập để mở hoặc quản lý quán.', flows));
   }
   if (flows?.m02 == null) {
     return const EmptyState(
@@ -359,7 +370,8 @@ Widget _orders(SessionController session, AppFlows? flows) {
         padding: const EdgeInsets.all(N11Space.pad),
         child: SizedBox(
           width: double.infinity,
-          child: _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
+          child: _guestPrompt(
+              session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
         ),
       ),
     );
@@ -443,8 +455,8 @@ Widget _account(
                             ShopStartScreen(controller: flows!.shop!)));
                       }
                     },
-                    child: const Text('Quản lý cửa hàng',
-                        style: N11Text.caption),
+                    child:
+                        const Text('Quản lý cửa hàng', style: N11Text.caption),
                   ),
                 ),
             ],

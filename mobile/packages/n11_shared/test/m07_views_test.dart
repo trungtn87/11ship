@@ -35,7 +35,8 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
 Finder key(String value) => find.byKey(Key(value));
 Finder containing(String value) => find.textContaining(value);
 
-DeliveryView _delivery(String id, DeliveryState state, {Set<String> can = const <String>{}, int version = 1}) {
+DeliveryView _delivery(String id, DeliveryState state,
+    {Set<String> can = const <String>{}, int version = 1}) {
   final DateTime now = DateTime.utc(2026, 10, 18, 9);
   return DeliveryView(
     deliveryId: id,
@@ -43,11 +44,22 @@ DeliveryView _delivery(String id, DeliveryState state, {Set<String> can = const 
     source: 'DIRECT',
     state: state,
     version: version,
-    pickup: const PickupView(shopName: 'Quán Mẫu', phone: '0900000001', addressText: 'Số 1 Phố Mẫu', lat: 22.665, lng: 106.257),
-    recipient: const RecipientView(name: 'Người nhận', phone: '0900000002', addressText: 'Số 9 Phố Mẫu'),
-    goods: const GoodsView(description: 'Hộp bánh', valueVnd: 150000, paidVnd: 100000),
-    fee: const FeeView(mode: 'PICKUP_AGREEMENT', payer: 'CUSTOMER', status: 'UNKNOWN'),
-    search: SearchView(startedAt: now.subtract(const Duration(minutes: 3)), expiresAt: now.add(const Duration(minutes: 27)), serverNow: now),
+    pickup: const PickupView(
+        shopName: 'Quán Mẫu',
+        phone: '0900000001',
+        addressText: 'Số 1 Phố Mẫu',
+        lat: 22.665,
+        lng: 106.257),
+    recipient: const RecipientView(
+        name: 'Người nhận', phone: '0900000002', addressText: 'Số 9 Phố Mẫu'),
+    goods: const GoodsView(
+        description: 'Hộp bánh', valueVnd: 150000, paidVnd: 100000),
+    fee: const FeeView(
+        mode: 'PICKUP_AGREEMENT', payer: 'CUSTOMER', status: 'UNKNOWN'),
+    search: SearchView(
+        startedAt: now.subtract(const Duration(minutes: 3)),
+        expiresAt: now.add(const Duration(minutes: 27)),
+        serverNow: now),
     can: can,
   );
 }
@@ -62,12 +74,40 @@ void main() {
         'state': 'waiting_driver',
         'version': 3,
         'pickup': <String, Object?>{'shop_name': 'Quán'},
-        'recipient': <String, Object?>{'name': 'A', 'phone': '0900000000', 'address_text': 'x', 'lat': null, 'lng': null},
-        'goods': <String, Object?>{'description': 'g', 'value_vnd': 1000, 'paid_vnd': 0},
-        'fee': <String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'amount_vnd': null, 'status': 'UNKNOWN', 'distance_m': null, 'agreement': null, 'decider': 'SHOP', 'basis': null},
-        'search': <String, Object?>{'started_at': '2026-10-18T09:00:00Z', 'expires_at': '2026-10-18T09:30:00Z', 'server_now': '2026-10-18T09:05:00Z', 'stopped_at': null},
+        'recipient': <String, Object?>{
+          'name': 'A',
+          'phone': '0900000000',
+          'address_text': 'x',
+          'lat': null,
+          'lng': null
+        },
+        'goods': <String, Object?>{
+          'description': 'g',
+          'value_vnd': 1000,
+          'paid_vnd': 0
+        },
+        'fee': <String, Object?>{
+          'mode': 'STANDARD',
+          'payer': 'SHOP',
+          'amount_vnd': null,
+          'status': 'UNKNOWN',
+          'distance_m': null,
+          'agreement': null,
+          'decider': 'SHOP',
+          'basis': null
+        },
+        'search': <String, Object?>{
+          'started_at': '2026-10-18T09:00:00Z',
+          'expires_at': '2026-10-18T09:30:00Z',
+          'server_now': '2026-10-18T09:05:00Z',
+          'stopped_at': null
+        },
         'dropoff_note': 'Cổng xanh, gọi bảo vệ',
-        'can': <String, Object?>{'cancel': true, 'recall': false, 'confirm_fee': true},
+        'can': <String, Object?>{
+          'cancel': true,
+          'recall': false,
+          'confirm_fee': true
+        },
       });
       expect(d.state, DeliveryState.waitingDriver);
       expect(d.fee.amountVnd, isNull);
@@ -83,7 +123,8 @@ void main() {
     });
 
     test('a body that is not the contract is refused, not half filled', () {
-      expect(() => DeliveryView.fromJson(<String, Object?>{'delivery_id': 1}), throwsFormatException);
+      expect(() => DeliveryView.fromJson(<String, Object?>{'delivery_id': 1}),
+          throwsFormatException);
       expect(() => deliveryStateOf('on_the_moon'), throwsFormatException);
     });
 
@@ -97,13 +138,20 @@ void main() {
   });
 
   group('11Food — shop', () {
-    testWidgets('Q01 defaults to all deliveries, flags what needs attention, filters completed', (WidgetTester tester) async {
+    testWidgets(
+        'Q01 defaults to all deliveries, flags what needs attention, filters completed',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopDeliveryHub(source: source))));
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShopDeliveryHub(source: source))));
       expect(key('m07-sample-banner'), findsOneWidget);
       expect(key('m07-card-d-wait'), findsOneWidget);
       expect(key('m07-card-d-done'), findsOneWidget);
-      expect(containing('Cần xử lý'), findsWidgets); // the stopped search and the open incident
+      expect(containing('Cần xử lý'),
+          findsWidgets); // the stopped search and the open incident
       await tap(tester, key('m07-filter'));
       await tap(tester, key('order-filter-completed'));
       await tap(tester, key('order-filter-apply'));
@@ -112,9 +160,14 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q01 empty search reports no matching delivery', (WidgetTester tester) async {
+    testWidgets('Q01 empty search reports no matching delivery',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShopDeliveryHub(source: source))));
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShopDeliveryHub(source: source))));
       await tester.enterText(key('m07-search').first, 'không có mã này');
       await tester.pump(const Duration(milliseconds: 400));
       await settle(tester);
@@ -122,9 +175,12 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q03 searching: server timer, marks, cancel needs a reason and does not touch the order', (WidgetTester tester) async {
+    testWidgets(
+        'Q03 searching: server timer, marks, cancel needs a reason and does not touch the order',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-wait'));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: source, deliveryId: 'd-wait'));
       expect(key('m07-countdown'), findsOneWidget);
       expect(find.text('5 phút'), findsOneWidget);
       expect(key('m07-cancel'), findsOneWidget);
@@ -135,27 +191,37 @@ void main() {
       expect(find.text('Hủy'), findsNothing);
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
-      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
+      expect(
+          tester
+              .widgetList<Text>(find.byType(Text))
+              .any((Text text) => (text.data ?? '').startsWith('Nhập ')),
+          isTrue);
       await tester.enterText(key('m07-reason-field').first, 'Khách đổi ý');
       await settle(tester);
-      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed, isNotNull);
+      expect(tester.widget<TextButton>(key('m07-reason-confirm')).onPressed,
+          isNotNull);
       await tap(tester, key('m07-reason-confirm'));
-      expect((await source.get('d-wait')).state, DeliveryState.cancelledByMerchant);
+      expect((await source.get('d-wait')).state,
+          DeliveryState.cancelledByMerchant);
       expect(containing('Đã hủy yêu cầu giao'), findsWidgets);
       expect(key('m07-cancel'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('Q05 delivering a DIRECT call: status only (no Shipper route); the creating shop alone may cancel, with a clear warning', (WidgetTester tester) async {
+    testWidgets(
+        'Q05 delivering a DIRECT call: status only (no Shipper route); the creating shop alone may cancel, with a clear warning',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-run'));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: source, deliveryId: 'd-run'));
       expect(key('m07-location-card'), findsNothing);
       expect(containing('Trực tiếp'), findsNothing);
       expect(containing('phí không sửa được'), findsOneWidget);
       expect(containing('Hủy giao (shipper đã lấy hàng)'), findsOneWidget);
       await tap(tester, key('m07-cancel'));
       expect(containing('hàng vẫn ở shipper'), findsOneWidget);
-      await tester.enterText(key('m07-reason-field').first, 'Khách không nhận nữa');
+      await tester.enterText(
+          key('m07-reason-field').first, 'Khách không nhận nữa');
       await settle(tester);
       await tap(tester, key('m07-reason-confirm'));
       final DeliveryView after = await source.get('d-run');
@@ -167,28 +233,46 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q05 delivering a customer\'s order: the shop cannot cancel (the customer does) and sees the Shipper\'s position', (WidgetTester tester) async {
+    testWidgets(
+        'Q05 delivering a customer\'s order: the shop cannot cancel (the customer does) and sees the Shipper\'s position',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
       final DeliveryView base = await source.get('d-run');
-      final _OrderShop orderShop = _OrderShop(base.copyWith(can: const <String>{}, location: LocationView(lat: 22.666, lng: 106.258, recordedAt: DateTime.utc(2026, 10, 18, 8, 59), ageSeconds: 60, freshness: Freshness.live)));
-      await mount(tester, ShopDeliveryDetailScreen(source: orderShop, deliveryId: 'd-run'));
+      final _OrderShop orderShop = _OrderShop(base.copyWith(
+          can: const <String>{},
+          location: LocationView(
+              lat: 22.666,
+              lng: 106.258,
+              recordedAt: DateTime.utc(2026, 10, 18, 8, 59),
+              ageSeconds: 60,
+              freshness: Freshness.live)));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: orderShop, deliveryId: 'd-run'));
       expect(key('m07-cancel'), findsNothing);
       expect(containing('chỉ khách mới hủy được'), findsOneWidget);
       expect(key('m07-location-card'), findsOneWidget);
       await unmount(tester);
     });
 
-    testWidgets('Q04 accepted: shipper card, no Shipper route for a DIRECT call, cancel allowed before pickup', (WidgetTester tester) async {
-      await mount(tester, ShopDeliveryDetailScreen(source: SampleShopSource(), deliveryId: 'd-acc'));
+    testWidgets(
+        'Q04 accepted: shipper card, no Shipper route for a DIRECT call, cancel allowed before pickup',
+        (WidgetTester tester) async {
+      await mount(
+          tester,
+          ShopDeliveryDetailScreen(
+              source: SampleShopSource(), deliveryId: 'd-acc'));
       expect(key('m07-shipper-card'), findsOneWidget);
       expect(containing('Trực tiếp'), findsNothing);
       expect(key('m07-cancel'), findsOneWidget);
       await unmount(tester);
     });
 
-    testWidgets('Q06 search stopped: call again or cancel, the order is not cancelled', (WidgetTester tester) async {
+    testWidgets(
+        'Q06 search stopped: call again or cancel, the order is not cancelled',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-stop'));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: source, deliveryId: 'd-stop'));
       expect(key('m07-stopped'), findsOneWidget);
       expect(key('m07-recall'), findsOneWidget);
       expect(key('m07-cancel'), findsOneWidget);
@@ -199,12 +283,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q08 failed delivery: goods stay with the Shipper until the shop confirms they are back', (WidgetTester tester) async {
+    testWidgets(
+        'Q08 failed delivery: goods stay with the Shipper until the shop confirms they are back',
+        (WidgetTester tester) async {
       final SampleShopSource source = SampleShopSource();
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-fail'));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: source, deliveryId: 'd-fail'));
       expect(key('m07-incident'), findsOneWidget);
       expect(containing('Hàng đang ở shipper hoặc chưa rõ'), findsOneWidget);
-      expect(key('m07-recall'), findsNothing); // cannot call again while the goods are out
+      expect(key('m07-recall'),
+          findsNothing); // cannot call again while the goods are out
       await tap(tester, key('m07-custody-returned'));
       await tap(tester, key('m07-confirm-yes'));
       expect(containing('Hàng đã về quán'), findsWidgets);
@@ -212,52 +300,78 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('a conflict reloads and says the record changed', (WidgetTester tester) async {
+    testWidgets('a conflict reloads and says the record changed',
+        (WidgetTester tester) async {
       final _ConflictShop source = _ConflictShop();
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'd-wait'));
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: source, deliveryId: 'd-wait'));
       await tap(tester, key('m07-cancel'));
       await tester.enterText(key('m07-reason-field').first, 'x');
       await settle(tester);
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-action-failed'), findsOneWidget);
       expect(containing('vừa thay đổi'), findsWidgets);
-      expect(source.gets, greaterThan(1), reason: 'the screen reloads after a conflict');
+      expect(source.gets, greaterThan(1),
+          reason: 'the screen reloads after a conflict');
       await unmount(tester);
     });
-
   });
 
   group('11Ship — shipper', () {
-    testWidgets('S01 offer shows only what is allowed before accepting', (WidgetTester tester) async {
+    testWidgets('S01 offer shows only what is allowed before accepting',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: source))));
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShipperDeliveryHub(source: source))));
       await tap(tester, key('m07-ship-tab-offers'));
       expect(key('m07-offer-o-1'), findsOneWidget);
       // No customer phone, no street address, no map: the offer type has no field for them.
       expect(containing('0900000002'), findsNothing);
       expect(containing('Số 9'), findsNothing);
-      expect(find.byType(CustomPaint).evaluate().where((e) => e.widget.key == const Key('m07-ship-map')), isEmpty);
-      expect(containing('Chưa xác định phí'), findsOneWidget); // the offer without a fee
-      expect(tester.widget<N11Button>(key('m07-accept-o-2')).onPressed, isNull); // not eligible
+      expect(
+          find
+              .byType(CustomPaint)
+              .evaluate()
+              .where((e) => e.widget.key == const Key('m07-ship-map')),
+          isEmpty);
+      expect(containing('Chưa xác định phí'),
+          findsOneWidget); // the offer without a fee
+      expect(tester.widget<N11Button>(key('m07-accept-o-2')).onPressed,
+          isNull); // not eligible
       expect(containing('3 km'), findsWidgets);
       await unmount(tester);
     });
 
-    testWidgets('S01 accepting moves the order to "đang thực hiện"', (WidgetTester tester) async {
+    testWidgets('S01 accepting moves the order to "đang thực hiện"',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: source))));
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShipperDeliveryHub(source: source))));
       await tap(tester, key('m07-ship-tab-offers'));
       await tap(tester, key('m07-accept-o-1'));
-      expect((await source.mine(history: false)).map((DeliveryView d) => d.deliveryId), contains('o-1'));
+      expect(
+          (await source.mine(history: false))
+              .map((DeliveryView d) => d.deliveryId),
+          contains('o-1'));
       await unmount(tester);
     });
 
-    testWidgets('S02/S03 before pickup: a fee never settled blocks pickup and asks for the agreed amount only; release needs a reason', (WidgetTester tester) async {
+    testWidgets(
+        'S02/S03 before pickup: a fee never settled blocks pickup and asks for the agreed amount only; release needs a reason',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
-      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'm-acc'));
+      await mount(tester,
+          ShipperDeliveryDetailScreen(source: source, deliveryId: 'm-acc'));
       expect(key('m07-missing-banner'), findsOneWidget);
       expect(containing('Phí giao chưa được chốt'), findsWidgets);
-      expect(key('m07-pickup'), findsNothing); // the server did not allow pickup yet
+      expect(key('m07-pickup'),
+          findsNothing); // the server did not allow pickup yet
       expect(key('m07-confirm-fee'), findsOneWidget);
       expect(containing('Điểm giao'), findsNothing);
       expect(containing('ghim'), findsNothing);
@@ -267,22 +381,31 @@ void main() {
       expect(containing('tìm shipper khác'), findsOneWidget);
       await tap(tester, key('m07-reason-confirm'));
       expect(key('m07-reason-dialog'), findsOneWidget);
-      expect(tester.widgetList<Text>(find.byType(Text)).any((Text text) => (text.data ?? '').startsWith('Nhập ')), isTrue);
+      expect(
+          tester
+              .widgetList<Text>(find.byType(Text))
+              .any((Text text) => (text.data ?? '').startsWith('Nhập ')),
+          isTrue);
       await unmount(tester);
     });
 
-    testWidgets('S04 asks only for the agreed fee, no map; a bad amount is explained and nothing is sent', (WidgetTester tester) async {
+    testWidgets(
+        'S04 asks only for the agreed fee, no map; a bad amount is explained and nothing is sent',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       final DeliveryView d = await source.get('m-acc');
       await mount(tester, ConfirmFeeScreen(source: source, delivery: d));
       expect(key('m07-no-map'), findsNothing);
       await tap(tester, key('m07-fee-submit'));
-      expect(find.text('Nhập phí là số nguyên từ 0 đến 10.000.000đ.'), findsOneWidget);
+      expect(find.text('Nhập phí là số nguyên từ 0 đến 10.000.000đ.'),
+          findsOneWidget);
       expect((await source.get('m-acc')).version, d.version);
       await unmount(tester);
     });
 
-    testWidgets('S04 with an agreed fee the Shipper can pick up in one more step', (WidgetTester tester) async {
+    testWidgets(
+        'S04 with an agreed fee the Shipper can pick up in one more step',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       final DeliveryView d = await source.get('m-acc');
       await mount(tester, ConfirmFeeScreen(source: source, delivery: d));
@@ -297,8 +420,13 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S06 delivering: no release, no cancel and NO "Giao thất bại" — only complete, with a note to call the shop', (WidgetTester tester) async {
-      await mount(tester, ShipperDeliveryDetailScreen(source: SampleShipperSource(), deliveryId: 'm-run'));
+    testWidgets(
+        'S06 delivering: no release, no cancel and NO "Giao thất bại" — only complete, with a note to call the shop',
+        (WidgetTester tester) async {
+      await mount(
+          tester,
+          ShipperDeliveryDetailScreen(
+              source: SampleShipperSource(), deliveryId: 'm-run'));
       expect(key('m07-release'), findsNothing);
       expect(key('m07-pickup'), findsNothing);
       expect(key('m07-fail'), findsNothing);
@@ -309,10 +437,13 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S06 a fee that is settled shows one "Đã nhận hàng" step and no fee screen', (WidgetTester tester) async {
+    testWidgets(
+        'S06 a fee that is settled shows one "Đã nhận hàng" step and no fee screen',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
       await source.accept('o-1', key: 'k');
-      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'o-1'));
+      await mount(tester,
+          ShipperDeliveryDetailScreen(source: source, deliveryId: 'o-1'));
       expect(key('m07-pickup'), findsOneWidget);
       expect(key('m07-confirm-fee'), findsNothing);
       expect(key('m07-missing-banner'), findsNothing);
@@ -325,9 +456,11 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S06 completing asks first, then shows the result', (WidgetTester tester) async {
+    testWidgets('S06 completing asks first, then shows the result',
+        (WidgetTester tester) async {
       final SampleShipperSource source = SampleShipperSource();
-      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'm-run'));
+      await mount(tester,
+          ShipperDeliveryDetailScreen(source: source, deliveryId: 'm-run'));
       await tap(tester, key('m07-complete'));
       expect(containing('Giao thành công?'), findsOneWidget);
       await tap(tester, key('m07-confirm-yes'));
@@ -337,54 +470,90 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('S01 a fee in force can be questioned BEFORE taking (a table fee has no agreement): the button sends the amount; with a proposal waiting the offer cannot be taken', (WidgetTester tester) async {
+    testWidgets(
+        'S01 a fee in force can be questioned BEFORE taking (a table fee has no agreement): the button sends the amount; with a proposal waiting the offer cannot be taken',
+        (WidgetTester tester) async {
       final _TableOfferShipper source = _TableOfferShipper();
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: source))));
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShipperDeliveryHub(source: source))));
       await tap(tester, key('m07-ship-tab-offers'));
       expect(key('m07-fee-counter'), findsOneWidget);
-      expect(key('m07-fee-agree'), findsNothing); // nothing to agree to: the fee is already settled
+      expect(key('m07-fee-agree'),
+          findsNothing); // nothing to agree to: the fee is already settled
       await tap(tester, key('m07-fee-counter'));
-      await tester.enterText(find.descendant(of: key('m07-counter-amount'), matching: find.byType(EditableText)), '20000');
+      await tester.enterText(
+          find.descendant(
+              of: key('m07-counter-amount'),
+              matching: find.byType(EditableText)),
+          '20000');
       await tap(tester, key('m07-counter-send'));
       expect(source.proposed, <int>[20000]);
       // The server now reports the waiting proposal: the offer says so and "Nhận đơn" is closed until it is answered.
       expect(key('m07-offer-waiting'), findsOneWidget);
-      expect(containing('đang chờ quán (người trả phí) trả lời'), findsOneWidget);
+      expect(
+          containing('đang chờ quán (người trả phí) trả lời'), findsOneWidget);
       expect(tester.widget<N11Button>(key('m07-accept-t-1')).onPressed, isNull);
       expect(key('m07-fee-counter'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('S06 after taking and before the pickup: the Shipper may propose another fee, then pickup closes until the payer answers; nothing offers a failed delivery', (WidgetTester tester) async {
+    testWidgets(
+        'S06 after taking and before the pickup: the Shipper may propose another fee, then pickup closes until the payer answers; nothing offers a failed delivery',
+        (WidgetTester tester) async {
       final _HeldShipper source = _HeldShipper();
-      await mount(tester, ShipperDeliveryDetailScreen(source: source, deliveryId: 'h-1'));
+      await mount(tester,
+          ShipperDeliveryDetailScreen(source: source, deliveryId: 'h-1'));
       expect(key('m07-propose-fee'), findsOneWidget);
       expect(key('m07-pickup'), findsOneWidget);
       expect(key('m07-release'), findsOneWidget);
       expect(key('m07-fee-waiting-banner'), findsNothing);
       await tap(tester, key('m07-propose-fee'));
-      await tester.enterText(find.descendant(of: key('m07-counter-amount'), matching: find.byType(EditableText)), '18000');
+      await tester.enterText(
+          find.descendant(
+              of: key('m07-counter-amount'),
+              matching: find.byType(EditableText)),
+          '18000');
       await tap(tester, key('m07-counter-send'));
       expect(source.proposed, <int>[18000]);
       expect(key('m07-fee-waiting-banner'), findsOneWidget);
-      expect(containing('Chưa nhận hàng được cho đến khi khách đồng ý'), findsOneWidget);
+      expect(containing('Chưa nhận hàng được cho đến khi khách đồng ý'),
+          findsOneWidget);
       expect(key('m07-pickup'), findsNothing);
       expect(key('m07-propose-fee'), findsNothing);
-      expect(key('m07-release'), findsOneWidget); // giving the delivery up stays possible
+      expect(key('m07-release'),
+          findsOneWidget); // giving the delivery up stays possible
       expect(key('m07-fail'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('S06 once picked up there is no way to change the fee: no proposal button at all', (WidgetTester tester) async {
-      await mount(tester, ShipperDeliveryDetailScreen(source: SampleShipperSource(), deliveryId: 'm-run'));
+    testWidgets(
+        'S06 once picked up there is no way to change the fee: no proposal button at all',
+        (WidgetTester tester) async {
+      await mount(
+          tester,
+          ShipperDeliveryDetailScreen(
+              source: SampleShipperSource(), deliveryId: 'm-run'));
       expect(key('m07-propose-fee'), findsNothing);
       expect(key('m07-fee-waiting-banner'), findsNothing);
       await unmount(tester);
     });
 
-    testWidgets('S08 a turn that ended because the proposed fee was not agreed says so in the history', (WidgetTester tester) async {
-      final DeliveryView ended = _held(ownOutcome: 'fee_not_agreed', state: DeliveryState.cancelledByMerchant, can: const <String>{});
-      await mount(tester, Scaffold(body: SingleChildScrollView(child: ShipperDeliveryHub(source: _FixedMine(<DeliveryView>[ended])))));
+    testWidgets(
+        'S08 a turn that ended because the proposed fee was not agreed says so in the history',
+        (WidgetTester tester) async {
+      final DeliveryView ended = _held(
+          ownOutcome: 'fee_not_agreed',
+          state: DeliveryState.cancelledByMerchant,
+          can: const <String>{});
+      await mount(
+          tester,
+          Scaffold(
+              body: SingleChildScrollView(
+                  child: ShipperDeliveryHub(
+                      source: _FixedMine(<DeliveryView>[ended])))));
       await tap(tester, key('m07-ship-tab-history'));
       expect(containing('Phí không được đồng ý'), findsOneWidget);
       await unmount(tester);
@@ -392,36 +561,52 @@ void main() {
   });
 
   group('failure texts', () {
-    test('every failure kind has a Vietnamese sentence and never a raw code', () {
+    test('every failure kind has a Vietnamese sentence and never a raw code',
+        () {
       for (final M07FailureKind kind in M07FailureKind.values) {
         final String text = M07Failure(kind).message;
         expect(text, isNotEmpty);
         expect(RegExp(r'[A-Z]{3,}_[A-Z]{3,}').hasMatch(text), isFalse);
       }
-      expect(const M07Failure(M07FailureKind.refused, code: 'AFTER_PICKUP_NO_CANCEL').message, contains('không hủy'));
+      expect(
+          const M07Failure(M07FailureKind.refused,
+                  code: 'AFTER_PICKUP_NO_CANCEL')
+              .message,
+          contains('không hủy'));
     });
   });
 
   group('11Food — shop: a Shipper\'s other fee', () {
-    testWidgets('Q09 the shop pays: it answers Đồng ý / Từ chối, also after the Shipper took the delivery', (WidgetTester tester) async {
-      final _NegotiationShop source = _NegotiationShop(decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+    testWidgets(
+        'Q09 the shop pays: it answers Đồng ý / Từ chối, also after the Shipper took the delivery',
+        (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(
+          decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
+      await mount(
+          tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
       expect(key('m07-fee-negotiation'), findsOneWidget);
       expect(containing('Phí hiện tại'), findsWidgets);
       expect(key('m07-wait-customer-fee'), findsNothing);
       await tap(tester, key('m07-counter-reject'));
       expect(source.answers, <bool>[false]);
       await unmount(tester);
-      final _NegotiationShop accepting = _NegotiationShop(decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
-      await mount(tester, ShopDeliveryDetailScreen(source: accepting, deliveryId: 'n-1'));
+      final _NegotiationShop accepting = _NegotiationShop(
+          decider: 'SHOP', can: const <String>{'cancel', 'decide_fee'});
+      await mount(tester,
+          ShopDeliveryDetailScreen(source: accepting, deliveryId: 'n-1'));
       await tap(tester, key('m07-counter-accept'));
       expect(accepting.answers, <bool>[true]);
       await unmount(tester);
     });
 
-    testWidgets('Q09 an order the CUSTOMER pays: the shop only waits (the customer decides in 11Food) and has no buttons', (WidgetTester tester) async {
-      final _NegotiationShop source = _NegotiationShop(decider: 'CUSTOMER', can: const <String>{'cancel', 'wait_customer_fee'});
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+    testWidgets(
+        'Q09 an order the CUSTOMER pays: the shop only waits (the customer decides in 11Food) and has no buttons',
+        (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(
+          decider: 'CUSTOMER',
+          can: const <String>{'cancel', 'wait_customer_fee'});
+      await mount(
+          tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
       expect(key('m07-fee-negotiation'), findsOneWidget);
       expect(key('m07-wait-customer-fee'), findsOneWidget);
       expect(key('m07-counter-accept'), findsNothing);
@@ -429,9 +614,15 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Q09 a DIRECT call the customer pays: the shop answers for the customer and the screen says that is how it is recorded', (WidgetTester tester) async {
-      final _NegotiationShop source = _NegotiationShop(decider: 'SHOP', payer: 'CUSTOMER', can: const <String>{'cancel', 'decide_fee'});
-      await mount(tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
+    testWidgets(
+        'Q09 a DIRECT call the customer pays: the shop answers for the customer and the screen says that is how it is recorded',
+        (WidgetTester tester) async {
+      final _NegotiationShop source = _NegotiationShop(
+          decider: 'SHOP',
+          payer: 'CUSTOMER',
+          can: const <String>{'cancel', 'decide_fee'});
+      await mount(
+          tester, ShopDeliveryDetailScreen(source: source, deliveryId: 'n-1'));
       expect(containing('xác nhận thay khách'), findsOneWidget);
       expect(key('m07-counter-accept'), findsOneWidget);
       await unmount(tester);
@@ -439,20 +630,36 @@ void main() {
   });
 
   group('wire: the proposal that waits for the payer', () {
-    test('the fee and the offer carry it; an older server (no field) still lets an agreed proposal be countered, as before', () {
+    test(
+        'the fee and the offer carry it; an older server (no field) still lets an agreed proposal be countered, as before',
+        () {
       final FeeView fee = FeeView.fromJson(<String, Object?>{
         'mode': 'STANDARD',
         'payer': 'CUSTOMER',
         'status': 'FINAL',
         'amount_vnd': 15000,
-        'negotiation': <String, Object?>{'state': 'WAITING', 'current_vnd': 15000, 'offered_vnd': 20000, 'decider': 'CUSTOMER', 'by_me': true, 'answer_expires_at': '2026-10-24T10:05:00Z'},
+        'negotiation': <String, Object?>{
+          'state': 'WAITING',
+          'current_vnd': 15000,
+          'offered_vnd': 20000,
+          'decider': 'CUSTOMER',
+          'by_me': true,
+          'answer_expires_at': '2026-10-24T10:05:00Z'
+        },
       });
       expect(fee.negotiation?.offeredVnd, 20000);
       expect(fee.negotiation?.currentVnd, 15000);
       expect(fee.negotiation?.deciderText, 'khách');
       expect(fee.negotiation?.byMe, isTrue);
       expect(fee.negotiation?.answerExpiresAt, isNotNull);
-      expect(FeeView.fromJson(<String, Object?>{'mode': 'STANDARD', 'payer': 'SHOP', 'status': 'FINAL', 'amount_vnd': 1}).negotiation, isNull);
+      expect(
+          FeeView.fromJson(<String, Object?>{
+            'mode': 'STANDARD',
+            'payer': 'SHOP',
+            'status': 'FINAL',
+            'amount_vnd': 1
+          }).negotiation,
+          isNull);
       final Map<String, Object?> offer = <String, Object?>{
         'delivery_id': 'o',
         'code': 'G-1',
@@ -466,18 +673,36 @@ void main() {
         'server_now': '2026-10-24T10:00:00Z',
         'eligible': true,
       };
-      expect(OfferView.fromJson(<String, Object?>{...offer, 'fee_counter_allowed': true}).canCounter, isTrue);
-      expect(OfferView.fromJson(<String, Object?>{...offer, 'fee_counter_allowed': false}).canCounter, isFalse);
+      expect(
+          OfferView.fromJson(
+                  <String, Object?>{...offer, 'fee_counter_allowed': true})
+              .canCounter,
+          isTrue);
+      expect(
+          OfferView.fromJson(
+                  <String, Object?>{...offer, 'fee_counter_allowed': false})
+              .canCounter,
+          isFalse);
       expect(OfferView.fromJson(offer).canCounter, isFalse);
       expect(
-        OfferView.fromJson(<String, Object?>{...offer, 'agreement': <String, Object?>{'state': 'PROPOSED', 'proposed_vnd': 1, 'reason_code': 'URGENT', 'expires_at': '2026-10-24T10:30:00Z'}}).canCounter,
+        OfferView.fromJson(<String, Object?>{
+          ...offer,
+          'agreement': <String, Object?>{
+            'state': 'PROPOSED',
+            'proposed_vnd': 1,
+            'reason_code': 'URGENT',
+            'expires_at': '2026-10-24T10:30:00Z'
+          }
+        }).canCounter,
         isTrue,
       );
     });
   });
 
   group('PR #231: customer courier and COD', () {
-    testWidgets('Issue #212: OfferCard has no skip button, no dropoff area, and displays COD and recipient pays', (WidgetTester tester) async {
+    testWidgets(
+        'Issue #212: OfferCard has no skip button, no dropoff area, and displays COD and recipient pays',
+        (WidgetTester tester) async {
       final OfferView offer = OfferView(
         deliveryId: 'o-cod',
         code: 'G-COD01',
@@ -523,7 +748,9 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Issue #212: askFeeProposal dialog renders compact layout, displays subtitle, and returns amount', (WidgetTester tester) async {
+    testWidgets(
+        'Issue #212: askFeeProposal dialog renders compact layout, displays subtitle, and returns amount',
+        (WidgetTester tester) async {
       int? proposed;
       await mount(
         tester,
@@ -531,7 +758,10 @@ void main() {
           builder: (BuildContext context) => ElevatedButton(
             key: const Key('open-dialog'),
             onPressed: () async {
-              proposed = await askFeeProposal(context, currentFeeVnd: 15000, proposedFeeVnd: 20000, deciderText: 'khách');
+              proposed = await askFeeProposal(context,
+                  currentFeeVnd: 15000,
+                  proposedFeeVnd: 20000,
+                  deciderText: 'khách');
             },
             child: const Text('Open'),
           ),
@@ -539,23 +769,27 @@ void main() {
       );
       await tap(tester, key('open-dialog'));
       expect(find.text('Đề xuất mức phí'), findsOneWidget);
-      expect(find.text('Phí hiện tại: 15.000đ · Đang đề xuất: 20.000đ'), findsOneWidget);
+      expect(find.text('Phí hiện tại: 15.000đ · Đang đề xuất: 20.000đ'),
+          findsOneWidget);
       await tester.enterText(key('m07-counter-amount'), '25000');
       await tap(tester, key('m07-counter-send'));
       expect(proposed, 25000);
       await unmount(tester);
     });
 
-    testWidgets('CustomerCallScreen: creates delivery without GPS and calculates recipient total', (WidgetTester tester) async {
-      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+    testWidgets(
+        'CustomerCallScreen: creates delivery without GPS and calculates recipient total',
+        (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source =
+          SampleCustomerDeliverySource();
       await mount(tester, CustomerCallScreen(source: source));
-      expect(find.text('Ghim vị trí lấy hàng (tùy chọn)'), findsOneWidget);
-      expect(find.text('Ghim vị trí giao hàng (tùy chọn)'), findsOneWidget);
+      // #413: both points use the shared block; the pin is optional and says so.
+      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsNWidgets(2));
       await tester.enterText(key('m07-c-sender-phone'), '0901234567');
-      await tester.enterText(key('m07-c-pickup-addr'), 'Số 1 Phố Huế');
+      await tapSharedAddress(tester, 'm07-c-pickup-addr', 'Số 1 Phố Huế');
       await tester.enterText(key('m07-c-recip-name'), 'Người nhận A');
       await tester.enterText(key('m07-c-recip-phone'), '0987654321');
-      await tester.enterText(key('m07-c-dropoff-addr'), 'Số 10 Phố Trúc');
+      await tapSharedAddress(tester, 'm07-c-dropoff-addr', 'Số 10 Phố Trúc');
       await tester.enterText(key('m07-c-goods'), 'Hộp quà');
       // Toggle COD
       await tap(tester, find.text('Thu hộ tiền hàng (COD)'));
@@ -567,7 +801,8 @@ void main() {
       await tester.enterText(key('m07-c-fee-amount'), '25000');
       await settle(tester);
       // Recipient total summary should show COD + fee
-      expect(find.textContaining('225.000đ (200.000đ COD + 25.000đ ship)'), findsOneWidget);
+      expect(find.textContaining('225.000đ (200.000đ COD + 25.000đ ship)'),
+          findsOneWidget);
       // Submit
       await tap(tester, key('m07-c-submit'));
       expect(find.text('Xác nhận gọi shipper?'), findsOneWidget);
@@ -579,24 +814,34 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('CustomerDeliveryDetailScreen: shows COD, tracking link management, and no map when GPS missing', (WidgetTester tester) async {
-      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
-      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-wait'));
+    testWidgets(
+        'CustomerDeliveryDetailScreen: shows COD, tracking link management, and no map when GPS missing',
+        (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source =
+          SampleCustomerDeliverySource();
+      await mount(tester,
+          CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-wait'));
       expect(find.text('Thu hộ (COD)'), findsOneWidget);
       expect(find.text('200.000đ'), findsWidgets);
       expect(find.text('Theo dõi & Chia sẻ công khai'), findsOneWidget);
       // Create link
       await tap(tester, find.text('Tạo liên kết chia sẻ cho người nhận'));
-      expect(find.textContaining('https://11ship.app/track/sample-track-cd-wait'), findsOneWidget);
+      expect(
+          find.textContaining('https://11ship.app/track/sample-track-cd-wait'),
+          findsOneWidget);
       // Revoke link
       await tap(tester, find.text('Thu hồi liên kết chia sẻ'));
       expect(find.text('Tạo liên kết chia sẻ cho người nhận'), findsOneWidget);
       await unmount(tester);
     });
 
-    testWidgets('CustomerDeliveryDetailScreen: displays shipper card, chat, and live location toggle when GPS present', (WidgetTester tester) async {
-      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
-      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-run'));
+    testWidgets(
+        'CustomerDeliveryDetailScreen: displays shipper card, chat, and live location toggle when GPS present',
+        (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source =
+          SampleCustomerDeliverySource();
+      await mount(tester,
+          CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-run'));
       expect(find.text('Shipper phụ trách'), findsOneWidget);
       expect(find.text('Shipper Mẫu'), findsOneWidget);
       expect(find.text('SĐT: 0900000003'), findsOneWidget);
@@ -608,9 +853,14 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('CustomerDeliveryDetailScreen: handles counter fee accept', (WidgetTester tester) async {
-      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
-      await mount(tester, CustomerDeliveryDetailScreen(source: source, deliveryId: 'cd-counter'));
+    testWidgets('CustomerDeliveryDetailScreen: handles counter fee accept',
+        (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source =
+          SampleCustomerDeliverySource();
+      await mount(
+          tester,
+          CustomerDeliveryDetailScreen(
+              source: source, deliveryId: 'cd-counter'));
       expect(find.text('Shipper đề xuất phí mới'), findsOneWidget);
       expect(find.text('30.000đ'), findsWidgets);
       expect(find.byKey(const Key('customer-counter-accept')), findsOneWidget);
@@ -623,8 +873,11 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('CustomerOrdersTab: switches between food orders and direct delivery calls', (WidgetTester tester) async {
-      final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
+    testWidgets(
+        'CustomerOrdersTab: switches between food orders and direct delivery calls',
+        (WidgetTester tester) async {
+      final SampleCustomerDeliverySource source =
+          SampleCustomerDeliverySource();
       final SampleOrderStore store = SampleOrderStore();
       final SampleCustomerOrders customer = SampleCustomerOrders(store);
       final CartController cart = CartController(source: customer);
@@ -633,7 +886,10 @@ void main() {
         shop: SampleShopOrders(store),
         cart: cart,
       );
-      await mount(tester, Scaffold(body: CustomerOrdersTab(runtime: runtime, deliveries: source)));
+      await mount(
+          tester,
+          Scaffold(
+              body: CustomerOrdersTab(runtime: runtime, deliveries: source)));
       expect(find.text('Đơn món'), findsOneWidget);
       expect(find.text('Giao hàng'), findsOneWidget);
       await tap(tester, find.text('Giao hàng'));
@@ -645,7 +901,8 @@ void main() {
   });
 
   test('delivery helper builds a valid view', () {
-    expect(_delivery('x', DeliveryState.accepted).state, DeliveryState.accepted);
+    expect(
+        _delivery('x', DeliveryState.accepted).state, DeliveryState.accepted);
   });
 }
 
@@ -683,11 +940,21 @@ class _ConflictShop extends SampleShopSource {
   }
 
   @override
-  Future<DeliveryView> cancel(String id, {required String reason, required int expectedVersion, required String key}) async =>
-      throw const M07Failure(M07FailureKind.conflict, code: 'DELIVERY_STATE_CONFLICT');
+  Future<DeliveryView> cancel(String id,
+          {required String reason,
+          required int expectedVersion,
+          required String key}) async =>
+      throw const M07Failure(M07FailureKind.conflict,
+          code: 'DELIVERY_STATE_CONFLICT');
 }
 
-DeliveryView _held({String ownOutcome = '', DeliveryState state = DeliveryState.accepted, Set<String> can = const <String>{'release', 'pickup', 'propose_fee'}, FeeNegotiation? negotiation, String decider = 'CUSTOMER', int version = 1}) {
+DeliveryView _held(
+    {String ownOutcome = '',
+    DeliveryState state = DeliveryState.accepted,
+    Set<String> can = const <String>{'release', 'pickup', 'propose_fee'},
+    FeeNegotiation? negotiation,
+    String decider = 'CUSTOMER',
+    int version = 1}) {
   final DeliveryView base = _delivery('h-1', state, can: can, version: version);
   return DeliveryView(
     deliveryId: base.deliveryId,
@@ -699,7 +966,13 @@ DeliveryView _held({String ownOutcome = '', DeliveryState state = DeliveryState.
     pickup: base.pickup,
     recipient: base.recipient,
     goods: base.goods,
-    fee: FeeView(mode: 'STANDARD', payer: 'CUSTOMER', status: 'FINAL', amountVnd: 15000, decider: decider, negotiation: negotiation),
+    fee: FeeView(
+        mode: 'STANDARD',
+        payer: 'CUSTOMER',
+        status: 'FINAL',
+        amountVnd: 15000,
+        decider: decider,
+        negotiation: negotiation),
     search: base.search,
     can: can,
   );
@@ -725,14 +998,21 @@ class _TableOfferShipper extends SampleShipperSource {
         eligible: true,
         feeDecider: 'SHOP',
         feeCounterAllowed: !_waiting,
-        negotiation: _waiting ? const FeeNegotiation(currentVnd: 15000, offeredVnd: 20000, decider: 'SHOP', byMe: true) : null,
+        negotiation: _waiting
+            ? const FeeNegotiation(
+                currentVnd: 15000,
+                offeredVnd: 20000,
+                decider: 'SHOP',
+                byMe: true)
+            : null,
       );
 
   @override
   Future<List<OfferView>> offers() async => <OfferView>[_offer()];
 
   @override
-  Future<OfferView> feeCounter(String id, {required int amountVnd, required String key}) async {
+  Future<OfferView> feeCounter(String id,
+      {required int amountVnd, required String key}) async {
     proposed.add(amountVnd);
     _waiting = true;
     return _offer();
@@ -748,12 +1028,17 @@ class _HeldShipper extends SampleShipperSource {
   Future<DeliveryView> get(String id) async => _view;
 
   @override
-  Future<OfferView> feeCounter(String id, {required int amountVnd, required String key}) async {
+  Future<OfferView> feeCounter(String id,
+      {required int amountVnd, required String key}) async {
     proposed.add(amountVnd);
     _view = _held(
       can: const <String>{'release'},
       version: 2,
-      negotiation: FeeNegotiation(currentVnd: 15000, offeredVnd: amountVnd, decider: 'CUSTOMER', byMe: true),
+      negotiation: FeeNegotiation(
+          currentVnd: 15000,
+          offeredVnd: amountVnd,
+          decider: 'CUSTOMER',
+          byMe: true),
     );
     return super.feeCounter('o-1', amountVnd: amountVnd, key: key);
   }
@@ -770,7 +1055,8 @@ class _FixedMine extends SampleShipperSource {
 
 /// A shop whose delivery has a Shipper's proposal about the fee in force, waiting for the payer.
 class _NegotiationShop extends SampleShopSource {
-  _NegotiationShop({required this.decider, this.payer = 'SHOP', required this.can});
+  _NegotiationShop(
+      {required this.decider, this.payer = 'SHOP', required this.can});
 
   final String decider;
   final String payer;
@@ -779,7 +1065,8 @@ class _NegotiationShop extends SampleShopSource {
 
   @override
   Future<DeliveryView> get(String id) async {
-    final DeliveryView base = _delivery(id, DeliveryState.accepted, can: can, version: 4);
+    final DeliveryView base =
+        _delivery(id, DeliveryState.accepted, can: can, version: 4);
     return DeliveryView(
       deliveryId: base.deliveryId,
       code: base.code,
@@ -795,17 +1082,41 @@ class _NegotiationShop extends SampleShopSource {
         status: 'FINAL',
         amountVnd: 15000,
         decider: decider,
-        negotiation: FeeNegotiation(currentVnd: 15000, offeredVnd: 20000, decider: decider, byMe: false),
+        negotiation: FeeNegotiation(
+            currentVnd: 15000,
+            offeredVnd: 20000,
+            decider: decider,
+            byMe: false),
       ),
       search: base.search,
-      assignment: AssignmentView(assignmentId: 'a', shipperName: 'Shipper Mẫu', acceptedAt: DateTime.utc(2026, 10, 18, 9), destinationConfirmed: true),
+      assignment: AssignmentView(
+          assignmentId: 'a',
+          shipperName: 'Shipper Mẫu',
+          acceptedAt: DateTime.utc(2026, 10, 18, 9),
+          destinationConfirmed: true),
       can: can,
     );
   }
 
   @override
-  Future<DeliveryView> answerCounter(String id, {required bool accept, required int expectedVersion, required String key}) async {
+  Future<DeliveryView> answerCounter(String id,
+      {required bool accept,
+      required int expectedVersion,
+      required String key}) async {
     answers.add(accept);
     return get(id);
   }
+}
+
+/// #413: a Gọi ship point through the shared flow: the block opens the saved list, "Thêm địa chỉ mới" opens the map, Save returns the text.
+Future<void> tapSharedAddress(
+    WidgetTester tester, String fieldKey, String text) async {
+  await tester.ensureVisible(find.byKey(Key(fieldKey)));
+  await tester.tap(find.byKey(Key(fieldKey)));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('pick-add-new')));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('location-address-text')), text);
+  await tester.tap(find.byKey(const Key('location-save')));
+  await tester.pumpAndSettle();
 }

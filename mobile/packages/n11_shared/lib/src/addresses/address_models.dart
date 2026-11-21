@@ -60,11 +60,27 @@ class DeliveryAddress {
   String get phoneText => formatVnPhone(contactPhone);
 }
 
-String formatVnPhone(String e164) => e164.startsWith('+84') ? '0${e164.substring(3)}' : e164;
+/// The longest "Mô tả bổ sung" / delivery note of an address (the same limit as the address form and the order's delivery note).
+const int kAddressNoteMaxLength = 200;
+
+String formatVnPhone(String e164) =>
+    e164.startsWith('+84') ? '0${e164.substring(3)}' : e164;
 
 /// Address text and the point chosen by the person. Legacy text-only addresses remain readable.
 class AddressInput {
-  const AddressInput({required this.label, this.displayName = '', required this.recipientName, required this.phone, required this.addressText, required this.note, this.pickupDefault = false, bool? deliveryDefault, bool? makeDefault, this.latitude, this.longitude}) : deliveryDefault = deliveryDefault ?? makeDefault ?? false;
+  const AddressInput(
+      {required this.label,
+      this.displayName = '',
+      required this.recipientName,
+      required this.phone,
+      required this.addressText,
+      required this.note,
+      this.pickupDefault = false,
+      bool? deliveryDefault,
+      bool? makeDefault,
+      this.latitude,
+      this.longitude})
+      : deliveryDefault = deliveryDefault ?? makeDefault ?? false;
 
   final AddressLabel label;
   final String displayName;
@@ -84,16 +100,20 @@ abstract class AddressApi {
 
   Future<DeliveryAddress> create(AddressInput input, {required String key});
 
-  Future<DeliveryAddress> update(String id, AddressInput input, {required int expectedVersion, required String key});
+  Future<DeliveryAddress> update(String id, AddressInput input,
+      {required int expectedVersion, required String key});
 
   /// Returns the id of the address that is the default afterwards (null = none left).
   Future<String?> delete(String id, {required String key});
 
   Future<void> setDefault(String id, {required String key});
 
-  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled, {required String key}) {
-    if (kind == AddressDefaultKind.delivery && enabled) return setDefault(id, key: key);
-    throw UnsupportedError('This address API does not support independent defaults');
+  Future<void> setDefaultKind(String id, AddressDefaultKind kind, bool enabled,
+      {required String key}) {
+    if (kind == AddressDefaultKind.delivery && enabled)
+      return setDefault(id, key: key);
+    throw UnsupportedError(
+        'This address API does not support independent defaults');
   }
 }
 
