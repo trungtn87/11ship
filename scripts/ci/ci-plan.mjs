@@ -2,8 +2,12 @@
 // Decides how much of ci.yml a run needs. Pure policy in plan(); the CLI only reads facts that the workflow
 // collected (event, draft flag, changed files, reuse evidence) and writes job outputs.
 //
-// Fail-closed: an unknown event, an empty or unknown diff, a path outside the allowlist, or any missing
-// evidence selects the FULL run (both integration modes). A run is only lighter when a rule below proves it.
+// Integration runs ONCE per run, in CI mode (the full suite with the wrong-user and remote-path fixtures).
+// The former "local mode" pass is no longer run on PRs or on pushes to main (Owner decision 2026-11-21);
+// it only runs for workflow_dispatch and for fail-closed cases.
+//
+// Fail-closed: an unknown event, or an empty or unknown diff, selects the FULL run (both integration modes).
+// A run is only lighter when a rule below proves it.
 // The required check "Verify (Node 24, PostgreSQL 17)" always runs and always reports; only its integration steps vary.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -16,20 +20,13 @@ export const isSkippablePath = file =>
   || (/^docs\//.test(file) && !/^docs\/verification\//.test(file))
   || /^[^/]+\.md$/.test(file);
 
-// Changes to the test infrastructure itself also run the README "local mode", because that mode is what they can break.
-export const isInfraPath = file =>
-  /^tests\/integration\/support\//.test(file)
-  || /^jest\.[^/]*$/.test(file)
-  || /^package(-lock)?\.json$/.test(file)
-  || file === '.node-version'
-  || file === '.github/workflows/ci.yml'
-  || /^scripts\/ci\//.test(file);
-
 // facts: { event, draft, files, reuse, parentGreen }
 //   files: changed paths (PR: base..merge ref; push: parent..commit), [] when unknown
 //   reuse: an artifact proves this exact git tree already passed a full integration run
 //   parentGreen: (push only) the parent commit has a successful ci.yml push run
 // returns { integration: 'none' | 'ci' | 'both', heavy: boolean, reason: string }
+//   'ci'   = integration once, CI mode (full suite, real fixtures)
+//   'both' = CI mode plus local mode; only for workflow_dispatch and fail-closed cases
 //   heavy=false also skips the self-hosted/Windows jobs, which are not required checks.
 export function plan({ event, draft = false, files = [], reuse = false, parentGreen = false } = {}) {
   if (event === 'pull_request' && draft) {
@@ -44,11 +41,14 @@ export function plan({ event, draft = false, files = [], reuse = false, parentGr
   if (reuse) {
     return { integration: 'none', heavy: true, reason: 'this exact git tree already passed the full integration run (artifact found)' };
   }
-  const infra = !known || files.some(isInfraPath);
-  if (event === 'pull_request' && !infra) {
-    return { integration: 'ci', heavy: true, reason: 'PR: integration once, in CI mode' };
+  if ((event === 'pull_request' || event === 'push') && known) {
+    return { integration: 'ci', heavy: true, reason: event === 'pull_request' ? 'PR: integration once, in CI mode' : 'main push: integration once, in CI mode' };
   }
-  return { integration: 'both', heavy: true, reason: event === 'pull_request' ? 'test infrastructure changed or diff unknown: both modes' : 'main/dispatch: both modes' };
+  return {
+    integration: 'both',
+    heavy: true,
+    reason: event === 'workflow_dispatch' ? 'manual run: both modes' : 'unknown event or empty/unknown diff: both modes (fail-closed)',
+  };
 }
 
 function main() {

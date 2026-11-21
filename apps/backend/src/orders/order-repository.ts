@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TechnicalError } from '../common/app-errors';
+import { AppError, TechnicalError } from '../common/app-errors';
 import { DeliveryState } from '../delivery/delivery-constants';
 import { JsonObject } from '../idempotency/idempotency-executor';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -368,7 +368,37 @@ export class OrderRepository {
 
   /** Inserts the Order in PENDING_CONFIRMATION with its lines (original = current). A code or client_ref collision returns false. */
   async insert(context: TransactionContext, o: NewOrder, items: readonly NewItem[]): Promise<boolean> {
-    const inserted = await context.query(
+    let inserted;
+    try {
+      inserted = await this.#insertOrder(context, o);
+    } catch (error) {
+      // The quote's route snapshot was removed (retention) after the quote read it, so the Order cannot point to it. Two DB guards can refuse:
+      // the Order's BEFORE INSERT pair guard (ROUTE_SNAPSHOT_MISMATCH, SQLSTATE 23001, raised first when the snapshot row is missing) and, behind it,
+      // the foreign key orders_route_snapshot_id_fkey (23503). Both mean the quote is no longer valid: the client re-quotes.
+      if (typeof error === 'object' && error !== null && 'code' in error) {
+        const constraint = 'constraint' in error ? error.constraint : undefined;
+        const message = 'message' in error ? error.message : undefined;
+        if ((error.code === '23503' && constraint === 'orders_route_snapshot_id_fkey') || (error.code === '23001' && message === 'ROUTE_SNAPSHOT_MISMATCH')) {
+          throw new AppError('ORDER_QUOTE_CHANGED');
+        }
+      }
+      throw error;
+    }
+    if (inserted.rowCount !== 1) {
+      return false;
+    }
+    for (const item of items) {
+      await context.query(
+        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, note, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
+         SELECT $1::uuid, $2::uuid, $3::smallint, $4::uuid, $5, $6, $7::bigint, $8::int, $7::bigint, $8::int, clock.t FROM (SELECT ${CLOCK} AS t) AS clock`,
+        [item.lineId, o.orderId, item.lineNo, item.menuItemId, item.name, item.note, item.unitPriceVnd, item.quantity],
+      );
+    }
+    return true;
+  }
+
+  #insertOrder(context: TransactionContext, o: NewOrder) {
+    return context.query(
       `INSERT INTO app.orders (
          order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
           address_lat, address_lng, source_address_id, note, delivery_note, scheduled_for, items_original_total_vnd, items_total_vnd, paid_vnd, fee_estimate_vnd, fee_estimate_distance_m, route_snapshot_id,
@@ -383,17 +413,6 @@ export class OrderRepository {
         o.addressLat, o.addressLng, o.sourceAddressId, o.note, o.deliveryNote, msToTs(o.scheduledForMs), o.itemsTotalVnd, o.feeEstimateVnd, o.feeEstimateDistanceM, o.routeSnapshotId,
       ],
     );
-    if (inserted.rowCount !== 1) {
-      return false;
-    }
-    for (const item of items) {
-      await context.query(
-        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, note, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
-         SELECT $1::uuid, $2::uuid, $3::smallint, $4::uuid, $5, $6, $7::bigint, $8::int, $7::bigint, $8::int, clock.t FROM (SELECT ${CLOCK} AS t) AS clock`,
-        [item.lineId, o.orderId, item.lineNo, item.menuItemId, item.name, item.note, item.unitPriceVnd, item.quantity],
-      );
-    }
-    return true;
   }
 
   async findById(context: TransactionContext, orderId: string): Promise<OrderRow | undefined> {

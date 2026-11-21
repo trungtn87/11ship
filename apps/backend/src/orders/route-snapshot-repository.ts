@@ -35,8 +35,10 @@ export function routeSnapshotMatchesLeg(row: RouteSnapshotRow, leg: RouteLeg): b
 export class RouteSnapshotRepository {
   /**
    * Stores the snapshot of the leg and returns its id. An identical route (same engine version, metres, time and road) is NOT stored twice: the
-   * content_key is unique, so the existing row is returned. A row is locked (FOR KEY SHARE) before it is returned, so the retention job cannot delete it
-   * before the caller references it; if the job got there first, the row is gone and a new one is stored.
+   * content_key is unique, so the existing row is returned. The re-read takes NO row lock: the runtime role holds SELECT and INSERT only
+   * (ops/selfhosted/02-runtime-grants.sql), and a row lock such as FOR KEY SHARE needs UPDATE. Nothing here stops retention from deleting the row
+   * before the caller's Order references it; a foreign key on orders.route_snapshot_id then refuses that Order write, which OrderRepository.insert
+   * reports as ORDER_QUOTE_CHANGED. Retention only removes rows older than 7 days, so this is not reachable for a fresh quote.
    */
   async create(context: TransactionContext, leg: RouteLeg): Promise<string> {
     const inserted = await context.query<{ id: string }>(
@@ -51,8 +53,7 @@ export class RouteSnapshotRepository {
     }
     const existing = await context.query<{ id: string }>(
       `SELECT id::text AS id FROM app.route_snapshots
-        WHERE route_version = $1 AND distance_m = $2::int AND duration_s = $3::int AND geometry = $4
-        FOR KEY SHARE`,
+        WHERE route_version = $1 AND distance_m = $2::int AND duration_s = $3::int AND geometry = $4`,
       [leg.routeVersion, leg.distanceM, leg.seconds, leg.geometry],
     );
     const row = existing.rows[0];
@@ -63,10 +64,13 @@ export class RouteSnapshotRepository {
     return this.create(context, leg);
   }
 
-  /** The snapshot with this id, locked (FOR KEY SHARE) for the caller's transaction; undefined when it does not exist (never stored, or already removed). */
+  /**
+   * The snapshot with this id, read WITHOUT a row lock (the runtime role has no UPDATE privilege on this table). Undefined when it does not exist
+   * (never stored, or already removed). A removal after this read makes the Order INSERT fail on its foreign key; see OrderRepository.insert.
+   */
   async find(context: TransactionContext, id: string): Promise<RouteSnapshotRow | undefined> {
     const result = await context.query<RawRouteSnapshot>(
-      `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid FOR KEY SHARE`,
+      `SELECT id::text AS id, route_version, distance_m, duration_s, geometry FROM app.route_snapshots WHERE id = $1::uuid`,
       [id],
     );
     return toRow(result.rows[0]);

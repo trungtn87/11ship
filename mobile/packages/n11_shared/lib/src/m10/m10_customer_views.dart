@@ -12,8 +12,8 @@ import '../account/models.dart';
 import '../account/session_controller.dart';
 import '../addresses/address_controller.dart';
 import '../addresses/address_models.dart';
-import '../addresses/address_views.dart';
 import '../addresses/address_location_picker.dart';
+import '../addresses/shared_address_flow.dart';
 import '../m02/m02_widgets.dart';
 import '../m02/route_distance.dart';
 import '../m02/shop_contact.dart';
@@ -563,14 +563,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final SessionController? session = widget.session ?? widget.runtime.session;
     final int? epoch = session?.sessionEpoch;
     final M07PinPickerBuilder? builder = widget.pinPicker ?? widget.runtime.pinPicker;
-    final AddressLocation initial = fresh ? const AddressLocation('') : AddressLocation(_typedMode ? _typed.text : (_address?.text ?? ''), latitude: _typedMode ? _pinLat : _address?.lat, longitude: _typedMode ? _pinLng : _address?.lng);
-    final AddressLocation? selected = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(initial: initial, session: session, requirePoint: false, location: widget.runtime.location, mapBuilder: builder == null ? null : (BuildContext context, double? lat, double? lng, void Function(double, double) onPick) => builder(context, lat: lat, lng: lng, onPick: onPick))));
+    final AddressLocation initial = fresh ? const AddressLocation('') : AddressLocation(_typedMode ? _typed.text : (_address?.text ?? ''), latitude: _typedMode ? _pinLat : _address?.lat, longitude: _typedMode ? _pinLng : _address?.lng, note: _deliveryNote.text.trim());
+    // The shared flow (#413): the address block opens the saved list (B); "Địa chỉ khác" opens the map (C) directly.
+    final SharedAddressSelection? selected = await pickSharedAddress(
+      context,
+      initial: initial,
+      selectedId: fresh ? null : _address?.addressId,
+      book: widget.addresses,
+      session: session,
+      location: widget.runtime.location,
+      mapBuilder: builder == null ? null : (BuildContext context, double? lat, double? lng, void Function(double, double) onPick) => builder(context, lat: lat, lng: lng, onPick: onPick),
+      mapOnly: fresh,
+    );
     if (selected == null || !mounted || _locked || session?.sessionEpoch != epoch || (session != null && session.status != SessionStatus.signedIn)) return;
-    _typed.text = selected.text;
-    _pinLat = selected.latitude;
-    _pinLng = selected.longitude;
+    final DeliveryAddress? saved = selected.saved;
+    if (saved != null) {
+      _address = _fromBook(saved);
+      _typedMode = false;
+      _name.text = saved.recipientName ?? '';
+      _phone.text = formatVnPhone(saved.contactPhone);
+      _deliveryNote.text = saved.deliveryNote ?? '';
+      _baseFee = null;
+      _touch();
+      return;
+    }
+    final AddressLocation chosen = selected.location!;
+    _typed.text = chosen.text;
+    _pinLat = chosen.latitude;
+    _pinLng = chosen.longitude;
     _typedMode = true;
+    // The optional description travels with the typed address in the order's existing delivery note (no new API field).
     if (fresh) _deliveryNote.clear();
+    if (chosen.note.isNotEmpty) _deliveryNote.text = chosen.note.length > kAddressNoteMaxLength ? chosen.note.substring(0, kAddressNoteMaxLength) : chosen.note;
     _baseFee = null;
     _touch();
   }
@@ -702,24 +726,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     await _check();
   }
 
-  Future<void> _pickAddress() async {
-    if (_locked) return;
-    final AddressBookController? book = widget.addresses;
-    if (book == null) {
-      return;
-    }
-    final DeliveryAddress? picked = await Navigator.of(context).push<DeliveryAddress>(MaterialPageRoute<DeliveryAddress>(builder: (BuildContext c) => m07Page('Chọn địa chỉ giao', false, <Widget>[DeliveryAddressPicker(controller: book, initialId: _address?.addressId, onConfirm: (DeliveryAddress a) => Navigator.of(c).pop(a))])));
-    if (picked != null) {
-      if (!mounted || _locked) return;
-      _address = _fromBook(picked);
-      _typedMode = false;
-      _name.text = picked.recipientName ?? '';
-      _phone.text = formatVnPhone(picked.contactPhone);
-      _deliveryNote.text = picked.deliveryNote ?? '';
-      _baseFee = null;
-      _touch();
-    }
-  }
+  /// "Chọn từ sổ địa chỉ" is the same shared flow as the address block (B first).
+  Future<void> _pickAddress() => _editAddress();
 
   Future<void> _pickTime() async {
     if (_locked) return;
@@ -932,6 +940,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       error: field.errorText,
                       key: const Key('checkout-address'),
                       label: 'Địa chỉ giao',
+                      actionLabel: 'Chỉnh sửa',
                       text: _typedMode ? _typed.text : (_address?.text ?? ''),
                       onTap: _locked
                           ? null
@@ -1156,6 +1165,7 @@ class _CustomerOrdersTabState extends State<CustomerOrdersTab> {
         if (_deliveries)
           CustomerDeliveryHub(
             source: d,
+            addresses: widget.runtime.addresses,
             mapBuilder: widget.mapBuilder,
             pinPicker: widget.pinPicker,
             feedbackSlot: widget.feedbackSlot,
