@@ -17,6 +17,7 @@ import '../flows/shop_views.dart';
 import '../flows/reset_controller.dart';
 import '../flows/reset_views.dart';
 import 'models.dart';
+import 'account_deletion.dart';
 import 'api_client.dart';
 import 'phone_verification.dart';
 import 'vn_mobile.dart';
@@ -298,6 +299,14 @@ class AccountTab extends StatelessWidget {
         )
       else
         _hero(),
+      // OD-26: the account was deleted (or locked for deletion) from this device; the sign-in actions below stay available for other accounts.
+      if (session.accountDeletedNotice)
+        const N11Banner(
+          key: Key('account-deleted'),
+          kind: BannerKind.info,
+          title: 'Đã xác nhận xóa tài khoản',
+          text: 'Tài khoản đã bị khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn không đăng nhập lại được bằng tài khoản này. Dữ liệu được xử lý theo quy định của pháp luật.',
+        ),
       // A confirmed logout shows nothing; only an unconfirmed revoke keeps a short warning.
       if (session.loggedOutNotice && session.logoutUnconfirmed)
         const N11Banner(
@@ -358,6 +367,18 @@ class AccountTab extends StatelessWidget {
       // lead to an unfinished screen.
       _tools(context, signedIn: true),
       N11Button(key: const Key('open-logout'), label: 'Đăng xuất', kind: ButtonKind.secondary, onPressed: () => confirmLogout(context, session)),
+      // OD-26: the owner's own deletion is the LAST entry. Hidden while the account is already locked (a wallet-only lock), since its
+      // session cannot start a new deletion.
+      if (!locked)
+        N11List(title: null, children: <Widget>[
+          N11ListItem(
+            key: const Key('open-delete-account'),
+            icon: Icons.delete_outline,
+            title: 'Xóa tài khoản',
+            sub: 'Khóa tài khoản và xử lý dữ liệu theo quy định',
+            onTap: () => Navigator.of(context).push(n11Route(DeleteAccountScreen(session: session))),
+          ),
+        ]),
     ]);
   }
 }
@@ -1044,6 +1065,126 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       N11Field(validator: passwordError, fieldKey: const Key('password-new'), label: 'Mật khẩu mới', controller: _next, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
       N11Field(validator: (String value) => confirmPasswordError(value, _next.text), fieldKey: const Key('password-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _next.text ? 'Mật khẩu chưa khớp.' : null, onChanged: () => setState(() {})),
       N11Button(key: const Key('password-submit'), validate: _pendingBody == null, label: _busy ? 'Đang lưu…' : _pendingBody != null ? 'Thử lại' : 'Đổi mật khẩu', loading: _busy, onPressed: _busy || widget.session.status != SessionStatus.signedIn ? null : _save),
+    ]);
+  }
+}
+
+// ---- Account deletion (OD-26) ----------------------------------------------------------------------------------------
+
+/// The owner's own deletion of this account, started in the app. It explains the consequences, asks for the CURRENT password and then a
+/// final confirmation. The answer is one of: deleted / locked (this device signs out and the Account tab says so), pending (the running
+/// work is finished first and the session stays), or a failure that keeps the form usable.
+class DeleteAccountScreen extends StatefulWidget {
+  const DeleteAccountScreen({super.key, required this.session});
+  final SessionController session;
+  @override
+  State<DeleteAccountScreen> createState() => _DeleteAccountScreenState();
+}
+
+class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
+  final TextEditingController _password = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
+  late final AccountDeletionController _controller = AccountDeletionController(transport: widget.session.api.transport, session: widget.session);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.session.addListener(_sessionChanged);
+    _controller.addListener(_changed);
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _sessionChanged() {
+    // The session is gone (a deletion that just finished, or a sign-out elsewhere): back to the Account tab, which shows the guest state.
+    if (mounted && widget.session.status != SessionStatus.signedIn) {
+      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_sessionChanged);
+    _controller.removeListener(_changed);
+    _controller.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirmAndSubmit() async {
+    final bool? yes = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Xóa tài khoản?'),
+        content: const Text('Sau khi xác nhận, bạn sẽ bị đăng xuất và không thể hủy yêu cầu này. Nếu còn việc đang chạy, tài khoản chỉ bị khóa sau khi việc đó hoàn tất.'),
+        actions: <Widget>[
+          TextButton(key: const Key('delete-confirm-cancel'), onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Huỷ')),
+          TextButton(key: const Key('delete-confirm-yes'), onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Xóa tài khoản')),
+        ],
+      ),
+    );
+    if (yes == true) {
+      await _controller.submit(_password.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AccountDeletionController c = _controller;
+    final bool shipper = widget.session.identity?.availableRoles.contains('DRIVER') ?? false;
+    final bool finished = c.outcome != null;
+    final AuthFailure? failure = c.failure;
+    final bool canSubmit = !c.busy && !finished && _password.text.isNotEmpty && widget.session.status == SessionStatus.signedIn;
+    return N11FormScaffold(formKey: _form, title: 'Xóa tài khoản', session: widget.session, children: <Widget>[
+      N11Banner(
+        key: const Key('delete-explain'),
+        kind: BannerKind.warn,
+        title: 'Xóa tài khoản không thể hoàn tác',
+        text: 'Sau khi xác nhận:\n'
+            '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'
+            '• Phiên đăng nhập trên mọi thiết bị bị thu hồi.\n'
+            '• Dữ liệu được giữ hoặc xử lý theo quy định của pháp luật.\n'
+            '${shipper ? '• Là shipper, bạn chỉ còn rút được toàn bộ số dư ví.\n' : ''}'
+            '• Đơn hoặc việc đang chạy sẽ hoàn tất trước; tài khoản bị khóa sau đó. Trong thời gian này bạn không nhận việc mới.',
+      ),
+      if (c.outcome == AccountDeletionOutcome.pending)
+        const N11Banner(
+          key: Key('delete-pending'),
+          kind: BannerKind.warn,
+          title: 'Đã ghi nhận yêu cầu xóa',
+          text: 'Tài khoản đang chờ hoàn tất việc hiện tại. Sau khi xong, tài khoản sẽ bị khóa và phiên đăng nhập sẽ kết thúc. Bạn không nhận việc mới trong thời gian này.',
+        ),
+      if (failure != null)
+        N11Banner(
+          key: const Key('delete-error'),
+          kind: BannerKind.error,
+          title: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu chưa đúng' : 'Chưa xóa được tài khoản',
+          text: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu hiện tại không đúng. Lần nhập sai này không khóa tài khoản.' : failureMessage(failure),
+        ),
+      N11Field(
+        requiredInput: true,
+        fieldKey: const Key('delete-password'),
+        label: 'Mật khẩu hiện tại',
+        controller: _password,
+        password: true,
+        maxLength: 128,
+        enabled: !c.busy && !finished,
+        onChanged: () => setState(() {}),
+      ),
+      N11Button(
+        key: const Key('delete-submit'),
+        label: finished
+            ? 'Đã ghi nhận'
+            : c.busy
+                ? 'Đang xóa…'
+                : c.hasPendingWrite
+                    ? 'Thử lại'
+                    : 'Xóa tài khoản',
+        loading: c.busy,
+        onPressed: canSubmit ? _confirmAndSubmit : null,
+      ),
     ]);
   }
 }

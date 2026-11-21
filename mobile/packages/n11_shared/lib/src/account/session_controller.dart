@@ -83,6 +83,7 @@ class SessionController extends ChangeNotifier {
   bool _loggedOutNotice = false;
   bool _sessionEndedNotice = false;
   bool _logoutUnconfirmed = false;
+  bool _accountDeletedNotice = false;
   RegistrationMode _registrationMode = RegistrationMode.unknown;
   int _epoch = 0;
   /// Counts every login / register / retry request sent; a stale attempt clears its stored token only while it is still the latest (P5-6d).
@@ -112,6 +113,9 @@ class SessionController extends ChangeNotifier {
   /// The person logged out on the phone but the server's confirmation (204) did not arrive.
   bool get logoutUnconfirmed => _logoutUnconfirmed;
   bool get loggedOutNotice => _loggedOutNotice;
+
+  /// True after the owner's own deletion (OD-26) was confirmed on this device; cleared by the next sign-in or [dismissNotices].
+  bool get accountDeletedNotice => _accountDeletedNotice;
 
   @override
   void dispose() {
@@ -281,9 +285,29 @@ class SessionController extends ChangeNotifier {
     _lastFailure = null;
   }
 
+  /// OD-26: the server deleted or locked this account at its owner's request and revoked its sessions. This device only forgets its token
+  /// and personal values (no revoke call: the server already did it) and the guest screen says what happened.
+  Future<void> endAfterAccountDeletion() async {
+    ++_epoch;
+    _busy = false;
+    _pending = null;
+    try {
+      await _tokenOp(() => bridge.clearToken());
+    } on DeviceBridgeException {
+      // The in-memory state is cleared below regardless.
+    }
+    _toGuest();
+    _loggedOutNotice = false;
+    _logoutUnconfirmed = false;
+    _sessionEndedNotice = false;
+    _accountDeletedNotice = true;
+    _notify();
+  }
+
   void dismissNotices() {
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
+    _accountDeletedNotice = false;
     _logoutUnconfirmed = false;
     _lastFailure = null;
     _notify();
@@ -356,6 +380,7 @@ class SessionController extends ChangeNotifier {
     _lastFailure = null;
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
+    _accountDeletedNotice = false;
     _setBusy(true);
     try {
       final String deviceBody = build(await api.deviceBlock());
@@ -448,6 +473,7 @@ class SessionController extends ChangeNotifier {
     }
     _sessionEndedNotice = false;
     _loggedOutNotice = false;
+    _accountDeletedNotice = false;
     _setIdentity(identity);
     _setProfile(identity.profile);
     _pending = null;
