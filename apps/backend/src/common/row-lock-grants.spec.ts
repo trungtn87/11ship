@@ -23,7 +23,9 @@ const KNOWN_GAPS: ReadonlyArray<{ readonly table: string; readonly file: string;
     table: 'wallet_commission_policies',
     file: 'apps/backend/src/wallet/commission-policy-repository.ts',
     reason:
-      'SELECT ... FOR UPDATE on the current commission policy; runtime grants SELECT, INSERT only. Pending Claude Lead decision (serialise the change with an advisory lock, or grant UPDATE). Not fixed in the route-snapshot PR.',
+      'VERIFIED 2026-11-21 on local PostgreSQL 17.11: the SYSTEM commission change (admin-finance-read-service.changeCommission) cannot run with the runtime grants SELECT, INSERT. ' +
+      '(1) CommissionPolicyRepository.lockCurrent takes FOR UPDATE: permission denied. (2) Even without it, insertNext fires the guard trigger wallet_commission_policies_guard, which runs LOCK TABLE ... SHARE ROW EXCLUSIVE: permission denied (LOCK needs UPDATE). ' +
+      'The table is append-only (UPDATE refused by trigger), so a plain SELECT fix would not restore the write. Needs a Claude Lead decision (grant UPDATE, or redesign the guard lock with an advisory lock by migration). Not fixed in PR #423.',
   },
 ];
 
