@@ -119,4 +119,43 @@ void main() {
         reason: 'the Home State (and the map under it) must survive 20 switches');
     expect(heights.every((double h) => h == start), isTrue, reason: 'the Home body height must not change over 20 switches');
   });
+
+  // From #436 (kept as merged on main): the same tab switches, checked for the builds and the Home State only.
+  testWidgets(
+      '#430: switching between tabs keeps each tab body (Home included) built once, with the same State object',
+      (WidgetTester tester) async {
+    _TabProbe.created = 0;
+    await tester.pumpWidget(MaterialApp(
+      theme: buildN11Theme(),
+      home: N11Shell(
+        brand: shipBrand,
+        config: config,
+        tabs: _tabs(),
+        transport: healthOk,
+        pollInterval: const Duration(hours: 1),
+      ),
+    ));
+    await tester.pump();
+    final int createdAtStart = _TabProbe.created;
+    final _TabProbeState home = tester.state<_TabProbeState>(
+        find.byKey(const ValueKey<String>('home-probe')));
+
+    for (int round = 0; round < 3; round++) {
+      await _tapTab(tester, 'Đơn hàng');
+      await _tapTab(tester, 'Trang chủ');
+      await _tapTab(tester, 'Thông báo');
+      await _tapTab(tester, 'Trang chủ');
+    }
+
+    expect(_TabProbe.created, createdAtStart,
+        reason: 'a tab switch must not build any tab body again');
+    expect(
+        identical(
+            tester.state<_TabProbeState>(
+                find.byKey(const ValueKey<String>('home-probe'))),
+            home),
+        isTrue,
+        reason:
+            'the Home State (and the map platform view under it) must survive leaving and returning to Home');
+  });
 }

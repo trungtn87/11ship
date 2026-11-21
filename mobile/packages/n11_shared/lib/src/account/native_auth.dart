@@ -33,8 +33,8 @@ class NativeAuthApi {
       transport.send('POST', path, body: utf8.encode(body), headers: <String, String>{'idempotency-key': idempotencyKey});
 
   // Keep the name for existing module callers; requests carry only the session token.
-  Future<ApiResponse> signedCall(String method, String path, {required String token, String? body, String? idempotencyKey}) =>
-      transport.send(method, path, body: body == null ? null : utf8.encode(body), headers: <String, String>{
+  Future<ApiResponse> signedCall(String method, String path, {required String token, String? body, String? idempotencyKey, Duration? timeout}) =>
+      transport.send(method, path, timeout: timeout, body: body == null ? null : utf8.encode(body), headers: <String, String>{
         'authorization': 'Bearer $token',
         if (idempotencyKey != null) 'idempotency-key': idempotencyKey,
       });

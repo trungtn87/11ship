@@ -44,7 +44,8 @@ class ApiResponse {
 
 abstract class ApiTransport {
   /// Throws [AuthFailure] (unknownOutcome / tls) when no complete answer arrived.
-  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body});
+  /// [timeout] overrides the transport default for this one call (a long poll waits on the server longer than a normal request).
+  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body, Duration? timeout});
 }
 
 class HttpApiTransport implements ApiTransport {
@@ -54,21 +55,22 @@ class HttpApiTransport implements ApiTransport {
   final Duration timeout;
 
   @override
-  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body}) async {
-    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+  Future<ApiResponse> send(String method, String pathAndQuery, {Map<String, String> headers = const <String, String>{}, List<int>? body, Duration? timeout}) async {
+    final Duration limit = timeout ?? this.timeout;
+    final HttpClient client = HttpClient()..connectionTimeout = limit;
     try {
       final Uri uri = base.resolve(pathAndQuery);
       if (uri.scheme != 'https') {
         throw const AuthFailure(AuthFailureKind.tls);
       }
-      final HttpClientRequest request = await client.openUrl(method, uri).timeout(timeout);
+      final HttpClientRequest request = await client.openUrl(method, uri).timeout(limit);
       headers.forEach(request.headers.set);
       if (body != null) {
         request.headers.contentType = ContentType('application', 'json', charset: 'utf-8');
         request.add(body);
       }
-      final HttpClientResponse response = await request.close().timeout(timeout);
-      final List<int> bytes = await response.expand((List<int> chunk) => chunk).toList().timeout(timeout);
+      final HttpClientResponse response = await request.close().timeout(limit);
+      final List<int> bytes = await response.expand((List<int> chunk) => chunk).toList().timeout(limit);
       final Map<String, String> out = <String, String>{};
       response.headers.forEach((String name, List<String> values) => out[name.toLowerCase()] = values.join(', '));
       return ApiResponse(status: response.statusCode, headers: out, body: utf8.decode(bytes, allowMalformed: true), bodyBytes: bytes);
