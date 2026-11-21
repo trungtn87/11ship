@@ -512,7 +512,7 @@ class SessionController extends ChangeNotifier {
 
   /// A signed request of the current session (Bearer + device proof, raw bytes). A 401 ends the session exactly like everywhere
   /// else and surfaces as [AuthFailureKind.sessionEnded]; any other refusal is thrown as the closed [AuthFailure].
-  Future<ApiResponse> protectedCall(String method, String path, {String? body, String? idempotencyKey}) async {
+  Future<ApiResponse> protectedCall(String method, String path, {String? body, String? idempotencyKey, Duration? timeout}) async {
     if (_status != SessionStatus.signedIn) {
       throw const AuthFailure(AuthFailureKind.sessionEnded);
     }
@@ -522,7 +522,7 @@ class SessionController extends ChangeNotifier {
       throw const AuthFailure(AuthFailureKind.sessionEnded);
     }
     try {
-      final ApiResponse response = await api.signedCall(method, path, token: token, body: body, idempotencyKey: idempotencyKey);
+      final ApiResponse response = await api.signedCall(method, path, token: token, body: body, idempotencyKey: idempotencyKey, timeout: timeout);
       if (epoch != _epoch) {
         throw const AuthFailure(AuthFailureKind.sessionEnded);
       }

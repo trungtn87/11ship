@@ -27,6 +27,7 @@ import '../widgets/components.dart';
 import '../widgets/form_feedback.dart';
 import 'm10_cart.dart';
 import 'm10_common.dart';
+import 'customer_order_progress.dart';
 import 'm10_models.dart';
 import 'm10_order_edit.dart';
 import 'm10_source.dart';
@@ -485,7 +486,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _note = TextEditingController();
   final TextEditingController _deliveryNote = TextEditingController();
   final TextEditingController _typed = TextEditingController();
-  final TextEditingController _customTip = TextEditingController();
   DraftAddress? _address;
   bool _typedMode = false;
   DateTime? _scheduled;
@@ -510,8 +510,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _key = newIdempotencyKey();
   double? _pinLat;
   double? _pinLng;
+  // Tip is off by default ("Không tip"). _tipVnd stays 0 until a level is picked while _tipOn is true.
+  bool _tipOn = false;
   int _tipVnd = 0;
-  bool _tipValid = true;
   int? _baseFee;
   Timer? _tipDebounce;
   CheckoutDraft? _sendingDraft;
@@ -551,7 +552,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _note.dispose();
     _deliveryNote.dispose();
     _typed.dispose();
-    _customTip.dispose();
     _freshness.dispose();
     super.dispose();
   }
@@ -854,36 +854,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  void _onCustomTipChanged() {
+  /// "Không tip": tip goes back to 0 and the level dropdown is hidden. Re-prices only when an amount was actually removed.
+  void _chooseNoTip() {
     if (_locked) return;
-    final String value = _customTip.text.trim();
-    final int? amount = value.isEmpty ? 0 : int.tryParse(value);
-    final bool valid = amount != null &&
-        amount >= 0 &&
-        amount <= 10000000 &&
-        (_baseFee == null || amount + _baseFee! <= 10000000);
-
-    _tipDebounce?.cancel();
-    _previewEpoch++;
-    setState(() {
-      _tipValid = valid;
-      if (valid) {
-        _tipVnd = amount;
-      }
-      _previewFresh = false;
-      _clientRef = newIdempotencyKey();
-      _key = newIdempotencyKey();
-      _attempt = _Attempt.none;
-      _failure = null;
-      _changed = false;
-    });
-
-    if (valid) {
-      _tipDebounce = Timer(const Duration(milliseconds: 300), () {
-        if (!mounted || _locked) return;
-        unawaited(_check());
-      });
+    if (_tipVnd == 0) {
+      setState(() => _tipOn = false);
+      return;
     }
+    _tipOn = false;
+    _tipVnd = 0;
+    _touch();
+  }
+
+  /// "Tip": shows the level dropdown. The amount stays 0 until a level is picked, so the price does not change yet.
+  void _chooseTip() {
+    if (_locked || _baseFee == null) return;
+    setState(() => _tipOn = true);
+  }
+
+  void _chooseTipLevel(int value) {
+    if (_locked || _baseFee == null) return;
+    _tipOn = true;
+    _tipVnd = value;
+    _touch();
   }
 
   void _done(OrderView order) {
@@ -901,7 +894,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final CheckoutPreview? confirmed = _previewFresh && !_previewing ? p : null;
     final bool blocked = confirmed != null && (!confirmed.ok || confirmed.blockers.isNotEmpty);
     final bool tipConfirmed = _tipVnd == 0 || (confirmed?.feeEstimateVnd != null && confirmed?.tipVnd == _tipVnd);
-    final bool ready = _tipValid && tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && !_locked;
+    final bool ready = tipConfirmed && confirmed != null && !cart.isEmpty && cart.shopId != null && !blocked && !_locked;
     final int items = confirmed?.itemsVnd ?? cart.itemsVnd;
     final int? estimateFee = confirmed?.feeEstimateVnd;
     final int? expectedTotal = confirmed?.expectedTotalVnd;
@@ -984,40 +977,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
             const Text('Thêm tiền cảm ơn shipper · Không bắt buộc', style: N11Text.label),
             const SizedBox(height: 4),
-            const Text('Hoàn toàn tự nguyện, ví dụ khi thời tiết xấu. Khoản này không cam kết giao nhanh hay ưu tiên.', style: N11Text.caption),
-            const SizedBox(height: N11Space.gap2),
             Wrap(spacing: N11Space.gap2, runSpacing: N11Space.gap2, children: <Widget>[
-              for (final (int value, String label) in const <(int, String)>[(0, 'Không tip'), (5000, '5.000đ'), (10000, '10.000đ'), (20000, '20.000đ')])
-                if (canTip || value == 0)
-                ChoiceChip(
-                  key: Key('checkout-tip-$value'),
-                  label: Text(label),
-                  selected: _tipValid && _tipVnd == value && _customTip.text.isEmpty,
-                  onSelected: _locked || (!canTip && value > 0) ? null : (_) {
-                    _tipDebounce?.cancel();
-                    _customTip.clear();
-                    _tipVnd = value;
-                    _tipValid = true;
-                    _touch();
-                  },
-                ),
+              ChoiceChip(
+                key: const Key('checkout-tip-none'),
+                label: const Text('Không tip'),
+                selected: !_tipOn,
+                onSelected: _locked ? null : (_) => _chooseNoTip(),
+              ),
+              ChoiceChip(
+                key: const Key('checkout-tip-on'),
+                label: const Text('Tip'),
+                selected: _tipOn,
+                onSelected: _locked || !canTip ? null : (_) => _chooseTip(),
+              ),
             ]),
-            const SizedBox(height: N11Space.gap2),
-            N11Field(
-              fieldKey: const Key('checkout-tip-custom'),
-              label: 'Nhập số khác',
-              controller: _customTip,
-              keyboard: TextInputType.number,
-              enabled: canTip && !_locked,
-              validator: (String value) {
-                if (value.isEmpty) return null;
-                final int? amount = int.tryParse(value);
-                if (amount == null || amount < 0 || amount > 10000000 || _baseFee == null || amount + _baseFee! > 10000000) return 'Số tiền cảm ơn không hợp lệ.';
-                return null;
-              },
-              onChanged: _onCustomTipChanged,
-              hint: canTip ? 'Số VND nguyên, tối đa theo giới hạn phí giao' : 'Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.',
-            ),
+            if (_tipOn) ...<Widget>[
+              const SizedBox(height: N11Space.gap2),
+              InputDecorator(
+                decoration: const InputDecoration(labelText: 'Mức tip', border: OutlineInputBorder(), isDense: true),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    key: const Key('checkout-tip-level'),
+                    isExpanded: true,
+                    value: _tipVnd == 0 ? null : _tipVnd,
+                    hint: const Text('Chọn mức tip'),
+                    onChanged: _locked || !canTip ? null : (int? value) {
+                      if (value != null) _chooseTipLevel(value);
+                    },
+                    items: <DropdownMenuItem<int>>[
+                      for (final int level in kTipLevelsVnd) DropdownMenuItem<int>(value: level, child: Text(m10Money(level))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (!canTip) ...<Widget>[
+              const SizedBox(height: 4),
+              const Text('Chờ xác định phí giao; bạn vẫn có thể chọn Không tip.', style: N11Text.caption),
+            ],
           ]),
         ),
         if (road != null && roadPoints.isNotEmpty && widget.runtime.mapBuilder != null)
@@ -1140,26 +1137,34 @@ class _CustomerOrdersTabState extends State<CustomerOrdersTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _CustomerTabSegment(
-                key: const Key('customer-orders-part-orders'),
-                label: 'Đơn món',
-                selected: !_deliveries,
-                onTap: () => setState(() => _deliveries = false),
+        // Figma F03A: one white container, the selected part is a black pill.
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl + 5),
+            border: Border.all(color: N11Colors.line),
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: _CustomerTabSegment(
+                  key: const Key('customer-orders-part-orders'),
+                  label: 'Đơn món',
+                  selected: !_deliveries,
+                  onTap: () => setState(() => _deliveries = false),
+                ),
               ),
-            ),
-            const SizedBox(width: N11Space.gap2),
-            Expanded(
-              child: _CustomerTabSegment(
-                key: const Key('customer-orders-part-deliveries'),
-                label: 'Giao hàng',
-                selected: _deliveries,
-                onTap: () => setState(() => _deliveries = true),
+              Expanded(
+                child: _CustomerTabSegment(
+                  key: const Key('customer-orders-part-deliveries'),
+                  label: 'Giao hàng',
+                  selected: _deliveries,
+                  onTap: () => setState(() => _deliveries = true),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: N11Space.gap3),
         if (_deliveries)
@@ -1196,14 +1201,14 @@ class _CustomerTabSegment extends StatelessWidget {
           height: kControlHeight,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? N11Colors.black : N11Colors.white,
+            color: selected ? N11Colors.black : Colors.transparent,
             borderRadius: BorderRadius.circular(kRadiusControl),
-            border: Border.all(color: selected ? N11Colors.black : N11Colors.line),
           ),
           child: Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
               color: selected ? N11Colors.white : (onTap == null ? N11Colors.disabledInk : N11Colors.black),
             ),
@@ -1235,14 +1240,17 @@ class _CustomerOrdersViewState extends State<CustomerOrdersView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (source.isSample) const M10SampleBanner(),
-        Wrap(
-          spacing: N11Space.gap2,
-          runSpacing: N11Space.gap2,
+        // Figma F03A: the three filters stay on ONE row; the selected one is a yellow pill with a check mark. No count on the chips: the
+        // number belongs to the section title below, taken from the list really loaded for the selected filter.
+        Row(
           children: <Widget>[
-            for (final (CustomerScope s, String label) in <(CustomerScope, String)>[(CustomerScope.processing, 'Đang xử lý'), (CustomerScope.scheduled, 'Đơn hẹn'), (CustomerScope.history, 'Lịch sử')]) ChoiceChip(key: Key('orders-tab-${s.name}'), label: Text(label), selected: _scope == s, onSelected: (bool _) => setState(() => _scope = s)),
+            for (final (CustomerScope s, String label, int flex) in <(CustomerScope, String, int)>[(CustomerScope.processing, 'Đang xử lý', 14), (CustomerScope.scheduled, 'Đơn hẹn', 10), (CustomerScope.history, 'Lịch sử', 10)]) ...<Widget>[
+              if (s != CustomerScope.processing) const SizedBox(width: N11Space.gap2),
+              Expanded(flex: flex, child: _CustomerScopeChip(key: Key('orders-tab-${s.name}'), label: label, selected: _scope == s, onTap: () => setState(() => _scope = s))),
+            ],
           ],
         ),
-        const SizedBox(height: N11Space.gap3),
+        const SizedBox(height: N11Space.gap4),
         M07Loader<List<OrderSummary>>(
           key: ValueKey<CustomerScope>(_scope),
           keyPrefix: 'orders-${_scope.name}',
@@ -1257,14 +1265,23 @@ class _CustomerOrdersViewState extends State<CustomerOrdersView> {
           },
           emptyText: 'Đơn bạn đặt sẽ hiện ở đây.',
           builder: (BuildContext context, List<OrderSummary> orders, Future<void> Function() reload) => vstack(<Widget>[
+            _SectionTitle(key: const Key('orders-section-title'), label: switch (_scope) {
+              CustomerScope.processing => 'Đang xử lý',
+              CustomerScope.scheduled => 'Đơn hẹn',
+              CustomerScope.history => 'Lịch sử',
+            }, count: orders.length),
+            const SizedBox(height: N11Space.gap3),
             for (final OrderSummary o in orders)
-              OrderSummaryCard(
-                summary: o,
-                forShop: false,
-                onTap: () async {
-                  await Navigator.of(context).push(n11Route(CustomerOrderDetailScreen(runtime: widget.runtime, orderId: o.orderId)));
-                  await reload();
-                },
+              Padding(
+                padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                child: OrderSummaryCard(
+                  summary: o,
+                  forShop: false,
+                  onTap: () async {
+                    await Navigator.of(context).push(n11Route(CustomerOrderDetailScreen(runtime: widget.runtime, orderId: o.orderId)));
+                    await reload();
+                  },
+                ),
               ),
           ]),
         ),
@@ -1284,6 +1301,7 @@ class OrderSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final OrderSummary o = summary;
+    if (!forShop) return _CustomerOrderCard(summary: o, onTap: onTap);
     return InkWell(
       key: Key('order-card-${o.orderId}'),
       borderRadius: BorderRadius.circular(kRadiusCard),
@@ -1303,6 +1321,247 @@ class OrderSummaryCard extends StatelessWidget {
             Text(m10When(o.createdAt), style: N11Text.caption),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One filter of the customer's list: a yellow pill with a check mark when selected, a white bordered pill otherwise. Text may wrap inside the
+/// pill at large font scales; the row never wraps.
+class _CustomerScopeChip extends StatelessWidget {
+  const _CustomerScopeChip({super.key, required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadiusControl),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: kTapMin),
+          padding: const EdgeInsets.symmetric(horizontal: N11Space.gap2, vertical: N11Space.gap2),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? N11Colors.yellowSoft : N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl),
+            border: Border.all(color: selected ? N11Colors.yellowSoft : N11Colors.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (selected) ...<Widget>[const Icon(Icons.check, size: 18, color: N11Colors.black), const SizedBox(width: N11Space.gap1)],
+              Flexible(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, color: selected ? N11Colors.black : N11Colors.ink2),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "▌Đang xử lý (2)": the yellow marker and the title of the list, with the real number of orders shown.
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({super.key, required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      header: true,
+      label: '$label ($count)',
+      child: Row(
+        children: <Widget>[
+          Container(width: 4, height: 25, decoration: BoxDecoration(color: N11Colors.yellow, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: N11Space.gap3),
+          Expanded(child: Text('$label ($count)', maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.h2)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The customer's order card (Figma F03A "Order Card · Compact Progress"): code and shop, the status pill with a chevron, the 3-step progress when the
+/// order is still open or finished, then "số món · tổng tiền · giờ". The whole card is the tap target. Nothing here is a fixed sample: every value is the
+/// server's.
+class _CustomerOrderCard extends StatelessWidget {
+  const _CustomerOrderCard({required this.summary, required this.onTap});
+
+  final OrderSummary summary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final OrderSummary o = summary;
+    final CustomerOrderProgress? progress = customerProgressOf(o.display);
+    final DateTime? when = o.scheduledFor;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: Key('order-card-${o.orderId}'),
+        borderRadius: BorderRadius.circular(kRadiusCard),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(N11Space.gap4),
+          decoration: BoxDecoration(
+            color: N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusCard),
+            border: Border.all(color: N11Colors.line),
+            boxShadow: const <BoxShadow>[BoxShadow(color: Color(0x0F191919), offset: Offset(0, 4), blurRadius: 8)],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(o.code, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.h2),
+                        const SizedBox(height: 2),
+                        Text(o.shopName, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: N11Space.gap2),
+                  Flexible(child: Align(alignment: Alignment.topRight, child: OrderStatusChip(o.display))),
+                  const SizedBox(width: N11Space.gap1),
+                  const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.chevron_right, color: N11Colors.ink2, semanticLabel: 'Mở chi tiết')),
+                ],
+              ),
+              if (progress != null) ...<Widget>[const SizedBox(height: N11Space.gap4), _ProgressSteps(progress: progress, orderId: o.orderId)],
+              const SizedBox(height: N11Space.gap3),
+              const Divider(height: 1, thickness: 1, color: N11Colors.line),
+              const SizedBox(height: N11Space.gap3),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: _InfoCell(icon: Icons.restaurant_outlined, text: '${o.lineCount} món')),
+                    const VerticalDivider(width: 1, thickness: 1, color: N11Colors.line),
+                    Expanded(child: _InfoCell(icon: Icons.account_balance_wallet_outlined, text: m10Money(o.itemsVnd))),
+                    const VerticalDivider(width: 1, thickness: 1, color: N11Colors.line),
+                    Expanded(
+                      child: _InfoCell(
+                        icon: Icons.schedule_outlined,
+                        text: m10When(when ?? o.createdAt),
+                        textKey: when == null ? null : Key('order-scheduled-${o.orderId}'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The three steps as dots on a line: done = check, current = filled yellow, waiting = yellow ring, stalled = orange ring with "!", pending = grey.
+class _ProgressSteps extends StatelessWidget {
+  const _ProgressSteps({required this.progress, required this.orderId});
+
+  final CustomerOrderProgress progress;
+  final String orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      key: Key('order-progress-$orderId'),
+      label: 'Tiến trình: ${progress.semanticsLabel}',
+      excludeSemantics: true,
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              for (int i = 0; i < 3; i++) ...<Widget>[
+                if (i > 0) Expanded(child: Container(height: 2, color: progress.steps[i - 1] == OrderStepState.done ? N11Colors.yellow : N11Colors.lineStrong)),
+                _StepDot(state: progress.steps[i]),
+              ],
+            ],
+          ),
+          const SizedBox(height: N11Space.gap2),
+          Row(
+            children: <Widget>[
+              for (int i = 0; i < 3; i++)
+                Expanded(
+                  child: Text(
+                    kCustomerProgressLabels[i],
+                    textAlign: i == 0 ? TextAlign.left : (i == 2 ? TextAlign.right : TextAlign.center),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: progress.steps[i] == OrderStepState.pending ? FontWeight.w500 : FontWeight.w700,
+                      color: progress.steps[i] == OrderStepState.pending ? N11Colors.ink2 : N11Colors.black,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  const _StepDot({required this.state});
+
+  final OrderStepState state;
+
+  @override
+  Widget build(BuildContext context) {
+    const double size = 22;
+    final Widget child = switch (state) {
+      OrderStepState.done => Container(width: size, height: size, decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle), child: const Icon(Icons.check, size: 15, color: N11Colors.black)),
+      OrderStepState.current => Container(width: size, height: size, decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle)),
+      OrderStepState.waiting => Container(width: size, height: size, decoration: BoxDecoration(color: N11Colors.white, shape: BoxShape.circle, border: Border.all(color: N11Colors.yellow, width: 3))),
+      OrderStepState.stalled => Container(width: size, height: size, alignment: Alignment.center, decoration: BoxDecoration(color: N11Colors.white, shape: BoxShape.circle, border: Border.all(color: N11Colors.accentOrange, width: 2)), child: const Text('!', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: N11Colors.accentOrange))),
+      OrderStepState.pending => Container(width: size, height: size, decoration: const BoxDecoration(color: N11Colors.lineStrong, shape: BoxShape.circle)),
+    };
+    return SizedBox(width: size, height: size, child: child);
+  }
+}
+
+class _InfoCell extends StatelessWidget {
+  const _InfoCell({required this.icon, required this.text, this.textKey});
+
+  final IconData icon;
+  final String text;
+  final Key? textKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: N11Space.gap2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          Icon(icon, size: 18, color: N11Colors.ink2),
+          const SizedBox(width: N11Space.gap1),
+          Expanded(child: Text(text, key: textKey, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: N11Colors.black))),
+        ],
       ),
     );
   }

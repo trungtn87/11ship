@@ -40,10 +40,15 @@ class ShopCardData {
     this.ratingCount = 0,
     this.latitude,
     this.longitude,
+    this.createdAt,
   });
 
   final double? ratingAverage;
   final int ratingCount;
+
+  /// Issue #411: when the shop was created (public date from the shop list). Null on an older server response: such a shop sorts last
+  /// when a "newest" fill is needed, and no date is ever invented.
+  final DateTime? createdAt;
   final double? latitude;
   final double? longitude;
   /// The STRAIGHT-LINE distance (Haversine). Issue #190: it is never the distance a card shows as a route; it exists only to be shown as a
