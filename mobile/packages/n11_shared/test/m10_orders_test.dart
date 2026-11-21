@@ -1066,7 +1066,7 @@ void main() {
       await tap(tester, key('order-call'));
       await tap(tester, key('call-payer-shop'));
       expect(key('fee-proposal-dialog'), findsOneWidget);
-      expect(containing('chưa tính được phí giao tự động'), findsOneWidget);
+      expect(containing('tính được phí giao tự động'), findsOneWidget);
       await tap(tester, key('fee-proposal-send'));
       expect(containing('Nhập phí là số nguyên'), findsOneWidget); // nothing is sent without an amount
       await tester.enterText(key('fee-proposal-amount').first, '22000');

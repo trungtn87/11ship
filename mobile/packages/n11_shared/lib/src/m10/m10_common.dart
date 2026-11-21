@@ -15,7 +15,7 @@ import 'm10_source.dart';
 
 /// One wording for the reminders of the customer order flow (cart, checkout, order detail).
 const String kFeeEstimateNote = 'Phí giao chỉ là tạm tính, có thể chưa phải giá chính thức.';
-const String kScheduleNote = 'Giờ hẹn là thời gian mong muốn, món có thể đến sớm hoặc muộn hơn.';
+const String kScheduleNote = 'Giờ hẹn là mong muốn; món có thể đến sớm hoặc muộn hơn.';
 const String kDirectPayNote = 'Bạn thanh toán trực tiếp cho quán hoặc shipper, không qua ứng dụng.';
 const String kNoFeeNote = 'Chưa có phí giao nên chưa tính được tổng tiền.';
 const String kM10SampleLabel = 'Dữ liệu minh họa';
@@ -310,7 +310,7 @@ class OrderMapCard extends StatelessWidget {
         else if (legacyReferenceOnly)
           const Padding(
             padding: EdgeInsets.only(top: N11Space.gap2),
-            child: ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
+            child: ReasonNote('Đơn cũ không có đường đi đã lưu. Khoảng cách và phí giữ như lúc đặt.', key: Key('m10-route-legacy'), icon: Icons.history),
           ),
       ],
     );
@@ -372,7 +372,7 @@ class _FeeProposalDialogState extends State<_FeeProposalDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Hệ thống chưa tính được phí giao tự động cho đơn này. Hãy đề xuất một mức phí; shipper đồng ý hoặc đề xuất mức khác, và người trả phí quyết định.', style: N11Text.lead),
+              const Text('Chưa tính được phí giao tự động. Hãy đề xuất một mức; shipper đồng ý hoặc đề xuất lại, người trả phí quyết định.', style: N11Text.lead),
               const SizedBox(height: N11Space.gap2),
               Wrap(
                 spacing: N11Space.gap2,

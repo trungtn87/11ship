@@ -1527,7 +1527,7 @@ class _CustomerOrderDetailState extends State<CustomerOrderDetailScreen> with M0
           onCancel: busy ? null : () => _cancelAddressChange(o),
         ),
       if (d?.feeDecision != null) _feeDecisionCard(o, d!, d.feeDecision!),
-      if (o.edited && o.confirmedAt != null) N11Banner(key: const Key('order-edited'), kind: BannerKind.info, title: 'Quán đã chỉnh đơn', text: 'Lý do: ${o.changeReason ?? '—'}. Bên dưới là bản đã chốt, kèm số liệu ban đầu của bạn.'),
+      if (o.edited && o.confirmedAt != null) N11Banner(key: const Key('order-edited'), kind: BannerKind.info, title: 'Quán đã chỉnh đơn', text: 'Lý do: ${o.changeReason ?? '—'}. Bên dưới là bản đã chốt và số liệu ban đầu.'),
       if (shipperHeld)
         OrderSection(
           id: 'shipper',

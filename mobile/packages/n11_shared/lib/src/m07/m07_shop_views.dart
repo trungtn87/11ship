@@ -342,7 +342,7 @@ class _ShopDeliveryPanelState extends State<ShopDeliveryPanel> with M07Actions<S
               const SizedBox(height: N11Space.gap2),
               ReasonNote(d.fee.payer == 'CUSTOMER'
                   ? 'Khách trả ship: hãy liên hệ khách trước. Bấm Đồng ý nghĩa là quán xác nhận thay khách, hệ thống sẽ ghi lại như vậy. Từ chối thì giữ mức hiện tại; shipper đang giữ đơn sẽ không còn giữ đơn và đơn tiếp tục tìm shipper khác.'
-                  : 'Từ chối thì giữ mức hiện tại; shipper đang giữ đơn (nếu có) sẽ không còn giữ đơn và đơn tiếp tục tìm shipper khác, thời gian tìm không tính lại.'),
+                  : 'Từ chối thì giữ mức hiện tại và tiếp tục tìm shipper khác; thời gian tìm không tính lại.'),
               const SizedBox(height: N11Space.gap2),
               Row(
                 children: <Widget>[

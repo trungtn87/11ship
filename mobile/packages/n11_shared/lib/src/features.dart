@@ -18,9 +18,9 @@ class FeatureStatus {
   final String package;
 }
 
-/// What an Android action says while it is not connected. The backend for these exists (or is its own package); what is missing is
-/// this app's connection, so the wording says "on Android", never "the backend does not exist".
-const String kNotOnAndroidReason = 'Chưa nối trên Android.';
+/// What an action says while it is not available in this build.
+/// Wording stays neutral: no build, module or platform names.
+const String kUnavailableReason = 'Chưa dùng được lúc này.';
 
 const Map<FeatureId, FeatureStatus> kFeatures = <FeatureId, FeatureStatus>{
   // M01-ANDROID: register, login, own profile and logout are connected to the real server (device-bound session).
@@ -31,8 +31,8 @@ const Map<FeatureId, FeatureStatus> kFeatures = <FeatureId, FeatureStatus>{
   FeatureId.shopManage: FeatureStatus(wired: true, reason: '', package: 'M01-QUAN'),
   FeatureId.driverProfile: FeatureStatus(wired: true, reason: '', package: 'M01-XE'),
   FeatureId.passwordReset: FeatureStatus(wired: true, reason: '', package: 'M01-RESET'),
-  FeatureId.receiveOrders: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M01-XE'),
-  FeatureId.wallet: FeatureStatus(wired: false, reason: kNotOnAndroidReason, package: 'M04'),
+  FeatureId.receiveOrders: FeatureStatus(wired: false, reason: kUnavailableReason, package: 'M01-XE'),
+  FeatureId.wallet: FeatureStatus(wired: false, reason: kUnavailableReason, package: 'M04'),
 };
 
 String featureReason(FeatureId id) => kFeatures[id]!.reason;
