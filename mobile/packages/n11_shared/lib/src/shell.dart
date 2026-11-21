@@ -395,7 +395,6 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final TabSpec tab = widget.tabs[_index];
     final ShellActions actions = ShellActions(
       goTab: _goTab,
       openDiagnostics: _openDiagnostics,
@@ -427,110 +426,98 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
           backgroundColor: N11Colors.bg,
           body: SafeArea(
             bottom: false,
-            child: Column(
+            // The tab area has the same size whichever tab is open. Each tab's own app bar and connection banner sit inside that tab's part of the
+            // area (see _tabArea), not beside it: a bar above a shared body shrank the area every other tab was laid out in, so the Home map was
+            // resized each time another tab was opened and again when Home came back (#430).
+            child: Stack(
+              fit: StackFit.expand,
               children: <Widget>[
-                if (diagnostics)
-                  N11AppBar(
-                    title: 'Chẩn đoán kết nối',
-                    onBack: _closeDiagnostics,
-                  )
-                else if (!childRoute && tab.showAppBar && tab.showLogo)
-                  N11AppBar(
-                    logo: BrandLogo(brand: widget.brand),
-                    title: tab.title,
-                  )
-                else if (!childRoute && tab.showAppBar)
-                  N11AppBar(title: tab.title),
-                if (!diagnostics && !childRoute && !tab.ownsConnectionBanner)
-                  ConnectionBanner(monitor: _monitor),
-                Expanded(
-                  // The tabs stay in the tree (offstage) while diagnostics is open, so what was typed in a tab is not lost.
-                  child: Stack(
-                    fit: StackFit.expand,
+                Offstage(
+                  offstage: diagnostics,
+                  child: IndexedStack(
+                    index: _index,
                     children: <Widget>[
-                      Offstage(
-                        offstage: diagnostics,
-                        child: IndexedStack(
-                          index: _index,
-                          children: <Widget>[
-                            for (int i = 0; i < widget.tabs.length; i++)
-                              if (widget.keepBottomNavOnChildRoutes)
-                                Navigator(
-                                key: _navigatorKeys[i],
-                                observers: <NavigatorObserver>[
-                                  _TabRouteObserver(
-                                    (Route<dynamic>? route) =>
-                                        _onTabRouteChanged(i, route),
-                                  ),
-                                ],
-                                onGenerateRoute: (RouteSettings settings) =>
-                                    MaterialPageRoute<void>(
-                                      settings: const RouteSettings(name: '/'),
-                                      builder: (BuildContext context) {
-                                        final TabSpec spec = widget.tabs[i];
-                                        return spec.fullBleed
-                                            ? Builder(
-                                                key: Key('page-${spec.id}'),
-                                                builder:
-                                                    (BuildContext context) =>
-                                                        spec.body(
-                                                          context,
-                                                          actions,
-                                                        ),
-                                              )
-                                            : SingleChildScrollView(
-                                                key: Key('page-${spec.id}'),
-                                                padding:
-                                                    const EdgeInsets.fromLTRB(
-                                                      N11Space.pad,
-                                                      N11Space.gap4,
-                                                      N11Space.pad,
-                                                      N11Space.gap8,
-                                                    ),
-                                                child: Builder(
-                                                  builder:
-                                                      (BuildContext context) =>
-                                                          spec.body(
-                                                            context,
-                                                            actions,
-                                                          ),
-                                                ),
-                                              );
-                                      },
+                      for (int i = 0; i < widget.tabs.length; i++)
+                        _tabArea(
+                          i,
+                          diagnostics,
+                          widget.keepBottomNavOnChildRoutes
+                              ? Navigator(
+                                  key: _navigatorKeys[i],
+                                  observers: <NavigatorObserver>[
+                                    _TabRouteObserver(
+                                      (Route<dynamic>? route) =>
+                                          _onTabRouteChanged(i, route),
                                     ),
+                                  ],
+                                  onGenerateRoute: (RouteSettings settings) =>
+                                      MaterialPageRoute<void>(
+                                        settings: const RouteSettings(name: '/'),
+                                        builder: (BuildContext context) {
+                                          final TabSpec spec = widget.tabs[i];
+                                          return spec.fullBleed
+                                              ? Builder(
+                                                  key: Key('page-${spec.id}'),
+                                                  builder: (BuildContext context) =>
+                                                      spec.body(context, actions),
+                                                )
+                                              : SingleChildScrollView(
+                                                  key: Key('page-${spec.id}'),
+                                                  padding: const EdgeInsets.fromLTRB(
+                                                    N11Space.pad,
+                                                    N11Space.gap4,
+                                                    N11Space.pad,
+                                                    N11Space.gap8,
+                                                  ),
+                                                  child: Builder(
+                                                    builder: (BuildContext context) =>
+                                                        spec.body(context, actions),
+                                                  ),
+                                                );
+                                        },
+                                      ),
                                 )
-                              else if (widget.tabs[i].fullBleed)
-                                Builder(
-                                  key: Key('page-${widget.tabs[i].id}'),
-                                  builder: (BuildContext context) =>
-                                      widget.tabs[i].body(context, actions),
-                                )
-                              else
-                                SingleChildScrollView(
-                                  key: Key('page-${widget.tabs[i].id}'),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    N11Space.pad,
-                                    N11Space.gap4,
-                                    N11Space.pad,
-                                    N11Space.gap8,
-                                  ),
-                                  child: Builder(
-                                    builder: (BuildContext context) =>
-                                        widget.tabs[i].body(context, actions),
-                                  ),
-                                ),
-                          ],
-                        ),
-                      ),
-                      if (diagnostics)
-                        DiagnosticsView(
-                          monitor: _monitor,
-                          brand: widget.brand,
-                          config: widget.config,
+                              : widget.tabs[i].fullBleed
+                                  ? Builder(
+                                      key: Key('page-${widget.tabs[i].id}'),
+                                      builder: (BuildContext context) =>
+                                          widget.tabs[i].body(context, actions),
+                                    )
+                                  : SingleChildScrollView(
+                                      key: Key('page-${widget.tabs[i].id}'),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        N11Space.pad,
+                                        N11Space.gap4,
+                                        N11Space.pad,
+                                        N11Space.gap8,
+                                      ),
+                                      child: Builder(
+                                        builder: (BuildContext context) =>
+                                            widget.tabs[i].body(context, actions),
+                                      ),
+                                    ),
                         ),
                     ],
                   ),
                 ),
+                if (diagnostics)
+                  Positioned.fill(
+                    child: Column(
+                      children: <Widget>[
+                        N11AppBar(
+                          title: 'Chẩn đoán kết nối',
+                          onBack: _closeDiagnostics,
+                        ),
+                        Expanded(
+                          child: DiagnosticsView(
+                            monitor: _monitor,
+                            brand: widget.brand,
+                            config: widget.config,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -544,6 +531,26 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
           ),
         ),
       ),
+    );
+  }
+
+  /// One tab's part of the tab area: its own app bar and connection banner (only while it is the open tab and no diagnostics is shown), then its
+  /// body filling the rest. Bars and body are one column, so a tab with bars and a tab without them lay the same area out at the same size.
+  Widget _tabArea(int i, bool diagnostics, Widget body) {
+    final TabSpec tab = widget.tabs[i];
+    final bool childRoute =
+        widget.keepBottomNavOnChildRoutes && !_tabAtRoot[i];
+    final bool bars = i == _index && !diagnostics && !childRoute;
+    return Column(
+      children: <Widget>[
+        if (bars && tab.showAppBar && tab.showLogo)
+          N11AppBar(logo: BrandLogo(brand: widget.brand), title: tab.title)
+        else if (bars && tab.showAppBar)
+          N11AppBar(title: tab.title),
+        if (bars && !tab.ownsConnectionBanner)
+          ConnectionBanner(monitor: _monitor),
+        Expanded(child: body),
+      ],
     );
   }
 }
