@@ -151,18 +151,21 @@ void main() {
 
     testWidgets('a long list loads the next page when the end is reached, without repeating a shop', (WidgetTester tester) async {
       _phone(tester);
-      final FakeDiscoveryApi api = FakeDiscoveryApi(shops: _shops(35));
+      // Issue #411 (Owner 21/11): the ranking pool reads pages of 30 until 200 shops are reached, so 230 shops stop at 210 after Home loads.
+      final FakeDiscoveryApi api = FakeDiscoveryApi(shops: _shops(230));
       final DiscoveryController c = await _pumpHome(tester, api);
-      expect(c.shops, hasLength(30));
+      expect(c.shops, hasLength(210));
       expect(c.hasMore, isTrue);
       await tester.ensureVisible(find.byKey(const Key('home-nearby-see-all')));
       await tester.tap(find.byKey(const Key('home-nearby-see-all')));
       await tester.pumpAndSettle();
       // Scroll to the end of the lazy list: the next page loads by itself.
-      await tester.drag(find.byKey(const Key('nearby-all-list')), const Offset(0, -6000));
-      await tester.pumpAndSettle();
-      expect(c.shops, hasLength(35));
-      expect(c.shops.map((s) => s.shopId).toSet(), hasLength(35));
+      for (int i = 0; i < 40 && c.hasMore; i++) {
+        await tester.drag(find.byKey(const Key('nearby-all-list')), const Offset(0, -3000));
+        await tester.pumpAndSettle();
+      }
+      expect(c.shops, hasLength(230));
+      expect(c.shops.map((s) => s.shopId).toSet(), hasLength(230));
       expect(c.hasMore, isFalse);
       expect(tester.takeException(), isNull);
     });
@@ -228,12 +231,12 @@ void main() {
       expect(api.routeRequests, isEmpty);
     });
 
-    testWidgets('"Quán nổi bật" is not shown while its criterion is off', (WidgetTester tester) async {
+    testWidgets('"Quán nổi bật" is shown above "Quán gần bạn" (Owner 21/11)', (WidgetTester tester) async {
       _phone(tester);
       await _pumpHome(tester, FakeDiscoveryApi(shops: _shops(3)));
-      expect(kHomeFeaturedShopsEnabled, isFalse);
-      expect(find.text('Quán nổi bật'), findsNothing);
-      expect(find.byKey(const Key('home-featured-section')), findsNothing);
+      expect(kHomeFeaturedShopsEnabled, isTrue);
+      expect(find.byKey(const Key('home-featured-section')), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(const Key('home-featured-section'))).dy, lessThan(tester.getTopLeft(find.byKey(const Key('home-nearby-section'))).dy));
     });
   });
 

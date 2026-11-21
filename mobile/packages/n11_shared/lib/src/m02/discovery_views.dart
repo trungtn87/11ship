@@ -402,12 +402,13 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
 
   /// Issue #411: "Xem tất cả" of "Quán gần bạn" opens the full list (no 5-card limit). Coming back keeps Home's scroll position
   /// and the loaded pages (no reload here).
-  Future<void> _openNearbyAll() async {
+  Future<void> _openShopsAll({required bool featured}) async {
     await Navigator.of(context).push(
       n11Route(
         NearbyShopsAllScreen(
           controller: c,
           position: _position,
+          featured: featured,
           onOpenShop: (ShopCardData s) => _openShop(
             context,
             widget.publicApi,
@@ -428,6 +429,8 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         // Road distances: asked after the frame, only for cards not known yet (a pure lookup otherwise), so a rebuild never becomes a request.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(c.distances.want(c.shops, _position.fix));
+          // Issue #411: the featured rule needs the rating of more than the first page (see kRankingPoolCap).
+          if (mounted && kHomeFeaturedShopsEnabled) unawaited(c.fillRankingPool());
         });
         // Issue #384 / Figma F01: the header row (area + bell) is the first item; the gradient paints behind the status bar.
         // Figma F01: the header sits 14px above the search panel (12 list gap + 2).
@@ -805,10 +808,32 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           }
         } else {
           // Issue #411: one horizontal row of at most 5 cards, then "Xem tất cả" (the full list opens with every loaded shop).
+          // Owner 21/11: "Quán nổi bật" above; without GPS, "Quán gần bạn" uses the same featured order and shows no distance.
+          if (kHomeFeaturedShopsEnabled) {
+            out.add(
+              HomeShopSection(
+                sectionId: 'home-featured',
+                shops: featuredOrder(c.shops),
+                // The same road distances as the nearby row (one cache, no new request); no distance is invented.
+                distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
+                customerLocation: _position.fix,
+                locating: _position.loading,
+                stale: c.stale,
+                onOpenShop: (ShopCardData s) => _openShop(
+                  context,
+                  widget.publicApi,
+                  s,
+                  ratings: widget.ratings,
+                  onReturn: c.freshness.reload,
+                ),
+                onSeeAll: () => _openShopsAll(featured: true),
+              ),
+            );
+          }
           out.add(
             HomeShopSection(
               sectionId: 'home-nearby',
-              shops: nearbyByRoadDistance(
+              shops: _position.fix == null ? featuredOrder(c.shops) : nearbyByRoadDistance(
                 c.shops,
                 (ShopCardData s) => c.distances.of(s, _position.fix),
               ),
@@ -817,7 +842,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
               locating: _position.loading,
               stale: c.stale,
               note: _position.fix == null && !_position.loading
-                  ? 'Bật vị trí để xem quán theo khoảng cách đường đi.'
+                  ? 'Bật vị trí để xem quán gần bạn theo khoảng cách đường đi.'
                   : null,
               onOpenShop: (ShopCardData s) => _openShop(
                 context,
@@ -826,7 +851,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                 ratings: widget.ratings,
                 onReturn: c.freshness.reload,
               ),
-              onSeeAll: _openNearbyAll,
+              onSeeAll: () => _openShopsAll(featured: false),
             ),
           );
         }
@@ -918,8 +943,11 @@ class HomeShopTile extends StatelessWidget {
     this.locating = false,
     this.distance = RouteDistance.noPosition,
     this.stale = false,
+    this.keyScope = '',
   });
 
+  /// Issue #411: prefix of the inner keys (rating, distance) so the featured row and the nearby row never share a key.
+  final String keyScope;
   final LocationFix? customerLocation;
   final RouteDistance distance;
   final bool locating;
@@ -974,7 +1002,7 @@ class HomeShopTile extends StatelessWidget {
                           top: N11Space.gap2,
                           right: N11Space.gap2,
                           child: Container(
-                            key: Key('shop-rating-${shop.shopId}'),
+                            key: Key('${keyScope}shop-rating-${shop.shopId}'),
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(
                               color: N11Colors.white,
@@ -1026,7 +1054,7 @@ class HomeShopTile extends StatelessWidget {
                           Expanded(
                             child: Text(
                               shortDistance,
-                              key: Key('shop-distance-${shop.shopId}'),
+                              key: Key('${keyScope}shop-distance-${shop.shopId}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: N11Text.caption.copyWith(fontSize: 12, fontWeight: FontWeight.w700),
@@ -1049,9 +1077,45 @@ class HomeShopTile extends StatelessWidget {
 /// Issue #411: a Home carousel shows at most this many shop cards; the card after them is "Xem tất cả" (the full list of that section).
 const int kHomeCarouselCardLimit = 5;
 
-/// Issue #411: "Quán nổi bật" is NOT shown yet. No featured / ranking criterion exists in the backend or the app (Owner question in the issue).
-/// The shared [HomeShopSection] is ready for it; turn this on only with the approved criterion and its data.
-const bool kHomeFeaturedShopsEnabled = false;
+/// Issue #411 (Owner 21/11): "Quán nổi bật" is shown above "Quán gần bạn".
+const bool kHomeFeaturedShopsEnabled = true;
+
+/// Issue #411 (Owner 21/11): a featured shop has an average of at least 4.0 stars AND at least 5 visible customer reviews.
+const double kFeaturedMinAverage = 4.0;
+const int kFeaturedMinReviews = 5;
+
+/// True when the shop meets the featured rule (real review data only).
+bool isFeaturedRated(ShopCardData s) => s.ratingAverage != null && s.ratingCount >= kFeaturedMinReviews && s.ratingAverage! >= kFeaturedMinAverage;
+
+/// Issue #411 (Owner 21/11): the featured order of the loaded shops, the same for "Quán nổi bật" and for "Quán gần bạn" without GPS.
+/// 1) shops that meet the rule: higher average first, then more reviews, then name;
+/// 2) the rest, newest creation date first (a shop with no date last, in server order). Each shop appears once.
+/// Never invents a rating or a date: an unrated shop shows as unrated.
+List<ShopCardData> featuredOrder(List<ShopCardData> shops) {
+  final Set<String> seen = <String>{};
+  final List<(int, ShopCardData)> unique = <(int, ShopCardData)>[
+    for (final (int i, ShopCardData s) in shops.indexed)
+      if (seen.add(s.shopId)) (i, s),
+  ];
+  final List<(int, ShopCardData)> rated = unique.where((r) => isFeaturedRated(r.$2)).toList()
+    ..sort((a, b) {
+      final int byAverage = b.$2.ratingAverage!.compareTo(a.$2.ratingAverage!);
+      if (byAverage != 0) return byAverage;
+      final int byCount = b.$2.ratingCount.compareTo(a.$2.ratingCount);
+      if (byCount != 0) return byCount;
+      final int byName = a.$2.name.compareTo(b.$2.name);
+      return byName != 0 ? byName : a.$1.compareTo(b.$1);
+    });
+  final List<(int, ShopCardData)> rest = unique.where((r) => !isFeaturedRated(r.$2)).toList()
+    ..sort((a, b) {
+      final DateTime? da = a.$2.createdAt;
+      final DateTime? db = b.$2.createdAt;
+      if (da != null && db != null && da != db) return db.compareTo(da);
+      if ((da == null) != (db == null)) return da == null ? 1 : -1;
+      return a.$1.compareTo(b.$1);
+    });
+  return <ShopCardData>[for (final r in rated) r.$2, for (final r in rest) r.$2];
+}
 
 /// Issue #411 "Quán gần bạn": shops with a known ROAD distance come first, nearest first; the rest keep the server order. Ties and unknown
 /// distances keep the server order (stable), and no straight-line distance is used.
@@ -1105,6 +1169,8 @@ class HomeShopSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<ShopCardData> shown = shops.take(kHomeCarouselCardLimit).toList();
+    // The featured row repeats shops of the nearby row: its keys carry their own prefix so a finder never matches two.
+    final String keyScope = sectionId == 'home-featured' ? 'featured-' : '';
     return Column(
       key: Key('$sectionId-section'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1129,7 +1195,8 @@ class HomeShopSection extends StatelessWidget {
                       SizedBox(
                         width: cardWidth,
                         child: HomeShopTile(
-                          key: Key('shop-${s.shopId}'),
+                          key: Key('${keyScope}shop-${s.shopId}'),
+                          keyScope: keyScope,
                           shop: s,
                           stale: stale,
                           customerLocation: customerLocation,
@@ -1215,11 +1282,15 @@ class NearbyShopsAllScreen extends StatefulWidget {
     required this.controller,
     required this.position,
     required this.onOpenShop,
+    this.featured = false,
   });
 
   final DiscoveryController controller;
   final DiscoveryPosition position;
   final void Function(ShopCardData shop) onOpenShop;
+
+  /// Issue #411 (Owner 21/11): "Quán nổi bật" — the featured order, no distance. False = "Quán gần bạn" (featured order only without GPS).
+  final bool featured;
 
   @override
   State<NearbyShopsAllScreen> createState() => _NearbyShopsAllScreenState();
@@ -1250,10 +1321,10 @@ class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      key: const Key('nearby-all-screen'),
+      key: Key(widget.featured ? 'featured-all-screen' : 'nearby-all-screen'),
       backgroundColor: N11Colors.white,
       appBar: AppBar(
-        title: const Text('Quán gần bạn'),
+        title: Text(widget.featured ? 'Quán nổi bật' : 'Quán gần bạn'),
         backgroundColor: N11Colors.white,
         foregroundColor: N11Colors.black,
         elevation: 0,
@@ -1265,10 +1336,14 @@ class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) unawaited(c.distances.want(c.shops, widget.position.fix));
             });
-            final List<ShopCardData> shops = nearbyByRoadDistance(
-              c.shops,
-              (ShopCardData s) => c.distances.of(s, widget.position.fix),
-            );
+            // Issue #411: featured order (no distance) for "Quán nổi bật" and without GPS; road distance order with GPS.
+            final bool byFeatured = widget.featured || widget.position.fix == null;
+            final List<ShopCardData> shops = byFeatured
+                ? featuredOrder(c.shops)
+                : nearbyByRoadDistance(
+                    c.shops,
+                    (ShopCardData s) => c.distances.of(s, widget.position.fix),
+                  );
             if (shops.isEmpty && c.listState == DiscoveryLoad.ready) {
               return const EmptyState(
                 key: Key('nearby-all-empty'),
