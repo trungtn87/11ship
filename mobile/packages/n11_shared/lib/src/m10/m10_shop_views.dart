@@ -535,6 +535,8 @@ class _ShopOrderDetailState extends State<ShopOrderDetailScreen> with M07Actions
             mapBuilder: widget.mapBuilder ?? widget.runtime.mapBuilder,
             ended: o.ended,
             who: 'shipper',
+            route: o.route,
+            legacyReferenceOnly: o.legacyReferenceOnly,
           ),
         ),
       if (_chat != null)

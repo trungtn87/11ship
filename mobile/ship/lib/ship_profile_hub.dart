@@ -41,7 +41,7 @@ class ShipProfileHub extends StatelessWidget {
                 key: const Key('profile-shipper-unavailable'),
                 icon: Icons.badge_outlined,
                 title: 'Hồ sơ shipper',
-                sub: kNotOnAndroidReason,
+                sub: kUnavailableReason,
                 soon: true,
                 trailing: const N11Chip('Chưa nối', kind: ChipKind.soon),
               ),

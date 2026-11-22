@@ -7,15 +7,20 @@ import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../tokens.dart';
 import '../widgets/form_feedback.dart';
+import 'address_models.dart';
+import 'coverage.dart';
 import 'place_index.dart';
 import 'place_search.dart';
 
 /// Address text and its explicitly selected point are returned together, only on Save.
 class AddressLocation {
-  const AddressLocation(this.text, {this.latitude, this.longitude});
+  const AddressLocation(this.text, {this.latitude, this.longitude, this.note = ''});
   final String text;
   final double? latitude;
   final double? longitude;
+
+  /// "Mô tả bổ sung" (optional): house number, floor, lane, directions. Separate from [text], which the pin or a suggestion sets.
+  final String note;
 }
 
 typedef AddressMapBuilder =
@@ -35,11 +40,15 @@ class AddressLocationField extends StatelessWidget {
     required this.onTap,
     this.error,
     this.pinSummary,
+    this.actionLabel,
   });
   final String label;
   final String text;
   final VoidCallback? onTap;
   final String? error;
+
+  /// Shared order flows show a visible "Chỉnh sửa" action on the address block; the whole block stays tappable too.
+  final String? actionLabel;
 
   /// The confirmed pin as the person reviews it before saving ("Ghim: lat, lng"), or null when the caller shows none.
   final String? pinSummary;
@@ -61,7 +70,11 @@ class AddressLocationField extends StatelessWidget {
         child: ListTile(
           leading: const Icon(Icons.location_on_outlined),
           title: Text(text.trim().isEmpty ? 'Chọn địa chỉ' : text),
-          trailing: onTap == null ? null : const Icon(Icons.chevron_right),
+          trailing: onTap == null
+              ? null
+              : actionLabel == null
+                  ? const Icon(Icons.chevron_right)
+                  : TextButton(onPressed: onTap, child: Text(actionLabel!)),
           onTap: onTap,
         ),
       ),
@@ -89,6 +102,8 @@ class AddressLocationPicker extends StatefulWidget {
     this.requirePoint = true,
     this.mapBuilder,
     this.searchApi,
+    this.enforceCoverage = false,
+    this.title = 'Chọn địa chỉ',
   });
   final AddressLocation initial;
   final LocationProvider? location;
@@ -100,12 +115,17 @@ class AddressLocationPicker extends StatefulWidget {
   final AddressMapBuilder? mapBuilder;
   final PlaceSearchApi? searchApi;
 
+  /// Shared order flows (Đặt món, Gọi ship): a pin outside the Cao Bằng map is refused. The typed text is never refused.
+  final bool enforceCoverage;
+  final String title;
+
   @override
   State<AddressLocationPicker> createState() => _AddressLocationPickerState();
 }
 
 class _AddressLocationPickerState extends State<AddressLocationPicker> {
   late final TextEditingController _text;
+  late final TextEditingController _note;
   double? _lat;
   double? _lng;
   bool _locating = false;
@@ -122,8 +142,6 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   String? _pinHint;
   int _searchRevision = 0;
   bool _programmaticText = false;
-  bool _pinTextUnconfirmed = false;
-  late String _pinText;
   bool _submitted = false;
   final FocusNode _addressFocus = FocusNode();
   String? get _addressError => _submitted
@@ -135,9 +153,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   void initState() {
     super.initState();
     _text = TextEditingController(text: widget.initial.text);
+    _note = TextEditingController(text: widget.initial.note);
     _lat = widget.initial.latitude;
     _lng = widget.initial.longitude;
-    _pinText = widget.initial.text.trim();
     _sessionEpoch = widget.session?.sessionEpoch;
     widget.session?.addListener(_sessionChanged);
   }
@@ -164,6 +182,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     _debounce?.cancel();
     _addressFocus.dispose();
     _text.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -174,7 +193,6 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
 
   void _textChanged(String value) {
     if (_programmaticText) return;
-    if (_lat != null && _lng != null && value.trim() != _pinText) _pinTextUnconfirmed = true;
     _debounce?.cancel();
     final String query = value.trim();
     final int revision = ++_searchRevision;
@@ -200,24 +218,28 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
     _programmaticText = true;
     _text.text = result.address;
     _programmaticText = false;
-    _pinText = result.address;
-    _pinTextUnconfirmed = false;
     _searchRevision++;
     _results = const <PlaceSearchResult>[];
-    _pick(result.latitude, result.longitude);
+    if (!_pick(result.latitude, result.longitude)) return;
     setState(() => _pinHint = result.approximate ? 'Ghim đặt ở một điểm trên "${result.name}", chưa phải đúng nhà bạn. Hãy chạm bản đồ để chỉnh ghim và thêm số nhà vào ô địa chỉ.' : null);
   }
 
-  void _clearPin() => setState(() { _pinHint = null; _lat = null; _lng = null; _accuracyMeters = null; _currentPosition = false; _pinTextUnconfirmed = false; _pointRevision++; });
+  // Clearing the pin only changes the coordinates; the typed text stays as the description.
+  void _clearPin() => setState(() { _pinHint = null; _lat = null; _lng = null; _accuracyMeters = null; _currentPosition = false; _pointRevision++; });
 
-  void _pick(double lat, double lng) {
+  /// Moves the pin. Returns false (and changes nothing) for an invalid point, or one outside the covered area when [enforceCoverage] is set.
+  bool _pick(double lat, double lng) {
     if (!mounted ||
         !_sessionValid ||
         !lat.isFinite ||
         !lng.isFinite ||
         lat.abs() > 90 ||
         lng.abs() > 180) {
-      return;
+      return false;
+    }
+    if (widget.enforceCoverage && !insideCaoBang(lat, lng)) {
+      setState(() => _error = kOutsideCoverageMessage);
+      return false;
     }
     setState(() {
       _pointRevision++;
@@ -225,11 +247,10 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       _accuracyMeters = null;
       _lat = lat;
       _lng = lng;
-      _pinText = _text.text.trim();
-      _pinTextUnconfirmed = false;
       _error = null;
       _pinHint = null;
     });
+    return true;
   }
 
   Future<void> _locate() async {
@@ -245,8 +266,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       final LocationFix fix =
           await (widget.location ?? MethodChannelLocationProvider())
               .currentFix();
-      if (mounted && _sessionValid && pointRevision == _pointRevision) {
-        _pick(fix.latitude, fix.longitude);
+      if (mounted && _sessionValid && pointRevision == _pointRevision && _pick(fix.latitude, fix.longitude)) {
         setState(() {
           _currentPosition = true;
           _accuracyMeters = fix.accuracyMeters;
@@ -288,13 +308,9 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
       setState(() => _error = 'Chọn vị trí trên bản đồ trước khi lưu.');
       return;
     }
-    if (_pinTextUnconfirmed && _lat != null && _lng != null) {
-      setState(() => _error = 'Địa chỉ chữ đã đổi. Hãy xác nhận giữ ghim cũ hoặc bỏ/chọn lại ghim.');
-      return;
-    }
     Navigator.of(
       context,
-    ).pop(AddressLocation(_text.text.trim(), latitude: _lat, longitude: _lng));
+    ).pop(AddressLocation(_text.text.trim(), latitude: _lat, longitude: _lng, note: _note.text.trim()));
   }
 
   /// Suggestions are optional help: a short scrollable box (shorter while the keyboard is open) that can be hidden, so the map and Save stay in reach.
@@ -366,7 +382,7 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Chọn địa chỉ')),
+    appBar: AppBar(title: Text(widget.title)),
     body: SafeArea(
       // Not a lazy ListView: the map must stay mounted while the keyboard resizes the viewport (a disposed platform view re-parses the whole map package, #299).
       child: SingleChildScrollView(
@@ -383,10 +399,10 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
             minLines: 1,
             maxLines: 3,
             decoration: InputDecoration(
-              labelText: 'Địa chỉ',
+              labelText: 'Tìm vị trí',
               errorText: _addressError,
               errorMaxLines: 2,
-              hintText: 'Số nhà, đường, tổ, phường/xã…',
+              hintText: 'Nhập số nhà, đường, tổ, phường/xã…',
               filled: true,
               fillColor: N11Colors.white,
               contentPadding: const EdgeInsets.symmetric(
@@ -416,20 +432,6 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
           if (_searched && !_searching && !_searchFailed && _text.text.trim().runes.length >= 2 && _results.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Không có kết quả phù hợp. Có thể tiếp tục nhập địa chỉ chữ.')),
           if (_results.isNotEmpty) _suggestions(context),
-          if (_pinTextUnconfirmed && _lat != null && _lng != null)
-            Card(
-              key: const Key('pin-text-confirmation'),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-                  const Text('Bạn đã đổi địa chỉ chữ. Ghim cũ có còn đúng không?'),
-                  Wrap(spacing: 8, children: <Widget>[
-                    TextButton(onPressed: () => setState(() { _pinText = _text.text.trim(); _pinTextUnconfirmed = false; }), child: const Text('Giữ ghim – chỉ bổ sung mô tả')),
-                    TextButton(onPressed: _clearPin, child: const Text('Bỏ ghim – đổi địa điểm')),
-                  ]),
-                ]),
-              ),
-            ),
           const SizedBox(height: 12),
           if (!widget.requirePoint)
             Text(
@@ -485,6 +487,22 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // "Mô tả bổ sung": optional, separate from the address text and the pin (house number, floor, lane, directions).
+          TextField(
+            key: const Key('location-extra-note'),
+            controller: _note,
+            maxLength: kAddressNoteMaxLength,
+            minLines: 1,
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: 'Mô tả bổ sung (không bắt buộc)',
+              hintText: 'Số nhà, tầng, ngõ, ghi chú tìm đường…',
+              filled: true,
+              fillColor: N11Colors.white,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
             ),
           ),
           // #194: a pinned point is fixed; moving around never changes it, and nothing here shares the person's position.

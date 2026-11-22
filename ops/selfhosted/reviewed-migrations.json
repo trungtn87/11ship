@@ -104,6 +104,10 @@
     "1797984000000_ios-password-client-sessions": {
       "sha256": "7503e0ecf4037e3f4f61934a0d163a947b6cb679ed1b3a2678c4914447f08681",
       "review": "PR #410 (G1 iOS). Replaces only the CHECK sessions_password_client_ck so PASSWORD sessions may also carry platform IOS (apps FOOD/SHIP); it widens the rule, adds no column or data, and existing rows all satisfy it. The previous backend never writes platform IOS, so it is unaffected. Down revokes live IOS PASSWORD sessions and restores the old rule as NOT VALID; for disposable databases only."
+    },
+    "1798070400000_wallet-commission-policy-advisory-lock": {
+      "sha256": "7a50b8225ef6a648cc3838b55cb3bcc14cec33461afb65d4b5dc140e2b30d875",
+      "review": "PR #427; compatibility review 2026-11-21: Up replaces only the function app.wallet_commission_policies_guard so its LOCK TABLE ... SHARE ROW EXCLUSIVE (which needs UPDATE, not granted to the runtime role) becomes pg_advisory_xact_lock; the version check is unchanged. It adds no column, constraint, grant or data. The old backend keeps writing commission versions normally, so it is compatible. Down restores the LOCK TABLE guard and must be used only on a temporary database, since it works only where the owner/migrator role writes."
     }
   }
 }

@@ -120,7 +120,7 @@ void main() {
     expect(map.road, isEmpty);
     expect(find.byKey(const Key('m07-ship-route')), findsNothing);
     expect(find.byKey(const Key('m07-ship-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('không có đường đi đã lưu'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -129,6 +129,20 @@ void main() {
     expect(map.road, isEmpty);
     expect(find.byKey(const Key('m07-ship-route')), findsNothing);
     expect(find.byKey(const Key('m07-ship-route-legacy')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: a holding Shipper with two pins and no stored road sees "Chưa có tuyến đường đi" and no line', (WidgetTester tester) async {
+    final ({int calls, List<List<double>>? road}) map = await _openMap(tester, _view());
+    expect(map.road, isEmpty);
+    expect(find.byKey(const Key('m07-ship-route-missing')), findsOneWidget);
+    expect(find.textContaining('Chưa có tuyến đường đi'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: with a stored road the "chưa có tuyến" status is not shown', (WidgetTester tester) async {
+    await _openMap(tester, _view(route: _route()));
+    expect(find.byKey(const Key('m07-ship-route-missing')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

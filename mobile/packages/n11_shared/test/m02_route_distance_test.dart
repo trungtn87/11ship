@@ -141,7 +141,7 @@ void main() {
       phone(tester);
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..roads = <String, int?>{'s1': 3400};
       final DiscoveryController c = await pumpHome(tester, api);
-      expect(find.text('Quán s1'), findsOneWidget);
+      expect(find.text('Quán s1'), findsWidgets);
       // Home tile: the short road distance (Antigravity #385 fix); the full road wording stays in its semantics label.
       expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, '3,4 km');
       expect(find.textContaining('chim bay'), findsNothing);
@@ -161,9 +161,10 @@ void main() {
         ..roads = <String, int?>{'s1': 3400, 's2': 800}
         ..routeGate = () => hold.future;
       await pumpHome(tester, api);
-      expect(find.text('Quán s1'), findsOneWidget);
-      expect(find.text('Quán s2'), findsOneWidget);
-      expect(find.text('Đang tính…'), findsNWidgets(2));
+      expect(find.text('Quán s1'), findsWidgets);
+      expect(find.text('Quán s2'), findsWidgets);
+      // Issue #411: two shops, each shown in the featured row and in the nearby row while the routes are asked.
+      expect(find.text('Đang tính…'), findsNWidgets(4));
       hold.complete();
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s2'))).data, '0,8 km');
@@ -175,7 +176,7 @@ void main() {
       final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..roads = <String, int?>{'s1': 3400};
       await pumpHome(tester, api, gps: gps);
-      expect(find.text('Quán s1'), findsOneWidget);
+      expect(find.text('Quán s1'), findsWidgets);
       expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, 'Chưa rõ');
       expect(api.routeRequests, isEmpty);
     });

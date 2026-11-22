@@ -83,10 +83,10 @@ void main() {
     }
     for (final FeatureId id in <FeatureId>[FeatureId.receiveOrders, FeatureId.wallet]) {
       expect(isWired(id), isFalse, reason: '$id');
-      expect(featureReason(id), kNotOnAndroidReason);
+      expect(featureReason(id), kUnavailableReason);
       expect(featureReason(id), isNot(contains('backend')));
     }
-    expect(kNotOnAndroidReason, startsWith('Chưa nối trên Android'));
+    expect(kUnavailableReason, 'Chưa dùng được lúc này.');
   });
 
   test('source never disables TLS verification', () {

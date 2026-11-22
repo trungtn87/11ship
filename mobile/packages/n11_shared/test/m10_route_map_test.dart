@@ -88,7 +88,7 @@ void main() {
     expect(road, isEmpty);
     expect(find.byKey(const Key('m10-route-summary')), findsNothing);
     expect(find.byKey(const Key('m10-route-legacy')), findsOneWidget);
-    expect(find.textContaining('không có đường để vẽ'), findsOneWidget);
+    expect(find.textContaining('không có đường đi đã lưu'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -98,6 +98,27 @@ void main() {
     expect(find.byKey(const Key('m10-route-summary')), findsNothing);
     expect(find.byKey(const Key('m10-route-legacy')), findsNothing);
     expect(find.byKey(const Key('m10-map')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: pins without a stored road draw no line and say "Chưa có tuyến đường đi"', (WidgetTester tester) async {
+    final List<List<double>>? road = await pump(tester);
+    expect(road, isEmpty);
+    expect(find.byKey(const Key('m10-route-missing')), findsOneWidget);
+    expect(find.textContaining('Chưa có tuyến đường đi'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: a legacy Order keeps its own neutral note and no "chưa có tuyến" line', (WidgetTester tester) async {
+    await pump(tester, legacy: true);
+    expect(find.byKey(const Key('m10-route-legacy')), findsOneWidget);
+    expect(find.byKey(const Key('m10-route-missing')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('issue #393: with a stored road the "chưa có tuyến" status is not shown', (WidgetTester tester) async {
+    await pump(tester, route: _route());
+    expect(find.byKey(const Key('m10-route-missing')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

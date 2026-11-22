@@ -100,3 +100,16 @@ jobs:
             --dart-define=SOURCE_SHA="$SOURCE_SHA" \
             --dart-define=SIGNING_MODE="unsigned" \
             --dart-define=DEVICE_ENVIRONMENT="$DEVICE_ENVIRONMENT"
+
+      # The Cao Bang offline map is a CocoaPods resource of the n11_m14_map plugin (a framework in Flutter's Podfile). If it is missing from the built app,
+      # the map shows "no package" on a device. Found anywhere in the app (framework or app bundle); the paths found are printed to the log.
+      - name: Cao Bang map package is inside the built app
+        run: |
+          set -euo pipefail
+          app="$(find "mobile/${{ matrix.app }}/build/ios/iphonesimulator" -maxdepth 1 -name 'Runner.app' -type d -print -quit)"
+          if [ -z "$app" ]; then echo "::error title=Runner.app::no simulator app was built"; exit 1; fi
+          for rel in caobang/manifest.json caobang/fonts/NotoSans-Regular.ttf; do
+            found="$(find "$app" -path "*/$rel" -type f -print -quit)"
+            if [ -z "$found" ]; then echo "::error title=Cao Bang map::$rel is not inside $app"; exit 1; fi
+            echo "$rel found at: $found"
+          done
