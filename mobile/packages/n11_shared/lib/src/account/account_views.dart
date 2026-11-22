@@ -17,6 +17,7 @@ import '../flows/shop_views.dart';
 import '../flows/reset_controller.dart';
 import '../flows/reset_views.dart';
 import 'models.dart';
+import 'account_deletion.dart';
 import 'api_client.dart';
 import 'phone_verification.dart';
 import 'vn_mobile.dart';
@@ -28,8 +29,6 @@ import 'legal_policy_draft.dart';
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
 // docs/ui/m01-ship-web.md S05/S10/S11): guest, login, register, signed-in account, own profile and the logout dialog. They reuse
 // the shell, the components and the tokens; nothing here knows a role as an authority, every value comes from [SessionController].
-
-const String kNoServerReason = 'Bản dựng này thiếu địa chỉ máy chủ HTTPS (API_BASE_URL).';
 
 /// A refusal in words (Vietnamese, fixed): never the server's text.
 String failureMessage(AuthFailure failure) => withRequestTrace(_failureMessage(failure), failure.requestId);
@@ -159,7 +158,7 @@ class GuestPrompt extends StatelessWidget {
           text: text,
           trailing: session.ready
               ? N11Button(key: const Key('guest-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, compact: true, onPressed: () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))))
-              : const ReasonNote(kNoServerReason),
+              : const ReasonNote(kUnavailableReason),
         );
       },
     );
@@ -169,7 +168,10 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[]});
+  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[], this.showProfileEntry = true});
+
+  /// The built-in "Thông tin cá nhân" row. The shipper app passes false and offers its own "Thông tin & Hồ sơ" entry (#396).
+  final bool showProfileEntry;
 
   /// Look of the guest register action (the shipper app uses [ButtonKind.outline]). Only the button look; the form is unchanged.
   final ButtonKind registerKind;
@@ -244,7 +246,7 @@ class AccountTab extends StatelessWidget {
 
   Widget _tools(BuildContext context, {required bool signedIn}) {
     return N11List(title: signedIn ? 'Cài đặt' : null, children: <Widget>[
-      if (signedIn)
+      if (signedIn && showProfileEntry)
         N11ListItem(
           key: const Key('open-profile'),
           icon: Icons.badge_outlined,
@@ -295,6 +297,16 @@ class AccountTab extends StatelessWidget {
         )
       else
         _hero(),
+      // OD-26: the account was deleted (or locked for deletion) from this device; the sign-in actions below stay available for other accounts.
+      if (session.accountDeletedNotice)
+        N11Banner(
+          key: const Key('account-deleted'),
+          kind: BannerKind.info,
+          title: 'Đã xác nhận xóa tài khoản',
+          text: session.accountDeletedWalletOnly
+              ? 'Tài khoản đã được khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn vẫn đăng nhập lại 11Ship được, chỉ để rút toàn bộ số dư ví.'
+              : 'Tài khoản đã bị khóa và phiên đăng nhập trên máy này đã kết thúc. Bạn không đăng nhập lại được bằng tài khoản này. Dữ liệu được xử lý theo quy định của pháp luật.',
+        ),
       // A confirmed logout shows nothing; only an unconfirmed revoke keeps a short warning.
       if (session.loggedOutNotice && session.logoutUnconfirmed)
         const N11Banner(
@@ -303,7 +315,7 @@ class AccountTab extends StatelessWidget {
           title: 'Đã đăng xuất trên máy này',
           text: 'Chưa xác nhận được với máy chủ rằng phiên đã bị thu hồi (không có kết nối).',
         ),
-      if (!session.ready) const ReasonNote(kNoServerReason),
+      if (!session.ready) const ReasonNote(kUnavailableReason),
       if (ended)
         N11Button(key: const Key('open-login'), label: 'Đăng nhập lại', onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null)
       else ...<Widget>[
@@ -355,6 +367,18 @@ class AccountTab extends StatelessWidget {
       // lead to an unfinished screen.
       _tools(context, signedIn: true),
       N11Button(key: const Key('open-logout'), label: 'Đăng xuất', kind: ButtonKind.secondary, onPressed: () => confirmLogout(context, session)),
+      // OD-26: the owner's own deletion is the LAST entry. Hidden while the account is already locked (a wallet-only lock), since its
+      // session cannot start a new deletion.
+      if (!locked)
+        N11List(title: null, children: <Widget>[
+          N11ListItem(
+            key: const Key('open-delete-account'),
+            icon: Icons.delete_outline,
+            title: 'Xóa tài khoản',
+            sub: 'Khóa tài khoản và xử lý dữ liệu theo quy định',
+            onTap: () => Navigator.of(context).push(n11Route(DeleteAccountScreen(session: session))),
+          ),
+        ]),
     ]);
   }
 }
@@ -511,7 +535,7 @@ class _LoginScreenState extends State<LoginScreen> {
             if (widget.reset != null)
               N11Link('Quên mật khẩu?', key: const Key('to-reset'), onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))))
             else
-              ReasonNote(kNotOnAndroidReason),
+              ReasonNote(kUnavailableReason),
             const SizedBox(height: N11Space.gap2),
             N11Button(
               key: const Key('login-submit'), validate: true,
@@ -519,7 +543,7 @@ class _LoginScreenState extends State<LoginScreen> {
               loading: busy,
               onPressed: busy || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
-            if (!session.ready) const ReasonNote(kNoServerReason),
+            if (!session.ready) const ReasonNote(kUnavailableReason),
             N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
               // The login form's refusal must not show on the register form.
               session.dismissNotices();
@@ -825,7 +849,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           if (_step == 1) ...<Widget>[
             for (final bool owner in <bool>[false, true])
               N11Card(child: Material(color: Colors.transparent, child: ListTile(key: Key(owner ? 'purpose-owner' : 'purpose-customer'), selected: _owner == owner, selectedTileColor: N11Colors.yellow.withValues(alpha: 0.2), leading: Icon(owner ? Icons.storefront_outlined : Icons.person_outline), title: Text(owner ? 'Chủ quán' : 'Khách hàng'), subtitle: Text(owner ? 'Gửi hồ sơ đăng ký quán sau khi xác minh. Chỉ bán hàng sau khi được duyệt.' : 'Tìm quán và đặt món khi tính năng sẵn sàng.'), trailing: Icon(_owner == owner ? Icons.radio_button_checked : Icons.radio_button_off), onTap: locked ? null : () => setState(() => _owner = owner)))),
-            const ReasonNote('Bạn luôn là khách hàng và có thể đăng ký mở quán trong mục Tài khoản theo luồng hồ sơ hiện có.'),
+            const ReasonNote('Bạn là khách hàng. Muốn mở quán, đăng ký trong mục Tài khoản.'),
             if (_purposeAttempted && _owner == null) const Text('Chọn Khách hàng hoặc Chủ quán để tiếp tục.', style: TextStyle(color: N11Colors.error)),
             N11Button(key: const Key('purpose-next'), label: 'Tiếp tục', onPressed: locked ? null : () => setState(() { _purposeAttempted = true; if (_owner != null) _step = 2; })),
           ],
@@ -969,7 +993,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 }
               },
             ),
-            if (!session.ready) const ReasonNote(kNoServerReason),
+            if (!session.ready) const ReasonNote(kUnavailableReason),
           ],
         );
       },
@@ -1041,6 +1065,125 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       N11Field(validator: passwordError, fieldKey: const Key('password-new'), label: 'Mật khẩu mới', controller: _next, password: true, maxLength: 128, enabled: !locked, onChanged: () => setState(() {})),
       N11Field(validator: (String value) => confirmPasswordError(value, _next.text), fieldKey: const Key('password-confirm'), label: 'Nhập lại mật khẩu mới', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _confirm.text.isNotEmpty && _confirm.text != _next.text ? 'Mật khẩu chưa khớp.' : null, onChanged: () => setState(() {})),
       N11Button(key: const Key('password-submit'), validate: _pendingBody == null, label: _busy ? 'Đang lưu…' : _pendingBody != null ? 'Thử lại' : 'Đổi mật khẩu', loading: _busy, onPressed: _busy || widget.session.status != SessionStatus.signedIn ? null : _save),
+    ]);
+  }
+}
+
+// ---- Account deletion (OD-26) ----------------------------------------------------------------------------------------
+
+/// The owner's own deletion of this account, started in the app. It explains the consequences, asks for the CURRENT password and then a
+/// final confirmation. The answer is one of: deleted / locked (this device signs out and the Account tab says so), pending (the running
+/// work is finished first and the session stays), or a failure that keeps the form usable.
+class DeleteAccountScreen extends StatefulWidget {
+  const DeleteAccountScreen({super.key, required this.session});
+  final SessionController session;
+  @override
+  State<DeleteAccountScreen> createState() => _DeleteAccountScreenState();
+}
+
+class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
+  final TextEditingController _password = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
+  late final AccountDeletionController _controller = AccountDeletionController(transport: widget.session.api.transport, session: widget.session);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.session.addListener(_sessionChanged);
+    _controller.addListener(_changed);
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _sessionChanged() {
+    // The session is gone (a deletion that just finished, or a sign-out elsewhere): back to the Account tab, which shows the guest state.
+    if (mounted && widget.session.status != SessionStatus.signedIn) {
+      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_sessionChanged);
+    _controller.removeListener(_changed);
+    _controller.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirmAndSubmit() async {
+    final bool? yes = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Xóa tài khoản?'),
+        content: const Text('Sau khi xác nhận, bạn sẽ bị đăng xuất và không thể hủy yêu cầu này. Nếu còn việc đang chạy, tài khoản chỉ bị khóa sau khi việc đó hoàn tất.'),
+        actions: <Widget>[
+          TextButton(key: const Key('delete-confirm-cancel'), onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Huỷ')),
+          TextButton(key: const Key('delete-confirm-yes'), onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Xóa tài khoản')),
+        ],
+      ),
+    );
+    if (yes == true) {
+      await _controller.submit(_password.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AccountDeletionController c = _controller;
+    final bool shipper = widget.session.identity?.availableRoles.contains('DRIVER') ?? false;
+    final bool finished = c.outcome != null;
+    final AuthFailure? failure = c.failure;
+    final bool canSubmit = !c.busy && !finished && _password.text.isNotEmpty && widget.session.status == SessionStatus.signedIn;
+    return N11FormScaffold(formKey: _form, title: 'Xóa tài khoản', session: widget.session, children: <Widget>[
+      N11Banner(
+        key: const Key('delete-explain'),
+        kind: BannerKind.warn,
+        title: 'Xóa tài khoản không thể hoàn tác',
+        text: 'Sau khi xác nhận:\n'
+            '${shipper ? '• Bạn bị đăng xuất ngay. Bạn vẫn đăng nhập lại 11Ship được, chỉ để rút toàn bộ số dư ví; sau đó tài khoản được đóng.\n' : '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'}'
+            '• Phiên đăng nhập trên mọi thiết bị bị thu hồi.\n'
+            '• Dữ liệu được giữ hoặc xử lý theo quy định của pháp luật.\n'
+            '• Đơn hoặc việc đang chạy sẽ hoàn tất trước; tài khoản bị khóa sau đó. Trong thời gian này bạn không nhận việc mới.',
+      ),
+      if (c.outcome == AccountDeletionOutcome.pending)
+        const N11Banner(
+          key: Key('delete-pending'),
+          kind: BannerKind.warn,
+          title: 'Đã ghi nhận yêu cầu xóa',
+          text: 'Tài khoản đang chờ hoàn tất việc hiện tại. Sau khi xong, tài khoản sẽ bị khóa và phiên đăng nhập sẽ kết thúc. Bạn không nhận việc mới trong thời gian này.',
+        ),
+      if (failure != null)
+        N11Banner(
+          key: const Key('delete-error'),
+          kind: BannerKind.error,
+          title: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu chưa đúng' : 'Chưa xóa được tài khoản',
+          text: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu hiện tại không đúng. Lần nhập sai này không khóa tài khoản.' : failureMessage(failure),
+        ),
+      N11Field(
+        requiredInput: true,
+        fieldKey: const Key('delete-password'),
+        label: 'Mật khẩu hiện tại',
+        controller: _password,
+        password: true,
+        maxLength: 128,
+        enabled: !c.busy && !finished,
+        onChanged: () => setState(() {}),
+      ),
+      N11Button(
+        key: const Key('delete-submit'),
+        label: finished
+            ? 'Đã ghi nhận'
+            : c.busy
+                ? 'Đang xóa…'
+                : c.hasPendingWrite
+                    ? 'Thử lại'
+                    : 'Xóa tài khoản',
+        loading: c.busy,
+        onPressed: canSubmit ? _confirmAndSubmit : null,
+      ),
     ]);
   }
 }

@@ -581,20 +581,25 @@ void main() {
           'Quán Đóng Cửa',
         ];
         for (final String n in order.take(2)) {
-          expect(find.text(n), findsOneWidget);
+          expect(find.text(n), findsWidgets);
         }
+        // Issue #385 / #411: in the server order Zeta (first) is left of Alpha on the same row of the nearby section (the featured row above repeats them).
         expect(
-          tester.getTopLeft(find.text('Zeta Ốc Hương')).dy,
-          lessThan(tester.getTopLeft(find.text('Alpha Hải Sản')).dy),
+          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Zeta Ốc Hương'))).dx,
+          lessThan(tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Alpha Hải Sản'))).dx),
+        );
+        expect(
+          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Zeta Ốc Hương'))).dy,
+          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Alpha Hải Sản'))).dy,
         );
         expect(find.text('Đang mở cửa'), findsWidgets);
         expect(find.text('Đã đóng cửa'), findsWidgets);
         await tester.scrollUntilVisible(
-          find.text('Quán Đóng Cửa'),
+          find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Quán Đóng Cửa')),
           120,
           scrollable: find.byType(Scrollable).first,
         );
-        expect(find.text('Quán Đóng Cửa'), findsOneWidget);
+        expect(find.text('Quán Đóng Cửa'), findsWidgets);
         expect(find.text('Chưa cài giờ hoạt động'), findsNothing);
         expect(find.text('Quán Máy Chủ Cũ'), findsNothing);
         expect(find.text('Quán Khu Khác'), findsNothing);
@@ -623,9 +628,9 @@ void main() {
         await home(tester, c);
         await tapKey(tester, 'home-cat-c2');
         expect(find.text('Zeta Ốc Hương'), findsNothing);
-        expect(find.text('Alpha Hải Sản'), findsOneWidget);
+        expect(find.text('Alpha Hải Sản'), findsWidgets);
         await tapKey(tester, 'home-cat-c2');
-        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Zeta Ốc Hương'), findsWidgets);
 
         await tapKey(tester, 'home-filter');
         await tester.tap(find.byKey(const Key('filter-open')));
@@ -634,7 +639,7 @@ void main() {
         await tapKey(tester, 'filter-close');
         expect(c.openOnly, isFalse);
         expect(c.categoryId, isNull);
-        expect(find.text('Alpha Hải Sản'), findsOneWidget);
+        expect(find.text('Alpha Hải Sản'), findsWidgets);
 
         await tapKey(tester, 'home-filter');
         await tester.tap(find.byKey(const Key('filter-open')));
@@ -643,14 +648,14 @@ void main() {
         await tapKey(tester, 'filter-apply');
         expect(c.openOnly, isTrue);
         expect(find.text('Alpha Hải Sản'), findsNothing);
-        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Zeta Ốc Hương'), findsWidgets);
 
         await tapKey(tester, 'home-filter');
         await tapKey(tester, 'filter-reset');
         await tapKey(tester, 'filter-apply');
         expect(c.filtersActive, isFalse);
         expect(c.areaId, 'a1');
-        expect(find.text('Alpha Hải Sản'), findsOneWidget);
+        expect(find.text('Alpha Hải Sản'), findsWidgets);
       },
     );
 
@@ -778,6 +783,10 @@ void main() {
         await c.locate(force: true);
         await tester.pumpAndSettle();
         expect(c.areaId, 'a2');
+        // Issue #411: the featured row sits above the nearby row, so the filter taps above may leave Home scrolled a little; the area
+        // label is the top row of the list, so bring the list back to its top before reading it.
+        tester.state<ScrollableState>(find.descendant(of: find.byKey(const Key('home-list')), matching: find.byType(Scrollable)).first).position.jumpTo(0);
+        await tester.pumpAndSettle();
         expect(
           find.descendant(
             of: find.byKey(const Key('home-area')),
@@ -785,7 +794,7 @@ void main() {
           ),
           findsOneWidget,
         );
-        expect(find.text('Quán Khu Khác'), findsOneWidget);
+        expect(find.text('Quán Khu Khác'), findsWidgets);
         expect(find.text('Zeta Ốc Hương'), findsNothing);
       },
     );
@@ -823,7 +832,7 @@ void main() {
           ).first,
         );
         await tapKey(tester, 'home-clear');
-        expect(find.text('Quán Đóng'), findsOneWidget);
+        expect(find.text('Quán Đóng'), findsWidgets);
         final DiscoveryController empty = DiscoveryController(
           api: FakeDiscoveryApi(),
         );
@@ -898,12 +907,12 @@ void main() {
         );
         await tapKey(tester, 'discovery-locate');
         expect(c.areaId, 'a1');
-        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Zeta Ốc Hương'), findsWidgets);
         api.offline = true;
         await c.refresh();
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('home-stale')), findsOneWidget);
-        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Zeta Ốc Hương'), findsWidgets);
 
         final FakeDiscoveryApi down = seeded()..offline = true;
         final DiscoveryController d = DiscoveryController(api: down);
@@ -912,7 +921,7 @@ void main() {
         expect(find.text('Không tải được dữ liệu'), findsOneWidget);
         down.offline = false;
         await tapKey(tester, 'home-retry');
-        expect(find.text('Zeta Ốc Hương'), findsOneWidget);
+        expect(find.text('Zeta Ốc Hương'), findsWidgets);
       },
     );
     testWidgets(

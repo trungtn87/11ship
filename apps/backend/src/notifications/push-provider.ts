@@ -187,6 +187,15 @@ export class FcmPushProvider implements PushProvider {
               ...(message.collapseKey === null ? {} : { collapse_key: message.collapseKey }),
               notification: { channel_id: channelId(message.sound, message.vibrate) },
             },
+            // iOS (APNs through FCM): same priority, lifetime and collapse as the Android block; sound only when the user keeps it on. Ignored for Android tokens.
+            apns: {
+              headers: {
+                'apns-priority': message.highPriority ? '10' : '5',
+                'apns-expiration': String(Math.floor(Date.now() / 1000) + Math.max(1, Math.floor(message.ttlSeconds))),
+                ...(message.collapseKey === null ? {} : { 'apns-collapse-id': message.collapseKey }),
+              },
+              payload: { aps: message.sound ? { sound: 'default' } : {} },
+            },
           },
         }),
         signal,

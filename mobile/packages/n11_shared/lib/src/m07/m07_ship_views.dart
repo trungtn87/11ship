@@ -197,15 +197,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       children: <Widget>[
         if (widget.source.isSample) const Padding(padding: EdgeInsets.only(bottom: N11Space.gap3), child: M07SampleBanner()),
         if (widget.locationSlot != null) Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: widget.locationSlot!(context)),
-        Wrap(
-          spacing: N11Space.gap2,
-          runSpacing: N11Space.gap2,
-          children: <Widget>[
-            N11Button(key: const Key('m07-ship-tab-mine'), label: 'Đang thực hiện', compact: true, kind: _view == _ShipView.mine ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.mine)),
-            N11Button(key: const Key('m07-ship-tab-offers'), label: 'Có thể nhận', compact: true, kind: _view == _ShipView.offers ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.offers)),
-            N11Button(key: const Key('m07-ship-tab-history'), label: 'Lịch sử', compact: true, kind: _view == _ShipView.history ? ButtonKind.primary : ButtonKind.secondary, onPressed: () => setState(() => _view = _ShipView.history)),
-          ],
-        ),
+        _ShipViewSegments(selected: _view, onSelect: (_ShipView v) => setState(() => _view = v)),
         const SizedBox(height: N11Space.gap3),
         actionBanner(),
         if (_view == _ShipView.offers) _offers() else _deliveries(history: _view == _ShipView.history),
@@ -224,6 +216,7 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       emptyTitle: 'Chưa có đơn để nhận',
       emptyText: 'Đơn mới trong bán kính 3 km quanh bạn sẽ hiện ở đây khi quán gọi shipper.',
       builder: (BuildContext context, List<OfferView> offers, Future<void> Function() reload) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final OfferView o in offers)
             Padding(
@@ -253,11 +246,103 @@ class _ShipperDeliveryHubState extends State<ShipperDeliveryHub> with M07Actions
       emptyTitle: history ? 'Chưa có lịch sử giao hàng' : 'Chưa có đơn đang thực hiện',
       emptyText: history ? 'Đơn đã kết thúc sẽ hiện ở đây.' : 'Vào "Có thể nhận" để nhận đơn.',
       builder: (BuildContext context, List<DeliveryView> items, Future<void> Function() reload) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final DeliveryView d in items)
             Padding(padding: const EdgeInsets.only(bottom: N11Space.gap3), child: _MineCard(delivery: d, onTap: () => _open(d))),
         ],
       ),
+    );
+  }
+}
+
+/// The three list filters of the Orders tab on ONE row (#394). Each segment takes width in proportion to its label; when the text is too large for one
+/// row the row scrolls sideways instead of wrapping or shrinking the text.
+class _ShipViewSegments extends StatelessWidget {
+  const _ShipViewSegments({required this.selected, required this.onSelect});
+  final _ShipView selected;
+  final ValueChanged<_ShipView> onSelect;
+
+  static const List<({_ShipView view, String label, Key key})> _items = <({_ShipView view, String label, Key key})>[
+    (view: _ShipView.mine, label: 'Đang thực hiện', key: Key('m07-ship-tab-mine')),
+    (view: _ShipView.offers, label: 'Có thể nhận', key: Key('m07-ship-tab-offers')),
+    (view: _ShipView.history, label: 'Lịch sử', key: Key('m07-ship-tab-history')),
+  ];
+  static const TextStyle _style = TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: N11Colors.black);
+  static const double _pad = 8;
+  static const double _gap = 6;
+
+  double _labelWidth(String label, TextScaler scaler) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: label, style: _style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    return painter.width + _pad * 2;
+  }
+
+  Widget _segment(({_ShipView view, String label, Key key}) item) {
+    final bool active = selected == item.view;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: item.label,
+      excludeSemantics: true,
+      onTap: () => onSelect(item.view),
+      child: Material(
+        color: active ? N11Colors.yellow : N11Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          side: BorderSide(color: active ? Colors.transparent : N11Colors.line),
+        ),
+        child: InkWell(
+          key: item.key,
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          onTap: () => onSelect(item.view),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kTapMin),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _pad, vertical: 4),
+                child: Text(item.label, style: _style, maxLines: 1, softWrap: false, textAlign: TextAlign.center),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final List<double> natural = <double>[for (final ({_ShipView view, String label, Key key}) i in _items) _labelWidth(i.label, scaler)];
+    final double total = natural.reduce((double a, double b) => a + b) + _gap * (_items.length - 1);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (total <= constraints.maxWidth) {
+          return Row(
+            children: <Widget>[
+              for (int i = 0; i < _items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: _gap),
+                Expanded(flex: (natural[i] * 100).round(), child: _segment(_items[i])),
+              ],
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (int i = 0; i < _items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: _gap),
+                SizedBox(width: natural[i], child: _segment(_items[i])),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -337,7 +422,7 @@ class OfferCard extends StatelessWidget {
           if (!offer.destinationKnown)
             const Padding(
               padding: EdgeInsets.only(top: N11Space.gap2),
-              child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim điểm giao. Đơn này chỉ shipper chưa có đơn khác nhận được.'),
+              child: ReasonNote('Giao theo địa chỉ mô tả, không cần ghim. Chỉ shipper chưa có đơn khác nhận được.'),
             ),
           if (a != null) ...<Widget>[
             const SizedBox(height: N11Space.gap2),
@@ -632,27 +717,10 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           onAccept: busy ? null : () => _decideAddressChange(d, true, null),
           onReject: busy ? null : (String reason) => _decideAddressChange(d, false, reason),
         ),
-      OrderIncidentGuidance(
-        role: 'SHIPPER',
-        deliveryState: d.state.name,
-        hasShipper: true,
-        customerPhone: d.recipient.phone,
-        shopPhone: d.pickup.phone,
-        onCallCustomer: d.recipient.phone != null ? () => orderPhoneDialer.dial(d.recipient.phone!) : null,
-        onCallShop: d.pickup.phone != null ? () => orderPhoneDialer.dial(d.pickup.phone!) : null,
-        feePending: d.fee.negotiation != null,
-        incident: d.incident,
-        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
-      ),
       if (active && widget.locationSlot != null) widget.locationSlot!(context),
       if (widget.feedbackSlot != null && (d.state == DeliveryState.completed || d.state == DeliveryState.failed)) widget.feedbackSlot!(context, d),
-      if (active && widget.mapBuilder != null && pins.isNotEmpty)
-        OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
-      // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
-      // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
-      if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
       if (active && d.legacyReferenceOnly)
-        const ReasonNote('Đơn tạo trước khi lưu đường đi nên không có đường để vẽ. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
+        const ReasonNote('Đơn cũ không có đường đi đã lưu. Khoảng cách và phí giữ như lúc đặt.', key: Key('m07-ship-route-legacy'), icon: Icons.history),
       if (active && d.needsFee)
         N11Banner(
           key: const Key('m07-missing-banner'),
@@ -678,19 +746,48 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
           text: 'Chỉ cần bấm "Giao thành công" khi đã giao xong. Nếu không giao được, hãy gọi quán để thống nhất; chỉ người tạo đơn mới hủy được.',
           icon: Icons.phone_in_talk_outlined,
         ),
-      // The contacts exist only while this Shipper holds the delivery (the server sends them only then); "Gọi" opens the dialer and never calls by itself.
-      _contactCard('Quán lấy hàng', d.pickup.shopName, <(String, String)>[('Quán', d.pickup.shopName), if (d.pickup.phone != null) ('Điện thoại', d.pickup.phone!), if (d.pickup.addressText != null) ('Địa chỉ', d.pickup.addressText!)], key: 'm07-pickup-card', show: active, phone: d.pickup.phone, who: 'quán'),
-      _contactCard(
-        'Người nhận',
-        d.recipient.name,
-        <(String, String)>[('Tên', d.recipient.name), if (d.recipient.phone != null) ('Điện thoại', d.recipient.phone!), ('Địa chỉ', d.recipient.addressText ?? '—'), if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) ('Hướng dẫn tìm đường', d.dropoffNote!)],
-        key: 'm07-recipient-card',
-        show: active,
-        phone: d.recipient.phone,
-        who: 'người nhận',
+      // #191 (18/11): thẻ 1 "Người gửi & nhận" — mỗi bên một lần tên, một lần số, một nút Gọi ngay cạnh bên đó.
+      if (active)
+        OrderSection(
+          id: 'ship-parties',
+          title: 'Người gửi & nhận',
+          summary: 'Quán lấy hàng · Người nhận',
+          initiallyExpanded: true,
+          builder: (BuildContext _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _partyRow(key: 'm07-pickup-card', role: 'Quán lấy hàng', name: d.pickup.shopName, phone: d.pickup.phone, who: 'quán', lines: <String>[if (d.pickup.addressText != null) 'Địa chỉ: ${d.pickup.addressText}']),
+              const SizedBox(height: N11Space.gap3),
+              const Divider(height: 1, thickness: 1, color: N11Colors.line),
+              const SizedBox(height: N11Space.gap3),
+              _partyRow(key: 'm07-recipient-card', role: 'Người nhận', name: d.recipient.name, phone: d.recipient.phone, who: 'người nhận', lines: <String>['Địa chỉ: ${d.recipient.addressText ?? '—'}', if (d.dropoffNote != null && d.dropoffNote!.isNotEmpty) 'Hướng dẫn tìm đường: ${d.dropoffNote!}']),
+            ],
+          ),
+        ),
+      // #191 (18/11): thẻ 2 "Thông tin đơn" — hàng, ghi chú, tiền/phí, rồi bản đồ (mở rộng được) và quãng đường đã lưu.
+      OrderSection(
+        id: 'ship-order-info',
+        title: 'Thông tin đơn',
+        summary: d.goods.description,
+        initiallyExpanded: true,
+        builder: (BuildContext _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            KeyValueRows(<(String, String)>[('Hàng', d.goods.description), if (d.note != null && d.note!.isNotEmpty) ('Ghi chú', d.note!)]),
+            const SizedBox(height: N11Space.gap3),
+            MoneySummary(goods: d.goods, fee: d.fee),
+            const SizedBox(height: N11Space.gap3),
+            if (active && widget.mapBuilder != null && pins.isNotEmpty)
+              OrderSection(id: 'ship-map', title: 'Bản đồ giao hàng', summary: 'Chạm để xem bản đồ', builder: (BuildContext context) => SizedBox(key: const Key('m07-ship-map'), height: 220, child: ClipRRect(borderRadius: BorderRadius.circular(kRadiusCard), child: widget.mapBuilder!(context, pins, road)))),
+            // Issue #393: two pins but no stored road: no line, and the screen says so (a legacy record already has its own note below).
+            if (active && widget.mapBuilder != null && pins.isNotEmpty && road.isEmpty && !d.legacyReferenceOnly)
+              const ReasonNote('Chưa có tuyến đường đi.', key: Key('m07-ship-route-missing'), icon: Icons.route_outlined),
+            // The stored road's distance and time, shown only together with the road itself. A delivery without one (DIRECT call, released or waiting for a
+            // Shipper, or an old record) says nothing about distance, so no new figure is attached to the fee in force.
+            if (road.isNotEmpty && d.route != null) Text(_shipRouteText(d.route!), key: const Key('m07-ship-route'), style: N11Text.body),
+          ],
+        ),
       ),
-      N11Card(child: KeyValueRows(<(String, String)>[('Hàng', d.goods.description), if (d.note != null && d.note!.isNotEmpty) ('Ghi chú', d.note!)])),
-      MoneySummary(goods: d.goods, fee: d.fee),
       if (active || d.state == DeliveryState.completed)
         if (_chatFor(d) case final OrderChatController chat)
           ListenableBuilder(
@@ -698,23 +795,42 @@ class _ShipperDeliveryDetailScreenState extends State<ShipperDeliveryDetailScree
             builder: (BuildContext context, Widget? _) => OrderSection(id: 'chat', title: 'Trao đổi đơn hàng', summary: chat.summary, initiallyExpanded: true, builder: (BuildContext _) => OrderChatPanel(controller: chat)),
           ),
       if (!active) _result(d),
+      // #191 (18/11): "Xử lý sự cố" là trợ giúp phụ cuối nội dung, đóng mặc định; không có nút "Gọi Khách" (đã có Gọi ở thẻ Người nhận).
+      OrderIncidentGuidance(
+        role: 'SHIPPER',
+        deliveryState: d.state.name,
+        hasShipper: true,
+        customerPhone: d.recipient.phone,
+        shopPhone: d.pickup.phone,
+        onCallShop: d.pickup.phone != null ? () => orderPhoneDialer.dial(d.pickup.phone!) : null,
+        feePending: d.fee.negotiation != null,
+        incident: d.incident,
+        isAfterPickup: d.state == DeliveryState.delivering || d.state == DeliveryState.pickedUp,
+      ),
     ];
     return M07PageParts(body, bottom: active ? _bottom(d) : null);
   }
 
-  Widget _contactCard(String title, String name, List<(String, String)> rows, {required String key, required bool show, String? phone, required String who}) {
-    if (!show) {
-      return const SizedBox.shrink();
-    }
+  Widget _partyRow({required String key, required String role, required String name, String? phone, required String who, required List<String> lines}) {
+    final String? shown = phone == null ? null : (dialNumberText(phone) ?? phone);
     return KeyedSubtree(
       key: Key(key),
-      child: OrderSection(
-        id: key,
-        title: title,
-        summary: [name, dialNumberText(phone) ?? ''].where((String s) => s.isNotEmpty).join(' · '),
-        initiallyExpanded: true,
-        trailing: QuickCall(phone: phone, who: who),
-        builder: (BuildContext _) => KeyValueRows(rows, responsive: true),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(role, style: N11Text.caption),
+                Text(name, style: N11Text.bodyStrong),
+                if (shown != null) Text(shown, key: Key('party-$who-phone'), style: N11Text.body),
+                for (final String line in lines) Text(line, style: N11Text.caption),
+              ],
+            ),
+          ),
+          QuickCall(phone: phone, who: who),
+        ],
       ),
     );
   }

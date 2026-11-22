@@ -358,35 +358,32 @@ class DishRow extends StatelessWidget {
           opacity: dim ? 0.62 : 1,
           child: Padding(
             padding: const EdgeInsets.all(N11Space.gap3),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool stacked = constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(16) > 21;
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    DishThumb(url: imageUrl, size: 72),
-                    const SizedBox(width: N11Space.gap3),
-                    Expanded(
-                      child: Column(
+            // The name and the trailing control (the + of a menu row) always share the first line, whatever the text scale or width:
+            // the name wraps (max 2 lines) and gives way, the control keeps its fixed size. Price and "Đã bán" sit under the name.
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                DishThumb(url: imageUrl, size: 72),
+                const SizedBox(width: N11Space.gap3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong),
-                          const SizedBox(height: N11Space.gap1),
-                          Text(price, style: N11Text.bodyStrong),
-                          if (sub != null) Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
-                          if (chip != null && stacked)
-                            Padding(
-                              padding: const EdgeInsets.only(top: N11Space.gap2),
-                              child: Align(alignment: Alignment.centerLeft, child: chip),
-                            ),
+                          Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: N11Text.bodyStrong)),
+                          if (chip != null) ...<Widget>[const SizedBox(width: N11Space.gap2), chip!],
                         ],
                       ),
-                    ),
-                    if (chip != null && !stacked) ...<Widget>[const SizedBox(width: N11Space.gap2), chip!],
-                    if (onTap != null) ...<Widget>[const SizedBox(width: N11Space.gap1), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
-                  ],
-                );
-              },
+                      const SizedBox(height: N11Space.gap1),
+                      Text(price, style: N11Text.bodyStrong),
+                      if (sub != null) Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+                    ],
+                  ),
+                ),
+                if (onTap != null) ...<Widget>[const SizedBox(width: N11Space.gap1), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
+              ],
             ),
           ),
         ),
@@ -462,7 +459,7 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
     case 'NO_BUSINESS_HOURS':
       return (label: 'Chưa cài giờ hoạt động', text: 'Cài lịch để quán tự mở và đóng cửa.', kind: ChipKind.warn);
     case 'NO_PICKUP_POINT':
-      return (label: 'Chưa có vị trí lấy hàng hợp lệ', text: 'Chọn vị trí lấy hàng trên bản đồ, trong khu vực phục vụ, để khách tìm thấy quán. Không cần đứng tại quán hay bật GPS.', kind: ChipKind.warn);
+      return (label: 'Chưa có vị trí lấy hàng hợp lệ', text: 'Chọn vị trí lấy hàng trên bản đồ trong khu vực phục vụ để khách tìm thấy quán. Không cần bật GPS.', kind: ChipKind.warn);
     case 'NO_SELLABLE_ITEM':
       return (label: 'Chưa có món đang bán', text: 'Thêm ít nhất 1 món đang bán, có giá và ảnh để quán hiển thị với khách.', kind: ChipKind.warn);
     case 'SHOP_INCOMPLETE':
@@ -478,9 +475,10 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
 
 /// The same square, uncropped frame for public logos and saved owner previews.
 class ShopLogoImage extends StatelessWidget {
-  const ShopLogoImage({super.key, this.url, this.bytes});
+  const ShopLogoImage({super.key, this.url, this.bytes, this.borderRadius = 12});
   final String? url;
   final Uint8List? bytes;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -488,7 +486,7 @@ class ShopLogoImage extends StatelessWidget {
     return AspectRatio(
       aspectRatio: 1,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(borderRadius),
         child: ColoredBox(
           color: N11Colors.yellowSoft,
           child: bytes != null

@@ -98,15 +98,22 @@ try:
     _, locate_y = wait('Bật định vị ngay')
     assert locate_y < 730, f'the locate button must be on the first screen, got y={locate_y}'
     capture('01-home-offline-no-gps')
-    wait('Chưa xác định trạng thái hoạt động', scroll=True)
-    wait('Bật online · Chưa khả dụng', scroll=True)
+    # #392 Home: header on one row, the round Online control with its status label, the receiving-area card with its short radius chip.
+    wait('Nhận đơn giao hàng', scroll=True)
+    wait('Chưa có trạng thái hoạt động', scroll=True)
+    wait('Chờ vị trí để hiện bán kính', scroll=True)
+    wait('Bật online', scroll=True)
     hierarchy = nodes()
+    labels = [n.get('text', '') + '\n' + n.get('content-desc', '') for n in hierarchy]
     online = [n for n in hierarchy if 'Bật online' in (n.get('text', '') + n.get('content-desc', '')) and n.get('clickable') == 'true']
-    assert any('Bật online' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy), 'the disabled online control must actually be visible'
+    assert any('Bật online' in text for text in labels), 'the disabled online control must actually be visible'
     assert not online, 'unknown activity must not expose an online action'
-    # One online button only: no separate sharing control, and no status line while there is nothing to say.
-    assert not any('chia sẻ vị trí' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy), 'no separate location-sharing control or standing status'
-    assert not any('trong M01' in (n.get('text', '') + n.get('content-desc', '')) for n in hierarchy)
+    # One online control only: no separate sharing control, and no standing status line while there is nothing to say.
+    assert not any('chia sẻ vị trí' in text for text in labels), 'no separate location-sharing control or standing status'
+    assert not any('trong M01' in text for text in labels)
+    # #392: no wallet or top-up action on Home, and no offers for a guest (nothing is ready to receive without a sign-in).
+    assert not any('Nạp tiền' in text or 'Ví tiền' in text for text in labels), 'Home must not show the wallet or top-up actions'
+    assert not any('Đơn có thể nhận' in text for text in labels), 'a guest must not see receivable orders'
     capture('01b-home-activity')
     adb('shell', 'svc', 'wifi', 'enable')
     for tab, title, name in [

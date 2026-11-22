@@ -398,8 +398,8 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
               if (!canShop) const ReasonNote('Chế độ cửa hàng chỉ mở khi máy chủ xác nhận cửa hàng đang hoạt động.'),
               N11List(children: <Widget>[
                 N11ListItem(icon: Icons.storefront_outlined, title: 'Quản lý quán', sub: 'Có ở tab Quán khi bạn vào chế độ quản lý quán.', soon: false),
-                N11ListItem(icon: Icons.receipt_long_outlined, title: 'Đơn hàng', sub: kNotOnAndroidReason, soon: true),
-                N11ListItem(icon: Icons.bar_chart_outlined, title: 'Doanh thu', sub: kNotOnAndroidReason, soon: true),
+                N11ListItem(icon: Icons.receipt_long_outlined, title: 'Đơn hàng', sub: kUnavailableReason, soon: true),
+                N11ListItem(icon: Icons.bar_chart_outlined, title: 'Doanh thu', sub: kUnavailableReason, soon: true),
               ]),
             ],
           ],

@@ -11,6 +11,7 @@ import '../account/account_views.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
 import 'discovery_controller.dart';
+import 'category_icons.dart';
 import 'discovery_models.dart';
 import 'm02_format.dart';
 import 'route_distance.dart';
@@ -399,6 +400,27 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     if (mounted) await c.freshness.reload();
   }
 
+  /// Issue #411: "Xem tất cả" of "Quán gần bạn" opens the full list (no 5-card limit). Coming back keeps Home's scroll position
+  /// and the loaded pages (no reload here).
+  Future<void> _openShopsAll({required bool featured}) async {
+    await Navigator.of(context).push(
+      n11Route(
+        NearbyShopsAllScreen(
+          controller: c,
+          position: _position,
+          featured: featured,
+          onOpenShop: (ShopCardData s) => _openShop(
+            context,
+            widget.publicApi,
+            s,
+            ratings: widget.ratings,
+            onReturn: c.freshness.reload,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -407,8 +429,14 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         // Road distances: asked after the frame, only for cards not known yet (a pure lookup otherwise), so a rebuild never becomes a request.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(c.distances.want(c.shops, _position.fix));
+          // Issue #411: the featured rule needs the rating of more than the first page (see kRankingPoolCap).
+          if (mounted && kHomeFeaturedShopsEnabled) unawaited(c.fillRankingPool());
         });
-        final List<Widget> body = <Widget>[_header()];
+        // Issue #384 / Figma F01: the header row (area + bell) is the first item; the gradient paints behind the status bar.
+        // Figma F01: the header sits 14px above the search panel (12 list gap + 2).
+        final List<Widget> body = <Widget>[
+          Padding(padding: const EdgeInsets.only(bottom: 2), child: _header()),
+        ];
         switch (c.choicesState) {
           case DiscoveryLoad.idle:
           case DiscoveryLoad.loading:
@@ -423,56 +451,116 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           case DiscoveryLoad.ready:
             body.addAll(_ready());
         }
-        return RefreshIndicator(
-          onRefresh: () =>
-              c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
-          child: ListView(
-            key: const Key('home-list'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              N11Space.pad,
-              N11Space.gap4,
-              N11Space.pad,
-              N11Space.gap8,
-            ),
-            children: <Widget>[
-              for (final Widget w in body)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: N11Space.gap3),
-                  child: w,
+        return Container(
+          key: const Key('home-gradient'),
+          decoration: const BoxDecoration(gradient: N11V5.homeGradient),
+          child: SafeArea(
+            bottom: false,
+            child: RefreshIndicator(
+              onRefresh: () =>
+                  c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
+              child: ListView(
+                key: const Key('home-list'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(
+                  N11Space.pad,
+                  N11Space.gap2,
+                  N11Space.pad,
+                  N11Space.gap8,
                 ),
-            ],
+                children: <Widget>[
+                  for (final Widget w in body)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                      child: w,
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  /// The notification bell (the brand logo was dropped from the Home by the Owner, #282).
-  Widget _header() => Row(
-    children: <Widget>[
-      const Spacer(),
-      Material(
-        color: N11Colors.white,
-        shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
-        child:
-            widget.bell ??
-            IconButton(
-              key: const Key('home-bell'),
-              tooltip: 'Thông báo',
-              constraints: const BoxConstraints(
-                minWidth: kTapMin,
-                minHeight: kTapMin,
-              ),
-              onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
-              icon: const Icon(
-                Icons.notifications_outlined,
-                color: N11Colors.black,
-              ),
+  /// Figma F01 header, one row 48 high: the area (with the GPS retry inline when needed) on the left and the bell on the right.
+  /// The brand logo was dropped from the Home by the Owner (#282). GPS controls the area label; it is not an area selector.
+  Widget _header() {
+    final String areaLabel = c.area == null
+        ? (c.resolvingArea || _position.loading
+              ? 'Đang xác định khu vực…'
+              : c.outsideCoverage
+              ? 'Ngoài khu vực phục vụ'
+              : 'Chưa xác định khu vực')
+        : c.manualArea
+        ? '${c.area!.name} · tham khảo'
+        : _position.failure != null
+        ? '${c.area!.name} · vị trí gần nhất'
+        : c.area!.name;
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
+                const SizedBox(width: 7),
+                Flexible(
+                  key: const Key('home-area'),
+                  child: Text(
+                    areaLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 19 / 14,
+                      fontWeight: FontWeight.w700,
+                      color: N11Colors.black,
+                    ),
+                  ),
+                ),
+                // Flexible: a long area name and the inline action share the row; the label truncates instead of overflowing at 320px.
+                Flexible(
+                  child: _PositionButton(
+                    position: _position,
+                    resolving: c.resolvingArea,
+                    failed: c.areaResolutionFailed,
+                    outsideCoverage: c.outsideCoverage,
+                    retry: () => c.locate(source: _position, force: true),
+                  ),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(width: N11Space.gap2),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: Material(
+              color: N11Colors.white,
+              shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
+              child:
+                  widget.bell ??
+                  IconButton(
+                    key: const Key('home-bell'),
+                    tooltip: 'Thông báo',
+                    constraints: const BoxConstraints(
+                      minWidth: kTapMin,
+                      minHeight: kTapMin,
+                    ),
+                    onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
+                    icon: const Icon(
+                      Icons.notifications_outlined,
+                      color: N11Colors.black,
+                    ),
+                  ),
+            ),
+          ),
+        ],
       ),
-    ],
-  );
+    );
+  }
 
   Widget _failed(VoidCallback retry) => Column(
     children: <Widget>[
@@ -492,68 +580,22 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
 
   List<Widget> _ready() {
     final List<Widget> out = <Widget>[];
-    // GPS controls this label; it is not an interactive area selector.
-    final String areaLabel = c.area == null
-        ? (c.resolvingArea || _position.loading
-              ? 'Đang xác định khu vực…'
-              : c.outsideCoverage
-              ? 'Ngoài khu vực phục vụ'
-              : 'Chưa xác định khu vực')
-        : c.manualArea
-        ? '${c.area!.name} · tham khảo'
-        : _position.failure != null
-        ? '${c.area!.name} · vị trí gần nhất'
-        : c.area!.name;
-    out.add(
-      ConstrainedBox(
-        key: const Key('home-area'),
-        constraints: const BoxConstraints(minHeight: 32),
-        child: Row(
-          children: <Widget>[
-            const Icon(
-              Icons.my_location,
-              size: 18,
-              color: N11Colors.yellowStrong,
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                areaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: N11Colors.black,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    out.add(
-      _PositionButton(
-        position: _position,
-        resolving: c.resolvingArea,
-        failed: c.areaResolutionFailed,
-        outsideCoverage: c.outsideCoverage,
-        retry: () => c.locate(source: _position, force: true),
-      ),
-    );
     // V5 visual shell: preserve the real search, filters, category controllers,
     // GPS and API data. No preview shops, mocked fees or hardcoded categories.
+    // Figma F01: search panel 358x76 (12 top/bottom, 11 sides), field 52 high, filter 42x52; 14px below the header.
     out.add(
-      Container(
-        key: const Key('home-v5-search-panel'),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: N11Colors.yellow,
-          borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
-        ),
-        child: Column(
-          children: <Widget>[
-            Row(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: Container(
+          key: const Key('home-v5-search-panel'),
+          padding: const EdgeInsets.fromLTRB(11, 12, 11, 12),
+          decoration: BoxDecoration(
+            color: N11Colors.yellow,
+            borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
+          ),
+          child: SizedBox(
+            height: 52,
+            child: Row(
               children: <Widget>[
                 Expanded(child: _FakeField(onTap: _openSearch)),
                 const SizedBox(width: N11Space.gap2),
@@ -563,52 +605,67 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                   child: IconButton(
                     key: const Key('home-filter'),
                     tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-                    constraints: const BoxConstraints(
-                      minWidth: kTapMin,
-                      minHeight: kTapMin,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 42,
+                      height: 52,
                     ),
                     color: c.filtersActive
                         ? N11Colors.accentOrange
                         : N11Colors.black,
                     onPressed: _openFilters,
-                    icon: const Icon(Icons.tune, size: 22),
+                    icon: const Icon(Icons.tune, size: 24),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
     // Category row sits on the light background below the yellow header (F01), scrolls sideways.
     if (c.categories.isNotEmpty) {
+      // Figma F01: white card 358x92 (radius 18), padding 9 / 8; the title below starts 20px under it (12 list gap + 8).
       out.add(
-        SingleChildScrollView(
-          key: const Key('home-v5-category-row'),
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: <Widget>[
-              _chip(
-                'home-cat-all',
-                'Tất cả',
-                c.categoryId == null,
-                () => c.categoryId == null
-                    ? null
-                    : c.toggleCategory(c.categoryId!),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            key: const Key('home-v5-category-card'),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            decoration: BoxDecoration(
+              color: N11Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: SingleChildScrollView(
+              key: const Key('home-v5-category-row'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  _chip(
+                    'home-cat-all',
+                    'Tất cả',
+                    c.categoryId == null,
+                    () => c.categoryId == null
+                        ? null
+                        : c.toggleCategory(c.categoryId!),
+                    icon: kCategoryAllIcon,
+                  ),
+                  for (final CategoryChoice cat in c.categories)
+                    _chip(
+                      'home-cat-${cat.id}',
+                      cat.name,
+                      c.categoryId == cat.id,
+                      () => c.toggleCategory(cat.id),
+                      icon: categoryIconFor(cat.id),
+                    ),
+                ],
               ),
-              for (final CategoryChoice cat in c.categories)
-                _chip(
-                  'home-cat-${cat.id}',
-                  cat.name,
-                  c.categoryId == cat.id,
-                  () => c.toggleCategory(cat.id),
-                ),
-            ],
+            ),
           ),
         ),
       );
     }
-    if (c.area != null) out.add(_DiscoveryBanner(areaName: c.area!.name));
     if (c.stale) {
       out.add(
         N11Banner(
@@ -625,10 +682,20 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         ),
       );
     }
+    // Figma F01: ExtraBold 22/30 #191919; the shop grid starts 15px below it (12 list gap + 3).
     out.add(
-      Text(
-        'Quán gần bạn',
-        style: N11Text.title.copyWith(fontSize: N11V5.homeTitleSize),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Text(
+          'Quán gần bạn',
+          key: const Key('home-v5-section-title'),
+          style: N11Text.title.copyWith(
+            fontSize: N11V5.homeTitleSize,
+            height: 30 / 22,
+            fontWeight: FontWeight.w800,
+            color: N11Colors.black,
+          ),
+        ),
       ),
     );
     if (c.outsideCoverage) {
@@ -740,44 +807,62 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
             );
           }
         } else {
-          for (final ShopCardData s in c.shops) {
+          // Issue #411: one horizontal row of at most 5 cards, then "Xem tất cả" (the full list opens with every loaded shop).
+          // Owner 21/11: "Quán nổi bật" above; without GPS, "Quán gần bạn" uses the same featured order and shows no distance.
+          if (kHomeFeaturedShopsEnabled) {
             out.add(
-              ShopCard(
-                key: Key('shop-${s.shopId}'),
-                shop: s,
-                stale: c.stale,
+              HomeShopSection(
+                sectionId: 'home-featured',
+                shops: featuredOrder(c.shops),
+                // The same road distances as the nearby row (one cache, no new request); no distance is invented.
+                distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
                 customerLocation: _position.fix,
-                distance: c.distances.of(s, _position.fix),
                 locating: _position.loading,
-                onTap: () => _openShop(
+                stale: c.stale,
+                onOpenShop: (ShopCardData s) => _openShop(
                   context,
                   widget.publicApi,
                   s,
                   ratings: widget.ratings,
                   onReturn: c.freshness.reload,
                 ),
+                onSeeAll: () => _openShopsAll(featured: true),
               ),
             );
           }
-          if (c.hasMore) {
-            out.add(
-              N11Button(
-                key: const Key('home-more'),
-                label: c.loadingMore ? 'Đang tải…' : 'Xem thêm',
-                kind: ButtonKind.secondary,
-                loading: c.loadingMore,
-                onPressed: c.loadingMore ? null : c.loadMore,
+          out.add(
+            HomeShopSection(
+              sectionId: 'home-nearby',
+              shops: _position.fix == null ? featuredOrder(c.shops) : nearbyByRoadDistance(
+                c.shops,
+                (ShopCardData s) => c.distances.of(s, _position.fix),
               ),
-            );
-          }
+              distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
+              customerLocation: _position.fix,
+              locating: _position.loading,
+              stale: c.stale,
+              note: _position.fix == null && !_position.loading
+                  ? 'Bật vị trí để xem quán gần bạn theo khoảng cách đường đi.'
+                  : null,
+              onOpenShop: (ShopCardData s) => _openShop(
+                context,
+                widget.publicApi,
+                s,
+                ratings: widget.ratings,
+                onReturn: c.freshness.reload,
+              ),
+              onSeeAll: () => _openShopsAll(featured: false),
+            ),
+          );
         }
     }
     return out;
   }
 
-  Widget _chip(String key, String label, bool on, VoidCallback? onTap) =>
+  Widget _chip(String key, String label, bool on, VoidCallback? onTap,
+          {required IconData icon}) =>
       Padding(
-        padding: const EdgeInsets.only(right: N11Space.gap2),
+        padding: const EdgeInsets.only(right: N11V5.homeCategoryGap),
         child: Semantics(
           selected: on,
           button: true,
@@ -785,44 +870,41 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           excludeSemantics: true,
           child: Material(
             key: Key(key),
-            color: on ? N11Colors.yellowSoft : N11Colors.white,
-            borderRadius: BorderRadius.circular(N11V5.inputRadius),
+            color: on ? N11Colors.homeCategorySelected : N11Colors.white,
+            borderRadius: BorderRadius.circular(kRadiusControl),
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(N11V5.inputRadius),
+              borderRadius: BorderRadius.circular(kRadiusControl),
               child: Container(
-                width: N11V5.categoryTileWidth,
-                constraints: const BoxConstraints(
-                  minHeight: N11V5.categoryTileMinHeight,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                // Figma F01: tile 86x76, icon 25 at 8 from the top, label 11/17 at 42.
+                width: 86,
+                constraints: const BoxConstraints(minHeight: 76),
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
                 decoration: BoxDecoration(
                   border: Border.all(
                     color: on ? N11Colors.accentOrange : N11Colors.line,
                   ),
-                  borderRadius: BorderRadius.circular(N11V5.inputRadius),
+                  borderRadius: BorderRadius.circular(kRadiusControl),
                 ),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
                     Icon(
-                      label == 'Tất cả'
-                          ? Icons.grid_view_rounded
-                          : Icons.restaurant_menu_rounded,
-                      size: 23,
+                      icon,
+                      size: 25,
                       color: on ? N11Colors.accentOrange : N11Colors.black,
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 9),
                     Text(
                       label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: N11Text.caption.copyWith(
-                        fontSize: 12,
-                        height: 1.2,
-                        fontWeight: on ? FontWeight.w800 : FontWeight.w600,
-                        color: N11Colors.black,
+                        fontSize: 11,
+                        height: 17 / 11,
+                        fontWeight: FontWeight.w700,
+                        color: N11Colors.homeInk,
                       ),
                     ),
                   ],
@@ -834,66 +916,500 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       );
 }
 
-/// Brand-only V5 hero. It reflects the area already resolved by real GPS/API
-/// data and deliberately contains no invented shop, dish, price or promotion.
-class _DiscoveryBanner extends StatelessWidget {
-  const _DiscoveryBanner({required this.areaName});
+/// Short distance for the Home tile only: a road distance as "1,3 km" (never a number without a route), otherwise one short word.
+/// The full road wording stays in the tile's semantics label, and [distanceLine] is unchanged for Search and the shop detail.
+String homeDistanceText(RouteDistance distance, {bool locating = false}) {
+  if (locating) return 'Đang tìm…';
+  switch (distance.kind) {
+    case RouteDistanceKind.route:
+      return RouteDistance.text(distance.meters!);
+    case RouteDistanceKind.loading:
+      return 'Đang tính…';
+    case RouteDistanceKind.noPosition:
+    case RouteDistanceKind.unavailable:
+      return 'Chưa rõ';
+  }
+}
 
-  final String areaName;
+/// Issue #385: one shop tile of the Home grid, two per row. Home only; Search keeps [ShopCard].
+/// Vertical layout: full-width image, state, name (up to 2 lines), then the compact road distance.
+/// A tile without a real rating shows no badge and never invents a score.
+class HomeShopTile extends StatelessWidget {
+  const HomeShopTile({
+    super.key,
+    required this.shop,
+    required this.onTap,
+    this.customerLocation,
+    this.locating = false,
+    this.distance = RouteDistance.noPosition,
+    this.stale = false,
+    this.keyScope = '',
+  });
+
+  /// Issue #411: prefix of the inner keys (rating, distance) so the featured row and the nearby row never share a key.
+  final String keyScope;
+  final LocationFix? customerLocation;
+  final RouteDistance distance;
+  final bool locating;
+  final ShopCardData shop;
+  final bool stale;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    key: const Key('home-v5-banner'),
-    constraints: const BoxConstraints(minHeight: 112),
-    padding: const EdgeInsets.all(N11Space.gap4),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: <Color>[N11Colors.homeBannerStart, N11Colors.homeBannerEnd],
+  Widget build(BuildContext context) {
+    final ({String label, ChipKind kind}) chip = stale
+        ? (label: 'Chưa cập nhật', kind: ChipKind.warn)
+        : _stateChip(shop.reason);
+    // Only a real rating is shown: no count of zero and no invented score.
+    final bool rated = shop.ratingCount > 0 && shop.ratingAverage != null;
+    final String score = rated ? shop.ratingAverage!.toStringAsFixed(1) : '';
+    final String shortDistance = homeDistanceText(distance, locating: locating);
+    final String fullDistance = 'Quãng đường đường bộ từ quán đến vị trí hiện tại: $shortDistance';
+    return Semantics(
+      button: true,
+      label:
+          '${shop.name}, ${rated ? '$score sao' : 'chưa có đánh giá'}, $fullDistance, ${chip.label}',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Material(
+        color: N11Colors.white,
+        borderRadius: BorderRadius.circular(N11V5.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(N11V5.cardRadius),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  key: Key('shop-image-frame-${shop.shopId}'),
+                  aspectRatio: 4 / 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      ShopLogoImage(
+                        key: Key('shop-logo-${shop.shopId}'),
+                        url: shop.logoUrl,
+                        borderRadius: N11V5.cardRadius,
+                      ),
+                      if (rated)
+                        Positioned(
+                          top: N11Space.gap2,
+                          right: N11Space.gap2,
+                          child: Container(
+                            key: Key('${keyScope}shop-rating-${shop.shopId}'),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: N11Colors.white,
+                              borderRadius: BorderRadius.circular(kRadiusPill),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const Icon(Icons.star_rounded, size: 13, color: N11Colors.yellow),
+                                const SizedBox(width: 2),
+                                Text(
+                                  score,
+                                  style: N11Text.caption.copyWith(fontSize: 11, height: 1.2, fontWeight: FontWeight.w800),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(N11Space.gap2, N11Space.gap2, N11Space.gap2, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: N11Chip(chip.label, key: Key('shop-status-${shop.shopId}'), kind: chip.kind),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(N11Space.gap2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        shop.name,
+                        key: Key('shop-name-${shop.shopId}'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.route_outlined, size: 13, color: N11Colors.ink2),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              shortDistance,
+                              key: Key('${keyScope}shop-distance-${shop.shopId}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: N11Text.caption.copyWith(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      borderRadius: BorderRadius.circular(N11V5.cardRadius),
-      boxShadow: N11V5.cardShadow,
-    ),
-    child: Row(
+    );
+  }
+}
+
+/// Issue #411: a Home carousel shows at most this many shop cards; the card after them is "Xem tất cả" (the full list of that section).
+const int kHomeCarouselCardLimit = 5;
+
+/// Issue #411 (Owner 21/11): "Quán nổi bật" is shown above "Quán gần bạn".
+const bool kHomeFeaturedShopsEnabled = true;
+
+/// Issue #411 (Owner 21/11): a featured shop has an average of at least 4.0 stars AND at least 5 visible customer reviews.
+const double kFeaturedMinAverage = 4.0;
+const int kFeaturedMinReviews = 5;
+
+/// True when the shop meets the featured rule (real review data only).
+bool isFeaturedRated(ShopCardData s) => s.ratingAverage != null && s.ratingCount >= kFeaturedMinReviews && s.ratingAverage! >= kFeaturedMinAverage;
+
+/// Issue #411 (Owner 21/11): the featured order of the loaded shops, the same for "Quán nổi bật" and for "Quán gần bạn" without GPS.
+/// 1) shops that meet the rule: higher average first, then more reviews, then name;
+/// 2) the rest, newest creation date first (a shop with no date last, in server order). Each shop appears once.
+/// Never invents a rating or a date: an unrated shop shows as unrated.
+List<ShopCardData> featuredOrder(List<ShopCardData> shops) {
+  final Set<String> seen = <String>{};
+  final List<(int, ShopCardData)> unique = <(int, ShopCardData)>[
+    for (final (int i, ShopCardData s) in shops.indexed)
+      if (seen.add(s.shopId)) (i, s),
+  ];
+  final List<(int, ShopCardData)> rated = unique.where((r) => isFeaturedRated(r.$2)).toList()
+    ..sort((a, b) {
+      final int byAverage = b.$2.ratingAverage!.compareTo(a.$2.ratingAverage!);
+      if (byAverage != 0) return byAverage;
+      final int byCount = b.$2.ratingCount.compareTo(a.$2.ratingCount);
+      if (byCount != 0) return byCount;
+      final int byName = a.$2.name.compareTo(b.$2.name);
+      return byName != 0 ? byName : a.$1.compareTo(b.$1);
+    });
+  final List<(int, ShopCardData)> rest = unique.where((r) => !isFeaturedRated(r.$2)).toList()
+    ..sort((a, b) {
+      final DateTime? da = a.$2.createdAt;
+      final DateTime? db = b.$2.createdAt;
+      if (da != null && db != null && da != db) return db.compareTo(da);
+      if ((da == null) != (db == null)) return da == null ? 1 : -1;
+      return a.$1.compareTo(b.$1);
+    });
+  return <ShopCardData>[for (final r in rated) r.$2, for (final r in rest) r.$2];
+}
+
+/// Issue #411 "Quán gần bạn": shops with a known ROAD distance come first, nearest first; the rest keep the server order. Ties and unknown
+/// distances keep the server order (stable), and no straight-line distance is used.
+List<ShopCardData> nearbyByRoadDistance(
+  List<ShopCardData> shops,
+  RouteDistance Function(ShopCardData shop) distanceOf,
+) {
+  final List<RouteDistance> distances = <RouteDistance>[for (final ShopCardData s in shops) distanceOf(s)];
+  int? metersAt(int i) => distances[i].kind == RouteDistanceKind.route ? distances[i].meters : null;
+  final List<int> order = List<int>.generate(shops.length, (int i) => i);
+  order.sort((int a, int b) {
+    final int? ma = metersAt(a);
+    final int? mb = metersAt(b);
+    if (ma != null && mb != null && ma != mb) return ma.compareTo(mb);
+    if ((ma == null) != (mb == null)) return ma == null ? 1 : -1;
+    return a.compareTo(b);
+  });
+  return <ShopCardData>[for (final int i in order) shops[i]];
+}
+
+/// Issue #411: one Home section of "Quán gần bạn" / "Quán nổi bật" — ONE horizontal row of at most [kHomeCarouselCardLimit] shop cards, then the
+/// "Xem tất cả" card. The next card peeks past the edge so the row reads as scrollable. It never grows downward; the full list opens with "Xem tất cả".
+/// The title belongs to the caller (Home), so the same widget serves every section.
+class HomeShopSection extends StatelessWidget {
+  const HomeShopSection({
+    super.key,
+    required this.sectionId,
+    required this.shops,
+    required this.onOpenShop,
+    required this.onSeeAll,
+    this.distanceOf,
+    this.customerLocation,
+    this.locating = false,
+    this.stale = false,
+    this.note,
+  });
+
+  /// Keys only: `<sectionId>-carousel`, `<sectionId>-see-all`, `<sectionId>-note`.
+  final String sectionId;
+  final List<ShopCardData> shops;
+  final void Function(ShopCardData shop) onOpenShop;
+  final VoidCallback onSeeAll;
+  final RouteDistance Function(ShopCardData shop)? distanceOf;
+  final LocationFix? customerLocation;
+  final bool locating;
+  final bool stale;
+
+  /// A short honest line above the row (for example "turn on location"), or null.
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ShopCardData> shown = shops.take(kHomeCarouselCardLimit).toList();
+    // The featured row repeats shops of the nearby row: its keys carry their own prefix so a finder never matches two.
+    final String keyScope = sectionId == 'home-featured' ? 'featured-' : '';
+    return Column(
+      key: Key('$sectionId-section'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text(
-                'Khám phá món ngon gần bạn',
-                style: N11Text.h2.copyWith(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: N11Space.gap2),
+            child: Text(note!, key: Key('$sectionId-note'), style: N11Text.caption),
+          ),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            // Two cards and a peek of the third on a 320-390 px phone; the width stays inside the page padding.
+            final double cardWidth = (box.maxWidth * 0.56).clamp(150.0, 190.0).toDouble();
+            return SingleChildScrollView(
+              key: Key('$sectionId-carousel'),
+              scrollDirection: Axis.horizontal,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final ShopCardData s in shown) ...<Widget>[
+                      SizedBox(
+                        width: cardWidth,
+                        child: HomeShopTile(
+                          key: Key('${keyScope}shop-${s.shopId}'),
+                          keyScope: keyScope,
+                          shop: s,
+                          stale: stale,
+                          customerLocation: customerLocation,
+                          locating: locating,
+                          distance: distanceOf?.call(s) ?? RouteDistance.noPosition,
+                          onTap: () => onOpenShop(s),
+                        ),
+                      ),
+                      const SizedBox(width: N11Space.gap3),
+                    ],
+                    SizedBox(
+                      width: 120,
+                      child: _SeeAllCard(key: Key('$sectionId-see-all'), onTap: onSeeAll),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: N11Space.gap1),
-              Text(
-                'Giao nhanh tại $areaName',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: N11Text.caption.copyWith(color: N11Colors.black),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: N11Space.gap3),
-        Container(
-          width: 64,
-          height: 64,
-          decoration: const BoxDecoration(
-            color: N11Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.delivery_dining_rounded,
-            size: 36,
-            color: N11Colors.accentOrange,
-          ),
+            );
+          },
         ),
       ],
-    ),
-  );
+    );
+  }
+}
+
+/// The last card of a Home carousel: a plain white card with the yellow arrow, same border and radius as a shop tile.
+class _SeeAllCard extends StatelessWidget {
+  const _SeeAllCard({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Xem tất cả',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Material(
+        color: N11Colors.white,
+        borderRadius: BorderRadius.circular(N11V5.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(N11V5.cardRadius),
+          child: Container(
+            padding: const EdgeInsets.all(N11Space.gap2),
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle),
+                  child: const Icon(Icons.arrow_forward, size: 22, color: N11Colors.black),
+                ),
+                const SizedBox(height: N11Space.gap2),
+                Text(
+                  'Xem tất cả',
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: N11Text.caption.copyWith(fontSize: 13, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue #411 "Xem tất cả" of "Quán gần bạn": every loaded shop of the same list as Home, two per row, scrolling DOWN (no 5-card limit).
+/// The next page loads near the end of the list or with "Xem thêm". "Quay lại" returns to Home, which keeps its scroll position.
+class NearbyShopsAllScreen extends StatefulWidget {
+  const NearbyShopsAllScreen({
+    super.key,
+    required this.controller,
+    required this.position,
+    required this.onOpenShop,
+    this.featured = false,
+  });
+
+  final DiscoveryController controller;
+  final DiscoveryPosition position;
+  final void Function(ShopCardData shop) onOpenShop;
+
+  /// Issue #411 (Owner 21/11): "Quán nổi bật" — the featured order, no distance. False = "Quán gần bạn" (featured order only without GPS).
+  final bool featured;
+
+  @override
+  State<NearbyShopsAllScreen> createState() => _NearbyShopsAllScreenState();
+}
+
+class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
+  final ScrollController _scroll = ScrollController();
+  DiscoveryController get c => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_maybeLoadMore);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _maybeLoadMore() {
+    if (!_scroll.hasClients) return;
+    final ScrollPosition p = _scroll.position;
+    if (p.pixels >= p.maxScrollExtent - 240) unawaited(c.loadMore());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: Key(widget.featured ? 'featured-all-screen' : 'nearby-all-screen'),
+      backgroundColor: N11Colors.white,
+      appBar: AppBar(
+        title: Text(widget.featured ? 'Quán nổi bật' : 'Quán gần bạn'),
+        backgroundColor: N11Colors.white,
+        foregroundColor: N11Colors.black,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: Listenable.merge(<Listenable>[c, widget.position, c.distances]),
+          builder: (BuildContext context, Widget? child) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) unawaited(c.distances.want(c.shops, widget.position.fix));
+            });
+            // Issue #411: featured order (no distance) for "Quán nổi bật" and without GPS; road distance order with GPS.
+            final bool byFeatured = widget.featured || widget.position.fix == null;
+            final List<ShopCardData> shops = byFeatured
+                ? featuredOrder(c.shops)
+                : nearbyByRoadDistance(
+                    c.shops,
+                    (ShopCardData s) => c.distances.of(s, widget.position.fix),
+                  );
+            if (shops.isEmpty && c.listState == DiscoveryLoad.ready) {
+              return const EmptyState(
+                key: Key('nearby-all-empty'),
+                icon: Icons.place_outlined,
+                title: 'Chưa có quán nào',
+                text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn.',
+              );
+            }
+            final int rows = (shops.length + 1) ~/ 2;
+            return ListView.builder(
+              key: const Key('nearby-all-list'),
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, N11Space.gap8),
+              itemCount: rows + 1,
+              itemBuilder: (BuildContext context, int index) {
+                if (index == rows) return _footer();
+                final int i = index * 2;
+                HomeShopTile tile(ShopCardData s) => HomeShopTile(
+                      key: Key('shop-${s.shopId}'),
+                      shop: s,
+                      stale: c.stale,
+                      customerLocation: widget.position.fix,
+                      distance: c.distances.of(s, widget.position.fix),
+                      locating: widget.position.loading,
+                      onTap: () => widget.onOpenShop(s),
+                    );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(child: tile(shops[i])),
+                        const SizedBox(width: N11Space.gap3),
+                        Expanded(child: i + 1 < shops.length ? tile(shops[i + 1]) : const SizedBox.shrink()),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _footer() {
+    if (c.loadingMore) {
+      return const Padding(
+        key: Key('nearby-all-loading'),
+        padding: EdgeInsets.symmetric(vertical: N11Space.gap3),
+        child: Center(child: Text('Đang tải…', style: N11Text.caption)),
+      );
+    }
+    if (c.hasMore) {
+      return N11Button(
+        key: const Key('nearby-all-more'),
+        label: 'Xem thêm',
+        kind: ButtonKind.secondary,
+        onPressed: c.loadMore,
+      );
+    }
+    return const SizedBox.shrink();
+  }
 }
 
 /// KP03: group and open-only filters; the area follows foreground GPS and is not editable.
@@ -1483,17 +1999,37 @@ class _PositionButton extends StatelessWidget {
         : position.failure == LocationFailure.disabled
         ? 'Bật vị trí'
         : 'Thử lại';
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: TextButton.icon(
-        key: const Key('discovery-locate'),
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+    // Figma F01 inline action: white pill, border #E7B628, radius 15, at least 78x30, Bold 12 #A65300.
+    return Padding(
+      padding: const EdgeInsets.only(left: N11Space.gap2),
+      child: Material(
+        color: N11Colors.white,
+        shape: const RoundedRectangleBorder(
+          side: BorderSide(color: N11Colors.homeLocateBorder),
+          borderRadius: BorderRadius.all(Radius.circular(15)),
         ),
-        onPressed: busy ? null : retry ?? position.locate,
-        icon: const Icon(Icons.my_location, size: 16),
-        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: InkWell(
+          key: const Key('discovery-locate'),
+          borderRadius: const BorderRadius.all(Radius.circular(15)),
+          onTap: busy ? null : retry ?? position.locate,
+          // Exactly 30 high (a Center here would take the whole 48 px header height); at least 78 wide.
+          child: Container(
+            height: 30,
+            constraints: const BoxConstraints(minWidth: 78),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: N11Colors.homeLocateInk,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

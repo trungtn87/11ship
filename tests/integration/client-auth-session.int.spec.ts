@@ -35,6 +35,7 @@ const PRIVACY = 'privacy-20261114-v3';
 const WEB_FOOD = { device_id: 'web-food-0001', platform: 'WEB', app: 'FOOD' };
 const WEB_SHIP = { device_id: 'web-ship-0001', platform: 'WEB', app: 'SHIP' };
 const ANDROID_FOOD = { device_id: 'android-device-0001', platform: 'ANDROID', app: 'FOOD' };
+const IOS_FOOD = { device_id: 'ios-device-0001', platform: 'IOS', app: 'FOOD' };
 const IDENTITY_KEYS = [
   'user_id',
   'phone_normalized',
@@ -308,6 +309,22 @@ describe('M01.04 — client login, me, context, logout', () => {
       const again = await loginOk(user, ANDROID_FOOD);
       await expireSession(app.pool, again.sessionId);
       expect(errorCode(await me(again.token))).toBe('SESSION_EXPIRED');
+    });
+
+    it('iOS password login replaces prior sessions like Android; replay never revives them', async () => {
+      const user = await newCustomer();
+      const old = await loginOk(user, IOS_FOOD);
+      expect((await me(old.token)).status).toBe(200);
+      const next = await loginOk(user, { ...IOS_FOOD, app: 'SHIP' });
+      expect(errorCode(await me(old.token))).toBe('SESSION_REVOKED');
+      expect((await me(next.token)).status).toBe(200);
+      expect(errorCode(await login(user, { device: IOS_FOOD, key: old.key }))).toBe('AUTH_RESULT_NOT_REPLAYABLE');
+      const replay = await login(user, { device: { ...IOS_FOOD, app: 'SHIP' }, key: next.key });
+      expect(dataOf(replay).access_token).toBe(next.token);
+      const row = (await app.pool.query('SELECT auth_method, platform FROM app.sessions WHERE session_id = $1', [next.sessionId])).rows[0];
+      expect([row.auth_method, row.platform]).toEqual(['PASSWORD', 'IOS']);
+      expect((await logout(next.token)).status).toBe(204);
+      expect(errorCode(await me(next.token))).toBe('SESSION_REVOKED');
     });
 
     it('login quota survives device/app changes and expiry restores credential login', async () => {

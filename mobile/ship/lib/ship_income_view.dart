@@ -4,32 +4,28 @@ import 'package:n11_shared/n11_shared.dart';
 import 'ship_income_data.dart';
 
 // Thu nhập tab body (issue #395). Layout from the Owner-approved mockup (reference only): 4 period filters, the "Tổng thu nhập" card, a daily column
-// chart, the statistics, "Ví của tôi" and the recent transactions. Every number comes from the server; nothing here is a sample.
+// chart, the statistics and "Ví của tôi" (the entry to the wallet history). Every number comes from the server; nothing here is a sample.
 // Money labels say "ước tính": the fee is received outside the app.
 
 const String kIncomeBarHint = 'Chạm một cột để xem số của ngày đó.';
-const String kIncomeWhatIsCounted = 'Tổng thu nhập là phí giao của các đơn bạn đã hoàn tất trong kỳ, ước tính và nhận ngoài app. '
+const String kIncomeWhatIsCounted = 'Tổng thu nhập là phí giao (gồm tip) của các đơn bạn đã hoàn tất trong kỳ, ước tính và nhận ngoài app. '
+    'Phí giao khách trả tiền mặt vẫn được tính. Tiền hàng khách trả ngoài ứng dụng (COD) không được tính. '
     'Hoa hồng nền tảng là khoản trừ thật từ ví cho từng đơn hoàn tất. '
     'Thu nhập ước tính sau hoa hồng = Tổng thu nhập − hoa hồng. '
     'Bình quân/đơn = Tổng thu nhập ÷ số đơn hoàn thành. '
-    'Đơn hủy, thất bại hoặc đã nhả đơn không được tính. Nạp, rút và số dư ví không tính vào thu nhập. Kỳ tính theo giờ Việt Nam.';
+    'Đơn hủy, thất bại hoặc đã nhả đơn không được tính. Mỗi đơn chỉ tính một lần. '
+    'Nạp, rút, số dư ví và khoản điều chỉnh của quản trị không hiện ở đây. Kỳ tính theo giờ Việt Nam.';
 const String kIncomeUnknown = 'Chưa xác định';
 
 String _signedVnd(int amount) => amount == 0 ? formatVnd(0) : amount < 0 ? '−${formatVnd(-amount)}' : '+${formatVnd(amount)}';
 
 class IncomeBody extends StatefulWidget {
-  const IncomeBody({super.key, required this.source, this.wallet, this.walletEntry, this.onOpenHistory, this.now});
+  const IncomeBody({super.key, required this.source, this.walletEntry, this.now});
 
   final IncomeSource source;
 
-  /// The wallet source of the recent transactions. Null hides that section.
-  final WalletSource? wallet;
-
-  /// The "Ví của tôi" row (the app passes [WalletEntry]).
+  /// The "Ví của tôi" row (the app passes [WalletEntry]); it opens the wallet history.
   final Widget? walletEntry;
-
-  /// "Xem tất cả": opens the wallet history.
-  final VoidCallback? onOpenHistory;
 
   /// Test hook for the clock; the app uses the device clock (in UTC).
   final DateTime Function()? now;
@@ -44,7 +40,6 @@ class _IncomeBodyState extends State<IncomeBody> {
   IncomeLoad _load = const IncomeLoading();
   int? _selected;
   int _request = 0;
-  Future<WalletLoad<List<WalletTxn>>>? _recent;
 
   DateTime get _nowUtc => widget.now?.call() ?? DateTime.now().toUtc();
 
@@ -54,7 +49,6 @@ class _IncomeBodyState extends State<IncomeBody> {
   void initState() {
     super.initState();
     _fetch(initial: true);
-    _recent = widget.wallet?.recentTxns();
   }
 
   Future<void> _fetch({bool initial = false}) async {
@@ -132,7 +126,6 @@ class _IncomeBodyState extends State<IncomeBody> {
       _summaryCard(summary, load),
       _chartCard(summary, load),
       if (widget.walletEntry != null) widget.walletEntry!,
-      _recentCard(),
     ]);
   }
 
@@ -175,7 +168,7 @@ class _IncomeBodyState extends State<IncomeBody> {
           Text(period, key: const Key('income-period'), style: N11Text.caption),
           const SizedBox(height: N11Space.gap2),
           Text(money(summary?.feeVnd), key: const Key('income-total'), style: N11Text.title),
-          const Text('Ước tính: phí giao của đơn đã hoàn tất, nhận ngoài app.', style: N11Text.caption),
+          const Text('Ước tính: phí giao (gồm tip) của đơn đã hoàn tất, nhận ngoài app.', style: N11Text.caption),
           const SizedBox(height: N11Space.gap3),
           _line('Hoa hồng nền tảng', failed || loading || summary == null ? money(null) : _signedVnd(summary.commissionVnd), 'income-commission'),
           _line(
@@ -202,17 +195,26 @@ class _IncomeBodyState extends State<IncomeBody> {
 
   Widget _line(String label, String value, String key, {String? tag}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: N11Space.gap1),
-        child: Row(children: <Widget>[
-          Expanded(child: Text(label, style: N11Text.body)),
-          if (tag != null) ...<Widget>[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: N11Space.gap2, vertical: 2),
-              decoration: BoxDecoration(color: N11Colors.warningSoft, borderRadius: BorderRadius.circular(8)),
-              child: Text(tag, style: N11Text.caption.copyWith(color: N11Colors.warning)),
-            ),
-            const SizedBox(width: N11Space.gap2),
-          ],
-          Text(value, key: Key(key), style: N11Text.bodyStrong),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
+          // The label and the figure share the row; at large text scales the label wraps and the figure (with its tag) may wrap too, never overflow.
+          Expanded(flex: 3, child: Text(label, style: N11Text.body)),
+          const SizedBox(width: N11Space.gap2),
+          Flexible(
+            flex: 2,
+            child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.end, children: <Widget>[
+              if (tag != null) ...<Widget>[
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: N11Space.gap2, vertical: 2),
+                    decoration: BoxDecoration(color: N11Colors.warningSoft, borderRadius: BorderRadius.circular(8)),
+                    child: Text(tag, style: N11Text.caption.copyWith(color: N11Colors.warning)),
+                  ),
+                ),
+                const SizedBox(width: N11Space.gap2),
+              ],
+              Flexible(child: Text(value, key: Key(key), style: N11Text.bodyStrong, textAlign: TextAlign.end)),
+            ]),
+          ),
         ]),
       );
 
@@ -238,11 +240,16 @@ class _IncomeBodyState extends State<IncomeBody> {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            selected == null ? kIncomeBarHint : _dayLine(summary.daily[selected]),
-            key: const Key('income-bar-detail'),
-            style: N11Text.caption,
-          ),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            Expanded(
+              child: Text(
+                selected == null ? '' : _dayLine(summary.daily[selected]),
+                key: const Key('income-bar-detail'),
+                style: N11Text.caption,
+              ),
+            ),
+            const InfoHint(title: 'Biểu đồ theo ngày', message: kIncomeBarHint),
+          ]),
           const SizedBox(height: N11Space.gap2),
           _DailyBars(days: summary.daily, selected: selected, onSelect: (int index) => setState(() => _selected = index)),
         ],
@@ -266,67 +273,6 @@ class _IncomeBodyState extends State<IncomeBody> {
     final String commission = day.commissionVnd == 0 ? '' : ' · hoa hồng ${_signedVnd(day.commissionVnd)}';
     final String provisional = day.provisional ? ' (tạm tính)' : '';
     return '${shortDay(parsed)} · ${day.completed} đơn · ${formatVnd(day.feeVnd)}$commission · sau hoa hồng ${formatVnd(day.netVnd)}$provisional';
-  }
-
-  Widget _recentCard() {
-    final Future<WalletLoad<List<WalletTxn>>>? recent = _recent;
-    if (recent == null) {
-      return const SizedBox.shrink();
-    }
-    return N11Card(
-      key: const Key('income-recent'),
-      child: FutureBuilder<WalletLoad<List<WalletTxn>>>(
-        future: recent,
-        builder: (BuildContext context, AsyncSnapshot<WalletLoad<List<WalletTxn>>> snapshot) {
-          final WalletLoad<List<WalletTxn>>? load = snapshot.data;
-          final List<Widget> rows = <Widget>[];
-          String note;
-          if (load is WalletReady<List<WalletTxn>>) {
-            for (final WalletTxn txn in load.value.take(5)) {
-              rows.add(_txnRow(txn));
-            }
-            note = rows.isEmpty ? 'Chưa có giao dịch.' : '';
-          } else if (load is WalletEmpty<List<WalletTxn>>) {
-            note = 'Chưa có giao dịch.';
-          } else if (load is WalletFailed<List<WalletTxn>>) {
-            note = 'Chưa tải được giao dịch.';
-          } else {
-            note = 'Đang tải…';
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(children: <Widget>[
-                const Icon(Icons.history, color: N11Colors.ink2),
-                const SizedBox(width: N11Space.gap2),
-                Expanded(child: Text('Giao dịch gần đây', style: N11Text.h2)),
-                if (widget.onOpenHistory != null) TextButton(key: const Key('income-open-history'), onPressed: widget.onOpenHistory, child: const Text('Xem tất cả')),
-              ]),
-              if (note.isNotEmpty) Text(note, key: const Key('income-recent-note'), style: N11Text.body),
-              ...rows,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _txnRow(WalletTxn txn) {
-    final String when = '${txn.at.day.toString().padLeft(2, '0')}/${txn.at.month.toString().padLeft(2, '0')} ${txn.at.hour.toString().padLeft(2, '0')}:${txn.at.minute.toString().padLeft(2, '0')}';
-    // Ledger movements keep their sign: a platform commission is a deduction (−), a top-up is +, a withdrawal is −.
-    final bool movement = txn.type == TxnType.commission || txn.type == TxnType.topup || txn.type == TxnType.withdraw;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: N11Space.gap1),
-      child: Row(children: <Widget>[
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Text(txn.title, style: N11Text.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(when, style: N11Text.caption),
-          ]),
-        ),
-        Text(movement ? _signedVnd(txn.amount) : formatVnd(txn.amount.abs()), style: N11Text.bodyStrong),
-      ]),
-    );
   }
 }
 

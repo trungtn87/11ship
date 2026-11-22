@@ -127,11 +127,14 @@ void main() {
     expect(find.byType(N11BottomNav), findsOneWidget);
   });
 
-  testWidgets('four tabs for a guest (Gọi ship included) in the agreed order, ready banner shown', (WidgetTester tester) async {
+  testWidgets('five tabs for a guest in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Tài khoản']) {
+    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Quán', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
+    await tester.tap(find.byKey(const Key('tab-shop')));
+    await tester.pumpAndSettle();
+    expect(find.text('Đăng nhập để mở hoặc quản lý quán.'), findsOneWidget);
     // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
@@ -155,7 +158,7 @@ void main() {
     await tester.tap(find.byKey(const Key('register-next')));
     await tester.pumpAndSettle();
     expect(tester.widget<ListTile>(find.byKey(const Key('purpose-owner'))).selected, isTrue);
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
     expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
   });
 
@@ -166,7 +169,7 @@ void main() {
     final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
     server.owner = true;
     await session.refreshIdentity();
     expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
@@ -211,7 +214,7 @@ void main() {
     await pump(tester, (Uri uri, Duration t) async => const RawHealthResponse(status: 200, body: ''), cfg: const AppConfig());
     await openTab(tester, 'account');
     expect(tester.widget<N11Button>(find.byKey(const Key('open-login'))).onPressed, isNull);
-    expect(find.text(kNoServerReason), findsWidgets);
+    expect(find.text(kUnavailableReason), findsWidgets);
   });
 
   testWidgets('register (SMS code) -> signed-in account -> profile -> logout, all on the shell', (WidgetTester tester) async {
@@ -363,7 +366,8 @@ void main() {
     await tester.pumpWidget(N11App(brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tab-search')), findsNothing);
-    expect(find.text('Ốc 11'), findsOneWidget);
+    // Issue #411: a featured shop is shown in the "Quán nổi bật" row and again in "Quán gần bạn".
+    expect(find.text('Ốc 11'), findsWidgets);
     await tester.tap(find.byKey(const Key('home-search')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('search-field')), 'oc 11');

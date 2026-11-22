@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'form_feedback.dart';
+import 'info_hint.dart';
 
 import '../tokens.dart';
 
@@ -893,6 +894,7 @@ class N11Field extends StatefulWidget {
     this.textInputAction,
     this.requiredInput = false,
     this.validator,
+    this.info,
   });
 
   final Key fieldKey;
@@ -915,6 +917,9 @@ class N11Field extends StatefulWidget {
   final TextInputAction? textInputAction;
   final bool requiredInput;
   final String? Function(String value)? validator;
+
+  /// Giải thích phụ đặt sau icon ⓘ cạnh nhãn (issue #388); null thì không có icon.
+  final String? info;
 
   @override
   State<N11Field> createState() => _N11FieldState();
@@ -961,21 +966,30 @@ class _N11FieldState extends State<N11Field> {
     final Color? ring = error ? N11Colors.errorSoft : (focused ? N11Colors.yellowSoft : null);
     final Color hintInk = error ? N11Colors.errorInk : (ok ? N11Colors.successInk : N11Colors.ink2);
     final OutlineInputBorder none = OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: BorderSide.none);
+    final Widget labelText = Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: widget.label, style: N11Text.label),
+          if (widget.optionalLabel)
+            const TextSpan(
+              text: ' · không bắt buộc',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.ink2),
+            ),
+        ],
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text.rich(
-          TextSpan(
-            children: <InlineSpan>[
-              TextSpan(text: widget.label, style: N11Text.label),
-              if (widget.optionalLabel)
-                const TextSpan(
-                  text: ' · không bắt buộc',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.ink2),
-                ),
+        if (widget.info == null)
+          labelText
+        else
+          Row(
+            children: <Widget>[
+              Flexible(child: labelText),
+              InfoHint(title: widget.label, message: widget.info!),
             ],
           ),
-        ),
         const SizedBox(height: 6),
         Container(
           constraints: const BoxConstraints(minHeight: kControlHeight),

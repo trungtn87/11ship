@@ -93,8 +93,7 @@ M07FeedbackSlot shipperDeliveryFeedbackSlot({required M11Source source, required
 /// Rows of the Account tab: "Phản ánh của tôi" for everybody, plus the shop's customer ratings or the Shipper's scores.
 List<Widget> m11AccountEntries(BuildContext context, {required M11Source source, required ImagePickerPort picker, required M11Role role}) {
   return <Widget>[
-    if (role == M11Role.shop)
-      N11ListItem(key: const Key('open-shop-reviews'), icon: Icons.star_outline_rounded, title: 'Đánh giá của khách', sub: 'Xem đánh giá quán và phản hồi', onTap: () => Navigator.of(context).push<void>(n11Route(ShopReviewsScreen(source: source, title: 'Đánh giá của khách')))),
+    // The shop's customer reviews moved to Quán -> Hồ sơ quán (ShopProfileScreen); they are not listed in the account any more.
     if (role == M11Role.shipper)
       N11ListItem(key: const Key('open-shipper-reviews'), icon: Icons.star_outline_rounded, title: 'Đánh giá của tôi', sub: 'Điểm theo nguồn khách và quán', onTap: () => Navigator.of(context).push<void>(n11Route(ShipperReviewsScreen(source: source, picker: picker)))),
     N11ListItem(key: const Key('open-complaints'), icon: Icons.flag_outlined, title: 'Phản ánh của tôi', sub: 'Theo dõi, bổ sung và xem kết quả', onTap: () => Navigator.of(context).push<void>(n11Route(ComplaintsScreen(source: source, role: role, picker: picker)))),

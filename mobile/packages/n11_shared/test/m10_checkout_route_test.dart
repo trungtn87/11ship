@@ -137,6 +137,17 @@ Future<void> settle(WidgetTester tester) async {
 
 Finder key(String value) => find.byKey(Key(value));
 
+/// Tip is two steps: "Tip" opens the level dropdown, then 5.000đ is picked from its menu.
+Future<void> pickTip5000(WidgetTester tester) async {
+  await tester.ensureVisible(key('checkout-tip-on'));
+  await tester.tap(key('checkout-tip-on'));
+  await settle(tester);
+  await tester.ensureVisible(key('checkout-tip-level'));
+  await tester.tap(key('checkout-tip-level'));
+  await settle(tester);
+  await tester.tap(find.text('5.000đ').last);
+}
+
 const DeliveryAddress _pinned = DeliveryAddress(
   id: 'route-address',
   label: AddressLabel.home,
@@ -252,8 +263,7 @@ void main() {
     expect(drawn.last.length, 3);
 
     source.hold = true;
-    await tester.ensureVisible(key('checkout-tip-5000'));
-    await tester.tap(key('checkout-tip-5000'));
+    await pickTip5000(tester);
     await settle(tester);
 
     expect(key('checkout-route'), findsNothing, reason: 'the road of the previous quote must not stay on screen while the new quote is priced');
@@ -318,8 +328,7 @@ void main() {
 
     // While the reload is pending the tip changes: preview A (of the old cart) is now in flight.
     final int drawnBeforeTip = drawn.length;
-    await tester.ensureVisible(key('checkout-tip-5000'));
-    await tester.tap(key('checkout-tip-5000'));
+    await pickTip5000(tester);
     await tester.pump(const Duration(milliseconds: 400));
     await settle(tester);
     expect(source.pending, hasLength(1), reason: 'preview A of the old cart is in flight');
@@ -383,8 +392,7 @@ void main() {
 
     // While recovery waits, the tip changes: preview A (of the old cart) is in flight.
     final int drawnBeforeTip = drawn.length;
-    await tester.ensureVisible(key('checkout-tip-5000'));
-    await tester.tap(key('checkout-tip-5000'));
+    await pickTip5000(tester);
     await tester.pump(const Duration(milliseconds: 400));
     await settle(tester);
     expect(source.pending, hasLength(1), reason: 'preview A of the old cart is in flight');

@@ -231,12 +231,15 @@ class AddressCard extends StatelessWidget {
 final RegExp _vnPhone = RegExp(r'^(?:\+84|84|0)[0-9]{9}$');
 
 class AddressFormScreen extends StatefulWidget {
-  const AddressFormScreen({super.key, required this.controller, this.editing});
+  const AddressFormScreen({super.key, required this.controller, this.editing, this.initialLabel});
 
   final AddressBookController controller;
 
   /// null = a new address.
   final DeliveryAddress? editing;
+
+  /// The label preselected for a new address ("Thêm địa chỉ Nhà" in the shared picker).
+  final AddressLabel? initialLabel;
 
   @override
   State<AddressFormScreen> createState() => _AddressFormScreenState();
@@ -275,7 +278,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     _longitude = a?.longitude;
     _note = TextEditingController(text: a?.deliveryNote ?? '');
     _initialPhone = _phone.text.replaceAll(' ', '');
-    _label = a?.label ?? AddressLabel.home;
+    _label = a?.label ?? widget.initialLabel ?? AddressLabel.home;
     _pickupDefault = a?.isPickupDefault ?? false;
     _deliveryDefault = a?.isDeliveryDefault ?? false;
   }
@@ -375,7 +378,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
               enabled: !locked,
               placeholder: '0912 345 678',
               tone: _submitted && _phoneError != null ? FieldTone.error : FieldTone.normal,
-              hint: _submitted ? _phoneError : 'Số shipper sẽ gọi khi giao hàng.',
+              hint: _submitted ? _phoneError : null,
+              info: 'Số shipper sẽ gọi khi giao hàng.',
               onChanged: () => setState(() {}),
             ),
             KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('address-text'), label: 'Địa chỉ', text: _address.text,

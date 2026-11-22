@@ -384,6 +384,93 @@ function aabReleaseViolations(text, jobs) {
   return out;
 }
 
+// Owner-approved narrow exception (G3, iOS): the manual TestFlight build may declare environment ios-release. Same discipline as the AAB release: one file,
+// one job, exact trigger/ref/runner/environment, pinned actions, a golden of every step, secrets only on the two steps that need them.
+const IOS_RELEASE = { file: 'mobile-ios-release.yml', job: 'testflight', environment: 'ios-release', runsOn: 'macos-26', ifRef: "github.ref == 'refs/heads/main'" };
+const IOS_GOLDEN = JSON.parse(readFileSync(join(ROOT, 'tests/deploy/fixtures/mobile-ios-release.golden.json'), 'utf8'));
+const IOS_UPLOAD_STEP = 'Build, sign and upload to TestFlight (the only step with the API key)';
+const IOS_PREPARE_STEP = 'Prepare the iOS project (push must be on for a release)';
+const IOS_SECRETS = { IOS_ASC_KEY_P8_BASE64: [IOS_UPLOAD_STEP], FCM_SHIP_IOS_API_KEY: [IOS_PREPARE_STEP], FCM_FOOD_IOS_API_KEY: [IOS_PREPARE_STEP] };
+const IOS_VARS_OK = ['IOS_ASC_KEY_ID', 'IOS_ASC_ISSUER_ID', 'IOS_TEAM_ID', 'FCM_PROJECT_ID', 'FCM_SENDER_ID', 'FCM_SHIP_IOS_APP_ID', 'FCM_FOOD_IOS_APP_ID'];
+const IOS_SCRIPTS_OK = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-ios.sh', 'mobile/tool/ios-testflight.sh'];
+const IOS_SETUP_ENV_STEPS = ['Source matches the run commit', 'App identity and version (pubspec.yaml)', 'Central endpoints (config/endpoints.json)'];
+
+function iosReleaseViolations(text) {
+  const out = [];
+  const add = reason => out.push(`${IOS_RELEASE.file}: ${reason}`);
+  if (/^(---|\.\.\.)\s*$/m.test(text)) add('multiple or explicit YAML documents are not allowed');
+  if (/(?:^|[:\-\[{,]\s*)[&*][A-Za-z0-9_-]+(?=\s|$|[,\]}])/m.test(text)) add('YAML anchors and aliases are not allowed');
+  if (/<<\s*:/.test(text)) add('YAML merge keys are not allowed');
+  if (/(?:^|[:\-\[{,]\s*)![!<A-Za-z][^\s]*/m.test(text)) add('YAML tags are not allowed');
+  if (/^\s*-\s*[\[{]/m.test(text) || /^\s*(?:"[^"\n]*"|'[^'\n]*'|[A-Za-z0-9_.-]+)\s*:\s*[\[{]/m.test(text)) add('flow-style collections are not allowed (block YAML only)');
+  if (/\bworkflow_run|repository_dispatch|workflow_call|deploy-vps|diagnose-vps|ci-gate|\bself-hosted\b/i.test(text)) add('must not trigger or call another workflow, or use a self-hosted runner');
+  if ((text.match(/^\s*environment\s*:/gm) ?? []).length !== 1) add('exactly one environment declaration is allowed');
+  if (!text.includes('if [ "$GITHUB_REF" != "refs/heads/main" ]; then')) add('a step must refuse any ref other than main');
+  let doc;
+  try { doc = yaml.load(text); } catch (error) { add(`YAML cannot be parsed (fail closed): ${String(error.message).split('\n')[0]}`); return out; }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) { add('the document is not a mapping'); return out; }
+  for (const key of Object.keys(doc)) if (!['name', 'on', 'concurrency', 'permissions', 'defaults', 'jobs'].includes(key)) add(`top-level key outside the allowlist: ${key}`);
+  if (!doc.on || typeof doc.on !== 'object' || JSON.stringify(Object.keys(doc.on)) !== '["workflow_dispatch"]') add('the only trigger is workflow_dispatch');
+  if (JSON.stringify(doc.permissions ?? null) !== JSON.stringify({ contents: 'read' })) add('permissions must be exactly contents: read');
+  const jobs = doc.jobs && typeof doc.jobs === 'object' ? doc.jobs : {};
+  if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify([IOS_RELEASE.job])) add(`must have exactly the job ${IOS_RELEASE.job}`);
+  const job = jobs[IOS_RELEASE.job] ?? {};
+  for (const key of Object.keys(job)) if (!AAB_JOB_KEYS.includes(key)) add(`job key outside the allowlist: ${key}`);
+  if (job.environment !== IOS_RELEASE.environment) add(`environment must be exactly ${IOS_RELEASE.environment}`);
+  if (job.if !== IOS_RELEASE.ifRef) add(`the job must be restricted to ${IOS_RELEASE.ifRef}`);
+  if (job['runs-on'] !== IOS_RELEASE.runsOn) add(`runs-on must be ${IOS_RELEASE.runsOn}`);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+  if (!Array.isArray(job.steps)) add('steps must be a block sequence');
+  steps.forEach((step, index) => {
+    if (!step || typeof step !== 'object' || Array.isArray(step)) { add(`step ${index} is not a mapping`); return; }
+    for (const key of Object.keys(step)) if (!AAB_STEP_KEYS.includes(key)) add(`step ${index} key outside the allowlist: ${key}`);
+  });
+  if (Array.isArray(job.steps) && !isDeepStrictEqual(canonicalSteps(job.steps), IOS_GOLDEN.steps)) {
+    add('the job steps differ from the approved golden (update tests/deploy/fixtures/mobile-ios-release.golden.json in the same change)');
+  }
+  for (const step of steps) {
+    const script = typeof step?.run === 'string' ? step.run : '';
+    if (/GITHUB_(OUTPUT|PATH|STEP_SUMMARY)\b/.test(script)) add(`step "${step.name}" writes a GITHUB_OUTPUT, GITHUB_PATH or GITHUB_STEP_SUMMARY channel (closed)`);
+    if (/GITHUB_ENV\b/.test(script) && !IOS_SETUP_ENV_STEPS.includes(step.name)) add(`step "${step.name}" writes GITHUB_ENV (only the public setup steps may)`);
+    if (/\b(os\.environ|getenv\(|process\.env|\$\{?ENV)/.test(script)) add(`step "${step.name}" reads an environment variable from code (indirect reading closed)`);
+  }
+  walkYaml(doc, (key, value) => {
+    if (key !== 'uses') return;
+    const pin = typeof value === 'string' ? /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([0-9a-f]{40})$/.exec(value) : null;
+    if (!pin || AAB_ACTIONS[pin[1]] !== pin[2] || !['actions/checkout', 'subosito/flutter-action'].includes(pin[1])) add(`uses "${String(value)}" is not an allowed action pinned by its full 40-hex SHA`);
+  });
+  walkYaml(doc, (key, value) => {
+    if (key !== 'run' || typeof value !== 'string') return;
+    for (const bad of [/\bgh\s/, /\bssh\b/, /\bscp\b/, /\brsync\b/, /\bwget\b/, /\bcurl\b/, /\bgit\s+(push|tag|remote|fetch)\b/, /scripts\/deploy/]) {
+      if (bad.test(value)) add(`a run step uses a forbidden command (${bad.source})`);
+    }
+    // The only URL-shaped text allowed is the https-origin validation pattern (data, not a request).
+    if (/https?:\/\//.test(value.replace("grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'", ''))) add('a run step may not contact any URL');
+    for (const found of value.matchAll(/\b(mobile\/tool\/[A-Za-z0-9_.-]+|scripts\/[A-Za-z0-9_./-]+|tests\/[A-Za-z0-9_./-]+)/g)) {
+      if (!IOS_SCRIPTS_OK.includes(found[1])) add(`a run step calls an unapproved script: ${found[1]}`);
+    }
+    for (const bad of shellScriptViolations(value)) add(bad);
+  });
+  walkYaml(doc, (key, value) => {
+    if (key === 'shell' && value !== 'bash') add(`shell must be bash, not ${JSON.stringify(value)}`);
+    if (key === 'env' && value && typeof value === 'object') {
+      for (const name of Object.keys(value)) {
+        if (/^(BASH_ENV|ENV|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*|PATH|NODE_OPTIONS|PYTHONPATH|PYTHONSTARTUP|GIT_SSH_COMMAND|BASH_FUNC_.*)$/.test(name)) add(`environment variable ${name} is not allowed in a step`);
+      }
+    }
+  });
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') continue;
+    const stepText = JSON.stringify(step);
+    for (const [, name] of stepText.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) {
+      if (!Object.hasOwn(IOS_SECRETS, name)) add(`secret not allowed in the release job: ${name}`);
+      else if (!IOS_SECRETS[name].includes(step.name)) add(`secret ${name} outside its step`);
+    }
+    for (const [, name] of stepText.matchAll(/vars\.([A-Za-z0-9_]+)/g)) if (!IOS_VARS_OK.includes(name)) add(`variable not allowed in the release job: ${name}`);
+  }
+  return out;
+}
+
 function topologyViolations(file, text) {
   const { jobs, outside } = splitWorkflow(text);
   const out = [];
@@ -413,6 +500,8 @@ function topologyViolations(file, text) {
     if (jobs.diagnose !== undefined) { try { assertPinnedReadOnly(file, 'diagnose', jobs.diagnose, allow); } catch (error) { out.push(error.message); } }
   } else if (file === AAB_RELEASE.file) {
     out.push(...aabReleaseViolations(text, jobs));
+  } else if (file === IOS_RELEASE.file) {
+    out.push(...iosReleaseViolations(text), ...unsafeReferences(jobs[IOS_RELEASE.job] ?? '').map(r => `${IOS_RELEASE.file}:${IOS_RELEASE.job} ${r}`));
   } else {
     for (const [name, block] of Object.entries(jobs)) {
       bad(name, unsafeReferences(block));
@@ -966,7 +1055,7 @@ test('multiple runs on one SHA: ANY success on the immutable SHA suffices, even 
 // Every release step that runs one checks the pin file FIRST, so a script changed without its pin fails that step (and this guard).
 const PIN_FILE = 'mobile/release/script-pins.sha256';
 // check-aab-release.py imports play_versioncode_gate.py, which runs inside the verify step, so it is pinned too (closure = direct scripts + imports).
-const PINNED_SCRIPTS = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py', 'mobile/tool/play_versioncode_gate.py'];
+const PINNED_SCRIPTS = ['mobile/tool/app-version.sh', 'mobile/tool/prepare-android.sh', 'mobile/tool/sign-aab.sh', 'mobile/tool/check-aab-release.py', 'mobile/tool/play_versioncode_gate.py', 'mobile/tool/prepare-ios.sh', 'mobile/tool/ios-testflight.sh'];
 const PIN_CHECK = `sha256sum -c ${PIN_FILE}`;
 const lfDigest = text => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
 const pinReal = () => readFileSync(join(ROOT, PIN_FILE), 'utf8');
@@ -1088,4 +1177,47 @@ test('GITHUB_ENV values (regression): the old endpoint regex alone accepted a va
   // grep -E matches per line, so a second line smuggled into the value passed the old check.
   assert.ok(re.test('https://api.example.com\nevil.example'), 'the old check passes a value with a newline');
   assert.equal(runReject('https://api.example.com\nevil.example').status, 1, 'the new check refuses it');
+});
+
+// ---- iOS TestFlight release (G3): the exact pair passes; the usual ways to widen it fail -------------------------
+const IOS_FILE = 'mobile-ios-release.yml';
+const iosReal = () => readFileSync(join(WORKFLOWS, IOS_FILE), 'utf8').replace(/\r\n/g, '\n');
+const iosMutate = (from, to) => {
+  const text = iosReal();
+  assert.ok(text.includes(from), `mutation anchor exists: ${from}`);
+  return text.replace(from, to);
+};
+
+test('iOS release: the exact pair (mobile-ios-release.yml:testflight, ios-release, main, dispatch only) passes and matches the golden', () => {
+  assert.deepEqual(topologyViolations(IOS_FILE, iosReal()), []);
+  assert.deepEqual(canonicalSteps(yaml.load(iosReal()).jobs.testflight.steps), IOS_GOLDEN.steps);
+  const pinned = Object.fromEntries(pinReal().replace(/\r\n/g, '\n').trim().split('\n').map(line => { const [digest, path] = line.split('  '); return [path, digest]; }));
+  assert.deepEqual(IOS_GOLDEN.scriptPins, pinned, 'golden.scriptPins equals the pin file');
+});
+
+test('iOS release (negative): another file name, job, environment, trigger, ref or runner is refused', () => {
+  for (const name of ['mobile-ios-release.yaml', 'mobile-ios-release-copy.yml', 'Mobile-iOS-Release.yml']) failsWith(name, iosReal(), /declares an environment/);
+  failsWith(IOS_FILE, iosMutate('\n  testflight:\n', '\n  release:\n'), /must have exactly the job testflight/);
+  failsWith(IOS_FILE, iosMutate('environment: ios-release', 'environment: vps-production'), /environment must be exactly ios-release|vps-production/);
+  failsWith(IOS_FILE, iosMutate('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'), /only trigger is workflow_dispatch/);
+  failsWith(IOS_FILE, iosMutate("    if: github.ref == 'refs/heads/main'", "    if: always()"), /restricted to/);
+  failsWith(IOS_FILE, iosMutate('runs-on: macos-26', 'runs-on: [self-hosted]'), /runs-on must be macos-26|self-hosted/);
+  failsWith(IOS_FILE, iosMutate('permissions:\n  contents: read', 'permissions:\n  contents: write'), /permissions must be exactly contents: read/);
+});
+
+test('iOS release (negative): an unpinned action, a changed step, a leaked key or a foreign secret is refused', () => {
+  failsWith(IOS_FILE, iosMutate('actions/checkout@11d5960a326750d5838078e36cf38b85af677262', 'actions/checkout@v4'), /is not an allowed action/);
+  failsWith(IOS_FILE, iosReal().replace('\n    steps:\n', '\n    steps:\n      - uses: actions/cache@0123456789abcdef0123456789abcdef01234567\n'), /is not an allowed action/);
+  failsWith(IOS_FILE, iosMutate('bash mobile/tool/ios-testflight.sh "${{ inputs.app }}"', 'bash mobile/tool/ios-testflight.sh "${{ inputs.app }}" --verbose'), /differ from the approved golden/);
+  failsWith(IOS_FILE, iosMutate('IOS_ASC_KEY_ID: ${{ vars.IOS_ASC_KEY_ID }}', 'IOS_ASC_KEY_ID: ${{ vars.IOS_ASC_KEY_ID }}\n          X: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}'), /secret not allowed in the release job/);
+  failsWith(IOS_FILE, iosMutate('FCM_API_KEY: ${{ inputs.app', 'FCM_API_KEY: ${{ secrets.IOS_ASC_KEY_P8_BASE64 }} ${{ inputs.app'), /secret IOS_ASC_KEY_P8_BASE64 outside its step/);
+  failsWith(IOS_FILE, iosMutate('echo "SOURCE_SHA=$actual" >> "$GITHUB_ENV"', 'echo "SOURCE_SHA=$actual" >> "$GITHUB_ENV"; curl https://example.com'), /forbidden command|contact any URL/);
+});
+
+test('iOS release: no other workflow names the iOS release environment or its API key', () => {
+  for (const file of readdirSync(WORKFLOWS)) {
+    if (file === IOS_FILE) continue;
+    const text = readFileSync(join(WORKFLOWS, file), 'utf8');
+    assert.doesNotMatch(text, /IOS_ASC_|ios-release/, `${file} must not name the iOS release key or environment`);
+  }
 });

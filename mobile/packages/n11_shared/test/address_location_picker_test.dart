@@ -70,7 +70,9 @@ void main() {
     expect(find.text('Kết quả cũ'), findsNothing);
   });
 
-  testWidgets('editing text never silently keeps a stale pin', (WidgetTester tester) async {
+  // #413: the typed text is only a description. Editing it never asks "Giữ ghim / Bỏ ghim" and never blocks Save; the pin stays until
+  // the person drags it, taps the map, uses "Vị trí hiện tại" or clears it.
+  testWidgets('editing the text keeps the pin with no keep/clear dialog and no red confirmation', (WidgetTester tester) async {
     AddressLocation? saved;
     await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
       child: const Text('Open'),
@@ -83,15 +85,49 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('location-address-text')), 'B');
     await tester.pump();
-    expect(find.byKey(const Key('pin-text-confirmation')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('location-save')));
-    await tester.pump();
-    expect(saved, isNull);
-    await tester.tap(find.text('Bỏ ghim – đổi địa điểm'));
+    expect(find.byKey(const Key('pin-text-confirmation')), findsNothing);
+    expect(find.text('Giữ ghim – chỉ bổ sung mô tả'), findsNothing);
+    expect(find.text('Bỏ ghim – đổi địa điểm'), findsNothing);
+    expect(find.byKey(const Key('location-picker-error')), findsNothing);
     await tester.tap(find.byKey(const Key('location-save')));
     await tester.pumpAndSettle();
     expect(saved?.text, 'B');
-    expect(saved?.latitude, isNull);
+    expect(saved?.latitude, 22.66);
+    expect(saved?.longitude, 106.25);
+  });
+
+  testWidgets('the optional description is separate, capped and returned with the address', (WidgetTester tester) async {
+    AddressLocation? saved;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (BuildContext context) => TextButton(
+      child: const Text('Open'),
+      onPressed: () async => saved = await Navigator.of(context).push<AddressLocation>(MaterialPageRoute<AddressLocation>(builder: (_) => AddressLocationPicker(
+        initial: const AddressLocation('Tổ 3'), requirePoint: false,
+        mapBuilder: (_, lat, lng, onPick) => const SizedBox.shrink(),
+      ))),
+    ))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    // Empty description is fine.
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'Tổ 3');
+    expect(saved?.note, '');
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-extra-note')), 'Nhà số 12, tầng 2, cổng xanh');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.text, 'Tổ 3');
+    expect(saved?.note, 'Nhà số 12, tầng 2, cổng xanh');
+    // Over the limit the field refuses more characters (the same 200 as the delivery note).
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('location-extra-note')), 'x' * (kAddressNoteMaxLength + 30));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    expect(saved?.note.length, kAddressNoteMaxLength);
   });
 
   testWidgets('typing and moving the pin returns one address; GPS is opt-in', (

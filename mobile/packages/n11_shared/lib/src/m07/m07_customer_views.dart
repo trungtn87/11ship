@@ -4,12 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../account/account_views.dart';
+import '../addresses/address_controller.dart';
+import '../addresses/address_location_picker.dart';
+import '../addresses/address_models.dart';
+import '../addresses/shared_address_flow.dart';
+import '../flows/location.dart';
 import '../m06/m06_views.dart' show parseAgreedFee;
 import '../m10/order_chat_models.dart';
 import '../m10/order_chat_view.dart';
 import '../m10/order_sections.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
+import '../widgets/info_hint.dart';
 import 'm07_models.dart';
 import 'm07_source.dart';
 import 'm07_widgets.dart';
@@ -17,7 +23,16 @@ import 'm07_widgets.dart';
 // ---- Customer Call Screen ----------------------------------------------------------------------------------------------------
 
 class CustomerCallScreen extends StatefulWidget {
-  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.initialSenderName, this.initialSenderPhone, this.embedded = false, this.onCreated});
+  const CustomerCallScreen({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.initialSenderName, this.initialSenderPhone, this.embedded = false, this.onCreated, this.addresses, this.addressMapBuilder, this.location});
+
+  /// The customer's address book (#413): saved addresses appear in the shared picker. Null = no saved list.
+  final AddressBookController? addresses;
+
+  /// Map of the shared address picker; null = the app's offline Cao Bằng map. Tests inject their own.
+  final AddressMapBuilder? addressMapBuilder;
+
+  /// One-shot GPS for "Vị trí hiện tại"; null = the device provider.
+  final LocationProvider? location;
 
   /// True when the form is the root of the "Gọi ship" tab: the shell draws the title bar, so this screen draws none.
   final bool embedded;
@@ -42,12 +57,14 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   final TextEditingController _senderName = TextEditingController(text: 'Khách gửi hàng');
   final TextEditingController _senderPhone = TextEditingController();
   final TextEditingController _pickupAddress = TextEditingController();
+  String _pickupNote = '';
   double? _pickupLat;
   double? _pickupLng;
 
   final TextEditingController _recipientName = TextEditingController();
   final TextEditingController _recipientPhone = TextEditingController();
   final TextEditingController _dropoffAddress = TextEditingController();
+  String _dropoffNote = '';
   double? _dropoffLat;
   double? _dropoffLng;
 
@@ -110,57 +127,62 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
     return cod > 0 ? '${m07Vnd(cod)} COD + Cước ship thỏa thuận' : 'Cước ship thỏa thuận';
   }
 
-  Future<void> _pickPickupPin() async {
-    if (widget.pinPicker == null) return;
-    await Navigator.of(context).push(
-      n11Route(
-        widget.pinPicker!(
-          context,
-          lat: _pickupLat,
-          label: 'Ghim điểm lấy hàng',
-          lng: _pickupLng,
-          onPick: (double lat, double lng) {
-            setState(() {
-              _pickupLat = lat;
-              _pickupLng = lng;
-            });
-            Navigator.of(context).pop();
-          },
-        ),
-      ),
+  /// Pickup or drop-off through the shared address flow (#413): block -> saved list (B) -> map (C). Text is required; the pin is optional.
+  Future<void> _editPoint({required bool pickup}) async {
+    final TextEditingController text = pickup ? _pickupAddress : _dropoffAddress;
+    final String note = pickup ? _pickupNote : _dropoffNote;
+    final double? lat = pickup ? _pickupLat : _dropoffLat;
+    final double? lng = pickup ? _pickupLng : _dropoffLng;
+    final SharedAddressSelection? selected = await pickSharedAddress(
+      context,
+      initial: AddressLocation(text.text.trim(), latitude: lat, longitude: lng, note: note),
+      book: widget.addresses,
+      session: widget.source.session,
+      location: widget.location,
+      mapBuilder: widget.addressMapBuilder,
     );
+    if (selected == null || !mounted) return;
+    setState(() {
+      final DeliveryAddress? saved = selected.saved;
+      if (saved != null) {
+        text.text = saved.addressText;
+        if (pickup) {
+          _pickupLat = saved.latitude;
+          _pickupLng = saved.longitude;
+          _pickupNote = saved.deliveryNote ?? '';
+        } else {
+          _dropoffLat = saved.latitude;
+          _dropoffLng = saved.longitude;
+          _dropoffNote = saved.deliveryNote ?? '';
+        }
+        return;
+      }
+      final AddressLocation chosen = selected.location!;
+      text.text = chosen.text;
+      if (pickup) {
+        _pickupLat = chosen.latitude;
+        _pickupLng = chosen.longitude;
+        _pickupNote = chosen.note;
+      } else {
+        _dropoffLat = chosen.latitude;
+        _dropoffLng = chosen.longitude;
+        _dropoffNote = chosen.note;
+      }
+    });
   }
 
-  Future<void> _pickDropoffPin() async {
-    if (widget.pinPicker == null) return;
-    await Navigator.of(context).push(
-      n11Route(
-        widget.pinPicker!(
-          context,
-          lat: _dropoffLat,
-          label: 'Ghim điểm giao hàng',
-          lng: _dropoffLng,
-          onPick: (double lat, double lng) {
-            setState(() {
-              _dropoffLat = lat;
-              _dropoffLng = lng;
-            });
-            Navigator.of(context).pop();
-          },
-        ),
-      ),
-    );
-  }
+  /// The address as sent: the typed or picked text, then the optional description (after a comma) when there is one.
+  static String _joinAddress(String text, String note) => note.trim().isEmpty ? text.trim() : '${text.trim()}, ${note.trim()}';
 
   Future<void> _submit() async {
     setState(() => _problem = null);
     final String senderName = _senderName.text.trim();
     final String senderPhone = _senderPhone.text.replaceAll(RegExp(r'[\s.\-]'), '');
-    final String pickupAddr = _pickupAddress.text.trim();
+    final String pickupAddr = _joinAddress(_pickupAddress.text, _pickupNote);
 
     final String recipientName = _recipientName.text.trim();
     final String recipientPhone = _recipientPhone.text.replaceAll(RegExp(r'[\s.\-]'), '');
-    final String dropoffAddr = _dropoffAddress.text.trim();
+    final String dropoffAddr = _joinAddress(_dropoffAddress.text, _dropoffNote);
     final String goods = _goodsDescription.text.trim();
 
     if (pickupAddr.isEmpty) {
@@ -298,23 +320,13 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                     const SizedBox(height: N11Space.gap2),
                     N11Field(fieldKey: const Key('m07-c-sender-phone'), label: 'Số điện thoại người gửi (*)', controller: _senderPhone, keyboard: TextInputType.phone),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-pickup-addr'), label: 'Địa chỉ lấy hàng (*)', controller: _pickupAddress),
-                    const SizedBox(height: N11Space.gap2),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed: _pickPickupPin,
-                            icon: const Icon(Icons.location_on_outlined),
-                            label: Text(
-                              _pickupLat != null ? 'Đã ghim (${_pickupLat!.toStringAsFixed(3)}, ${_pickupLng!.toStringAsFixed(3)})' : 'Ghim vị trí lấy hàng (tùy chọn)',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        if (_pickupLat != null)
-                          IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() { _pickupLat = null; _pickupLng = null; })),
-                      ],
+                    AddressLocationField(
+                      key: const Key('m07-c-pickup-addr'),
+                      label: 'Địa chỉ lấy hàng (*)',
+                      text: _joinAddress(_pickupAddress.text, _pickupNote),
+                      actionLabel: 'Chỉnh sửa',
+                      pinSummary: _pickupLat != null ? 'Đã ghim (${_pickupLat!.toStringAsFixed(3)}, ${_pickupLng!.toStringAsFixed(3)})' : 'Chưa ghim (tùy chọn): shipper sẽ hỏi lại khi cần',
+                      onTap: () => _editPoint(pickup: true),
                     ),
                   ],
                 ),
@@ -332,23 +344,13 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                     const SizedBox(height: N11Space.gap2),
                     N11Field(fieldKey: const Key('m07-c-recip-phone'), label: 'Số điện thoại người nhận (*)', controller: _recipientPhone, keyboard: TextInputType.phone),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-dropoff-addr'), label: 'Địa chỉ giao hàng (*)', controller: _dropoffAddress),
-                    const SizedBox(height: N11Space.gap2),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed: _pickDropoffPin,
-                            icon: const Icon(Icons.location_on_outlined),
-                            label: Text(
-                              _dropoffLat != null ? 'Đã ghim (${_dropoffLat!.toStringAsFixed(3)}, ${_dropoffLng!.toStringAsFixed(3)})' : 'Ghim vị trí giao hàng (tùy chọn)',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        if (_dropoffLat != null)
-                          IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() { _dropoffLat = null; _dropoffLng = null; })),
-                      ],
+                    AddressLocationField(
+                      key: const Key('m07-c-dropoff-addr'),
+                      label: 'Địa chỉ giao hàng (*)',
+                      text: _joinAddress(_dropoffAddress.text, _dropoffNote),
+                      actionLabel: 'Chỉnh sửa',
+                      pinSummary: _dropoffLat != null ? 'Đã ghim (${_dropoffLat!.toStringAsFixed(3)}, ${_dropoffLng!.toStringAsFixed(3)})' : 'Chưa ghim (tùy chọn): shipper sẽ hỏi lại khi cần',
+                      onTap: () => _editPoint(pickup: false),
                     ),
                   ],
                 ),
@@ -362,16 +364,20 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                   children: <Widget>[
                     const Text('Hàng hóa & Thu hộ (COD)', style: N11Text.h2),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-goods'), label: 'Mô tả hàng hóa (*)', controller: _goodsDescription, hint: 'Ví dụ: Quần áo, tài liệu, đồ gia dụng...'),
+                    N11Field(fieldKey: const Key('m07-c-goods'), label: 'Mô tả hàng hóa (*)', controller: _goodsDescription, info: 'Ví dụ: Quần áo, tài liệu, đồ gia dụng...'),
                     const SizedBox(height: N11Space.gap2),
-                    N11Field(fieldKey: const Key('m07-c-note'), label: 'Ghi chú cho tài xế (tùy chọn)', controller: _note, hint: 'Ví dụ: Hàng dễ vỡ, hướng dẫn nhận hàng...'),
+                    N11Field(fieldKey: const Key('m07-c-note'), label: 'Ghi chú cho tài xế (tùy chọn)', controller: _note, info: 'Ví dụ: Hàng dễ vỡ, hướng dẫn nhận hàng...'),
                     const SizedBox(height: N11Space.gap3),
                     Material(
                       type: MaterialType.transparency,
                       child: SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Thu hộ tiền hàng (COD)', style: N11Text.bodyStrong),
-                        subtitle: const Text('Shipper thu hộ từ người nhận và đưa lại người gửi', style: N11Text.caption),
+                        title: Row(
+                          children: <Widget>[
+                            const Flexible(child: Text('Thu hộ tiền hàng (COD)', style: N11Text.bodyStrong)),
+                            InfoHint(title: 'Thu hộ tiền hàng (COD)', message: 'Shipper thu hộ từ người nhận và đưa lại người gửi'),
+                          ],
+                        ),
                         value: _enableCod,
                         onChanged: (bool v) => setState(() => _enableCod = v),
                       ),
@@ -435,8 +441,14 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                           const Divider(),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: const Text('Đề xuất mức phí giao', style: N11Text.bodyStrong),
-                            subtitle: Text(_hasGps ? 'Nhập mức phí bạn mong muốn để shipper xem xét' : 'Thiếu GPS: Nhập mức phí đề xuất để shipper nhận chuyến', style: N11Text.caption),
+                            title: Row(
+                              children: <Widget>[
+                                const Flexible(child: Text('Đề xuất mức phí giao', style: N11Text.bodyStrong)),
+                                InfoHint(title: 'Đề xuất mức phí giao', message: 'Nhập mức phí bạn mong muốn để shipper xem xét'),
+                              ],
+                            ),
+                            // Khi thiếu GPS, dòng trạng thái này là điều kiện cần nhập phí nên vẫn hiển thị.
+                            subtitle: _hasGps ? null : const Text('Thiếu GPS: Nhập mức phí đề xuất để shipper nhận chuyến', style: N11Text.caption),
                             value: _customFee || !_hasGps,
                             onChanged: _hasGps ? (bool v) => setState(() => _customFee = v) : null,
                           ),
@@ -458,7 +470,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
                         fieldKey: const Key('m07-c-fee-note'),
                         label: 'Lý do đề xuất phí (tùy chọn)',
                         controller: _feeNote,
-                        hint: 'Ví dụ: Hàng cồng kềnh, cần giao gấp...',
+                        info: 'Ví dụ: Hàng cồng kềnh, cần giao gấp...',
                       ),
                     ],
                   ],
@@ -756,9 +768,14 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
                           if (d.location != null)
                             M07MapPin(lat: d.location!.lat, lng: d.location!.lng, label: 'Shipper', color: 0xFF2A2A2E),
                         ],
+                        // The stored road the server sent to the customer (issue #393): drawn as saved, never recomputed.
+                        d.route?.points ?? const <List<double>>[],
                       ),
                     ),
                   ),
+                  const SizedBox(height: N11Space.gap2),
+                  if ((d.route?.points ?? const <List<double>>[]).isEmpty)
+                    const ReasonNote('Chưa có tuyến đường đi.', key: Key('m07-c-route-missing'), icon: Icons.route_outlined),
                   const SizedBox(height: N11Space.gap3),
                 ] else if (!hasBothPins) ...<Widget>[
                   Container(
@@ -1001,7 +1018,9 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
 /// The root of the 11Food "Gọi ship" tab: the same call form as the one under Đơn hàng → Giao hàng, one tap from the bottom bar. After a trip is
 /// created its detail opens on top; coming back shows an empty form again (the trip itself is under Đơn hàng → Giao hàng).
 class CustomerCallTab extends StatefulWidget {
-  const CustomerCallTab({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot});
+  const CustomerCallTab({super.key, required this.source, this.pinPicker, this.mapBuilder, this.feedbackSlot, this.addresses});
+
+  final AddressBookController? addresses;
 
   final CustomerDeliverySource source;
   final M07PinPickerBuilder? pinPicker;
@@ -1020,6 +1039,7 @@ class _CustomerCallTabState extends State<CustomerCallTab> {
     return CustomerCallScreen(
       key: ValueKey<int>(_generation),
       source: widget.source,
+      addresses: widget.addresses,
       pinPicker: widget.pinPicker,
       mapBuilder: widget.mapBuilder,
       feedbackSlot: widget.feedbackSlot,
@@ -1037,8 +1057,9 @@ class _CustomerCallTabState extends State<CustomerCallTab> {
 // ---- Customer Delivery Hub ---------------------------------------------------------------------------------------------------
 
 class CustomerDeliveryHub extends StatefulWidget {
-  const CustomerDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.feedbackSlot});
+  const CustomerDeliveryHub({super.key, required this.source, this.mapBuilder, this.pinPicker, this.feedbackSlot, this.addresses});
 
+  final AddressBookController? addresses;
   final CustomerDeliverySource source;
   final M07MapBuilder? mapBuilder;
   final M07PinPickerBuilder? pinPicker;
@@ -1055,6 +1076,7 @@ class _CustomerDeliveryHubState extends State<CustomerDeliveryHub> {
     Navigator.of(context).push(
       n11Route(CustomerCallScreen(
         source: widget.source,
+        addresses: widget.addresses,
         pinPicker: widget.pinPicker,
         mapBuilder: widget.mapBuilder,
         feedbackSlot: widget.feedbackSlot,

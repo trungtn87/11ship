@@ -34,6 +34,9 @@ function toPolicy(row: Raw): CommissionPolicy {
   return { version, amountVnd: BigInt(row.commission_vnd), label: `COMMISSION_V${version}`, createdAtMs: Number(row.created_ms), createdByUserId: row.created_by_user_id };
 }
 
+/** Fixed name of the advisory lock that serialises every change of the commission policy. The database guard (migration 1798070400000) takes the same key. */
+export const WALLET_COMMISSION_POLICY_LOCK_KEY = '11ship.wallet.commission-policy.version.v1';
+
 @Injectable()
 export class CommissionPolicyRepository {
   /** The policy in force now (the highest version). A missing row is a broken installation, never a guess. */
@@ -46,9 +49,13 @@ export class CommissionPolicyRepository {
     return toPolicy(row);
   }
 
-  /** The current policy row, locked FOR UPDATE: the administration serialises a change on it. */
+  /**
+   * The current policy, read after taking the transaction-scoped advisory lock: a concurrent change waits here, and this read then sees its
+   * committed version. No row lock: the runtime role has no UPDATE privilege on this append-only table.
+   */
   async lockCurrent(context: TransactionContext): Promise<CommissionPolicy> {
-    const result = await context.query<Raw>(`SELECT ${COLUMNS} FROM app.wallet_commission_policies p WHERE p.policy_version = (SELECT MAX(policy_version) FROM app.wallet_commission_policies) FOR UPDATE`);
+    await context.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [WALLET_COMMISSION_POLICY_LOCK_KEY]);
+    const result = await context.query<Raw>(`SELECT ${COLUMNS} FROM app.wallet_commission_policies p WHERE p.policy_version = (SELECT MAX(policy_version) FROM app.wallet_commission_policies)`);
     const row = result.rows[0];
     if (row === undefined) {
       throw new TechnicalError('internal', 'The commission policy is missing');

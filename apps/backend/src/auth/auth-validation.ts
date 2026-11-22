@@ -69,7 +69,7 @@ export function parseDevice(value: unknown): DeviceInfo {
  * guard for the gate-off case only; it is not what protects a gate-on process.
  */
 export function assertLegacyDeviceAllowed(device: DeviceInfo, nativeGateEnabled = false): void {
-  if (nativeGateEnabled || (device.platform === 'ANDROID' && (device.app === 'FOOD' || device.app === 'SHIP'))) {
+  if (nativeGateEnabled || ((device.platform === 'ANDROID' || device.platform === 'IOS') && (device.app === 'FOOD' || device.app === 'SHIP'))) {
     throw new AppError('DEVICE_PROOF_REQUIRED');
   }
 }

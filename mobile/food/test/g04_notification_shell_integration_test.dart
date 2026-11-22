@@ -443,7 +443,7 @@ void main() {
   });
 }
 
-// Issue #282: "Gọi ship" is the third bottom tab in customer mode only, and opens the existing call form in one tap.
+// The Food shell keeps all five destinations visible in every account mode.
 void callShipTabTests() {
   testWidgets('customer mode: five tabs in order, Gọi ship opens the call form in one tap',
       (WidgetTester tester) async {
@@ -461,12 +461,12 @@ void callShipTabTests() {
     expect(find.byKey(const Key('m07-c-pickup-addr')), findsNothing);
   });
 
-  testWidgets('shop-owner mode has no standalone Gọi ship tab', (WidgetTester tester) async {
+  testWidgets('shop-owner mode keeps all five tabs', (WidgetTester tester) async {
     final _Fixture f = await _fixture('SHOP_OWNER');
     addTearDown(f.dispose);
     await _pump(tester, f);
-    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.id), <String>['home', 'orders', 'shop', 'account']);
-    expect(find.byKey(const Key('tab-call')), findsNothing);
+    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.id), <String>['home', 'orders', 'call', 'shop', 'account']);
+    expect(find.byKey(const Key('tab-call')), findsOneWidget);
   });
 }
 

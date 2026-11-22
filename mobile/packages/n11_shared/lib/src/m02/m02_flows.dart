@@ -1,6 +1,7 @@
 import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../flows/shop_controller.dart';
+import '../m11/m11_source.dart';
 import 'discovery_controller.dart';
 import 'discovery_models.dart';
 import 'dish_image_crop.dart';
@@ -12,7 +13,10 @@ import 'shop_setup_controller.dart';
 /// Everything the M02 screens of 11Food need, built once per app. The menu, picture and public-shop ports default to the "not
 /// connected" ones until the server side exists; the shop profile and schedule are connected to the existing /v1/shop/me contract.
 class M02Flows {
-  M02Flows({required this.ops, required this.menu, required this.publicApi, required this.discovery, required this.setup, this.onboarding, this.cropper});
+  M02Flows({required this.ops, required this.menu, required this.publicApi, required this.discovery, required this.setup, this.onboarding, this.cropper, this.feedback});
+
+  /// M11 source for "Đánh giá của khách" in the shop profile (Quán -> Hồ sơ quán). Null when the app has no M11 source.
+  final M11Source? feedback;
 
   final ShopOpsController ops;
 
@@ -45,6 +49,7 @@ M02Flows createM02Flows({
   DiscoveryApi discoveryApi = const UnwiredDiscoveryApi(),
   ImagePickerPort picker = const NoImagePicker(),
   DishImageCropperPort? cropper,
+  M11Source? feedback,
   Duration pollEvery = const Duration(seconds: 30),
 }) {
   return M02Flows(
@@ -55,5 +60,6 @@ M02Flows createM02Flows({
     discovery: DiscoveryController(api: discoveryApi),
     onboarding: onboarding,
     cropper: cropper,
+    feedback: feedback,
   );
 }

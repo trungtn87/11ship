@@ -141,8 +141,9 @@ void main() {
       phone(tester);
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..roads = <String, int?>{'s1': 3400};
       final DiscoveryController c = await pumpHome(tester, api);
-      expect(find.text('Quán s1'), findsOneWidget);
-      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, 'Quãng đường từ quán đến vị trí hiện tại: ≈ 3,4 km');
+      expect(find.text('Quán s1'), findsWidgets);
+      // Home tile: the short road distance (Antigravity #385 fix); the full road wording stays in its semantics label.
+      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, '3,4 km');
       expect(find.textContaining('chim bay'), findsNothing);
       expect(api.routeRequests, hasLength(1));
       await tester.pumpWidget(const SizedBox());
@@ -160,13 +161,14 @@ void main() {
         ..roads = <String, int?>{'s1': 3400, 's2': 800}
         ..routeGate = () => hold.future;
       await pumpHome(tester, api);
-      expect(find.text('Quán s1'), findsOneWidget);
-      expect(find.text('Quán s2'), findsOneWidget);
-      expect(find.text('Quãng đường từ quán đến vị trí hiện tại: đang tính…'), findsNWidgets(2));
+      expect(find.text('Quán s1'), findsWidgets);
+      expect(find.text('Quán s2'), findsWidgets);
+      // Issue #411: two shops, each shown in the featured row and in the nearby row while the routes are asked.
+      expect(find.text('Đang tính…'), findsNWidgets(4));
       hold.complete();
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s2'))).data, 'Quãng đường từ quán đến vị trí hiện tại: ≈ 0,8 km');
-      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, 'Quãng đường từ quán đến vị trí hiện tại: ≈ 3,4 km');
+      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s2'))).data, '0,8 km');
+      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, '3,4 km');
     });
 
     testWidgets('GPS off or refused: "Chưa xác định quãng đường", no request, the list works', (WidgetTester tester) async {
@@ -174,8 +176,8 @@ void main() {
       final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..roads = <String, int?>{'s1': 3400};
       await pumpHome(tester, api, gps: gps);
-      expect(find.text('Quán s1'), findsOneWidget);
-      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, 'Quãng đường từ quán đến vị trí hiện tại: chưa xác định');
+      expect(find.text('Quán s1'), findsWidgets);
+      expect(tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data, 'Chưa rõ');
       expect(api.routeRequests, isEmpty);
     });
 
@@ -184,7 +186,7 @@ void main() {
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[entry('s1')])..routeOffline = true;
       await pumpHome(tester, api);
       final String text = tester.widget<Text>(find.byKey(const Key('shop-distance-s1'))).data!;
-      expect(text, endsWith('chưa xác định'));
+      expect(text, 'Chưa rõ');
       expect(text, isNot(contains('đường chim bay')));
       expect(text, isNot(contains('đường đi')));
       expect(tester.takeException(), isNull);

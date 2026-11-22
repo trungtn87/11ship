@@ -314,13 +314,19 @@ Widget _txnList(BuildContext context, WalletSource source, List<WalletTxn> rows,
 // ---- M04-S01: Ví của tôi ---------------------------------------------------------------------------------------------
 
 class WalletHomeScreen extends StatefulWidget {
-  const WalletHomeScreen({super.key, required this.source, this.minTopup, this.minWithdraw});
+  const WalletHomeScreen({super.key, required this.source, this.minTopup, this.minWithdraw, this.title = 'Ví của tôi', this.extraSections = const <Widget>[]});
 
   final WalletSource source;
 
   /// Display minimums when a caller fixes them; null = what the source says (a real source reads the minimums the server asks for today).
   final int? minTopup;
   final int? minWithdraw;
+
+  /// The page title (#396 the shipper app shows "Ví tiền").
+  final String title;
+
+  /// Extra sections placed after the top-up button and notes, before the recent transactions (#396: financial requests, stop / withdraw).
+  final List<Widget> extraSections;
 
   @override
   State<WalletHomeScreen> createState() => _WalletHomeScreenState();
@@ -364,7 +370,7 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final WalletSource source = widget.source;
-    return _page(source, 'Ví của tôi', <Widget>[
+    return _page(source, widget.title, <Widget>[
       WalletLoader<Wallet>(key: ValueKey<String>('wallet-$_rev'), load: source.wallet, builder: _balance),
       // No withdraw button here: money is paid out only as a whole, while the account is being closed (Hoạt động → Dừng hoạt động).
       ValueListenableBuilder<bool>(
@@ -377,8 +383,9 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
           ],
         ),
       ),
-      if (!source.isSample && source.canWrite) const ReasonNote('Để nhận lại toàn bộ số dư, mở Hoạt động → Dừng hoạt động. Rút từng phần không được hỗ trợ.'),
+      if (!source.isSample && source.canWrite) const ReasonNote('Để nhận lại toàn bộ số dư, dùng mục "Dừng hoạt động / Rút tiền" bên dưới. Rút từng phần không được hỗ trợ.'),
       if (!source.canWrite) ReasonNote('${source.notWiredReason} Nạp và rút tiền chưa dùng được.'),
+      ...widget.extraSections,
       LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           if (constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(16) > 21) {
@@ -699,7 +706,7 @@ class _QrPlaceholder extends StatelessWidget {
           SizedBox(height: N11Space.gap2),
           Text('QR sẽ hiển thị khi kết nối ngân hàng', textAlign: TextAlign.center, style: N11Text.caption),
           SizedBox(height: 2),
-          Text('Vui lòng chuyển khoản đúng nội dung đã được xác nhận nhanh chóng.', textAlign: TextAlign.center, style: N11Text.caption),
+          Text('Chuyển khoản đúng nội dung mã đã tạo.', textAlign: TextAlign.center, style: N11Text.caption),
         ],
       ),
     );
