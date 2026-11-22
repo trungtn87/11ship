@@ -133,6 +133,11 @@ export class SepaySettlementService {
       return this.#hold(context, inboxId, 'REQUEST_NOT_FOUND');
     }
     if (request.state !== 'PENDING') {
+      // The request lock may have waited for an Administrator who confirmed this very transfer and committed meanwhile. The bank-record check
+      // above ran before that commit, so it is repeated now that the request is locked: a recorded transfer is LINKED, never queued.
+      if (await this.lookups.bankRecordExists(context, SEPAY_BANK_ID, account.systemAccountId, canonicalTransactionId)) {
+        return this.#alreadyRecorded(context, inboxId, account.systemAccountId, canonicalTransactionId);
+      }
       return this.#hold(context, inboxId, 'REQUEST_NOT_PENDING');
     }
     if (BigInt(event.transferAmountVnd) !== request.amountRequestedVnd) {
