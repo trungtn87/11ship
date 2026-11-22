@@ -12,5 +12,6 @@ Pod::Spec.new do |s|
   s.dependency 'FirebaseMessaging', '~> 11.0'
   s.platform         = :ios, '15.0'
   s.swift_version    = '5.0'
+  s.resource_bundles = { 'n11_native_ios_privacy' => ['Resources/PrivacyInfo.xcprivacy'] }
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end
