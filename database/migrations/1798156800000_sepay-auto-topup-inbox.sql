@@ -105,7 +105,9 @@ ALTER TABLE app.wallet_topups ADD CONSTRAINT wallet_topups_confirmed_actor_ck CH
 -- ---------------------------------------------------------------------------------------------------
 -- topup_request_id has NO foreign key on purpose: the inbox then depends on no wallet table, so the older migrations' down scripts (which drop
 -- those tables) keep working. The settlement code writes it only for a request it locked and confirmed in the same transaction.
--- RECEIVED -> CREDITED | NEEDS_ADMIN | IGNORED ; NEEDS_ADMIN -> CREDITED | IGNORED | NEEDS_ADMIN ; CREDITED and IGNORED are final.
+-- RECEIVED -> CREDITED | NEEDS_ADMIN | IGNORED | LINKED ; NEEDS_ADMIN -> CREDITED | IGNORED | LINKED | NEEDS_ADMIN ; RECEIVED -> RECEIVED is the claim of a held row for
+-- recovery (same state, no change). CREDITED, LINKED and IGNORED are final. LINKED = the bank transfer is already recorded by an Administrator
+-- (manual confirmation or a settlement seen earlier); topup_request_id names that request. Nothing is credited by a LINKED row.
 CREATE TABLE app.sepay_transfer_inbox (
   inbox_id uuid NOT NULL,
   -- Exactly one source identifies an event: the webhook id (webhook path) or the transactions-API UUID (reconciliation path). Both may be
@@ -133,9 +135,9 @@ CREATE TABLE app.sepay_transfer_inbox (
   CONSTRAINT sepay_transfer_inbox_event_ck CHECK (webhook_event_id >= 1),
   CONSTRAINT sepay_transfer_inbox_type_ck CHECK (transfer_type IN ('in', 'out')),
   CONSTRAINT sepay_transfer_inbox_amount_ck CHECK (transfer_amount_vnd > 0 AND transfer_amount_vnd <= 9007199254740991),
-  CONSTRAINT sepay_transfer_inbox_state_ck CHECK (state IN ('RECEIVED', 'CREDITED', 'NEEDS_ADMIN', 'IGNORED')),
+  CONSTRAINT sepay_transfer_inbox_state_ck CHECK (state IN ('RECEIVED', 'CREDITED', 'NEEDS_ADMIN', 'IGNORED', 'LINKED')),
   CONSTRAINT sepay_transfer_inbox_processed_ck CHECK ((state = 'RECEIVED') = (processed_at IS NULL)),
-  CONSTRAINT sepay_transfer_inbox_credit_ck CHECK ((state = 'CREDITED') = (topup_request_id IS NOT NULL)),
+  CONSTRAINT sepay_transfer_inbox_credit_ck CHECK ((state IN ('CREDITED', 'LINKED')) = (topup_request_id IS NOT NULL)),
   CONSTRAINT sepay_transfer_inbox_reason_ck CHECK (reason_code IS NULL OR reason_code ~ '^[A-Z][A-Z0-9_]{0,63}$'),
   CONSTRAINT sepay_transfer_inbox_time_ck CHECK (processed_at IS NULL OR processed_at >= received_at)
 );
@@ -154,11 +156,14 @@ CREATE TABLE app.sepay_reconciliation_cursor (
   last_run_at timestamptz,
   not_before_at timestamptz,
   updated_at timestamptz NOT NULL,
+  -- When the cursor last moved (or was seeded). A cursor that stays put for longer than the stall limit while SePay returns nothing is an alarm.
+  cursor_advanced_at timestamptz NOT NULL,
   CONSTRAINT sepay_reconciliation_cursor_pkey PRIMARY KEY (cursor_key),
   CONSTRAINT sepay_reconciliation_cursor_key_ck CHECK (cursor_key = 'SEPAY_COMPANY'),
   CONSTRAINT sepay_reconciliation_cursor_outcome_ck CHECK (last_outcome IS NULL OR last_outcome ~ '^[A-Z][A-Z0-9_]{0,31}$')
 );
-INSERT INTO app.sepay_reconciliation_cursor (cursor_key, updated_at) VALUES ('SEPAY_COMPANY', date_trunc('milliseconds', clock_timestamp()));
+INSERT INTO app.sepay_reconciliation_cursor (cursor_key, cursor_advanced_at, updated_at)
+  VALUES ('SEPAY_COMPANY', date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', clock_timestamp()));
 
 CREATE FUNCTION app.sepay_transfer_inbox_guard() RETURNS trigger
   LANGUAGE plpgsql AS $$
@@ -173,7 +178,7 @@ BEGIN
      OR NEW.content <> OLD.content OR NEW.reference_code <> OLD.reference_code THEN
     RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
-  IF OLD.state IN ('CREDITED', 'IGNORED') AND NEW.state <> OLD.state THEN
+  IF OLD.state IN ('CREDITED', 'IGNORED', 'LINKED') AND NEW.state <> OLD.state THEN
     RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_STATE_FINAL' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;

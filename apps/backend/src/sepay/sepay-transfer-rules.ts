@@ -35,11 +35,12 @@ export function decideTransfer(event: SepayTransferEvent): TransferDecision {
   if (!REFERENCE_PATTERN.test(event.referenceCode)) {
     return { kind: 'NEEDS_ADMIN', reason: 'REFERENCE_FORMAT' };
   }
-  // Bank identity, the key the bank-record table enforces (bank, account, canonical id). The account is its own column, so the canonical id
-  // carries the bank reference, the amount and the transaction time exactly as SePay sent them.
+  // ONE bank identity for the whole company: the bank's own reference (e.g. FT24012345678). The bank-record table enforces it per
+  // (bank, receiving account, canonical id), and an Administrator who confirms the same statement line by hand types the same reference. So
+  // a transfer is credited at most once, whichever side records it first, and the second attempt meets the unique key.
   return {
     kind: 'CANDIDATE',
     transferCode: event.code,
-    canonicalTransactionId: `SEPAY:${event.referenceCode}:${event.transferAmountVnd}:${event.transactionDateText}`,
+    canonicalTransactionId: event.referenceCode,
   };
 }

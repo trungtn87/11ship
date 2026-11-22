@@ -40,6 +40,18 @@ export class TopupAutoLookupRepository {
     return row === undefined ? undefined : { requestId: row.request_id, walletId: row.wallet_id, driverId: row.driver_id };
   }
 
+  /**
+   * The request that holds an INCOME bank record of this account and canonical id (through its topup), or undefined. A read, used to link the evidence.
+   */
+  async requestIdOfBankRecord(context: TransactionContext, bankId: string, systemAccountId: string, canonicalTransactionId: string): Promise<string | undefined> {
+    const result = await context.query<{ request_id: string }>(
+      `SELECT t.request_id::text AS request_id FROM app.wallet_bank_transactions b JOIN app.wallet_topups t ON t.topup_id = b.topup_id
+        WHERE b.bank_id = $1 AND b.system_owned_account_id = $2::uuid AND b.canonical_transaction_id = $3 LIMIT 1`,
+      [bankId, systemAccountId, canonicalTransactionId],
+    );
+    return result.rows[0]?.request_id;
+  }
+
   /** True when this bank transaction is already recorded on this account, by anyone. A read: the posting path decides under its own lock too. */
   async bankRecordExists(context: TransactionContext, bankId: string, systemAccountId: string, canonicalTransactionId: string): Promise<boolean> {
     const result = await context.query(

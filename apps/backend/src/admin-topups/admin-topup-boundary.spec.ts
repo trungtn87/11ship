@@ -10,11 +10,11 @@ const files = (): string[] =>
     .map((name) => `admin-topups/${name}`);
 
 describe('M04-B2.2b admin top-up boundary', () => {
-  it('exposes exactly the documented routes: receiving accounts (masked), list, read, confirm, reject', () => {
+  it('exposes exactly the documented routes: receiving accounts (masked), list, read, confirm, reject, and the SePay evidence queue (list, dismiss)', () => {
     const controller = codeOf('admin-topups/admin-topup.controller.ts');
     expect(controller).toContain("@Controller('admin/finance')");
     expect(controller).not.toMatch(/SessionAuthGuard|AuthPrincipal/);
-    expect(controller.match(/@(Get|Put|Post|Patch|Delete)\([^)]*\)/g)).toEqual(["@Get('topup-receiving-accounts')", "@Get('topup-requests')", "@Get('topup-requests/:request_id')", "@Post('topup-requests/:request_id/confirm')", "@Post('topup-requests/:request_id/reject')"]);
+    expect(controller.match(/@(Get|Put|Post|Patch|Delete)\([^)]*\)/g)).toEqual(["@Get('topup-receiving-accounts')", "@Get('topup-requests')", "@Get('topup-requests/:request_id')", "@Post('topup-requests/:request_id/confirm')", "@Get('sepay-inbox/needs-admin')", "@Post('sepay-inbox/:inbox_id/dismiss')", "@Post('topup-requests/:request_id/reject')"]);
   });
 
   it('issues no SQL and opens no transaction of its own: money is written by the wallet package inside the executor transaction', () => {
@@ -34,8 +34,10 @@ describe('M04-B2.2b admin top-up boundary', () => {
 
   it('never puts the bank account, the holder or the bank transaction code into the audit row or the event', () => {
     const service = codeOf('admin-topups/admin-topup-service.ts');
-    const metadata = service.slice(service.indexOf('metadata:'), service.indexOf('metadata:') + 60);
-    expect(metadata).toContain('state: row.state');
+    // The request audit row is the one with the request state in its metadata (the queue dismissal has its own, reason only).
+    const at = service.indexOf('metadata: { state: row.state');
+    expect(at).toBeGreaterThan(0);
+    expect(service.slice(at, at + 60)).toContain('state: row.state');
     expect(service.slice(service.indexOf('payload: {'))).not.toMatch(/canonical|account_number|account_holder/);
     expect(service).not.toMatch(/metadata:[^}]*(canonical|accountNumber|accountHolder)/);
   });

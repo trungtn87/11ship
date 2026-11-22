@@ -66,7 +66,7 @@ describe('SePay payload validation', () => {
 describe('SePay transfer decision (pure matching rule)', () => {
   it('makes a candidate only when the code opens the content and the reference is present', () => {
     const decision = decideTransfer(event());
-    expect(decision).toEqual({ kind: 'CANDIDATE', transferCode: 'NAPA1B2C3D4E5', canonicalTransactionId: 'SEPAY:FT24012345678:150000:2026-11-19 11:08:33' });
+    expect(decision).toEqual({ kind: 'CANDIDATE', transferCode: 'NAPA1B2C3D4E5', canonicalTransactionId: 'FT24012345678' });
   });
 
   it('ignores leading whitespace of the bank content and nothing else', () => {

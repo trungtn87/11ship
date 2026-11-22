@@ -19,12 +19,17 @@ import { AdminTopupRow, TopupRequestRepository } from '../wallet/topup-request-r
 import { SystemBankAccountRepository } from '../wallet/system-bank-account-repository';
 import { TopupPostingService } from '../wallet/topup-posting-service';
 import { encodeCursor } from '../wallet-topup/topup-request-validation';
-import { AdminTopupListQuery, ConfirmBody, RejectBody } from './admin-topup-validation';
+import { AdminTopupListQuery, ConfirmBody, RejectBody, SepayDismissBody } from './admin-topup-validation';
+import { SepaySettlementRepository } from '../sepay/sepay-settlement-repository';
 
 type Command = 'confirm' | 'reject';
 const OPERATION: Readonly<Record<Command, string>> = { confirm: 'admin.wallet_topup.confirm.v1', reject: 'admin.wallet_topup.reject.v1' };
 const RESOURCE = 'wallet_topup_request';
 const EVENT_CHANGED = 'wallet.topup_request.changed.v1';
+const OPERATION_SEPAY_DISMISS = 'admin.sepay_inbox.dismissed.v1';
+const SEPAY_RESOURCE = 'sepay_transfer_inbox';
+/** The queue shows at most this many items per call; the Administrator works it down in order. */
+const SEPAY_QUEUE_LIMIT = 50;
 /** A bank time later than the database clock by more than this is a typing error, not a payment. */
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -57,6 +62,7 @@ export class AdminTopupService {
     private readonly accounts: SystemBankAccountRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly evidence: SepaySettlementRepository,
     @Inject(APP_CONFIG) appConfig: AppConfig,
   ) {
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
@@ -140,9 +146,69 @@ export class AdminTopupService {
         settledBy: { kind: 'ADMIN', userId: locked.known.userId },
       });
       const after = await this.#resolve(context, row, body.expectedVersion, 'CONFIRMED', locked);
+      // A SePay transfer already in the inbox for this account, reference and amount is now evidence of this confirmation (LINKED, not queued).
+      const accountNumber = await this.accounts.accountNumberOf(context, body.systemAccountId);
+      if (accountNumber !== undefined) {
+        await this.evidence.linkManualConfirmation(context, { accountNumber, referenceCode: body.canonicalTransactionId, amountVnd: BigInt(body.actualAmountVnd), requestId: row.requestId });
+      }
       await this.#record(context, locked, meta.requestId, OPERATION.confirm, after, { requested_amount_vnd: Number(row.amountRequestedVnd), actual_amount_vnd: body.actualAmountVnd });
       return after;
     });
+  }
+
+  /**
+   * The SePay evidence the Administrator must still decide (NEEDS_ADMIN: wrong or missing code, wrong amount, no request, and so on). Read-only,
+   * under the finance right to read. A confirmation of the same bank reference from the top-up screen links the row (see confirm); the other way
+   * to close one is dismissSepayEvidence.
+   */
+  async sepayQueue(sessionToken: string | undefined): Promise<JsonObject> {
+    const known = await this.actor.precheck(sessionToken, { required: false });
+    return this.transactions.withTransaction(async (context) => {
+      await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+      await this.#authorize(context, known, 'read', FINANCE_PERMISSION_READ);
+      const rows = await this.evidence.listNeedsAdmin(context, SEPAY_QUEUE_LIMIT);
+      return {
+        items: rows.map((row) => ({
+          inbox_id: row.inboxId,
+          received_at: iso(row.receivedAtMs),
+          transaction_at: row.transactionAtIso,
+          gateway: row.gateway,
+          account_last4: row.accountLast4,
+          amount_vnd: row.transferAmountVnd,
+          code: row.code,
+          reference_code: row.referenceCode,
+          reason_code: row.reason,
+          content: row.content,
+        })),
+      };
+    });
+  }
+
+  /** Closes one queue item as not a Shipper top-up (fixed reason). Writes the audit row with the reason it had before. Asked again under the locks. */
+  dismissSepayEvidence(sessionToken: string | undefined, csrfHeader: unknown, inboxId: string, body: SepayDismissBody, meta: { requestId: string }): Promise<JsonObject> {
+    return this.actor.precheck(sessionToken, { required: true, header: csrfHeader }).then((known) =>
+      this.transactions.withTransaction(async (context) => {
+        await setBusinessLockTimeout(context, this.#lockTimeoutMs);
+        const { locked } = await this.#authorize(context, known, 'read', FINANCE_PERMISSION_TOPUP_RECORD);
+        const closed = await this.evidence.dismissNeedsAdmin(context, inboxId, body.reasonCode);
+        if (closed === undefined) {
+          throw new AppError('TOPUP_REQUEST_STATE_CONFLICT');
+        }
+        await this.audit.append(context, {
+          requestId: meta.requestId,
+          actorType: locked.checked.membership.adminRole,
+          actorId: locked.known.userId,
+          action: OPERATION_SEPAY_DISMISS,
+          resourceType: SEPAY_RESOURCE,
+          resourceId: inboxId,
+          resourceVersion: null,
+          outcome: 'SUCCESS',
+          reasonCode: body.reasonCode,
+          metadata: { previous_reason: closed.previousReason ?? '' },
+        });
+        return { inbox_id: inboxId, state: 'IGNORED', reason_code: body.reasonCode };
+      }),
+    );
   }
 
   /** The common shell of a write; `apply` returns the request as it is after the change. */

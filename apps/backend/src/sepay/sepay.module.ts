@@ -30,5 +30,6 @@ import { HttpSepayTransactionsClient, SEPAY_TRANSACTIONS_CLIENT } from './sepay-
     SepayReconciliationSweeper,
     { provide: SEPAY_TRANSACTIONS_CLIENT, useClass: HttpSepayTransactionsClient },
   ],
+  exports: [SepaySettlementRepository],
 })
 export class SepayModule {}

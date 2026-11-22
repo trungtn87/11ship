@@ -1,9 +1,12 @@
 import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { AuditWriter } from '../../apps/backend/src/audit/audit-writer';
 import { DriverRepository } from '../../apps/backend/src/driver/driver-repository';
 import { OutboxWriter } from '../../apps/backend/src/outbox/outbox-writer';
+import { readSepayConfig } from '../../apps/backend/src/sepay/sepay-config';
 import { SepaySettlementRepository } from '../../apps/backend/src/sepay/sepay-settlement-repository';
 import { SepaySettlementService } from '../../apps/backend/src/sepay/sepay-settlement-service';
 import { SepayWebhookService } from '../../apps/backend/src/sepay/sepay-webhook.service';
@@ -19,14 +22,16 @@ import { createDriverFor, purgePhone, randomPhone, Phone } from './support/auth-
 import { loadIntegrationConfig } from './support/test-helpers';
 import { testPool } from './support/transaction-fixtures';
 
-// M04 SePay automatic top-up, step 1, on a REAL PostgreSQL schema (all migrations, including 1798070400000_sepay-auto-topup-inbox).
+// M04 SePay automatic top-up, step 1, on a REAL PostgreSQL schema (all migrations, including 1798156800000_sepay-auto-topup-inbox).
 // EVERY scenario runs in ONE database transaction on one connection that is ROLLED BACK at the end, so no row is committed and nothing
 // needs cleaning up. Deferred constraint triggers (topup / request invariants, foreign keys) are forced to run before the rollback with
 // SET CONSTRAINTS ALL IMMEDIATE, so the database proves its own rules for each scenario. The service under test is the real one with the
 // real repositories; only the transaction source is the single rolled-back transaction.
 
 const SECRET = 'integration-only-sepay-secret';
-const ENV = { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_AUTO_TOPUP_ENABLED: 'true' } as NodeJS.ProcessEnv;
+// Automatic credit needs BOTH credentials (fail closed): the API key is part of the ON configuration, not optional.
+const API_KEY = 'integration-only-sepay-api-key';
+const ENV = { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_API_KEY: API_KEY, SEPAY_AUTO_TOPUP_ENABLED: 'true' } as NodeJS.ProcessEnv;
 const BANK_ID = 'MB';
 
 describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real schema, rolled back)', () => {
@@ -40,19 +45,39 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
   const wallets = new WalletService(new WalletRepository(), new DriverRepository());
   const requests = new TopupRequestRepository();
 
-  function serviceOver(connection: PoolClient): SepayWebhookService {
-    const context = { query: (sql: string, params?: unknown[]) => connection.query(sql, params as unknown[]) } as unknown as TransactionContext;
-    const transactions = { withTransaction: (work: (c: TransactionContext) => Promise<unknown>) => work(context) };
-    const settlement = new SepaySettlementService(
+  const posting = new TopupPostingService(new TopupSettlementRepository());
+
+  function settlementOver(): SepaySettlementService {
+    return new SepaySettlementService(
       new SepaySettlementRepository(),
       new TopupAutoLookupRepository(),
       new DriverRepository(),
-      new TopupPostingService(new TopupSettlementRepository()),
+      posting,
       requests,
       new AuditWriter(),
       new OutboxWriter(),
     );
-    return new SepayWebhookService(transactions as never, settlement);
+  }
+
+  function serviceOver(connection: PoolClient): SepayWebhookService {
+    const context = { query: (sql: string, params?: unknown[]) => connection.query(sql, params as unknown[]) } as unknown as TransactionContext;
+    const transactions = { withTransaction: (work: (c: TransactionContext) => Promise<unknown>) => work(context) };
+    return new SepayWebhookService(transactions as never, settlementOver());
+  }
+
+  /** The inbox row id of a webhook event (the key the recovery claims by). */
+  async function inboxIdOf(eventId: number): Promise<string> {
+    return (await client.query<{ inbox_id: string }>('SELECT inbox_id::text AS inbox_id FROM app.sepay_transfer_inbox WHERE webhook_event_id = $1::bigint', [eventId])).rows[0]!.inbox_id;
+  }
+
+  /** Signs a raw body with the given environment's secret, as SePay would (the same secret the environment holds). */
+  function signedWith(raw: Buffer, env: NodeJS.ProcessEnv): ReturnType<typeof signedRequest> {
+    return { ...signedRequest(raw), env };
+  }
+
+  /** Wallet-scoped topup count (the table is shared by the whole suite, so every count names its own wallet). */
+  async function topupCount(): Promise<number> {
+    return (await client.query<{ n: number }>('SELECT count(*)::int AS n FROM app.wallet_topups WHERE wallet_id = $1::uuid', [walletId])).rows[0]!.n;
   }
 
   function ctx(): TransactionContext {
@@ -336,4 +361,199 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
       expect(await requests.reportPending(ctx(), requestId)).toBeUndefined();
     });
   });
+
+  it('the Administrator queue lists a held transfer; dismissal closes it once, keeps the reason it had, and the row is never deleted', async () => {
+    await scenario(async (c) => {
+      await receivingAccount();
+      const { code } = await pendingRequest(150000n);
+      const raw = webhook({ code, content: code, transferAmount: 150001, referenceCode: 'FTQUEUEITEM1' });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      await service.receive(signedRequest(raw));
+      expect(await inboxOf(eventId)).toEqual({ state: 'NEEDS_ADMIN', reason_code: 'AMOUNT_MISMATCH', topup_request_id: null });
+      const repository = new SepaySettlementRepository();
+      const queued = await repository.listNeedsAdmin(ctx(), 500);
+      const item = queued.find((row) => row.referenceCode === 'FTQUEUEITEM1');
+      expect(item).toMatchObject({ reason: 'AMOUNT_MISMATCH', transferAmountVnd: 150001, accountLast4: accountNumber.slice(-4) });
+      const inboxId = await inboxIdOf(eventId);
+      expect(await repository.dismissNeedsAdmin(ctx(), inboxId, 'NOT_A_TOPUP')).toEqual({ previousReason: 'AMOUNT_MISMATCH' });
+      expect(await repository.dismissNeedsAdmin(ctx(), inboxId, 'NOT_A_TOPUP')).toBeUndefined();
+      expect(await inboxOf(eventId)).toEqual({ state: 'IGNORED', reason_code: 'NOT_A_TOPUP', topup_request_id: null });
+      expect((await repository.listNeedsAdmin(ctx(), 500)).some((row) => row.referenceCode === 'FTQUEUEITEM1')).toBe(false);
+      await c.query('SAVEPOINT no_delete');
+      await expect(c.query('DELETE FROM app.sepay_transfer_inbox WHERE inbox_id = $1::uuid', [inboxId])).rejects.toThrow(/EVIDENCE|restrict/i);
+      await c.query('ROLLBACK TO SAVEPOINT no_delete');
+    });
+  });
+
+  // ---- Same bank transfer, two sources (Codex 2026-11-22, finding 1): one bank identity = the bank reference ----
+
+  it('an Administrator confirmed the bank reference first; the SePay transfer of the same reference is LINKED to that request and is not credited again', async () => {
+    await scenario(async (c) => {
+      const accountId = await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      await posting.creditTopup(ctx(), {
+        walletId, driverId, requestId, bankId: BANK_ID, systemAccountId: accountId, canonicalTransactionId: 'FTADMINFIRST',
+        actualAmountVnd: 150000n, receivedAtIso: '2026-11-19T11:08:33+07:00', settledBy: { kind: 'ADMIN', userId },
+      });
+      await requests.resolve(ctx(), requestId, 1, 'CONFIRMED', { kind: 'ADMIN', userId });
+      const raw = webhook({ code, content: code, transferAmount: 150000, referenceCode: 'FTADMINFIRST' });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      expect((await service.receive(signedRequest(raw))).status).toBe(200);
+      expect(await inboxOf(eventId)).toEqual({ state: 'LINKED', reason_code: 'ALREADY_RECORDED', topup_request_id: requestId });
+      expect(await balanceOf()).toBe('150000');
+      expect(await topupCount()).toBe(1);
+      const bank = (await c.query("SELECT count(*)::int AS n FROM app.wallet_bank_transactions WHERE canonical_transaction_id = 'FTADMINFIRST'")).rows[0];
+      expect(bank).toEqual({ n: 1 });
+    });
+  });
+
+  it('the SePay transfer was credited first; the Administrator cannot confirm the same bank reference again, on this or another request', async () => {
+    await scenario(async () => {
+      const accountId = await receivingAccount();
+      const first = await pendingRequest(150000n);
+      const raw = webhook({ code: first.code, content: first.code, transferAmount: 150000, referenceCode: 'FTSEPAYFIRST' });
+      expect((await service.receive(signedRequest(raw))).status).toBe(200);
+      const second = await pendingRequest(150000n);
+      await expect(
+        posting.creditTopup(ctx(), {
+          walletId, driverId, requestId: second.requestId, bankId: BANK_ID, systemAccountId: accountId, canonicalTransactionId: 'FTSEPAYFIRST',
+          actualAmountVnd: 150000n, receivedAtIso: '2026-11-19T11:08:33+07:00', settledBy: { kind: 'ADMIN', userId },
+        }),
+      ).rejects.toMatchObject({ code: 'BANK_TRANSACTION_ALREADY_RECORDED' });
+      expect(await balanceOf()).toBe('150000');
+      expect(await topupCount()).toBe(1);
+    });
+  });
+
+  it('two different top-up requests cannot both take one bank transfer: the second SePay event is linked to the request that holds it', async () => {
+    await scenario(async () => {
+      await receivingAccount();
+      const first = await pendingRequest(150000n);
+      const second = await pendingRequest(150000n);
+      const reference = 'FTTWOREQUESTS';
+      const credited = webhook({ code: first.code, content: first.code, transferAmount: 150000, referenceCode: reference });
+      await service.receive(signedRequest(credited));
+      // The same bank reference, arriving later with a different SePay id and time: a new evidence row, but the same bank transfer.
+      const replay = webhook({ code: second.code, content: second.code, transferAmount: 150000, referenceCode: reference, transactionDate: '2026-11-19 11:09:00' });
+      const replayId = JSON.parse(replay.toString('utf8')).id as number;
+      await service.receive(signedRequest(replay));
+      expect(await inboxOf(replayId)).toEqual({ state: 'LINKED', reason_code: 'ALREADY_RECORDED', topup_request_id: first.requestId });
+      expect(await balanceOf()).toBe('150000');
+      expect(await topupCount()).toBe(1);
+    });
+  });
+
+  // ---- The switch and the credentials (Codex 2026-11-22, findings 2 and 3) ----
+
+  it('held while the switch was off; once the switch and both credentials are on, the recovery settles it exactly once and a repeat changes nothing', async () => {
+    await scenario(async (c) => {
+      await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      const raw = webhook({ code, content: code, transferAmount: 150000 });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      const offEnv = { SEPAY_WEBHOOK_SECRET: SECRET } as NodeJS.ProcessEnv;
+      expect((await service.receive(signedWith(raw, offEnv))).status).toBe(200);
+      expect(await inboxOf(eventId)).toEqual({ state: 'RECEIVED', reason_code: 'AUTO_TOPUP_DISABLED', topup_request_id: null });
+      expect(await balanceOf()).toBe('0');
+
+      const settlement = settlementOver();
+      const config = readSepayConfig(ENV);
+      const inboxId = await inboxIdOf(eventId);
+      expect(await settlement.recoverableIds(ctx(), 50)).toContain(inboxId);
+      expect(await settlement.recoverOne(ctx(), inboxId, config)).toBe(true);
+      expect(await inboxOf(eventId)).toEqual({ state: 'CREDITED', reason_code: null, topup_request_id: requestId });
+      expect(await settlement.recoverOne(ctx(), inboxId, config)).toBe(false);
+      expect(await service.receive(signedRequest(raw))).toEqual({ status: 200, body: { success: true } });
+      expect(await balanceOf()).toBe('150000');
+      expect(await topupCount()).toBe(1);
+      expect((await c.query("SELECT count(*)::int AS n FROM app.sepay_transfer_inbox WHERE reference_code = $1", [JSON.parse(raw.toString('utf8')).referenceCode as string])).rows[0]).toEqual({ n: 1 });
+    });
+  });
+
+  it('a verified webhook with the switch on but no API key is kept as evidence (AUTO_TOPUP_NOT_CONFIGURED) and credits nothing, until the key is configured', async () => {
+    await scenario(async () => {
+      await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      const raw = webhook({ code, content: code, transferAmount: 150000 });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      const noKey = { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_AUTO_TOPUP_ENABLED: 'true' } as NodeJS.ProcessEnv;
+      expect((await service.receive(signedWith(raw, noKey))).status).toBe(200);
+      expect(await inboxOf(eventId)).toEqual({ state: 'RECEIVED', reason_code: 'AUTO_TOPUP_NOT_CONFIGURED', topup_request_id: null });
+      expect(await balanceOf()).toBe('0');
+      const settlement = settlementOver();
+      expect(await settlement.recoverOne(ctx(), await inboxIdOf(eventId), readSepayConfig(noKey))).toBe(false);
+      expect(await settlement.recoverOne(ctx(), await inboxIdOf(eventId), readSepayConfig(ENV))).toBe(true);
+      expect(await inboxOf(eventId)).toEqual({ state: 'CREDITED', reason_code: null, topup_request_id: requestId });
+      expect(await balanceOf()).toBe('150000');
+    });
+  });
+
+  it('evidence held while the switch was off is linked when the Administrator confirms the same reference and amount by hand; the recovery then leaves it alone', async () => {
+    await scenario(async (c) => {
+      const accountId = await receivingAccount();
+      const { code } = await pendingRequest(150000n);
+      const raw = webhook({ code, content: code, transferAmount: 150000, referenceCode: 'FTHELDBYOFF' });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      await service.receive(signedWith(raw, { SEPAY_WEBHOOK_SECRET: SECRET } as NodeJS.ProcessEnv));
+      expect((await inboxOf(eventId)).state).toBe('RECEIVED');
+      // The Administrator confirms the statement line of the same reference (for this request), exactly as the top-up screen does.
+      const confirmed = await pendingRequest(150000n);
+      await posting.creditTopup(ctx(), { walletId, driverId, requestId: confirmed.requestId, bankId: BANK_ID, systemAccountId: accountId, canonicalTransactionId: 'FTHELDBYOFF', actualAmountVnd: 150000n, receivedAtIso: '2026-11-19T11:08:33+07:00', settledBy: { kind: 'ADMIN', userId } });
+      await requests.resolve(ctx(), confirmed.requestId, 1, 'CONFIRMED', { kind: 'ADMIN', userId });
+      const linked = await new SepaySettlementRepository().linkManualConfirmation(ctx(), { accountNumber, referenceCode: 'FTHELDBYOFF', amountVnd: 150000n, requestId: confirmed.requestId });
+      expect(linked).toBe(1);
+      expect(await inboxOf(eventId)).toEqual({ state: 'LINKED', reason_code: 'ADMIN_CONFIRMED', topup_request_id: confirmed.requestId });
+      expect(await settlementOver().recoverOne(ctx(), await inboxIdOf(eventId), readSepayConfig(ENV))).toBe(false);
+      expect(await balanceOf()).toBe('150000');
+      expect((await c.query('SELECT count(*)::int AS n FROM app.wallet_topups WHERE wallet_id = $1::uuid', [walletId])).rows[0]).toEqual({ n: 1 });
+    });
+  });
+
+  // ---- The same settlement under the runtime privileges of ship11_app (Codex 2026-11-22, finding 5, limit documented in the PR) ----
+
+  it('the credit runs under the runtime matrix of ops/selfhosted/02-runtime-grants.sql, and that matrix is really in force', async () => {
+    await scenario(async (c) => {
+      await applyRuntimeGrants(c, RUNTIME_TABLES);
+      // The matrix is in force: a row lock on an append-only table (audit_logs: SELECT, INSERT only) is refused; the owner would take it without the matrix.
+      await c.query('SAVEPOINT no_lock');
+      await expect(c.query('SELECT 1 FROM app.audit_logs FOR UPDATE')).rejects.toThrow(/permission denied/i);
+      await c.query('ROLLBACK TO SAVEPOINT no_lock');
+
+      await receivingAccount();
+      const { requestId, code } = await pendingRequest(150000n);
+      const raw = webhook({ code, content: code, transferAmount: 150000 });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      expect((await service.receive(signedRequest(raw))).status).toBe(200);
+      expect(await inboxOf(eventId)).toEqual({ state: 'CREDITED', reason_code: null, topup_request_id: requestId });
+      expect(await balanceOf()).toBe('150000');
+
+    });
+  });
 });
+
+// The runtime matrix (ops/selfhosted/02-runtime-grants.sql) for the tables of the top-up settlement. CI has no ship11_app login, so the owner
+// (ship11_test) takes exactly these privileges for the duration of a rolled-back transaction. Limit: this is a privilege simulation, not SET ROLE.
+const RUNTIME_TABLES = [
+  'drivers', 'driver_wallets', 'wallet_ledger_entries', 'system_owned_bank_accounts', 'wallet_topup_requests', 'wallet_bank_transactions',
+  'wallet_topups', 'sepay_transfer_inbox', 'sepay_reconciliation_cursor', 'outbox_events', 'audit_logs',
+];
+
+/**
+ * Tables that a foreign key references. PostgreSQL runs the check of a referencing row as the owner of the REFERENCED table, and that check takes a
+ * FOR KEY SHARE lock, which needs UPDATE. In production the owner is the migrator, not the runtime role. Here the owner is the same test role, so
+ * UPDATE is given back to it on these tables only (a simulation artifact, documented in the PR). Every other table keeps the exact matrix.
+ */
+const FK_REFERENCED = ['drivers', 'driver_wallets', 'system_owned_bank_accounts', 'wallet_bank_transactions', 'wallet_topup_requests', 'wallet_topups'];
+
+async function applyRuntimeGrants(client: PoolClient, tables: readonly string[]): Promise<void> {
+  const file = readFileSync(path.resolve(__dirname, '..', '..', '..', 'ops', 'selfhosted', '02-runtime-grants.sql'), 'utf8');
+  for (const line of file.split('\n')) {
+    const match = /^GRANT (.+) ON app\.(\w+) TO ship11_app;$/.exec(line.trim());
+    if (match === null || !tables.includes(match[2]!)) continue;
+    await client.query(`REVOKE ALL ON app.${match[2]} FROM ship11_test`);
+    await client.query(`GRANT ${match[1]} ON app.${match[2]} TO ship11_test`);
+  }
+  for (const table of tables.filter((name) => FK_REFERENCED.includes(name))) {
+    await client.query(`GRANT UPDATE ON app.${table} TO ship11_test`);
+  }
+}

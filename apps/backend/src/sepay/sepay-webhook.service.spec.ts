@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from '@jest/globals';
 import { AppError, TechnicalError } from '../common/app-errors';
 import { SepayWebhookService } from './sepay-webhook.service';
-import { buildService, CODE, freshStore, NOW, REQUEST_ID, SECRET } from './sepay-test-harness';
+import { API_KEY, buildService, CODE, freshStore, NOW, REQUEST_ID, SECRET } from './sepay-test-harness';
 
 function body(overrides: Record<string, unknown> = {}): Buffer {
   return Buffer.from(
@@ -29,7 +29,7 @@ function signed(raw: Buffer, timestamp = String(NOW), secret = SECRET): { timest
   return { timestampHeader: timestamp, signatureHeader: `sha256=${createHmac('sha256', secret).update(`${timestamp}.`).update(raw).digest('hex')}` };
 }
 
-function receive(service: SepayWebhookService, raw: Buffer, env: Record<string, string | undefined> = { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_AUTO_TOPUP_ENABLED: 'true' }, headers = signed(raw), now = NOW) {
+function receive(service: SepayWebhookService, raw: Buffer, env: Record<string, string | undefined> = { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_API_KEY: API_KEY, SEPAY_AUTO_TOPUP_ENABLED: 'true' }, headers = signed(raw), now = NOW) {
   return service.receive({ rawBody: raw, timestampHeader: headers.timestampHeader, signatureHeader: headers.signatureHeader, nowSeconds: now, env: env as NodeJS.ProcessEnv });
 }
 
@@ -68,12 +68,12 @@ describe('SePay webhook service: the automatic credit decision', () => {
     expect(store.inbox.has(1002)).toBe(false);
   });
 
-  it('a second request sharing the bank transaction identity is held as a duplicate, never credited', async () => {
-    const store = freshStore({ bankRecords: new Set(['SEPAY:FT24012345678:150000:2026-11-19 11:08:33']) });
+  it('a bank reference already recorded (for example by an Administrator) is linked to the request that holds it, never credited again', async () => {
+    const store = freshStore({ bankRecords: new Map([['FT24012345678', 'b1b2c3d4-e5f6-4789-8abc-0123456789ab']]) });
     const { service } = buildService(store);
     await receive(service, body());
     expect(store.creditCalls).toHaveLength(0);
-    expect(store.inbox.get(92704)).toEqual({ state: 'NEEDS_ADMIN', reason: 'BANK_TRANSACTION_ALREADY_RECORDED', topupRequestId: null });
+    expect(store.inbox.get(92704)).toEqual({ state: 'LINKED', reason: 'ALREADY_RECORDED', topupRequestId: 'b1b2c3d4-e5f6-4789-8abc-0123456789ab' });
   });
 
   it('with the switch off, the event is recorded as RECEIVED and nothing is credited', async () => {

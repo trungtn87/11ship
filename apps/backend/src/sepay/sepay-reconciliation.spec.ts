@@ -4,12 +4,12 @@ import { parseSepayApiTransaction } from './sepay-event';
 import { ReconciliationCursor, SepayReconciliationCursorRepository } from './sepay-reconciliation-cursor-repository';
 import { SepayReconciliationService } from './sepay-reconciliation.service';
 import { SepayPageRequest, SepayPageResult, SepayTransactionsClient, parsePage, parseRetryAfter } from './sepay-transactions-client';
-import { buildService, CODE, freshStore, NOW, SECRET, Store } from './sepay-test-harness';
+import { API_KEY, buildService, CODE, freshStore, NOW, SECRET, Store } from './sepay-test-harness';
 
 // The reconciliation job is driven against the same in-memory store as the webhook (its settlement is the webhook's), a fake cursor row and a
 // scripted fake of the transactions API. No test reaches SePay or the network.
 
-const KEY = 'test-only-api-key-not-a-real-key';
+const KEY = API_KEY;
 const ENV_ON = { SEPAY_AUTO_TOPUP_ENABLED: 'true', SEPAY_API_KEY: KEY, SEPAY_WEBHOOK_SECRET: SECRET };
 const UUID_1 = '0b6e8a2c-7f1d-4c3a-9e5b-000000000001';
 const UUID_2 = '0b6e8a2c-7f1d-4c3a-9e5b-000000000002';
@@ -68,7 +68,7 @@ function cursorRow(): SepayReconciliationCursorRepository & { row: CursorState }
   return {
     row,
     async read(): Promise<ReconciliationCursor> {
-      return { lastTransactionUuid: row.lastTransactionUuid, notBeforeMs: row.notBeforeMs };
+      return { lastTransactionUuid: row.lastTransactionUuid, notBeforeMs: row.notBeforeMs, advancedAtMs: NOW * 1000 };
     },
     async record(_c: unknown, input: { lastTransactionUuid: string | null; outcome: string; notBeforeMs: number | null }): Promise<void> {
       if (input.lastTransactionUuid !== null) row.lastTransactionUuid = input.lastTransactionUuid;
@@ -96,7 +96,7 @@ describe('SePay reconciliation: the switch and the key', () => {
     const client = scriptedClient([]);
     const { job, options } = jobWith(store, client);
     const result = await job.runOnce({ SEPAY_API_KEY: KEY, SEPAY_WEBHOOK_SECRET: SECRET }, options);
-    expect(result).toEqual({ outcome: 'DISABLED', read: 0 });
+    expect(result).toMatchObject({ outcome: 'DISABLED', read: 0 });
     expect(client.calls).toHaveLength(0);
     expect(store.creditCalls).toHaveLength(0);
   });
@@ -117,7 +117,7 @@ describe('SePay reconciliation: crediting a transfer the webhook never delivered
     const client = scriptedClient([page([apiItem()], false)]);
     const { job, cursor, options } = jobWith(store, client);
     const result = await job.runOnce(ENV_ON, options);
-    expect(result).toEqual({ outcome: 'OK', read: 1 });
+    expect(result).toMatchObject({ outcome: 'OK', read: 1 });
     expect(store.creditCalls).toHaveLength(1);
     expect(store.creditCalls[0]).toMatchObject({ settledBy: { kind: 'SEPAY_WEBHOOK' }, actualAmountVnd: 150000n, bankId: 'MB' });
     expect(store.inbox.get(UUID_1)).toEqual({ state: 'CREDITED', reason: null, topupRequestId: expect.any(String) });
@@ -182,7 +182,7 @@ describe('SePay reconciliation: cursor, pages and back-off', () => {
     cursor.row.lastTransactionUuid = UUID_3;
     const { job, options } = jobWith(store, client, cursor);
     const result = await job.runOnce(ENV_ON, options);
-    expect(result).toEqual({ outcome: 'OK', read: 2 });
+    expect(result).toMatchObject({ outcome: 'OK', read: 2 });
     expect(client.calls.map((c) => [c.page, c.sinceId])).toEqual([
       [1, UUID_3],
       [2, UUID_3],

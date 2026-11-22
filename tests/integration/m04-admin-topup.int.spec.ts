@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { ADMIN_SESSION_COOKIE } from '../../apps/backend/src/admin-auth/admin-auth-constants';
@@ -486,5 +486,27 @@ describe('M04-B2.2b — Admin top-up reconciliation and TOPUP posting', () => {
     expect((await changeGrant('revoke', recorder.userId, RECORD, 3)).status).toBe(200);
     expect(code(await get(recorderLogin, path))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
     expect((await changeGrant('grant', recorder.userId, RECORD, 4)).status).toBe(200);
+  });
+
+  // M04 SePay (Codex 2026-11-22, finding 2): the Administrator's queue of held transfer evidence. Read needs wallet.read; closing an item needs
+  // wallet.topup.record. The item is a committed NEEDS_ADMIN row with a random id (the inbox keeps history and never deletes it).
+  it('12. SePay queue: listed for the read right, closed once for the record right with a fixed reason, never deleted; no other right reaches it', async () => {
+    const inboxId = randomUUID();
+    await admin.pool.query(
+      `INSERT INTO app.sepay_transfer_inbox (inbox_id, webhook_event_id, gateway, account_number, transfer_type, transfer_amount_vnd, transaction_at, code, content, reference_code, state, reason_code, received_at, processed_at)
+       VALUES ($1::uuid, $2::bigint, 'MBBank', '7777777777', 'in', 12345, now(), NULL, 'queue fixture ${tag}', $3, 'NEEDS_ADMIN', 'NO_CODE', now(), now())`,
+      [inboxId, randomInt(4_100_000_000, 4_200_000_000), `FTQUEUE${tag}`],
+    );
+    expect(code(await get(bareLogin, '/finance/sepay-inbox/needs-admin'))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(code(await get(recorderLogin, '/finance/sepay-inbox/needs-admin'))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    const listed = adminData(await get(readerLogin, '/finance/sepay-inbox/needs-admin')).items as Array<{ inbox_id: string; account_last4: string; content: string }>;
+    expect(listed.find((item) => item.inbox_id === inboxId)).toMatchObject({ account_last4: '7777', content: `queue fixture ${tag}` });
+    expect(code(await send(readerLogin, `/finance/sepay-inbox/${inboxId}/dismiss`, { reason_code: 'NOT_A_TOPUP' }))).toEqual({ status: 403, code: 'ADMIN_FORBIDDEN' });
+    expect(code(await send(recorderLogin, `/finance/sepay-inbox/${inboxId}/dismiss`, { reason_code: 'NOPE' }))).toEqual({ status: 400, code: 'ADMIN_INPUT_INVALID' });
+    expect((await send(recorderLogin, `/finance/sepay-inbox/${inboxId}/dismiss`, { reason_code: 'NOT_A_TOPUP' })).status).toBe(200);
+    expect(code(await send(recorderLogin, `/finance/sepay-inbox/${inboxId}/dismiss`, { reason_code: 'NOT_A_TOPUP' }))).toEqual({ status: 409, code: 'TOPUP_REQUEST_STATE_CONFLICT' });
+    const after = await admin.pool.query<{ state: string; reason_code: string }>('SELECT state, reason_code FROM app.sepay_transfer_inbox WHERE inbox_id = $1::uuid', [inboxId]);
+    expect(after.rows).toEqual([{ state: 'IGNORED', reason_code: 'NOT_A_TOPUP' }]);
+    expect(await auditCount(inboxId, 'admin.sepay_inbox.dismissed.v1')).toBe(1);
   });
 });
