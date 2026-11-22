@@ -21,7 +21,7 @@ final class OfflineMap {
     private var cachedStyle: URL?
 
     private var root: URL? {
-        Bundle.main.url(forResource: "caobang", withExtension: nil)
+        CaobangPackage.root
     }
 
     private lazy var manifest: [String: Any]? = {
