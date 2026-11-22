@@ -12,7 +12,7 @@ import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/
 import { DEFAULT_ACCOUNT_DELETION_CONFIG } from '../../apps/backend/src/config/account-deletion-config';
 import { M14_ROUTING } from '../../apps/backend/src/delivery/m14-route-client';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
-import { ApiResponse, AuthApp, countRows, dataOf, errorCode, PASSWORD, rowLockWaitersRunning, startAuthApp } from './support/auth-fixtures';
+import { ApiResponse, AuthApp, countRows, dataOf, errorCode, obtainProof, PASSWORD, rowLockWaitersRunning, startAuthApp } from './support/auth-fixtures';
 import { insertDeliveryRow } from './support/delivery-fixtures';
 import {
   cleanupOrders,
@@ -27,6 +27,7 @@ import {
   PRIVACY,
   Shipper,
   TERMS,
+  WEB_FOOD,
   WEB_SHIP,
 } from './support/m10-fixtures';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
@@ -182,21 +183,55 @@ describe('P5-6a public account deletion', () => {
   /** A made-up order row (the repository's usual fixture for rows owned by another module). */
   async function insertOrder(customerId: string, shopId: string, status: 'PENDING_CONFIRMATION' | 'PREPARING' | 'COMPLETED'): Promise<string> {
     const orderId = randomUUID();
-    await withoutTriggers(['orders'], (q) =>
-      q.query(
+    // One dish line of 50.000 VND, so the order's amounts equal its lines (the order-invariant trigger checks it whenever the order is written again).
+    await withoutTriggers(['orders', 'order_items'], async (q) => {
+      await q.query(
         `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
            items_original_total_vnd, items_total_vnd, confirmed_at, ended_at, end_actor, created_at, updated_at)
          VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::varchar, 'Quán thử', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000,
            CASE WHEN $6::varchar IN ('PREPARING','COMPLETED') THEN now() END, CASE WHEN $6::varchar = 'COMPLETED' THEN now() END, CASE WHEN $6::varchar = 'COMPLETED' THEN 'SHOP' END, now(), now())`,
         [orderId, `#D${orderId.slice(0, 6)}`, randomUUID(), customerId, shopId, status],
-      ),
-    );
+      );
+      await q.query(
+        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
+         VALUES (gen_random_uuid(), $1::uuid, 1, $2::uuid, $3, 50000, 1, 50000, 1, now())`,
+        [orderId, dish.itemId, dish.name],
+      );
+    });
     return orderId;
   }
+  // An order that is no longer in progress. CANCELLED_BY_SHOP needs no delivery (a COMPLETED order needs exactly one completed delivery, which
+  // these fixtures do not create), so the order-invariant trigger accepts it when the anonymization touches the row.
   const finishOrder = (orderId: string): Promise<unknown> =>
     withoutTriggers(['orders'], (q) =>
-      q.query(`UPDATE app.orders SET status = 'COMPLETED', confirmed_at = COALESCE(confirmed_at, now()), ended_at = now(), end_actor = 'SHOP', version = version + 1 WHERE order_id = $1::uuid`, [orderId]),
+      q.query(
+        `UPDATE app.orders SET status = 'CANCELLED_BY_SHOP', confirmed_at = COALESCE(confirmed_at, now()), ended_at = now(), end_actor = 'SHOP', end_reason = 'Đơn thử nghiệm kết thúc', version = version + 1 WHERE order_id = $1::uuid`,
+        [orderId],
+      ),
     );
+  const anonymized = async (userId: string): Promise<boolean> =>
+    (await countRows(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [userId])) === 1;
+  /**
+   * The wallet is EMPTIED at the database level, the way the money leaves it when the shipper's balance is paid out. The payout itself (bank record,
+   * processing owner, paid evidence) is covered by m04-withdrawals and is not modelled here: an open request is closed as CANCELLED_BY_SHIPPER, its
+   * hold settled, and balance and held amount are set to zero. Only the gate of the account lifecycle is under test.
+   */
+  async function emptyWallet(driverId: string): Promise<void> {
+    await withoutTriggers(['wallet_withdrawals', 'wallet_holds', 'driver_wallets'], async (q) => {
+      await q.query(
+        `UPDATE app.wallet_holds SET status = 'CAPTURED', resolved_at = now()
+          WHERE status = 'ACTIVE' AND withdrawal_id IN (SELECT withdrawal_id FROM app.wallet_withdrawals WHERE driver_id = $1::uuid)`,
+        [driverId],
+      );
+      await q.query(
+        `UPDATE app.wallet_withdrawals SET state = 'CANCELLED', outcome = 'CANCELLED_BY_SHIPPER', resolved_at = now(), version = version + 1,
+                resolved_by_user_id = (SELECT user_id FROM app.drivers WHERE driver_id = $1::uuid)
+          WHERE driver_id = $1::uuid AND state IN ('PENDING', 'PROCESSING', 'RECONCILIATION')`,
+        [driverId],
+      );
+      await q.query('UPDATE app.driver_wallets SET balance_vnd = 0, held_vnd = 0 WHERE driver_id = $1::uuid', [driverId]);
+    });
+  }
 
   const ADDRESS = { address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội', lat: 21.0, lng: 105.82 };
   const checkoutBody = (shopId: string = shop.shopId, d: Dish = dish): Json => ({
@@ -296,13 +331,14 @@ describe('P5-6a public account deletion', () => {
 
   // ---- the immediate outcomes ----------------------------------------------------------------------------------------------------
 
-  it('nothing in progress and nothing to keep: the account is deleted for good at once, and the same Idempotency-Key answers again without a second effect', async () => {
+  it('nothing in progress: the account is anonymized at once (a DISABLED tombstone with the same id), and the same Idempotency-Key answers again without a second effect', async () => {
     const c = await customer();
     expect((await me(c.token)).status).toBe(200);
     const key = randomUUID();
     const first = await confirm(c.phone, PASSWORD, key);
     expect([first.status, resultOf(first), first.headers.get('cache-control')]).toEqual([200, 'DELETED', 'no-store']);
-    expect(await userRow(c.userId)).toBeUndefined();
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await anonymized(c.userId)).toBe(true);
     expect((await me(c.token)).status).toBe(401);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
     expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
@@ -317,21 +353,26 @@ describe('P5-6a public account deletion', () => {
     expect(await login(c.phone)).toMatchObject({ status: 401 });
   });
 
-  it('data that must be kept and nothing in progress: the account is locked with reason DELETE_REQUEST, every session revoked, the data stays', async () => {
+  it('money and orders to keep, nothing in progress: the account is anonymized, the order keeps its money and state, only its personal snapshot goes', async () => {
     const c = await customer();
-    const orderId = await insertOrder(c.userId, shop.shopId, 'COMPLETED');
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
     const key = randomUUID();
     const done = await confirm(c.phone, PASSWORD, key);
-    expect([done.status, resultOf(done)]).toEqual([200, 'LOCKED']);
+    expect([done.status, resultOf(done)]).toEqual([200, 'DELETED']);
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await anonymized(c.userId)).toBe(true);
     expect(await liveSessions(c.userId)).toBe(0);
     expect((await me(c.token)).status).toBe(401);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE order_id = $1::uuid', [orderId])).toBe(1);
+    const order = (await app.pool.query<{ status: string; recipient_name: string; recipient_phone: string; shop_name: string }>(
+      'SELECT status, recipient_name, recipient_phone, shop_name FROM app.orders WHERE order_id = $1::uuid',
+      [orderId],
+    )).rows[0];
+    expect(order).toEqual({ status: 'CANCELLED_BY_SHOP', recipient_name: 'Đã ẩn danh', recipient_phone: expect.stringMatching(/^\+999\d{11}$/), shop_name: 'Quán thử' });
     expect(await countRows(app.pool, `SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid`, [c.userId])).toBeGreaterThan(0);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
     // A retry (same key, or a new one) is answered; nothing is written twice.
-    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('LOCKED');
-    expect(resultOf(await confirm(c.phone))).toBe('LOCKED');
+    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('DELETED');
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
   });
 
@@ -438,32 +479,38 @@ describe('P5-6a public account deletion', () => {
     expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
   });
 
-  it('OD-31 (b)(c): a Shipper LOCKED for DELETE_REQUEST signs in to 11Ship wallet-only, withdraws the whole balance, and can do nothing else (no top-up, no delivery)', async () => {
+  it('OD-31 (b)(c) (Owner decision 2026-11-22): a Shipper with a balance is PENDING (still ACTIVE, signs in as usual), withdraws the whole balance once; the account is anonymized only after that money is paid out', async () => {
     const shipper = await newShipper(app, drivers, 50_000);
     extraUsers.push(shipper.userId);
     const phone = await phoneOf(shipper.userId);
-    // The confirmation finds no running work and the wallet is data to keep: LOCKED, never deleted.
-    expect(resultOf(await confirm(phone))).toBe('LOCKED');
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
-    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
+    // Money is owed to the shipper: the confirmation does NOT anonymize; the request waits as PENDING (OD-26) and the account stays ACTIVE.
+    expect(resultOf(await confirm(phone))).toBe('PENDING');
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
+    expect(await anonymized(shipper.userId)).toBe(false);
 
     const signedIn = await shipLogin(phone);
     expect(signedIn.status).toBe(200);
-    expect(dataOf(signedIn)).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', deletion_locked: true, available_roles: [], active_role: null });
-    expect(dataOf(signedIn)).not.toHaveProperty('lock_reason');
     const token = String(dataOf(signedIn).access_token);
-    // The same flag on /client-auth/me.
-    expect(dataOf(await app.call('GET', '/client-auth/me', { bearer: token }))).toMatchObject({ account_status: 'LOCKED', limited_access: 'WALLET_ONLY', deletion_locked: true });
-    // Nothing but the wallet: no top-up, no delivery, no order function.
-    expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } })).code).toBe('ACCOUNT_DISABLED');
-    expect(refused(await app.call('GET', '/driver/deliveries/offers', { bearer: token })).code).toBe('ACCOUNT_DISABLED');
-    expect((await app.call('GET', '/driver/wallet', { bearer: token })).status).toBe(200);
-    // The whole balance, once.
+    // New work is refused while pending; the whole balance can be withdrawn, once.
+    expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
     expect(refused(await withdraw(token, 20_000))).toEqual({ status: 409, code: 'WITHDRAWAL_INSUFFICIENT_AVAILABLE' });
     expect((await withdraw(token, 50_000)).status).toBe(201);
     expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
     expect(refused(await withdraw(token, 50_000)).status).toBeGreaterThanOrEqual(400);
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+    // Not paid out yet: the sweep keeps the request waiting and the personal data stays.
+    await sweeper().sweep();
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
+    expect(await anonymized(shipper.userId)).toBe(false);
+    // Paid out: nothing is owed any more, so the sweeper anonymizes the account.
+    await emptyWallet(shipper.driverId);
+    expect(await walletOf(shipper.driverId)).toEqual({ balance: '0', held: '0' });
+    expect((await sweeper().sweep()).failed).toBe(0);
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await anonymized(shipper.userId)).toBe(true);
+    // The wallet, its ledger and the withdrawal history stay (money); the profile is anonymized; the old number no longer signs in.
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE driver_id = $1::uuid AND state = $2', [shipper.driverId, 'CANCELLED'])).toBe(1);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND full_name = $2', [shipper.driverId, 'Đã ẩn danh'])).toBe(1);
+    expect((await shipLogin(phone)).status).toBe(401);
   });
 
   it('OD-31 (d): a Shipper locked for VIOLATION or SECURITY gets NO exception: the withdrawal is still CLOSING-only', async () => {
@@ -481,18 +528,17 @@ describe('P5-6a public account deletion', () => {
     }
   });
 
-  it('OD-31 (f): the balance and an open withdrawal are data to keep: nothing is deleted, an open request keeps the account PENDING, and it locks only when the request is gone', async () => {
+  it('OD-31 (f): an open withdrawal and an unpaid balance keep the account PENDING; a cancelled request does not end it, only the payout does', async () => {
     const shipper = await newShipper(app, drivers, 50_000);
     extraUsers.push(shipper.userId);
     const phone = await phoneOf(shipper.userId);
-    // PENDING + an open withdrawal = money in progress.
-    await markPending(shipper.userId);
+    expect(resultOf(await confirm(phone))).toBe('PENDING');
     const created = await withdraw(shipper.token, 50_000);
     expect(created.status).toBe(201);
     await sweeper().sweep();
     expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
     expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
-    // The request is cancelled: nothing is in progress any more, but the balance is still data to keep -> LOCKED, never purged.
+    // The request is cancelled: nothing is in progress, but the balance is still owed, so the account keeps waiting (not anonymized).
     const cancelled = await app.call('POST', `/driver/wallet/withdrawals/${String(dataOf(created).withdrawal_id)}/cancel`, {
       bearer: shipper.token,
       headers: { 'idempotency-key': randomUUID() },
@@ -500,12 +546,15 @@ describe('P5-6a public account deletion', () => {
     });
     expect(cancelled.status).toBe(200);
     await sweeper().sweep();
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
     expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid', [shipper.driverId])).toBe(1);
-    // And from the locked state the balance can still be asked back.
-    const token = String(dataOf(await shipLogin(phone)).access_token);
-    expect((await withdraw(token, 50_000)).status).toBe(201);
+    expect(await anonymized(shipper.userId)).toBe(false);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND full_name <> $2', [shipper.driverId, 'Đã ẩn danh'])).toBe(1);
+    // The balance is withdrawn and paid out: only then is the account anonymized.
+    expect((await withdraw(shipper.token, 50_000)).status).toBe(201);
+    await emptyWallet(shipper.driverId);
+    expect((await sweeper().sweep()).failed).toBe(0);
+    expect(await anonymized(shipper.userId)).toBe(true);
   });
 
   // ---- Codex review: Argon2 work of every refusal, the phone alias bucket, the 503 atomicity, the administrative lock -----------
@@ -679,12 +728,12 @@ describe('P5-6a public account deletion', () => {
     expect(await liveSessions(c.userId)).toBe(0);
     expect((await me(c.token)).status).toBe(401);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.locked.v1' AND resource_id = $1`, [c.userId])).toBe(1);
+    expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
     const finalizedAudit = await app.pool.query<{ actor_type: string; metadata: { trigger: string; result: string } }>(
       `SELECT actor_type, metadata FROM app.audit_logs WHERE action = 'account.delete.finalized.v1' AND resource_id = $1`,
       [c.userId],
     );
-    expect(finalizedAudit.rows[0]).toMatchObject({ actor_type: 'SYSTEM', metadata: { trigger: 'SWEEPER', result: 'LOCKED' } });
+    expect(finalizedAudit.rows[0]).toMatchObject({ actor_type: 'SYSTEM', metadata: { trigger: 'SWEEPER', result: 'DELETED' } });
 
     // A second sweep finds nothing to do for this account.
     await sweeper().sweep();
@@ -706,16 +755,101 @@ describe('P5-6a public account deletion', () => {
     for (const c of accounts) {
       expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
       expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-      expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.locked.v1' AND resource_id = $1`, [c.userId])).toBe(1);
+      expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
     }
   });
 
-  it('a pending account that has nothing left to keep is deleted for good by the sweeper', async () => {
+  // Owner decision 2026-11-22 (Apple 5.1.1(v)). The case a reviewer can meet: an account with NO order that still holds a saved address, a cart, a
+  // push token and a notification. The old rule only locked it (every such row counted as "data to keep"); now it is anonymized and the number is free.
+  it('a customer with NO order but a saved address, a cart, a push token and a notification is anonymized completely, and the same number registers a NEW account', async () => {
     const c = await customer();
-    // The only "work" is a cart-free, data-free account whose flag was set while something ran: nothing remains once it ended.
+    const sessionId = (await app.pool.query<{ session_id: string }>('SELECT session_id FROM app.sessions WHERE user_id = $1::uuid LIMIT 1', [c.userId])).rows[0]?.session_id;
+    expect(sessionId).toBeDefined();
+    await app.pool.query(`INSERT INTO app.customers (id, user_id) VALUES (gen_random_uuid(), $1::uuid) ON CONFLICT (user_id) DO NOTHING`, [c.userId]);
+    await app.pool.query(
+      `INSERT INTO app.customer_addresses (id, customer_id, label, recipient_name, contact_phone, address_description, latitude, longitude, is_default, is_active, version, display_name, is_pickup_default, is_delivery_default)
+       SELECT gen_random_uuid(), id, 'HOME', 'Người nhận', '+84912345678', '12 Phố Huế, Hà Nội', 21.0, 105.82, true, true, 1, 'Nhà', true, true FROM app.customers WHERE user_id = $1::uuid`,
+      [c.userId],
+    );
+    await app.pool.query(
+      `INSERT INTO app.customer_carts (user_id, shop_id, lines, note, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, '[{"quantity":1}]'::jsonb, 'Ít cay', 1, now(), now())`,
+      [c.userId, shop.shopId],
+    );
+    await app.pool.query(
+      `INSERT INTO app.notification_push_tokens (token_id, session_id, user_id, app, provider, token, token_digest, registered_at, last_seen_at)
+       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, 'FOOD', 'FCM', 'push-token-for-test', md5(random()::text) || md5(random()::text), now(), now())`,
+      [sessionId, c.userId],
+    );
+    await app.pool.query(
+      `INSERT INTO app.notifications (notification_id, recipient_user_id, app, kind, category, title, body, target_type, target_version, dedupe_key, item_count, purge_after, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1::uuid, 'FOOD', 'ORDER_UPDATED', 'ORDERS', 'Đơn hàng', 'Nội dung thông báo', 'NONE', 0, md5(random()::text), 1, now() + interval '30 days', now(), now())`,
+      [c.userId],
+    );
+    const addresses = 'SELECT 1 FROM app.customer_addresses a JOIN app.customers k ON k.id = a.customer_id WHERE k.user_id = $1::uuid';
+    expect(await countRows(app.pool, addresses, [c.userId])).toBe(1);
+
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await anonymized(c.userId)).toBe(true);
+    expect(await countRows(app.pool, addresses, [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_carts WHERE user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.notification_push_tokens WHERE user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_profiles WHERE user_id = $1::uuid', [c.userId])).toBe(0);
+    // The tombstone is never signed in to, and the old number no longer finds it.
+    expect((await login(c.phone)).status).toBe(401);
+    // The real number is released: the same phone registers a NEW account (new id) and signs in normally. The OTP resend cooldown of the
+    // earlier verification would last minutes in real life; the test removes that one-time verification row instead of waiting.
+    await app.pool.query(`DELETE FROM app.verification_proofs WHERE phone_normalized = $1`, [c.phone.normalized]);
+    await app.pool.query(`DELETE FROM app.phone_verifications WHERE phone_normalized = $1`, [c.phone.normalized]);
+    const proof = await obtainProof(app, c.phone as unknown as Parameters<typeof obtainProof>[1]);
+    const registered = await app.call('POST', '/client-auth/register', {
+      headers: { 'idempotency-key': randomUUID() },
+      body: { phone: c.phone.local, password: PASSWORD, verification_token: proof.proofToken, device: { ...WEB_FOOD }, full_name: 'Khách đăng ký lại', consent: { terms_version: TERMS, privacy_version: PRIVACY } },
+    });
+    expect(registered.status).toBe(201);
+    expect(String(dataOf(registered).user_id)).not.toBe(c.userId);
+    extraCustomers.push(String(dataOf(registered).user_id));
+    expect((await login(c.phone)).status).toBe(200);
+  });
+
+  // The tombstone cannot be re-enabled: the database refuses an anonymized row that becomes ACTIVE (users_anonymized_ck), whoever writes it.
+  it('an anonymized account cannot be unlocked or reactivated: the database refuses it', async () => {
+    const c = await customer();
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    await expect(app.pool.query(`UPDATE app.users SET status = 'ACTIVE', lock_reason = NULL, locked_at = NULL WHERE user_id = $1::uuid`, [c.userId])).rejects.toMatchObject({ code: '23514' });
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+  });
+
+  // A shop owner whose shop has no other member: the shop is anonymized and closed, and the owner's account too (the shop is his personal data).
+  it('a shop owner with no other member: the shop is anonymized and closed, and the account is anonymized', async () => {
+    const owner = await createShopOwner(app);
+    extraUsers.push(owner.userId);
+    extraShops.push(owner.shopId);
+    expect(resultOf(await confirm(await phoneOf(owner.userId)))).toBe('DELETED');
+    expect(await anonymized(owner.userId)).toBe(true);
+    expect(await app.pool.query<{ name: string; status: string; accepting_orders: boolean; address_text: string; contact_phone_normalized: string }>(
+      'SELECT name, status, accepting_orders, address_text, contact_phone_normalized FROM app.shops WHERE shop_id = $1::uuid',
+      [owner.shopId],
+    ).then((r) => r.rows[0])).toEqual({
+      name: 'Cửa hàng đã ẩn danh',
+      status: 'DISABLED',
+      accepting_orders: false,
+      address_text: 'Đã ẩn danh',
+      contact_phone_normalized: expect.stringMatching(/^\+999\d{11}$/),
+    });
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.userId])).toBe(0);
+  });
+
+  it('a pending account that has nothing left in progress is anonymized by the sweeper, exactly once', async () => {
+    const c = await customer();
+    // The only "work" is a flag that was set while something ran: nothing remains once it ended, so the sweeper anonymizes the account.
     await markPending(c.userId);
     await sweeper().sweep();
-    expect(await userRow(c.userId)).toBeUndefined();
+    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
+    expect(await anonymized(c.userId)).toBe(true);
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
+    await sweeper().sweep();
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
   });
 
@@ -789,10 +923,10 @@ describe('P5-6a public account deletion', () => {
       await waitForWaiters(2);
       await hold.release();
       const [confirmation, order] = await Promise.all([confirming, placing]);
-      // Nothing was in progress when the confirmation ran, so the account was deleted for good; the late order finds no valid session.
+      // Nothing was in progress when the confirmation ran, so the account was anonymized; the late order finds no valid session.
       expect(resultOf(confirmation)).toBe('DELETED');
       expect(order.status).toBeGreaterThanOrEqual(400);
-      expect(await userRow(c.userId)).toBeUndefined();
+      expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
       expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE customer_user_id = $1::uuid', [c.userId])).toBe(0);
     } finally {
       await hold.release();

@@ -108,6 +108,10 @@
     "1798070400000_wallet-commission-policy-advisory-lock": {
       "sha256": "7a50b8225ef6a648cc3838b55cb3bcc14cec33461afb65d4b5dc140e2b30d875",
       "review": "PR #427; compatibility review 2026-11-21: Up replaces only the function app.wallet_commission_policies_guard so its LOCK TABLE ... SHARE ROW EXCLUSIVE (which needs UPDATE, not granted to the runtime role) becomes pg_advisory_xact_lock; the version check is unchanged. It adds no column, constraint, grant or data. The old backend keeps writing commission versions normally, so it is compatible. Down restores the LOCK TABLE guard and must be used only on a temporary database, since it works only where the owner/migrator role writes."
+    },
+    "1798156800000_account-anonymize": {
+      "sha256": "437c173b812b8b9f1fb1aec669adef24dfdf78c92f96abe542283a3ce320ef92",
+      "review": "Owner decision 2026-11-22 (Apple 5.1.1(v)); compatibility review 2026-11-22: Up is additive: users.anonymized_at (nullable) with users_anonymized_ck, one sequence and two functions (anonymized_phone_number, anonymize_app_user, EXECUTE granted to the runtime role in 03-runtime-function-grants.sql), and orders_guard / deliveries_guard re-created from their current definitions with ONE exception active only while app.account_anonymize = 'on' and only when the write changes personal columns alone (version +1). No existing row, enum or money/state rule changes. The previous backend never sets anonymized_at and ignores the new function. Down refuses while an anonymized account exists."
     }
   }
 }

@@ -141,12 +141,8 @@ export class AccountDeletionService {
     // 2. The decision is the account lifecycle's own (shared with the administration delete and the sweeper).
     const outcome = await this.finalizer.finalize(context, account);
     if (outcome.kind === 'DELETED') {
-      await this.#finalized(context, { requestId, userId: account.userId, version: account.version, result: 'DELETED', trigger: 'CONFIRM', relatedData: [], revokedSessions: 0 });
+      await this.#finalized(context, { requestId, userId: account.userId, version: account.version, result: 'DELETED', trigger: 'CONFIRM', relatedData: outcome.relatedData, revokedSessions: 0 });
       return this.#answer('DELETED');
-    }
-    if (outcome.kind === 'LOCKED') {
-      await this.#finalized(context, { requestId, userId: account.userId, version: outcome.version, result: 'LOCKED', trigger: 'CONFIRM', relatedData: outcome.relatedData, revokedSessions: outcome.revokedSessions });
-      return this.#answer('LOCKED');
     }
     if (outcome.kind === 'ALREADY_DISABLED') {
       // Unreachable: the account is ACTIVE under our lock. Refuse rather than guess.

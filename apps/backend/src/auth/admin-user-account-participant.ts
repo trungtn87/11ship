@@ -98,8 +98,13 @@ export class AdminUserAccountParticipant {
    * and the driver profile again). The account's own sessions, device bindings, consents, profile and roles go with it. False when the row
    * is not an APP_USER account any more.
    */
-  async purge(context: TransactionContext, account: OrdinaryAccount): Promise<boolean> {
-    return this.users.purgeAppUser(context, account.userId);
+  /**
+   * Anonymizes the account in place (Owner decision 2026-11-22, migration 1798156800000): the personal data goes, the tombstone keeps the id,
+   * and the password hash is replaced by `passwordHash` (an unusable one, chosen by the caller). Undefined is never returned for a locked
+   * ordinary account; false means the account is no longer in that state.
+   */
+  async anonymize(context: TransactionContext, account: OrdinaryAccount, passwordHash: string): Promise<boolean> {
+    return this.users.anonymizeAppUser(context, account.userId, passwordHash);
   }
 
   /**

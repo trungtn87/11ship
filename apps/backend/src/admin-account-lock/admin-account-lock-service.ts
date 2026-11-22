@@ -193,11 +193,12 @@ export class AdminAccountLockService {
   }
 
   /**
-   * Delete (Owner decision 2026-10-14): an account with NO business data is removed for good (its own sessions, device bindings,
-   * consents, profile and roles go with it; audit entries stay); an account WITH business data is never deleted: it is locked at its
-   * owner's request (lock reason DELETE_REQUEST), keeping its id, roles and every record. Locking needs no orders or deliveries still being
-   * processed; an account that is already locked and has data is reported as already in that state. An administration account never gets
-   * here (the target lock only returns APP_USER accounts). The effect is `result`: DELETED or LOCKED.
+   * Delete (Owner decisions 2026-10-14 and 2026-11-22): the account is ANONYMIZED in place, the same rule as the owner's own deletion: its
+   * personal data goes (sessions, devices, profile, addresses, push tokens, notifications, personal snapshots of its orders and deliveries),
+   * the row stays as a DISABLED / DELETE_REQUEST tombstone with the same id, and money / orders / records keep their links. Anything still
+   * in progress (orders, deliveries, a wallet balance or a held amount) refuses the command (USER_ACCOUNT_HAS_ACTIVE_WORK). An account that is
+   * already locked is reported as already in that state. An administration account never gets here (the target lock only returns APP_USER
+   * accounts). The effect is `result`: DELETED.
    */
   async #delete(
     context: TransactionContext,
@@ -231,59 +232,14 @@ export class AdminAccountLockService {
       return {
         status: 200,
         replayGuard: { actor_user_id: auth.actorId, user_id: userId, kind: 'delete' },
-        payload: { command_id: randomUUID(), user_id: userId, result: 'DELETED', related_data: [] },
+        payload: { command_id: randomUUID(), user_id: userId, result: 'DELETED', related_data: [...outcome.relatedData] },
       };
     }
     if (outcome.kind === 'ALREADY_DISABLED') {
       throw new AppError('USER_ACCOUNT_ALREADY_IN_STATE');
     }
-    if (outcome.kind === 'ACTIVE_WORK') {
-      throw new AppError('USER_ACCOUNT_HAS_ACTIVE_WORK');
-    }
-    const related = [...outcome.relatedData];
-    await this.audit.append(context, {
-      requestId: meta.requestId,
-      actorType: auth.role,
-      actorId: auth.actorId,
-      action: AUDIT_ACTIONS.delete,
-      resourceType: RESOURCE_USER,
-      resourceId: userId,
-      resourceVersion: outcome.version,
-      outcome: 'SUCCESS',
-      metadata: {
-        target_user_id: userId,
-        result: 'LOCKED',
-        from_status: 'ACTIVE',
-        to_status: 'DISABLED',
-        lock_reason: 'DELETE_REQUEST',
-        version: outcome.version,
-        reason: body.reason,
-        revoked_sessions: outcome.revokedSessions,
-        related_data: related,
-      },
-    });
-    await this.outbox.append(context, {
-      eventType: EVENT_TYPES.lock,
-      eventSchemaVersion: 1,
-      resourceType: RESOURCE_USER,
-      resourceId: userId,
-      resourceVersion: outcome.version,
-      payload: { user_id: userId, account_status: 'DISABLED', version: outcome.version },
-    });
-    return {
-      status: 200,
-      replayGuard: { actor_user_id: auth.actorId, user_id: userId, kind: 'delete' },
-      payload: {
-        command_id: randomUUID(),
-        user_id: userId,
-        result: 'LOCKED',
-        account_status: 'DISABLED',
-        lock_reason: 'DELETE_REQUEST',
-        version: outcome.version,
-        changed_at: new Date(outcome.changedAtMs).toISOString(),
-        related_data: related,
-      },
-    };
+    // ACTIVE_WORK covers the wallet balance too (money still owed): the administration waits like the owner's pending request does.
+    throw new AppError('USER_ACCOUNT_HAS_ACTIVE_WORK');
   }
 
   async #assertNoActiveWork(context: TransactionContext, userId: string): Promise<void> {

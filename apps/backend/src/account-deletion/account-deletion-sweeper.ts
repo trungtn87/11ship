@@ -100,18 +100,7 @@ export class AccountDeletionSweeper {
     }
     const outcome = await this.finalizer.finalize(context, account);
     if (outcome.kind === 'DELETED') {
-      await this.deletion.recordFinalized(context, { userId, version: account.version, result: 'DELETED', trigger: 'SWEEPER', relatedData: [], revokedSessions: 0 });
-      return 'FINALIZED';
-    }
-    if (outcome.kind === 'LOCKED') {
-      await this.deletion.recordFinalized(context, {
-        userId,
-        version: outcome.version,
-        result: 'LOCKED',
-        trigger: 'SWEEPER',
-        relatedData: outcome.relatedData,
-        revokedSessions: outcome.revokedSessions,
-      });
+      await this.deletion.recordFinalized(context, { userId, version: account.version, result: 'DELETED', trigger: 'SWEEPER', relatedData: outcome.relatedData, revokedSessions: 0 });
       return 'FINALIZED';
     }
     return outcome.kind === 'ACTIVE_WORK' ? 'WAITING' : 'SKIPPED';

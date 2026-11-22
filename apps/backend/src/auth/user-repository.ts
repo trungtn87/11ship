@@ -283,9 +283,10 @@ export class UserRepository {
    * membership or a driver profile (23503), so even a caller that skipped the lifecycle checks cannot delete business data. Returns
    * false when no such APP_USER row exists. The caller holds the user row FOR UPDATE and has revoked nothing it still needs.
    */
-  async purgeAppUser(context: TransactionContext, userId: string): Promise<boolean> {
-    const result = await context.query<{ purged: boolean }>('SELECT app.purge_app_user($1::uuid) AS purged', [userId]);
-    return result.rows[0]?.purged === true;
+  /** Anonymizes an APP_USER account in place (app.anonymize_app_user, migration 1798156800000). False when the row is not an ordinary un-anonymized account. */
+  async anonymizeAppUser(context: TransactionContext, userId: string, passwordHash: string): Promise<boolean> {
+    const result = await context.query<{ done: boolean }>('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [userId, passwordHash]);
+    return result.rows[0]?.done === true;
   }
 
   /** Sorted supported business roles of the user (SHOP, DRIVER). */

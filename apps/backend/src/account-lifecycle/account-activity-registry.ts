@@ -86,6 +86,11 @@ export class AccountActivityRegistry {
     await this.#answer(() => this.records.lockWorkSources(context, userId));
   }
 
+  /** True while the shipper wallet holds a balance or a held amount (money still owed; see AccountRecordReader.walletBalanceOpen). */
+  async walletBalanceOpen(context: TransactionContext, userId: string): Promise<boolean> {
+    return this.#answer(() => this.records.walletBalanceOpen(context, userId));
+  }
+
   /** Names of the checks that found related data, in registration order. Empty = the account has no related data. */
   async relatedData(context: TransactionContext, userId: string): Promise<string[]> {
     this.#assertComplete();
