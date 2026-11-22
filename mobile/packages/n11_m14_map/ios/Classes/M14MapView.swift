@@ -35,7 +35,7 @@ final class MapPinsView: UIView {
         isOpaque = false
         backgroundColor = .clear
         isUserInteractionEnabled = false
-        if let url = Bundle.main.url(forResource: "caobang", withExtension: nil)?.appendingPathComponent("fonts/NotoSans-Regular.ttf") {
+        if let url = CaobangPackage.root?.appendingPathComponent("fonts/NotoSans-Regular.ttf") {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor], let first = descriptors.first {
                 fontName = CTFontDescriptorCopyAttribute(first, kCTFontNameAttribute) as? String
