@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens.dart';
+import 'legal_links.dart';
 import 'legal_policy_draft.dart';
 
 /// One consent checkbox for both 11Food and 11Ship. The underlined words
@@ -47,7 +48,8 @@ class RegistrationConsentCheckbox extends StatelessWidget {
 
 /// Open the two Owner-approved policies. Viewing does not toggle the checkbox
 /// or change any of the user's partially completed registration inputs.
-Future<void> showRegistrationPoliciesPopup(BuildContext context) {
+/// [origin] is the server the build talks to; it gives the links to the public pages (none when null).
+Future<void> showRegistrationPoliciesPopup(BuildContext context, {Uri? origin}) {
   return showDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) => AlertDialog(
@@ -56,11 +58,12 @@ Future<void> showRegistrationPoliciesPopup(BuildContext context) {
       content: SizedBox(
         width: double.maxFinite,
         height: MediaQuery.sizeOf(dialogContext).height * 0.64,
-        child: const DefaultTabController(
+        child: DefaultTabController(
           length: 2,
           child: Column(
             children: <Widget>[
-              TabBar(
+              Align(alignment: Alignment.centerLeft, child: LegalPageLinks(origin: origin)),
+              const TabBar(
                 tabs: <Widget>[
                   Tab(text: 'Điều khoản'),
                   Tab(text: 'Quyền riêng tư'),

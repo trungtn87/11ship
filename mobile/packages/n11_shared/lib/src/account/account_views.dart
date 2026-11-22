@@ -24,6 +24,7 @@ import 'vn_mobile.dart';
 import 'otp_input.dart';
 import 'session_controller.dart';
 import 'registration_consent.dart';
+import 'legal_links.dart';
 import 'legal_policy_draft.dart';
 
 // Account screens of both phone apps, laid out like the approved web screens (docs/ui/m01-food-web.md F04/F10/F11/F16/F17/F18 and
@@ -572,8 +573,12 @@ class PolicyScreen extends StatelessWidget {
     return N11FormScaffold(
       title: 'Chính sách và điều khoản',
       session: session,
-      children: const <Widget>[
-        N11Card(
+      children: <Widget>[
+        if (legalOriginOf(session) != null)
+          N11Card(
+            child: LegalPageLinks(key: const Key('policy-links'), origin: legalOriginOf(session)),
+          ),
+        const N11Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -778,7 +783,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showPolicyPopup() {
-    showRegistrationPoliciesPopup(context);
+    showRegistrationPoliciesPopup(context, origin: legalOriginOf(widget.session));
   }
 
   Widget _registrationConsent({required bool disabled}) => KeyedSubtree(

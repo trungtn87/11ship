@@ -53,6 +53,10 @@ public class N11NativePlugin: NSObject, FlutterPlugin {
         case "open":
             let url = (call.arguments as? [String: Any])?["url"] as? String ?? ""
             Launch.open(url, result)
+        case "browse":
+            // iOS only: the public privacy and terms pages. Android answers notImplemented, and the Dart side then copies the link instead.
+            let url = (call.arguments as? [String: Any])?["url"] as? String ?? ""
+            Launch.browse(url, result)
         case "dataDirectory":
             result(DataDirectory.path())
         default:
@@ -134,6 +138,21 @@ enum Launch {
 
     static func open(_ link: String, _ result: @escaping FlutterResult) {
         guard let url = isSafeLink(link) else { result(false); return }
+        UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+    }
+
+    /// The two public legal pages of the configured server (backend paths chinh-sach-quyen-rieng-tu and dieu-khoan-su-dung). The host is the one the
+    /// app was built for, so it is not fixed here; the path must be exactly one of these, over https, without credentials, query or fragment.
+    static let legalPaths: Set<String> = ["/chinh-sach-quyen-rieng-tu", "/dieu-khoan-su-dung"]
+
+    static func legalPage(_ value: String) -> URL? {
+        guard !value.isEmpty, value.count <= 300, let url = URL(string: value), url.scheme == "https", url.user == nil, url.password == nil,
+              url.query == nil, url.fragment == nil, url.host != nil, legalPaths.contains(url.path) else { return nil }
+        return url
+    }
+
+    static func browse(_ link: String, _ result: @escaping FlutterResult) {
+        guard let url = legalPage(link) else { result(false); return }
         UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
     }
 }
