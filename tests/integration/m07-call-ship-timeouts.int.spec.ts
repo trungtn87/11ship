@@ -13,6 +13,8 @@ import { TransactionManager } from '../../apps/backend/src/transaction/transacti
 import { ApiResponse, AuthApp, countRows, dataOf, obtainProof, PASSWORD, randomPhone, startAuthApp } from './support/auth-fixtures';
 import { createLegacyDirectDelivery } from './support/legacy-direct-delivery';
 import { createShopOwner, ShopOwner } from './support/shop-management-fixtures';
+import { Customer, newCustomer } from './support/m10-fixtures';
+import { NotificationRuntime } from '../../apps/backend/src/notifications/notification-runtime';
 
 // Issue #414 (Owner 2026-11-20): a call of a Shipper WITHOUT an Order (DIRECT, and CUSTOMER courier calls) ends by the same stage marks as an
 // ORDER's delivery: an accepted run that has not picked up up to its cancel time is cancelled by the system ONCE, through the existing cancel path
@@ -38,6 +40,8 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
   let router: http.Server;
   let shop: ShopOwner;
   const drivers: string[] = [];
+  const customerCalls: string[] = [];
+  let customer: Customer;
   let addedPolicy = false;
 
   beforeAll(async () => {
@@ -53,6 +57,7 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
       { relaxTimeouts: true, configOverride: { clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY } }, overrides: [{ provide: M14_ROUTING, useValue: { origin, timeoutMs: 3000 } }] },
     );
     shop = await createShopOwner(app);
+    customer = await newCustomer(app, `Khách 414 ${tag}`);
     const existing = await app.pool.query('SELECT 1 FROM app.shipping_fee_policy_versions LIMIT 1');
     if ((existing.rowCount ?? 0) === 0) {
       await app.pool.query(
@@ -78,16 +83,16 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
       for (const table of tables) {
         await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
       }
-      const mine = `SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid`;
+      const mine = `SELECT delivery_id FROM app.deliveries WHERE shop_id = $1::uuid OR delivery_id = ANY($2::uuid[])`;
       const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
       await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
       await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
-      await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shop.shopId]);
-      await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${mine})`, [shop.shopId]);
-      await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine}))`, [shop.shopId]);
-      await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine})`, [shop.shopId]);
-      await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${mine})`, [shop.shopId]);
-      await client.query('DELETE FROM app.deliveries WHERE shop_id = $1::uuid', [shop.shopId]);
+      await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
+      await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
+      await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine}))`, [shop.shopId, customerCalls]);
+      await client.query(`DELETE FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
+      await client.query(`DELETE FROM app.delivery_assignments WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
+      await client.query('DELETE FROM app.deliveries WHERE shop_id = $1::uuid OR delivery_id = ANY($2::uuid[])', [shop.shopId, customerCalls]);
       await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
       await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
       if (addedPolicy) {
@@ -182,24 +187,30 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
     fee_payer: 'CUSTOMER',
   });
 
-  /** A DIRECT call by the shop; for CUSTOMER the record is turned into a customer courier call (test data only, as in the other suites). */
+  /** A DIRECT call by the shop (the Shop API's legacy fixture, as in the M07 suite) or a CUSTOMER courier call through the customer's own API (no shop). */
   async function newCall(source: 'DIRECT' | 'CUSTOMER'): Promise<string> {
-    const id = await createLegacyDirectDelivery(app, shop, createBody());
-    if (source === 'CUSTOMER') {
-      const client = await app.pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query('ALTER TABLE app.deliveries DISABLE TRIGGER USER');
-        await client.query(`UPDATE app.deliveries SET source = 'CUSTOMER', version = version + 1, updated_at = clock_timestamp() WHERE delivery_id = $1::uuid`, [id]);
-        await client.query('ALTER TABLE app.deliveries ENABLE TRIGGER USER');
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
+    if (source === 'DIRECT') {
+      return createLegacyDirectDelivery(app, shop, createBody());
     }
+    const created = await app.call('POST', '/customers/me/deliveries', {
+      bearer: customer.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: {
+        recipient_name: 'Khách nhận',
+        recipient_phone: '0912345678',
+        pickup_address_text: '123 Đường Láng, Hà Nội',
+        pickup_lat: 21.0005,
+        pickup_lng: 105.8005,
+        dropoff_address_text: '12 Phố Huế, Hai Bà Trưng, Hà Nội',
+        dropoff_lat: 21.0,
+        dropoff_lng: 105.82,
+        goods_description: 'Hộp quà',
+        fee_payer: 'SENDER',
+      },
+    });
+    expect([created.status, created.text.slice(0, 300)]).toEqual([201, created.text.slice(0, 300)]);
+    const id = String(dataOf(created).delivery_id);
+    customerCalls.push(id);
     return id;
   }
 
@@ -262,6 +273,30 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
 
   const runOrderSweep = (): Promise<unknown> => app.running.app.get(OrderSweeper).sweep();
 
+  /** Drains the outbox into the notification tables (the same dispatcher the other notification suites use). */
+  async function settle(): Promise<void> {
+    const runtime = app.running.app.get(NotificationRuntime);
+    for (let i = 0; i < 2000; i += 1) {
+      const summary = await runtime.dispatcher.dispatchOnce();
+      if (summary.claimed === 0) return;
+    }
+  }
+
+  /** The timeout notices of one call, as {recipient, app}: the shop or the requester (FOOD) and the Shipper (SHIP). */
+  const cancelNoticesOf = async (id: string): Promise<{ recipient_user_id: string; app: string }[]> =>
+    (
+      await app.pool.query<{ recipient_user_id: string; app: string }>(
+        `SELECT recipient_user_id, app FROM app.notifications WHERE target_type = 'DELIVERY' AND target_id = $1::uuid AND kind = 'DELIVERY_CANCELLED' ORDER BY app, recipient_user_id`,
+        [id],
+      )
+    ).rows;
+
+  it('#414 a CUSTOMER call made through the customer API has no shop and is requested by the customer', async () => {
+    const id = await newCall('CUSTOMER');
+    const row = (await app.pool.query<{ source: string; shop_id: string | null; order_id: string | null; requested_by: string }>('SELECT source, shop_id, order_id, requested_by FROM app.deliveries WHERE delivery_id = $1::uuid', [id])).rows[0];
+    expect(row).toEqual({ source: 'CUSTOMER', shop_id: null, order_id: null, requested_by: customer.userId });
+  });
+
   for (const source of ['DIRECT', 'CUSTOMER'] as const) {
     describe(`${source} call without an Order`, () => {
       it('(a) accepted, not picked up and past the cancel time: cancelled by the system exactly once, the commission hold goes back', async () => {
@@ -279,6 +314,13 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
         expect(await eventsOf(id, 'delivery.cancelled_by_system')).toBe(1);
         expect(await timeoutTransitionsOf(id)).toBe(1);
         expect(await heldOf(s)).toBe(heldBefore);
+        // Who is told (#414): whoever placed the call (the shop of a DIRECT call, the customer of a CUSTOMER call) and the Shipper, once each.
+        await settle();
+        const requester = source === 'DIRECT' ? shop.userId : customer.userId;
+        expect(await cancelNoticesOf(id)).toEqual([
+          { recipient_user_id: requester, app: 'FOOD' },
+          { recipient_user_id: s.userId, app: 'SHIP' },
+        ]);
       });
 
       it('(d) a second and third sweep change nothing: still one cancellation, one transition', async () => {
@@ -294,6 +336,9 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
         expect(await stateOf(id)).toBe('cancelled_by_system');
         expect(await eventsOf(id, 'delivery.cancelled_by_system')).toBe(1);
         expect(await timeoutTransitionsOf(id)).toBe(1);
+        // The notices stay one per recipient however often the sweeper ran (dedupe by delivery and version).
+        await settle();
+        expect(await cancelNoticesOf(id)).toHaveLength(2);
       });
 
       it('(b) picked up before the cancel time: never cancelled by the timer, even when the marks are past', async () => {

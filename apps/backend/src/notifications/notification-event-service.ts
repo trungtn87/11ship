@@ -40,10 +40,12 @@ const CANDIDATE_LIMIT = 100;
 
 function parseDeliveryPayload(payload: Readonly<Record<string, unknown>>): DeliveryChangePayload | undefined {
   const { delivery_id: deliveryId, code, shop_id: shopId, change, state, version, assignment_id: assignmentId, driver_id: driverId, order_id: orderId, fee_payer: feePayer, source } = payload;
-  if (!isCanonicalUuid(deliveryId) || typeof code !== 'string' || !isCanonicalUuid(shopId) || typeof change !== 'string' || typeof state !== 'string' || typeof version !== 'number') {
+  // A CUSTOMER courier call has no shop: its timeout cancellation (#414) is the one change admitted without shop_id.
+  const noShopAllowed = shopId === null && source === 'CUSTOMER' && change === 'cancelled_by_system';
+  if (!isCanonicalUuid(deliveryId) || typeof code !== 'string' || !(isCanonicalUuid(shopId) || noShopAllowed) || typeof change !== 'string' || typeof state !== 'string' || typeof version !== 'number') {
     return undefined;
   }
-  return { deliveryId, code, shopId, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null, orderId: isCanonicalUuid(orderId) ? orderId : null, feePayer: feePayer === 'CUSTOMER' || feePayer === 'SHOP' ? feePayer : null, source: source === 'ORDER' || source === 'DIRECT' ? source : null };
+  return { deliveryId, code, shopId: isCanonicalUuid(shopId) ? shopId : null, change, state, version, assignmentId: isCanonicalUuid(assignmentId) ? assignmentId : null, driverId: isCanonicalUuid(driverId) ? driverId : null, orderId: isCanonicalUuid(orderId) ? orderId : null, feePayer: feePayer === 'CUSTOMER' || feePayer === 'SHOP' ? feePayer : null, source: source === 'ORDER' || source === 'DIRECT' || source === 'CUSTOMER' ? source : null };
 }
 
 function parseOrderPayload(payload: Readonly<Record<string, unknown>>): OrderChangePayload | undefined {
@@ -208,7 +210,7 @@ export class NotificationEventService {
           }
           await this.#offerRound(context, config, draft.deliveryId, draft.roundVersion, audience, event.eventId);
         } else {
-          const userId = draft.reminder === 'PICKUP' ? (p.driverId === null ? undefined : await this.recipients.driverUser(context, p.driverId)) : await this.recipients.shopOwner(context, p.shopId);
+          const userId = draft.reminder === 'PICKUP' ? (p.driverId === null ? undefined : await this.recipients.driverUser(context, p.driverId)) : p.shopId === null ? undefined : await this.recipients.shopOwner(context, p.shopId);
           const reminderKind: NotificationKind = draft.reminder === 'PICKUP' ? 'PICKUP_REMINDER' : 'SEARCH_REMINDER';
           if (userId !== undefined && (await this.#admit(context, event, { kind: reminderKind, validForMs: null, recipientUserId: userId, app: draft.reminder === 'PICKUP' ? 'SHIP' : 'FOOD', targetType: 'DELIVERY', targetId: draft.deliveryId }))) {
             await this.repo.insertReminder(context, {
@@ -230,10 +232,14 @@ export class NotificationEventService {
 
   async #resolve(context: TransactionContext, d: DraftBase, p: DeliveryChangePayload): Promise<string | undefined> {
     if (d.audience === 'SHOP') {
-      return this.recipients.shopOwner(context, p.shopId);
+      return p.shopId === null ? undefined : this.recipients.shopOwner(context, p.shopId);
     }
     if (d.audience === 'CUSTOMER') {
-      return p.orderId === null || p.orderId === undefined ? undefined : this.recipients.orderCustomer(context, p.orderId);
+      if (p.orderId === null || p.orderId === undefined) {
+        // A CUSTOMER courier call: its requester (the account that placed it), re-read from the delivery row.
+        return p.source === 'CUSTOMER' ? this.recipients.deliveryRequester(context, p.deliveryId) : undefined;
+      }
+      return this.recipients.orderCustomer(context, p.orderId);
     }
     if (d.audience === 'DRIVER') {
       return p.driverId === null ? undefined : this.recipients.driverUser(context, p.driverId);

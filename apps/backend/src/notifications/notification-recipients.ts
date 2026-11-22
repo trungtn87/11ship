@@ -71,6 +71,11 @@ export class NotificationRecipients {
     return this.shops.ownerUserIdOfShop(context, shopId);
   }
 
+  /** The account that placed a call (re-read from the delivery row). Used for a CUSTOMER courier call, which has no shop. */
+  async deliveryRequester(context: TransactionContext, deliveryId: string): Promise<string | undefined> {
+    return (await this.deliveries.findById(context, deliveryId))?.requestedBy;
+  }
+
   /** The account that placed the Order (re-read: the event only carries the id). Never a phone typed into the Order. */
   async orderCustomer(context: TransactionContext, orderId: string): Promise<string | undefined> {
     return (await this.orders.findById(context, orderId))?.customerUserId;
