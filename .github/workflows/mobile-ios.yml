@@ -42,9 +42,11 @@ jobs:
           - app: food
             label: 11Food
             app_id: vn.eleven.food
+            privacy_bundles: n11_native_ios_privacy
           - app: ship
             label: 11Ship
             app_id: vn.eleven.ship
+            privacy_bundles: n11_native_ios_privacy n11_m14_privacy
     env:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -116,6 +118,8 @@ jobs:
 
       # App Store privacy manifests (PrivacyInfo.xcprivacy). Our two plugins that use required-reason APIs (n11_native_ios: UserDefaults; n11_m14:
       # systemUptime) ship their manifest in a resource bundle named by the podspec; it must be inside the built app. Missing or not a valid plist = FAIL.
+      # Which bundles are required depends on the plugins the app links (matrix.privacy_bundles): 11Food does not depend on n11_m14 (only n11_m14_map,
+      # which calls no required-reason API and has no manifest), so it requires only n11_native_ios_privacy.
       # Third-party SDK manifests (Flutter, MapLibre, Firebase*) are only LISTED here, for comparison with App Store Connect; they are not enforced.
       - name: Privacy manifests are inside the built app
         run: |
@@ -125,7 +129,7 @@ jobs:
           manifests="$(find "$app" -name PrivacyInfo.xcprivacy -type f | sort)"
           echo "Every PrivacyInfo.xcprivacy in the app:"
           if [ -n "$manifests" ]; then printf '%s\n' "$manifests"; else echo "(none)"; fi
-          for bundle in n11_native_ios_privacy n11_m14_privacy; do
+          for bundle in ${{ matrix.privacy_bundles }}; do
             found="$(printf '%s\n' "$manifests" | grep -F "/${bundle}.bundle/" || true)"
             if [ -z "$found" ]; then echo "::error title=Privacy manifest::${bundle}/PrivacyInfo.xcprivacy is not inside $app"; exit 1; fi
             plutil -lint "$found"
