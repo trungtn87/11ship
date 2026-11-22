@@ -87,6 +87,9 @@ describe('Issue #414 — call without an Order: timer marks and pickup reminders
       const wallets = `SELECT wallet_id FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])`;
       await client.query(`DELETE FROM app.wallet_ledger_entries WHERE wallet_id IN (${wallets})`, [drivers]);
       await client.query(`DELETE FROM app.wallet_holds WHERE wallet_id IN (${wallets})`, [drivers]);
+      // The pickup reminders and offer rounds of these calls reference the delivery (ON DELETE RESTRICT); remove them first, as the M08 suite does.
+      await client.query(`DELETE FROM app.notification_reminders WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
+      await client.query(`DELETE FROM app.notification_offer_rounds WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
       await client.query(`DELETE FROM app.delivery_incidents WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
       await client.query(`DELETE FROM app.delivery_events WHERE delivery_id IN (${mine})`, [shop.shopId, customerCalls]);
       await client.query(`DELETE FROM app.shipping_fee_agreement_events WHERE agreement_id IN (SELECT agreement_id FROM app.shipping_fee_agreements WHERE delivery_id IN (${mine}))`, [shop.shopId, customerCalls]);
