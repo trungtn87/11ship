@@ -327,7 +327,8 @@ jobs:
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
         if: ${{ needs.changes.outputs.integration == 'ci' || needs.changes.outputs.integration == 'both' }}
-        timeout-minutes: 22
+        # 30 (was 22): run 45113103831 passed all 195 suites / 2776 tests in 1311 s and was then stopped at the 22-minute limit.
+        timeout-minutes: 30
         env:
           NODE_ENV: test
           APP_ENV: test
