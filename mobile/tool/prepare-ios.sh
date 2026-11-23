@@ -31,6 +31,10 @@ trap 'rm -rf "$tmp"' EXIT
 rm -rf "$dest"
 (cd "$tmp" && flutter create --project-name "$app" --org vn.eleven --platforms ios --empty "$app" >/dev/null)
 cp -R "$tmp/$app/ios" "$dest"
+icon_dir="$dest/Runner/Assets.xcassets/AppIcon.appiconset"
+rm -rf "$icon_dir"; mkdir -p "$icon_dir"
+cp "$root/tool/ios-icons/$app-1024.png" "$icon_dir/AppIcon-1024.png"
+printf '%s\n' '{"images":[{"filename":"AppIcon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "$icon_dir/Contents.json"
 
 # iOS 15 is the floor (instance-level CLLocationManager authorization, MapLibre, background location); the generated Podfile leaves the platform to the project's own target.
 sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/' "$dest/Runner.xcodeproj/project.pbxproj"
