@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 // tests/integration/admin-activation-migration.int.spec.ts compares the migrations byte for byte with it.
 export const isSkippablePath = file =>
   /^mobile\//.test(file)
+  || /^tests\/deploy\/fixtures\/mobile-[^/]+\.golden\.json$/.test(file)
   || (/^docs\//.test(file) && !/^docs\/verification\//.test(file))
   || /^[^/]+\.md$/.test(file);
 
