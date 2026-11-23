@@ -14,6 +14,12 @@ test('ready PR touching only mobile/docs/root md skips integration', () => {
   assert.equal(pr(['mobile/food/lib/a.dart', 'docs/process/x.md', 'README.md']).integration, 'none');
 });
 
+test('mobile golden fixtures and mobile scripts (iOS icon shape) skip integration', () => {
+  assert.equal(pr(['mobile/tool/prepare-ios.sh', 'tests/deploy/fixtures/mobile-ios-release.golden.json', 'mobile/release/script-pins.sha256']).integration, 'none');
+  assert.equal(isSkippablePath('tests/deploy/fixtures/mobile-aab-release.golden.json'), true);
+  assert.equal(isSkippablePath('tests/deploy/fixtures/other.golden.json'), false);
+});
+
 test('docs/verification is not skippable (a migration test reads it)', () => {
   assert.equal(isSkippablePath('docs/verification/m01-d-admin-1c-ddl/sql/001.sql'), false);
   assert.equal(pr(['docs/verification/m01-d-admin-1c-ddl/sql/001.sql']).integration, 'ci');
