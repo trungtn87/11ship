@@ -76,7 +76,8 @@ export class VerificationService {
   async requestOtp(phoneNormalized: string, purpose: string, clientIp: string): Promise<OtpRequestResult> {
     // SYSTEM turned the registration OTP off: no code is issued (nothing is sent, no SMS is spent). The application registers
     // without a proof; the SMS gateway itself stays on for the other purposes. The recovery of a locked account has its own request.
-    if (this.systemSettings !== undefined && !(await this.systemSettings.registrationOtpRequired())) {
+    // The switch is for the REGISTRATION code only: the owner's erasure code (purpose ACCOUNT_DELETE) is never skipped by it.
+    if (purpose === REGISTER_PURPOSE && this.systemSettings !== undefined && !(await this.systemSettings.registrationOtpRequired())) {
       throw new AppError('PHONE_VERIFICATION_NOT_REQUIRED');
     }
     // A provider with a queue (the SMS gateway) says BEFORE anything is written whether it can take a message at all.
@@ -92,7 +93,8 @@ export class VerificationService {
 
     await this.transactions.withTransaction(async (context) => {
       await this.verifications.lockLane(context, otpPhoneLockKey(phoneNormalized));
-      if (await this.users.isPhoneRegistered(context, 'APP_USER', phoneNormalized)) {
+      // The registration code refuses a registered phone; the owner's erasure code (purpose ACCOUNT_DELETE) is sent TO the registered account.
+      if (purpose === REGISTER_PURPOSE && (await this.users.isPhoneRegistered(context, 'APP_USER', phoneNormalized))) {
         // A locked account whose owner asked for its deletion can be recovered (OTP + a new password): the app opens that flow.
         const existing = await this.users.findByPhone(context, 'APP_USER', phoneNormalized);
         throw new AppError(

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { AccountDeletionFinalizer } from '../account-lifecycle/account-deletion-finalizer';
 import { ACCOUNT_ORIGIN_POLICY, AccountOriginPolicy, isClientLoginOrigin } from '../auth/account-origin';
 import { AdminUserAccountParticipant } from '../auth/admin-user-account-participant';
 import { PASSWORD_HASHER, PasswordHasher } from '../auth/password-hasher';
@@ -25,7 +24,7 @@ export const ACCOUNT_DELETE_SCOPE_TYPE = 'account_delete_phone';
 export const ACCOUNT_DELETE_OPERATION_ID = 'account.delete.confirm.v1';
 export const ACCOUNT_DELETE_REQUESTED_ACTION = 'account.delete.requested.v1';
 export const ACCOUNT_DELETE_FINALIZED_ACTION = 'account.delete.finalized.v1';
-const RESOURCE_USER = 'user';
+export const RESOURCE_USER = 'user';
 
 export interface AccountDeletionOutcome {
   readonly status: number;
@@ -46,11 +45,9 @@ export interface AccountDeletionOutcome {
  *     phone + password (the executor fingerprints both), so it still works after the account was deleted. A new execution takes the user row
  *     FOR UPDATE, RECHECKS the password hash and the account shape under that lock (anything that moved while Argon2 ran is the same answer
  *     as a wrong password), then decides:
- *       - nothing in progress  -> the shared finalizer: DELETED (no data to keep) or LOCKED (DELETE_REQUEST, sessions revoked) immediately;
- *       - work in progress     -> DELETE_REQUEST_PENDING: delete_requested_at is set, NEW work is refused everywhere (assertNewWorkAllowed),
- *                                 the running work is finished and the sweeper finalizes once nothing is in progress.
- *     A request that finds the deletion already pending answers PENDING again (no second audit entry); an account already locked at the
- *     owner's request answers LOCKED.
+ *  5. (Owner order 2026-11-23) the password path only LOCKS the account: DELETE_REQUEST, every session revoked, answer LOCKED. It never
+ *     anonymizes; the erasure is started from the signed-in app with a one-time code (AccountErasureService) and carried out by the erasure job.
+ *     A legacy pending flag is cleared by the lock.
  *
  * There is no cancel (OD-26) and no administrator step; the administration only reads the state and the audit trail.
  */
@@ -62,7 +59,6 @@ export class AccountDeletionService {
     private readonly executor: IdempotencyExecutor,
     private readonly users: UserRepository,
     private readonly accounts: AdminUserAccountParticipant,
-    private readonly finalizer: AccountDeletionFinalizer,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
@@ -134,50 +130,14 @@ export class AccountDeletionService {
     if (state === undefined) {
       throw new TechnicalError('internal', 'Locked account could not be read');
     }
-    if (state.requested) {
-      return this.#answer('PENDING');
-    }
-
-    // 2. The decision is the account lifecycle's own (shared with the administration delete and the sweeper).
-    const outcome = await this.finalizer.finalize(context, account);
-    if (outcome.kind === 'DELETED') {
-      await this.#finalized(context, { requestId, userId: account.userId, version: account.version, result: 'DELETED', trigger: 'CONFIRM', relatedData: [], revokedSessions: 0 });
-      return this.#answer('DELETED');
-    }
-    if (outcome.kind === 'LOCKED') {
-      await this.#finalized(context, { requestId, userId: account.userId, version: outcome.version, result: 'LOCKED', trigger: 'CONFIRM', relatedData: outcome.relatedData, revokedSessions: outcome.revokedSessions });
-      return this.#answer('LOCKED');
-    }
-    if (outcome.kind === 'ALREADY_DISABLED') {
-      // Unreachable: the account is ACTIVE under our lock. Refuse rather than guess.
-      throw new TechnicalError('internal', 'Active account reported as disabled');
-    }
-
-    // 3. Work in progress: DELETE_REQUEST_PENDING. The sessions stay so the running work can be finished.
-    const marked = await this.users.markDeleteRequested(context, { userId: account.userId, expectedVersion: account.version });
-    if (marked === undefined) {
+    // Owner order 2026-11-23: this path only LOCKS the account (every session revoked). Nothing is anonymized here: the erasure needs the one-time
+    // code of the signed-in app (AccountErasureService) and is carried out by the erasure job. A legacy pending flag is cleared by the same change.
+    const changed = await this.accounts.disable(context, account, account.version, 'DELETE_REQUEST', { clearDeleteRequest: state.requested });
+    if (changed === undefined) {
       throw new TechnicalError('internal', 'Locked account could not be updated');
     }
-    await this.audit.append(context, {
-      requestId,
-      actorType: 'USER',
-      actorId: account.userId,
-      action: ACCOUNT_DELETE_REQUESTED_ACTION,
-      resourceType: RESOURCE_USER,
-      resourceId: account.userId,
-      resourceVersion: marked.version,
-      outcome: 'SUCCESS',
-      metadata: { target_user_id: account.userId, state: 'DELETE_REQUEST_PENDING', version: marked.version, active_work: [...outcome.activeWork], related_data: [...outcome.relatedData] },
-    });
-    await this.outbox.append(context, {
-      eventType: 'user.account.delete_requested.v1',
-      eventSchemaVersion: 1,
-      resourceType: RESOURCE_USER,
-      resourceId: account.userId,
-      resourceVersion: marked.version,
-      payload: { user_id: account.userId, version: marked.version },
-    });
-    return this.#answer('PENDING');
+    await this.#finalized(context, { requestId, userId: account.userId, version: changed.version, result: 'LOCKED', trigger: 'CONFIRM', relatedData: [], revokedSessions: changed.revokedSessions });
+    return this.#answer('LOCKED');
   }
 
   #answer(result: AccountDeletionResult) {

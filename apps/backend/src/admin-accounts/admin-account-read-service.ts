@@ -147,8 +147,8 @@ export class AdminAccountReadService {
       const relatedData = await this.activity.relatedData(context, userId);
       const activeWork = await this.activity.activeWork(context, userId);
       const lockBlocked = row.status === 'DISABLED' ? 'ALREADY_LOCKED' : activeWork.length > 0 ? 'ACTIVE_WORK' : null;
-      const deleteBlocked =
-        relatedData.length === 0 ? null : row.status === 'DISABLED' ? 'ALREADY_LOCKED' : activeWork.length > 0 ? 'ACTIVE_WORK' : null;
+      // Owner decision 2026-11-22: every deletion anonymizes (related data no longer decides the effect); a locked account is already done.
+      const deleteBlocked = row.status === 'DISABLED' ? 'ALREADY_LOCKED' : activeWork.length > 0 ? 'ACTIVE_WORK' : null;
       return {
         ...userSummaryView(row),
         updated_at: iso(row.updatedAtMs),
@@ -163,7 +163,8 @@ export class AdminAccountReadService {
           delete_requested_at: row.deleteRequestedAtMs === undefined || row.deleteRequestedAtMs === null ? null : iso(row.deleteRequestedAtMs),
           related_data: relatedData,
           active_work: activeWork,
-          delete_effect: relatedData.length === 0 ? 'DELETE_PERMANENTLY' : 'LOCK',
+          // The admin screen's vocabulary is kept (DELETE_PERMANENTLY); the server anonymizes the account (see the delete command).
+          delete_effect: 'DELETE_PERMANENTLY',
           lock_blocked_reason: lockBlocked,
           delete_blocked_reason: deleteBlocked,
         },

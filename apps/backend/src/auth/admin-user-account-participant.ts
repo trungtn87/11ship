@@ -16,6 +16,8 @@ export interface OrdinaryAccount {
   readonly lockReason?: LockReason;
   /** The owner asked for the deletion and it is not carried out yet (P5-6a): the administration lock keeps that request. */
   readonly deleteRequested: boolean;
+  /** The personal data was removed by the owner's deletion (anonymized_at): the account is never unlocked again (Owner 2026-11-22). */
+  readonly anonymized: boolean;
 }
 
 /**
@@ -62,6 +64,7 @@ export class AdminUserAccountParticipant {
       version: row.version,
       roles: await this.users.allRoles(context, userId),
       deleteRequested: row.deleteRequested === true,
+      anonymized: row.anonymized === true,
       ...(row.lockReason === undefined ? {} : { lockReason: row.lockReason }),
     };
   }
@@ -98,8 +101,13 @@ export class AdminUserAccountParticipant {
    * and the driver profile again). The account's own sessions, device bindings, consents, profile and roles go with it. False when the row
    * is not an APP_USER account any more.
    */
-  async purge(context: TransactionContext, account: OrdinaryAccount): Promise<boolean> {
-    return this.users.purgeAppUser(context, account.userId);
+  /**
+   * Anonymizes the account in place (Owner decision 2026-11-22, migration 1798243200000): the personal data goes, the tombstone keeps the id,
+   * and the password hash is replaced by `passwordHash` (an unusable one, chosen by the caller). Undefined is never returned for a locked
+   * ordinary account; false means the account is no longer in that state.
+   */
+  async anonymize(context: TransactionContext, account: OrdinaryAccount, passwordHash: string): Promise<boolean> {
+    return this.users.anonymizeAppUser(context, account.userId, passwordHash);
   }
 
   /**

@@ -9,7 +9,7 @@ import { MAX_WALLET_VND } from './wallet-types';
 
 export interface PostAdjustmentInput {
   readonly driverId: string;
-  readonly sourceType: 'COMPLAINT';
+  readonly sourceType: 'COMPLAINT' | 'ACCOUNT_DELETE';
   /** What decided it (the M11 adjustment). The pair (sourceType, sourceId) is unique: a repeat posts nothing. */
   readonly sourceId: string;
   readonly direction: 'REFUND_TO_SHIPPER' | 'CHARGE_TO_SHIPPER';

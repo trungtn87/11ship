@@ -135,6 +135,7 @@ WITH expected(table_name, privileges) AS (
     ('complaint_reconsiderations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_adjustments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[]),
+    ('account_deletion_requests', ARRAY['SELECT', 'INSERT']::text[]),
     ('ops_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_admin_scopes', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),
@@ -184,7 +185,7 @@ WITH expected(table_name, privileges) AS (
                       FROM cat_kinds WHERE expected_kind <> actual_kind)
          END AS result
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
+  VALUES ('app.purge_app_user(uuid)'), ('app.anonymize_app_user(uuid, text)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
          ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)'),
          ('app.purge_unreferenced_route_snapshots(interval)')
 ), function_checks AS (

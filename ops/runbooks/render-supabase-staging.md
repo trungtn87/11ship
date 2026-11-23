@@ -201,6 +201,7 @@ Runtime grants are **explicit per table**, applied after the migrations create t
 | complaint_reconsiderations | SELECT, INSERT, UPDATE (M11: a request to review a closed file and its decision; never deleted) |
 | complaint_adjustments | SELECT, INSERT, UPDATE (M11: result and commission adjustments; the finance posting state is updated; never deleted) |
 | wallet_adjustments | SELECT, INSERT (M04: the refund / extra charge of a commission decided by M11; append-only, one ledger row each; the ledger row itself is written through the existing wallet_ledger_entries grant) |
+| account_deletion_requests | SELECT, INSERT (Owner order 2026-11-23: the one-time erasure request after an OTP; anonymize_app_user uses it up; no UPDATE/DELETE for the app) |
 | report_export_jobs | SELECT, INSERT, UPDATE (M12-E: export jobs; never deleted, a trigger refuses it) |
 | report_export_files | SELECT, INSERT, DELETE (M12-E: the bytes of an export; removed when the file expires) |
 | backup_records | SELECT (M12-F: written by the backup job with the owner role; the application only reads it; never deleted) |

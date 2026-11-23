@@ -86,7 +86,9 @@ describe('no real outbound system and no redrive in C1C', () => {
     expect(codeOf('outbox/fake-outbox-publisher.fixture.ts')).toContain('implements OutboxPublisher');
   });
 
-  it('no new migration: the only migration that touches the outbox is the C1B one', () => {
+  // C1C adds no outbox table or sender. Two migrations touch outbox_events in SQL: the C1B one, and the account-anonymize one, which only
+  // replaces the personal keys inside outbox_events.payload (Owner 2026-11-22; no column, constraint or grant change).
+  it('the only migrations that touch the outbox are the C1B one and the account-anonymize payload scrub', () => {
     const folder = sourcePath('../../../database/migrations');
     const touching = readdirSync(folder)
       .filter((name) => name.endsWith('.sql'))
@@ -100,6 +102,6 @@ describe('no real outbound system and no redrive in C1C', () => {
         ),
       )
       .sort();
-    expect(touching).toEqual(['1791417600000_create-audit-outbox.sql']);
+    expect(touching).toEqual(['1791417600000_create-audit-outbox.sql', '1798243200000_account-anonymize.sql']);
   });
 });

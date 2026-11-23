@@ -139,6 +139,12 @@ export class AccountRecordReader {
     return own + others;
   }
 
+  /** A balance or a held amount of the shipper wallet: money still owed, so the account waits before anonymization (OD-31). */
+  async walletBalanceOpen(context: TransactionContext, userId: string): Promise<boolean> {
+    const who = await this.#who(context, userId);
+    return this.wallets.hasOpenBalance(context, who.driverId);
+  }
+
   async reviewsExist(context: TransactionContext, userId: string): Promise<boolean> {
     const who = await this.#who(context, userId);
     return this.#flag(

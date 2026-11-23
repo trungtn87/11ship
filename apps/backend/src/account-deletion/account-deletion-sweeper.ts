@@ -9,6 +9,7 @@ import { APP_LOGGER } from '../logging/logging.module';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AccountDeletionService } from './account-deletion-service';
+import { AccountErasureRepository } from './account-erasure-repository';
 
 const BATCH = 50;
 
@@ -45,11 +46,12 @@ export class AccountDeletionSweeper {
     private readonly accounts: AdminUserAccountParticipant,
     private readonly finalizer: AccountDeletionFinalizer,
     private readonly deletion: AccountDeletionService,
+    private readonly erasures: AccountErasureRepository,
     @Optional() @Inject(APP_LOGGER) private readonly logger?: JsonLogger,
   ) {}
 
   async sweep(): Promise<AccountDeletionSweepResult> {
-    const candidates = await this.transactions.withTransaction((context) => this.users.listDeleteRequested(context, BATCH));
+    const candidates = await this.transactions.withTransaction((context) => this.erasures.accountsWithValidRequest(context, BATCH));
     let finalized = 0;
     let waiting = 0;
     let skipped = 0;
@@ -72,46 +74,23 @@ export class AccountDeletionSweeper {
     return { finalized, waiting, skipped, failed };
   }
 
+  /**
+   * One erasure: only an account with a valid one-time request (Owner order 2026-11-23) and a lock for it. The decision is the shared finalizer's
+   * (work in progress -> WAITING, the request then expires); the database checks the request again inside anonymize_app_user.
+   */
   async #one(context: TransactionContext, userId: string): Promise<'FINALIZED' | 'WAITING' | 'SKIPPED'> {
     const user = await this.users.lockByIdSkipLocked(context, userId);
     if (user === undefined) {
       return 'SKIPPED';
     }
-    const state = await this.users.deleteRequestState(context, userId);
-    if (state === undefined || !state.requested) {
-      return 'SKIPPED';
-    }
+    const request = await this.erasures.validRequest(context, userId);
     const account = await this.accounts.lockOrdinary(context, userId, 'write');
-    if (account === undefined) {
+    if (request === undefined || account === undefined || account.status !== 'DISABLED' || account.lockReason !== 'DELETE_REQUEST') {
       return 'SKIPPED';
     }
-    if (account.status === 'DISABLED') {
-      // An administrator locked the account while the request was pending: the request survives (OD-26, no cancel). Only VIOLATION / SECURITY can
-      // coexist with it (users_delete_request_ck); the stronger lock is kept, never replaced, and nothing is purged.
-      if (account.lockReason !== 'VIOLATION' && account.lockReason !== 'SECURITY') {
-        return 'SKIPPED';
-      }
-      const kept = await this.finalizer.settleUnderLock(context, account);
-      if (kept.kind === 'ACTIVE_WORK') {
-        return 'WAITING';
-      }
-      await this.deletion.recordFinalized(context, { userId, version: kept.version, result: 'LOCK_KEPT', trigger: 'SWEEPER', relatedData: kept.relatedData, revokedSessions: kept.revokedSessions, lockReason: kept.lockReason });
-      return 'FINALIZED';
-    }
-    const outcome = await this.finalizer.finalize(context, account);
+    const outcome = await this.finalizer.finalize(context, account, request);
     if (outcome.kind === 'DELETED') {
-      await this.deletion.recordFinalized(context, { userId, version: account.version, result: 'DELETED', trigger: 'SWEEPER', relatedData: [], revokedSessions: 0 });
-      return 'FINALIZED';
-    }
-    if (outcome.kind === 'LOCKED') {
-      await this.deletion.recordFinalized(context, {
-        userId,
-        version: outcome.version,
-        result: 'LOCKED',
-        trigger: 'SWEEPER',
-        relatedData: outcome.relatedData,
-        revokedSessions: outcome.revokedSessions,
-      });
+      await this.deletion.recordFinalized(context, { userId, version: account.version, result: 'DELETED', trigger: 'SWEEPER', relatedData: outcome.relatedData, revokedSessions: 0 });
       return 'FINALIZED';
     }
     return outcome.kind === 'ACTIVE_WORK' ? 'WAITING' : 'SKIPPED';

@@ -362,6 +362,7 @@ export class AccountRecoveryService {
       target.accountScope === 'APP_USER' &&
       target.status === 'DISABLED' &&
       target.lockReason === 'DELETE_REQUEST' &&
+      !(await this.users.hasPendingErasure(context, target.userId)) &&
       (await this.#classify(context, 'APP_USER', target)) === 'USER'
     );
   }

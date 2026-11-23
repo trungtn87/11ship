@@ -12,7 +12,7 @@ export interface AdjustmentRow {
 @Injectable()
 export class WalletAdjustmentRepository {
   /** The adjustment already posted for this source, or undefined. A plain read under the wallet lock the caller holds. */
-  async findBySource(context: TransactionContext, sourceType: 'COMPLAINT', sourceId: string): Promise<AdjustmentRow | undefined> {
+  async findBySource(context: TransactionContext, sourceType: 'COMPLAINT' | 'ACCOUNT_DELETE', sourceId: string): Promise<AdjustmentRow | undefined> {
     const result = await context.query<{ adjustment_id: string; wallet_id: string; direction: AdjustmentRow['direction']; amount_vnd: string }>(
       `SELECT adjustment_id::text AS adjustment_id, wallet_id::text AS wallet_id, direction, amount_vnd::text AS amount_vnd
          FROM app.wallet_adjustments WHERE source_type = $1 AND source_id = $2::uuid`,
@@ -22,7 +22,7 @@ export class WalletAdjustmentRepository {
     return row === undefined ? undefined : { adjustmentId: row.adjustment_id, walletId: row.wallet_id, direction: row.direction, amountVnd: BigInt(row.amount_vnd) };
   }
 
-  async insert(context: TransactionContext, input: { adjustmentId: string; walletId: string; sourceType: 'COMPLAINT'; sourceId: string; direction: AdjustmentRow['direction']; amountVnd: bigint; postedBy: string }): Promise<void> {
+  async insert(context: TransactionContext, input: { adjustmentId: string; walletId: string; sourceType: 'COMPLAINT' | 'ACCOUNT_DELETE'; sourceId: string; direction: AdjustmentRow['direction']; amountVnd: bigint; postedBy: string }): Promise<void> {
     await context.query(
       `INSERT INTO app.wallet_adjustments (adjustment_id, wallet_id, source_type, source_id, direction, amount_vnd, posted_by, created_at)
        VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5, $6::bigint, $7::uuid, date_trunc('milliseconds', clock_timestamp()))`,

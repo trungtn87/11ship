@@ -184,6 +184,9 @@ GRANT SELECT, INSERT, UPDATE ON app.complaint_adjustments TO ship11_app;
 -- M04 adjustments (posted by the wallet package for a decision of M11): the record is append-only. The ledger row it comes with is covered by the ledger grant above.
 GRANT SELECT, INSERT ON app.wallet_adjustments TO ship11_app;
 
+-- Owner order 2026-11-23: the erasure request (one-time, OTP-confirmed) is written by the app; anonymize_app_user uses it up in its own transaction.
+GRANT SELECT, INSERT ON app.account_deletion_requests TO ship11_app;
+
 -- #153: stage policy and append-only cancellation facts.
 GRANT SELECT, UPDATE ON app.order_timeout_policy TO ship11_app;
 GRANT SELECT, INSERT ON app.order_timeout_policy_changes TO ship11_app;

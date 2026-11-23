@@ -466,6 +466,16 @@ export async function purgePhone(pool: Pool, normalizedPhone: string): Promise<v
     'DELETE FROM app.client_device_bindings WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],
   );
+  // Owner order 2026-11-23: a locked (not erased) account keeps its push tokens, which reference its sessions: they go first.
+  await pool.query(
+    'DELETE FROM app.notification_push_tokens WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
+  // Owner order 2026-11-23: an erasure request of the account (one per use) references it.
+  await pool.query(
+    'DELETE FROM app.account_deletion_requests WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
+    [normalizedPhone],
+  );
   await pool.query(
     'DELETE FROM app.sessions WHERE user_id IN (SELECT user_id FROM app.users WHERE phone_normalized = $1)',
     [normalizedPhone],

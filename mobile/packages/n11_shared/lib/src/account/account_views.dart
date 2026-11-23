@@ -1074,11 +1074,37 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 }
 
-// ---- Account deletion (OD-26) ----------------------------------------------------------------------------------------
+// ---- Account deletion (OD-26, Owner order 2026-11-23) ----------------------------------------------------------------------------------------------
 
-/// The owner's own deletion of this account, started in the app. It explains the consequences, asks for the CURRENT password and then a
-/// final confirmation. The answer is one of: deleted / locked (this device signs out and the Account tab says so), pending (the running
-/// work is finished first and the session stays), or a failure that keeps the form usable.
+String _vndText(int amount) {
+  final String digits = amount.toString();
+  final StringBuffer out = StringBuffer();
+  for (int i = 0; i < digits.length; i += 1) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write('.');
+    out.write(digits[i]);
+  }
+  return '${out.toString()} đ';
+}
+
+String _blockerText(ErasureBlocker blocker) {
+  switch (blocker.code) {
+    case 'ACTIVE_WORK':
+      return blocker.items.isEmpty
+          ? 'Còn đơn hoặc việc đang xử lý. Hãy hoàn tất hoặc chờ chúng kết thúc.'
+          : 'Còn đơn hoặc việc đang xử lý (${blocker.items.join(', ')}). Hãy hoàn tất hoặc chờ chúng kết thúc.';
+    case 'WALLET_HELD':
+      return 'Ví đang giữ tiền chưa xử lý xong. Hãy chờ xử lý xong trước khi xóa tài khoản.';
+    case 'WALLET_AT_OR_ABOVE_MINIMUM':
+      return 'Số dư ví còn từ mức rút tối thiểu. Hãy rút hết số dư trước khi xóa tài khoản.';
+    case 'ALREADY_LOCKED':
+      return 'Tài khoản này đã bị khóa.';
+    default:
+      return 'Chưa thể xóa tài khoản lúc này.';
+  }
+}
+
+/// The owner's own deletion of this account, started in the app: the pre-check (what blocks it), the forfeit of a small balance that the owner
+/// must agree to, a one-time code by SMS, and the confirmation. The answer is the lock (this device signs out) or a failure that keeps the form.
 class DeleteAccountScreen extends StatefulWidget {
   const DeleteAccountScreen({super.key, required this.session});
   final SessionController session;
@@ -1087,15 +1113,18 @@ class DeleteAccountScreen extends StatefulWidget {
 }
 
 class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
-  final TextEditingController _password = TextEditingController();
+  final TextEditingController _otp = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
-  late final AccountDeletionController _controller = AccountDeletionController(transport: widget.session.api.transport, session: widget.session);
+  late final AccountDeletionController _controller = AccountDeletionController(session: widget.session);
+  bool _agreeForfeit = false;
+  bool _balanceChanged = false;
 
   @override
   void initState() {
     super.initState();
     widget.session.addListener(_sessionChanged);
     _controller.addListener(_changed);
+    _controller.loadPrecheck();
   }
 
   void _changed() {
@@ -1103,7 +1132,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   }
 
   void _sessionChanged() {
-    // The session is gone (a deletion that just finished, or a sign-out elsewhere): back to the Account tab, which shows the guest state.
+    // The session is gone (the deletion was confirmed, or a sign-out elsewhere): back to the Account tab, which shows the guest state.
     if (mounted && widget.session.status != SessionStatus.signedIn) {
       Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
     }
@@ -1114,81 +1143,141 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
     widget.session.removeListener(_sessionChanged);
     _controller.removeListener(_changed);
     _controller.dispose();
-    _password.dispose();
+    _otp.dispose();
     super.dispose();
   }
 
+  Future<void> _sendCode() async {
+    final ErasurePrecheck? pre = _controller.precheck;
+    if (pre == null || !pre.ready) return;
+    await _controller.sendCode(acceptForfeit: pre.hasForfeit && _agreeForfeit, forfeitVnd: pre.forfeitVnd);
+    await _reloadChangedBalance();
+  }
+
   Future<void> _confirmAndSubmit() async {
+    final ErasurePrecheck? pre = _controller.precheck;
     final bool? yes = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('Xóa tài khoản?'),
-        content: const Text('Sau khi xác nhận, bạn sẽ bị đăng xuất và không thể hủy yêu cầu này. Nếu còn việc đang chạy, tài khoản chỉ bị khóa sau khi việc đó hoàn tất.'),
+        content: const Text('Sau khi xác nhận, bạn sẽ bị đăng xuất và không thể hủy yêu cầu này. Tài khoản sẽ được xóa trong vòng một phút.'),
         actions: <Widget>[
           TextButton(key: const Key('delete-confirm-cancel'), onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Huỷ')),
           TextButton(key: const Key('delete-confirm-yes'), onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Xóa tài khoản')),
         ],
       ),
     );
-    if (yes == true) {
-      await _controller.submit(_password.text);
+    if (yes == true && pre != null) {
+      await _controller.confirm(otp: _otp.text, acceptForfeit: pre.hasForfeit && _agreeForfeit, forfeitVnd: pre.forfeitVnd);
+      await _reloadChangedBalance();
     }
+  }
+
+  Future<void> _reloadChangedBalance() async {
+    if (!mounted || _controller.failure?.code != 'ACCOUNT_ERASURE_CONSENT_REQUIRED') return;
+    _otp.clear();
+    setState(() {
+      _agreeForfeit = false;
+      _balanceChanged = true;
+    });
+    await _controller.loadPrecheck();
   }
 
   @override
   Widget build(BuildContext context) {
     final AccountDeletionController c = _controller;
+    final ErasurePrecheck? pre = c.precheck;
     final bool shipper = widget.session.identity?.availableRoles.contains('DRIVER') ?? false;
     final bool finished = c.outcome != null;
     final AuthFailure? failure = c.failure;
-    final bool canSubmit = !c.busy && !finished && _password.text.isNotEmpty && widget.session.status == SessionStatus.signedIn;
+    final bool ready = pre != null && pre.ready;
+    final bool needsAgreement = pre != null && pre.ready && pre.hasForfeit;
+    final bool agreed = !needsAgreement || _agreeForfeit;
+    final bool canSendCode = ready && agreed && !c.busy && !finished && !c.codeSent && widget.session.status == SessionStatus.signedIn;
+    final bool canConfirm = c.codeSent && _otp.text.trim().length == 6 && !c.busy && !finished;
     return N11FormScaffold(formKey: _form, title: 'Xóa tài khoản', session: widget.session, children: <Widget>[
       N11Banner(
         key: const Key('delete-explain'),
         kind: BannerKind.warn,
         title: 'Xóa tài khoản không thể hoàn tác',
         text: 'Sau khi xác nhận:\n'
-            '${shipper ? '• Bạn bị đăng xuất ngay. Bạn vẫn đăng nhập lại 11Ship được, chỉ để rút toàn bộ số dư ví; sau đó tài khoản được đóng.\n' : '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'}'
+            '${shipper ? '• Bạn bị đăng xuất ngay. Tài khoản được xóa trong vòng một phút.\n' : '• Bạn bị đăng xuất ngay và không đăng nhập lại được bằng tài khoản này.\n'}'
             '• Phiên đăng nhập trên mọi thiết bị bị thu hồi.\n'
-            '• Dữ liệu được giữ hoặc xử lý theo quy định của pháp luật.\n'
-            '• Đơn hoặc việc đang chạy sẽ hoàn tất trước; tài khoản bị khóa sau đó. Trong thời gian này bạn không nhận việc mới.',
+            '• Thông tin cá nhân (tên, số điện thoại, email, mật khẩu, ảnh đại diện, phiên đăng nhập) được xóa. Đơn hàng và giao dịch được giữ để đối soát.',
       ),
-      if (c.outcome == AccountDeletionOutcome.pending)
+      if (c.outcome == AccountErasureOutcome.scheduled)
         const N11Banner(
-          key: Key('delete-pending'),
+          key: Key('delete-scheduled'),
           kind: BannerKind.warn,
           title: 'Đã ghi nhận yêu cầu xóa',
-          text: 'Tài khoản đang chờ hoàn tất việc hiện tại. Sau khi xong, tài khoản sẽ bị khóa và phiên đăng nhập sẽ kết thúc. Bạn không nhận việc mới trong thời gian này.',
+          text: 'Tài khoản sẽ được xóa trong vòng một phút. Số điện thoại có thể đăng ký lại sau đó.',
+        ),
+      if (pre != null && !pre.ready)
+        N11Banner(
+          key: const Key('delete-blocked'),
+          kind: BannerKind.error,
+          title: 'Chưa thể xóa tài khoản',
+          text: pre.blockers.map(_blockerText).join('\n'),
+        ),
+      if (_balanceChanged && !finished && !c.codeSent)
+        const N11Banner(
+          key: Key('delete-balance-changed'),
+          kind: BannerKind.warn,
+          title: 'Số dư đã thay đổi',
+          text: 'Hãy xem lại số dư trước khi tiếp tục.',
+        ),
+      if (pre != null && needsAgreement)
+        N11Banner(
+          key: const Key('delete-forfeit'),
+          kind: BannerKind.warn,
+          title: 'Số dư nhỏ hơn mức rút tối thiểu',
+          text: 'Số dư ${_vndText(pre.balanceVnd)} dưới mức rút tối thiểu ${_vndText(pre.withdrawMinVnd)} sẽ không được hoàn lại khi xóa tài khoản. Số tiền này được ghi vào sổ giao dịch để đối soát.',
+        ),
+      if (needsAgreement && !c.codeSent)
+        CheckboxListTile(
+          key: const Key('delete-forfeit-agree'),
+          value: _agreeForfeit,
+          onChanged: c.busy ? null : (bool? value) => setState(() => _agreeForfeit = value ?? false),
+          title: const Text('Tôi đồng ý để số dư này không được hoàn lại'),
+          controlAffinity: ListTileControlAffinity.leading,
         ),
       if (failure != null)
         N11Banner(
           key: const Key('delete-error'),
           kind: BannerKind.error,
-          title: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu chưa đúng' : 'Chưa xóa được tài khoản',
-          text: failure.kind == AuthFailureKind.invalidCredentials ? 'Mật khẩu hiện tại không đúng. Lần nhập sai này không khóa tài khoản.' : failureMessage(failure),
+          title: failure.kind == AuthFailureKind.otpInvalid ? 'Mã xác nhận chưa đúng' : 'Chưa xóa được tài khoản',
+          text: failure.kind == AuthFailureKind.otpInvalid ? 'Mã xác nhận chưa đúng. Hãy nhập lại mã trong tin nhắn.' : failureMessage(failure),
         ),
-      N11Field(
-        requiredInput: true,
-        fieldKey: const Key('delete-password'),
-        label: 'Mật khẩu hiện tại',
-        controller: _password,
-        password: true,
-        maxLength: 128,
-        enabled: !c.busy && !finished,
-        onChanged: () => setState(() {}),
-      ),
-      N11Button(
-        key: const Key('delete-submit'),
-        label: finished
-            ? 'Đã ghi nhận'
-            : c.busy
-                ? 'Đang xóa…'
-                : c.hasPendingWrite
-                    ? 'Thử lại'
-                    : 'Xóa tài khoản',
-        loading: c.busy,
-        onPressed: canSubmit ? _confirmAndSubmit : null,
-      ),
+      if (!c.codeSent)
+        N11Button(
+          key: const Key('delete-send-code'),
+          label: 'Gửi mã xác nhận',
+          loading: c.busy,
+          onPressed: canSendCode ? _sendCode : null,
+        ),
+      if (c.codeSent && !finished) ...<Widget>[
+        const N11Banner(
+          key: Key('delete-code-sent'),
+          kind: BannerKind.info,
+          title: 'Đã gửi mã xác nhận',
+          text: 'Nhập mã 6 số vừa gửi tới số điện thoại của tài khoản để xác nhận xóa.',
+        ),
+        N11Field(
+          requiredInput: true,
+          fieldKey: const Key('delete-otp'),
+          label: 'Mã xác nhận',
+          controller: _otp,
+          maxLength: 6,
+          enabled: !c.busy,
+          onChanged: () => setState(() {}),
+        ),
+        N11Button(
+          key: const Key('delete-submit'),
+          label: c.busy ? 'Đang xóa…' : 'Xóa tài khoản',
+          loading: c.busy,
+          onPressed: canConfirm ? _confirmAndSubmit : null,
+        ),
+      ],
     ]);
   }
 }

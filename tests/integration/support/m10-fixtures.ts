@@ -133,6 +133,11 @@ async function fund(app: AuthApp, driverId: string, amount: number): Promise<str
       walletId = randomUUID();
       await client.query(`INSERT INTO app.driver_wallets (wallet_id, driver_id, balance_vnd, held_vnd, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 0, 0, 1, now(), now())`, [walletId, driverId]);
     }
+    // A zero balance is the wallet row alone: the ledger refuses a zero delta (wallet_ledger_entries_delta_ck).
+    if (amount === 0) {
+      await client.query('COMMIT');
+      return walletId;
+    }
     await client.query('ALTER TABLE app.wallet_ledger_entries DISABLE TRIGGER wallet_ledger_a_source_gate');
     await client.query(`INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at) VALUES ($1::uuid, $2::uuid, 1, 'ADJUSTMENT_CREDIT', $3, $3, now())`, [randomUUID(), walletId, amount]);
     await client.query('UPDATE app.driver_wallets SET balance_vnd = $2, version = version + 1 WHERE wallet_id = $1::uuid', [walletId, amount]);
@@ -181,7 +186,7 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
   const client = await app.pool.connect();
   const tables = [
     'order_events', 'order_items', 'orders', 'customer_carts', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries',
-    'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events', 'notification_reminders', 'notification_offer_rounds',
+    'wallet_adjustments', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events', 'notification_reminders', 'notification_offer_rounds',
   ];
   try {
     await client.query('BEGIN');
@@ -218,6 +223,8 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     await client.query(`DELETE FROM app.orders WHERE shop_id = ANY($1::uuid[]) OR customer_user_id = ANY($2::uuid[])`, [shops, customers]);
     await client.query('DELETE FROM app.customer_carts WHERE shop_id = ANY($1::uuid[]) OR user_id = ANY($2::uuid[])', [shops, customers]);
     await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
+    // Owner order 2026-11-23: the forfeit of an erasure is a wallet adjustment of the wallet (it references it): it goes first.
+    await client.query(`DELETE FROM app.wallet_adjustments WHERE wallet_id IN (${wallets})`, [drivers]);
     await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
     // The notified accounts are the given ones and the Shippers' own accounts (offers, reminders).
     const notified = `SELECT user_id FROM app.drivers WHERE driver_id = ANY($2::uuid[])`;

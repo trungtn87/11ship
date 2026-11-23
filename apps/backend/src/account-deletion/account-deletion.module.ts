@@ -2,10 +2,15 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
+import { DriverModule } from '../driver/driver.module';
+import { WalletModule } from '../wallet/wallet.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { AccountDeletionController, DeleteAccountPageController } from './account-deletion.controller';
 import { AccountDeletionLimiter } from './account-deletion-limiter';
 import { AccountDeletionService } from './account-deletion-service';
+import { AccountErasureService } from './account-erasure-service';
+import { AccountErasureRepository } from './account-erasure-repository';
+import { ClientAccountErasureController } from './account-erasure.controller';
 import { AccountDeletionSweeper, AccountDeletionSweeperRunner } from './account-deletion-sweeper';
 
 /**
@@ -19,9 +24,9 @@ export class AccountDeletionModule {
   static register(auth: DynamicModule): DynamicModule {
     return {
       module: AccountDeletionModule,
-      imports: [auth, TransactionModule, AuditModule, IdempotencyModule, OutboxModule],
-      controllers: [AccountDeletionController, DeleteAccountPageController],
-      providers: [AccountDeletionLimiter, AccountDeletionService, AccountDeletionSweeper, AccountDeletionSweeperRunner],
+      imports: [auth, TransactionModule, AuditModule, IdempotencyModule, OutboxModule, DriverModule, WalletModule],
+      controllers: [AccountDeletionController, DeleteAccountPageController, ClientAccountErasureController],
+      providers: [AccountDeletionLimiter, AccountDeletionService, AccountDeletionSweeper, AccountDeletionSweeperRunner, AccountErasureRepository, AccountErasureService],
     };
   }
 }

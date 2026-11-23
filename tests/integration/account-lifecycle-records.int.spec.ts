@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { AdminApp, adminData, adminErrorCode, AdminResponse, sessionCookies, startAdminApp } from './support/admin-fixtures';
@@ -16,6 +17,14 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 describe('account lock / delete against the real records of every module', () => {
   let app: AdminApp;
+  // The owner's erasure, as the app starts it (Owner order 2026-11-23): a one-time request, then the sweeper. The administration command only locks.
+  const requestErasure = async (userId: string): Promise<{ failed: number }> => {
+    await app.pool.query(
+      "INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '1 second', now() + interval '5 minutes')",
+      [randomUUID(), userId, randomUUID()],
+    );
+    return app.running.app.get(AccountDeletionSweeper).sweep();
+  };
   let system: SystemSession;
   const hasher = new Argon2idPasswordHasher();
   const seededIds: string[] = [];
@@ -87,17 +96,36 @@ describe('account lock / delete against the real records of every module', () =>
       client.release();
     }
   }
+  // An ended order is CANCELLED_BY_SHOP (a COMPLETED one needs a completed delivery). Its amounts (50.000) equal its one dish line, so the
+  // order invariants hold when the anonymization writes the row.
   const insertOrder = async (customerId: string, shopId: string, status: string): Promise<string> => {
     const orderId = randomUUID();
-    await withoutTriggers(['orders'], (q) =>
-      q.query(
+    const finalStatus = status === 'COMPLETED' ? 'CANCELLED_BY_SHOP' : status;
+    const categoryId = randomUUID();
+    const itemId = randomUUID();
+    await withoutTriggers(['orders', 'order_items'], async (q) => {
+      await q.query(
+        `INSERT INTO app.menu_categories (category_id, name, status, sort_order, version, created_at, updated_at) VALUES ($1::uuid, 'Thử nghiệm ' || $2, 'ACTIVE', 1, 1, now(), now())`,
+        [categoryId, categoryId.slice(0, 8)],
+      );
+      await q.query(
+        `INSERT INTO app.menu_items (item_id, shop_id, category_id, name, price_vnd, status, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Món thử', 50000, 'VISIBLE', 1, now(), now())`,
+        [itemId, shopId, categoryId],
+      );
+      await q.query(
         `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
-           items_original_total_vnd, items_total_vnd, confirmed_at, ended_at, end_actor, created_at, updated_at)
+           items_original_total_vnd, items_total_vnd, confirmed_at, ended_at, end_actor, end_reason, created_at, updated_at)
          VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::varchar, 'Quán thử', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000,
-           CASE WHEN $6::varchar IN ('PREPARING','COMPLETED') THEN now() END, CASE WHEN $6::varchar = 'COMPLETED' THEN now() END, CASE WHEN $6::varchar = 'COMPLETED' THEN 'SHOP' END, now(), now())`,
-        [orderId, `#${tag}${orderId.slice(0, 5)}`, randomUUID(), customerId, shopId, status],
-      ),
-    );
+           CASE WHEN $6::varchar IN ('PREPARING','CANCELLED_BY_SHOP') THEN now() END, CASE WHEN $6::varchar = 'CANCELLED_BY_SHOP' THEN now() END,
+           CASE WHEN $6::varchar = 'CANCELLED_BY_SHOP' THEN 'SHOP' END, CASE WHEN $6::varchar = 'CANCELLED_BY_SHOP' THEN 'Đơn thử nghiệm kết thúc' END, now(), now())`,
+        [orderId, `#${tag}${orderId.slice(0, 5)}`, randomUUID(), customerId, shopId, finalStatus],
+      );
+      await q.query(
+        `INSERT INTO app.order_items (line_id, order_id, line_no, menu_item_id, name, orig_unit_price_vnd, orig_quantity, unit_price_vnd, quantity, created_at)
+         VALUES (gen_random_uuid(), $1::uuid, 1, $2::uuid, 'Món thử', 50000, 1, 50000, 1, now())`,
+        [orderId, itemId],
+      );
+    });
     return orderId;
   };
   const orderExists = async (orderId: string): Promise<boolean> => (await app.pool.query('SELECT 1 FROM app.orders WHERE order_id = $1::uuid', [orderId])).rows.length === 1;
@@ -113,7 +141,7 @@ describe('account lock / delete against the real records of every module', () =>
       const client = await app.pool.connect();
       try {
         await client.query('BEGIN');
-        for (const table of ['complaints', 'customer_carts', 'wallet_topup_requests', 'driver_wallets', 'delivery_assignments', 'deliveries', 'orders']) {
+        for (const table of ['complaints', 'customer_carts', 'wallet_topup_requests', 'driver_wallets', 'delivery_assignments', 'deliveries', 'orders', 'order_items']) {
           await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
         }
         const drivers = '(SELECT driver_id FROM app.drivers WHERE user_id = ANY($1::uuid[]))';
@@ -124,8 +152,13 @@ describe('account lock / delete against the real records of every module', () =>
         await client.query(`DELETE FROM app.driver_wallets WHERE driver_id IN ${drivers}`, [seededIds]);
         await client.query(`DELETE FROM app.delivery_assignments WHERE driver_id IN ${drivers}`, [seededIds]);
         await client.query(`DELETE FROM app.deliveries WHERE requested_by = ANY($1::uuid[]) OR shop_id IN ${shops}`, [seededIds]);
+        // The dish lines of these fixture orders reference the fixture dishes, so they go first (the order-line trigger is off for this cleanup).
+        await client.query(
+          `DELETE FROM app.order_items WHERE order_id IN (SELECT order_id FROM app.orders WHERE customer_user_id = ANY($1::uuid[]) OR shop_id IN ${shops})`,
+          [seededIds],
+        );
         await client.query(`DELETE FROM app.orders WHERE customer_user_id = ANY($1::uuid[]) OR shop_id IN ${shops}`, [seededIds]);
-        for (const table of ['complaints', 'customer_carts', 'wallet_topup_requests', 'driver_wallets', 'delivery_assignments', 'deliveries', 'orders']) {
+        for (const table of ['complaints', 'customer_carts', 'wallet_topup_requests', 'driver_wallets', 'delivery_assignments', 'deliveries', 'orders', 'order_items']) {
           await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
         }
         await client.query('COMMIT');
@@ -145,7 +178,7 @@ describe('account lock / delete against the real records of every module', () =>
     const owner = await seedUser(['SHOP']);
     const orderId = await insertOrder(customer.id, await shopOf(owner.id), 'PREPARING');
     const shown = await detail(customer.id);
-    expect(shown.lifecycle).toMatchObject({ related_data: ['ORDERS'], active_work: ['ORDERS'], lock_blocked_reason: 'ACTIVE_WORK', delete_effect: 'LOCK' });
+    expect(shown.lifecycle).toMatchObject({ related_data: ['ORDERS'], active_work: ['ORDERS'], lock_blocked_reason: 'ACTIVE_WORK', delete_effect: 'DELETE_PERMANENTLY' });
     const version = Number(shown.version);
     const key = randomUUID();
     expect(outcome(await command('lock', customer.id, version, key))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
@@ -154,17 +187,23 @@ describe('account lock / delete against the real records of every module', () =>
     expect(await orderExists(orderId)).toBe(true);
 
     await app.pool.query("ALTER TABLE app.orders DISABLE TRIGGER USER");
-    await app.pool.query("UPDATE app.orders SET status = 'COMPLETED', ended_at = now(), end_actor = 'SHOP' WHERE order_id = $1::uuid", [orderId]);
+    await app.pool.query(
+      "UPDATE app.orders SET status = 'CANCELLED_BY_SHOP', confirmed_at = COALESCE(confirmed_at, now()), ended_at = now(), end_actor = 'SHOP', end_reason = 'Đơn thử nghiệm kết thúc', version = version + 1 WHERE order_id = $1::uuid",
+      [orderId],
+    );
     await app.pool.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
-    // Retry: a new intent after the order ended is allowed. A delete of an account WITH history locks it (DELETE_REQUEST), never purges it.
+    // Retry: a new intent after the order ended is allowed. The administration delete only locks; the owner's erasure then ANONYMIZES the account
+    // (a DISABLED tombstone with the same id); the order and its money keep their rows.
     const deleted = await command('delete', customer.id, version);
     expect(deleted.status).toBe(200);
-    expect(adminData(deleted)).toMatchObject({ result: 'LOCKED', lock_reason: 'DELETE_REQUEST', related_data: ['ORDERS'] });
+    expect(adminData(deleted)).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(customer.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(customer.id)).failed).toBe(0);
+    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [customer.id])).rowCount).toBe(1);
     expect(await orderExists(orderId)).toBe(true);
   });
 
-  it('historical order only: no active work, the lock works; the delete locks and keeps the order, the account and its roles', async () => {
+  it('historical order only: no active work; the delete locks the account and keeps the order and the roles', async () => {
     const customer = await seedUser(['CUSTOMER']);
     const owner = await seedUser(['SHOP']);
     const orderId = await insertOrder(customer.id, await shopOf(owner.id), 'COMPLETED');
@@ -176,12 +215,14 @@ describe('account lock / delete against the real records of every module', () =>
     expect((await app.pool.query('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [customer.id])).rows).toHaveLength(1);
   });
 
-  it('an account with NO data at all is still removed for good (the delete path keeps working)', async () => {
+  it('an account with NO data at all is anonymized in place (Owner 2026-11-22): a DISABLED tombstone with the same id, no personal data, never unlocked', async () => {
     const lonely = await seedUser(['CUSTOMER']);
     const shown = await detail(lonely.id);
     expect(shown.lifecycle).toMatchObject({ related_data: [], active_work: [], delete_effect: 'DELETE_PERMANENTLY' });
-    expect(adminData(await command('delete', lonely.id, Number(shown.version)))).toMatchObject({ result: 'DELETED' });
-    expect(await userRow(lonely.id)).toBeUndefined();
+    expect(adminData(await command('delete', lonely.id, Number(shown.version)))).toMatchObject({ result: 'LOCKED' });
+    expect(await userRow(lonely.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(lonely.id)).failed).toBe(0);
+    expect((await app.pool.query("SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL AND phone_normalized LIKE '+999%'", [lonely.id])).rowCount).toBe(1);
   });
 
   it('multiple roles: a shop owner whose shop has an order from ANOTHER customer is blocked by that order; the same account as customer is judged together', async () => {
@@ -216,7 +257,7 @@ describe('account lock / delete against the real records of every module', () =>
     expect(done.lifecycle).toMatchObject({ active_work: [], lock_blocked_reason: null });
   });
 
-  it('wallet: a pending top-up request is money in progress and blocks; a balance alone does not, but it is related data (never purged)', async () => {
+  it('wallet: a pending top-up request is money in progress and blocks; a balance alone does not block a lock, but the delete waits until it is paid out (OD-31)', async () => {
     const pending = await seedUser(['DRIVER']);
     const balanceOnly = await seedUser(['DRIVER']);
     for (const [user, state] of [[pending, 'PENDING'], [balanceOnly, null]] as const) {
@@ -241,7 +282,11 @@ describe('account lock / delete against the real records of every module', () =>
     expect(outcome(await command('lock', pending.id, Number(blocked.version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
     const free = await detail(balanceOnly.id);
     expect(free.lifecycle).toMatchObject({ related_data: expect.arrayContaining(['WALLET']), active_work: [] });
-    expect(adminData(await command('delete', balanceOnly.id, Number(free.version)))).toMatchObject({ result: 'LOCKED' });
+    // Owner decision OD-31: the lock goes through; money still owed to the shipper keeps the erasure waiting until it is paid out.
+    expect(outcome(await command('delete', balanceOnly.id, Number(free.version))).status).toBe(200);
+    expect(await userRow(balanceOnly.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(balanceOnly.id)).failed).toBe(0);
+    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [balanceOnly.id])).rowCount).toBe(0);
     expect((await app.pool.query('SELECT balance_vnd::text FROM app.driver_wallets WHERE driver_id = $1::uuid', [await driverOf(balanceOnly.id)])).rows[0]).toEqual({ balance_vnd: '100000' });
   });
 
@@ -264,7 +309,7 @@ describe('account lock / delete against the real records of every module', () =>
       [cartOnly.id, shopId],
     );
     const cart = await detail(cartOnly.id);
-    expect(cart.lifecycle).toMatchObject({ related_data: ['LINKED_RECORDS'], delete_effect: 'LOCK' });
+    expect(cart.lifecycle).toMatchObject({ related_data: ['LINKED_RECORDS'], delete_effect: 'DELETE_PERMANENTLY' });
     expect(adminData(await command('delete', cartOnly.id, Number(cart.version)))).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(cartOnly.id)).toMatchObject({ status: 'DISABLED' });
   });
@@ -281,7 +326,7 @@ describe('account lock / delete against the real records of every module', () =>
     } finally {
       registry.unregister('TEST_BROKEN');
     }
-    expect(adminData(await command('delete', customer.id, version))).toMatchObject({ result: 'DELETED' });
+    expect(adminData(await command('delete', customer.id, version))).toMatchObject({ result: 'LOCKED' });
   });
 
   it('race: an order placed for the shop (shop row held FOR SHARE, as the order command does) while the owner is being locked: the lock waits and then sees the order', async () => {

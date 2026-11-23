@@ -256,6 +256,10 @@ jobs:
           -- but is not the allowed user. Used only through TEST_WRONG_USER_DATABASE_URL.
           CREATE ROLE ship11_wrong_user LOGIN PASSWORD 'ci_wrong_user_ephemeral_only'
             NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          -- Runtime-privilege probe for tests/integration (account-deletion): a NOLOGIN role with no privilege of its own. ship11_test is
+          -- a member, so the test can SET ROLE to it and then run with the runtime grants only (inside rolled-back transactions).
+          CREATE ROLE ship11_runtime_probe NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          GRANT ship11_runtime_probe TO ship11_test;
           SQL
           # M00-D1 fixture for the remote migration path test (a disposable database on this throwaway container; never
           # Supabase). Mirrors ops/runbooks/render-supabase-staging.md section 3: two NON-superuser roles, the admin
@@ -323,7 +327,8 @@ jobs:
       # CI mode: same suite plus the real wrong-user fixture. Nothing may be skipped.
       - name: Integration tests, CI mode (real wrong-user fixture)
         if: ${{ needs.changes.outputs.integration == 'ci' || needs.changes.outputs.integration == 'both' }}
-        timeout-minutes: 22
+        # 30 (was 22): run 45113103831 passed all 195 suites / 2776 tests in 1311 s and was then stopped at the 22-minute limit.
+        timeout-minutes: 30
         env:
           NODE_ENV: test
           APP_ENV: test
