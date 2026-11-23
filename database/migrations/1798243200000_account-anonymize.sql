@@ -18,6 +18,13 @@
 --    become fixed values ('000000' / 'Đã ẩn danh') while amount, state and money trail stay (an OPEN withdrawal refuses the anonymization);
 --    the SMS jobs of the phone are deleted (sms_jobs_phone_ck allows only +84 numbers, so they cannot keep a placeholder) and the verification and
 --    proof rows of the phone get a placeholder number. There is no "ảnh giấy tờ" table in this schema; menu_images are dish photos and are kept.
+--  * Second round: complaint text and shop / shipper names (complaints), the reviewer name (reviews), the account's own complaint messages,
+--    review replies and their history, the event notes the account wrote (order_events, delivery_events), the incident notes (delivery_incidents),
+--    the personal keys and the phone number inside the JSON and text of outbox_events.payload, audit_logs.metadata, ops_events, ops_notifications,
+--    ops_anomaly_cases. The complaint pictures of an OPEN complaint are kept; app.purge_closed_complaint_pictures() removes them once it is
+--    closed (callable again; SECURITY DEFINER; EXECUTE for the runtime role in 03-runtime-function-grants.sql).
+--    Trade-off: the audit_logs table keeps its single statement trigger (the migration drift test pins it), so under the anonymization its
+--    UPDATE is allowed statement-wide (not column-wide); it is the only table without a column-level check.
 --  * Controlled exceptions, each active ONLY while app.anonymize_app_user runs (transaction setting app.account_anonymize = 'on', and for the
 --    complaint pictures also app.account_anonymize_user = the account) and ONLY for a write that changes the listed personal columns to their
 --    fixed value and nothing else: orders_guard, deliveries_guard, order_items_guard, order_chat_messages_reject_update,
@@ -44,9 +51,11 @@ CREATE FUNCTION app.anonymize_app_user(p_user_id uuid, p_password_hash text) RET
 DECLARE
   v_phone text;
   v_old_phone text;
+  v_phones text[];
   v_keys uuid[];
   v_shop record;
   v_driver_id uuid;
+  v_anon_shops uuid[] := ARRAY[]::uuid[];
 BEGIN
   PERFORM 1 FROM app.users WHERE user_id = p_user_id AND account_scope = 'APP_USER' AND anonymized_at IS NULL FOR UPDATE;
   IF NOT FOUND THEN
@@ -56,6 +65,8 @@ BEGIN
   -- Read by the complaint-picture delete guard: only the pictures this account uploaded may go, in this transaction.
   PERFORM set_config('app.account_anonymize_user', p_user_id::text, true);
   SELECT phone_normalized INTO v_old_phone FROM app.users WHERE user_id = p_user_id;
+  -- The phone in both forms (+84… and 0…) for the text and JSON scrubs below.
+  v_phones := ARRAY[v_old_phone, '0' || substring(v_old_phone FROM 4)];
   v_phone := app.anonymized_phone_number();
 
   -- Records that carry this account's personal data (never a money row): removed before the sessions and tokens they point at.
@@ -94,6 +105,7 @@ BEGIN
       FROM app.shop_members m WHERE m.user_id = p_user_id
   LOOP
     IF v_shop.others = 0 THEN
+      v_anon_shops := array_append(v_anon_shops, v_shop.shop_id);
       UPDATE app.shops SET name = 'Cửa hàng đã ẩn danh', contact_phone_normalized = app.anonymized_phone_number(), zalo = NULL, facebook = NULL,
              address_text = 'Đã ẩn danh', pickup_lat = NULL, pickup_lng = NULL, logo = NULL, setup_request_note = NULL, setup_request_at = NULL,
              status = 'DISABLED', accepting_orders = false, version = version + 1, updated_at = now()
@@ -141,8 +153,11 @@ BEGIN
   UPDATE app.order_chat_messages SET body = 'Tin nhắn đã ẩn danh', sender_name = 'Đã ẩn danh'
    WHERE sender_user_id = p_user_id AND (body <> 'Tin nhắn đã ẩn danh' OR sender_name <> 'Đã ẩn danh');
 
-  -- Pictures the account uploaded for a complaint (linked or not): the rows are deleted (complaint_attachments_delete_guard lets exactly these through).
-  DELETE FROM app.complaint_attachments WHERE uploader_user_id = p_user_id;
+  -- Pictures the account uploaded: an unlinked one, or one of a CLOSED complaint, is deleted. A picture of an OPEN complaint is kept; the cleanup
+  -- app.purge_closed_complaint_pictures() removes it once that complaint is closed (complaint_attachments_delete_guard lets exactly these through).
+  DELETE FROM app.complaint_attachments
+   WHERE uploader_user_id = p_user_id
+     AND (complaint_id IS NULL OR complaint_id IN (SELECT complaint_id FROM app.complaints WHERE status IN ('RESOLVED', 'CLOSED_NO_ACTION')));
 
   -- Bank account numbers kept in withdrawals: a withdrawal that is still open would keep the real number, so the account is refused first.
   -- A closed one (paid or cancelled) keeps its amount, state and money trail; only the destination number and holder are replaced.
@@ -161,6 +176,58 @@ BEGIN
   DELETE FROM app.sms_jobs WHERE phone_normalized = v_old_phone AND verification_id IS NOT NULL;
   UPDATE app.verification_proofs SET phone_normalized = app.anonymized_phone_number() WHERE phone_normalized = v_old_phone;
   UPDATE app.phone_verifications SET phone_normalized = app.anonymized_phone_number() WHERE phone_normalized = v_old_phone;
+
+  -- Second round (Owner 2026-11-22): the names and texts of complaints, reviews, events, incidents, the outbox, the audit trail and operations.
+  -- Every row keeps its id, state, time and money; only the personal text, name or number becomes the fixed value.
+  UPDATE app.complaints SET body = 'Đã ẩn danh', version = version + 1, updated_at = now()
+   WHERE submitter_user_id = p_user_id AND body <> 'Đã ẩn danh';
+  IF v_driver_id IS NOT NULL THEN
+    UPDATE app.complaints SET driver_name = 'Đã ẩn danh', version = version + 1, updated_at = now()
+     WHERE driver_id = v_driver_id AND driver_name IS DISTINCT FROM 'Đã ẩn danh';
+  END IF;
+  UPDATE app.complaints SET shop_name = 'Cửa hàng đã ẩn danh', version = version + 1, updated_at = now()
+   WHERE shop_id = ANY (v_anon_shops) AND shop_name <> 'Cửa hàng đã ẩn danh';
+  UPDATE app.complaint_messages SET body = 'Đã ẩn danh'
+   WHERE author_user_id = p_user_id AND body IS NOT NULL AND body <> 'Đã ẩn danh';
+  UPDATE app.reviews SET reviewer_name = 'Đã ẩn danh', version = version + 1
+   WHERE reviewer_user_id = p_user_id AND reviewer_name <> 'Đã ẩn danh';
+  UPDATE app.review_replies SET body = 'Đã ẩn danh', version = version + 1, updated_at = now()
+   WHERE body <> 'Đã ẩn danh' AND review_id IN (SELECT review_id FROM app.reviews WHERE reviewer_user_id = p_user_id);
+  UPDATE app.review_reply_history SET body = 'Đã ẩn danh'
+   WHERE body <> 'Đã ẩn danh' AND review_id IN (SELECT review_id FROM app.reviews WHERE reviewer_user_id = p_user_id);
+  -- Event notes the account itself wrote (the system's and the shop's notes stay).
+  UPDATE app.order_events SET note = 'Đã ẩn danh' WHERE actor_id = p_user_id AND note IS NOT NULL AND note <> 'Đã ẩn danh';
+  UPDATE app.delivery_events SET note = 'Đã ẩn danh' WHERE actor_id = p_user_id AND note IS NOT NULL AND note <> 'Đã ẩn danh';
+  -- Incident notes of the anonymized shipper, and the notes of incidents this account closed.
+  UPDATE app.delivery_incidents
+     SET reason_note = CASE WHEN reason_note IS NULL THEN NULL ELSE 'Đã ẩn danh' END,
+         close_note = CASE WHEN close_note IS NULL THEN NULL ELSE 'Đã ẩn danh' END,
+         version = version + 1, updated_at = now()
+   WHERE (driver_id = v_driver_id OR closed_by = p_user_id)
+     AND (reason_note IS DISTINCT FROM 'Đã ẩn danh' AND reason_note IS NOT NULL OR close_note IS DISTINCT FROM 'Đã ẩn danh' AND close_note IS NOT NULL);
+  -- JSON and text of the outbox, the audit trail and operations: the personal keys and the phone number of the account are replaced; the
+  -- structure, the ids and the actions stay. The rows are those that name the account (its id, its phone, or its orders / deliveries).
+  UPDATE app.outbox_events SET payload = app.anonymize_json(payload, v_phones)
+   WHERE payload::text LIKE ANY (ARRAY['%' || p_user_id::text || '%', '%' || v_phones[1] || '%', '%' || v_phones[2] || '%'])
+      OR resource_id = p_user_id::text
+      OR resource_id IN (SELECT order_id::text FROM app.orders WHERE customer_user_id = p_user_id)
+      OR resource_id IN (SELECT delivery_id::text FROM app.deliveries WHERE requested_by = p_user_id);
+  UPDATE app.audit_logs SET metadata = app.anonymize_json(metadata, v_phones)
+   WHERE metadata::text LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%'])
+      OR actor_id = p_user_id::text OR resource_id = p_user_id::text;
+  UPDATE app.ops_events
+     SET message = replace(replace(message, v_phones[1], 'Đã ẩn danh'), v_phones[2], 'Đã ẩn danh'),
+         detail = app.anonymize_json(detail, v_phones)
+   WHERE message LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%'])
+      OR detail::text LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%', '%' || p_user_id::text || '%']);
+  UPDATE app.ops_notifications SET content = app.anonymize_json(content, v_phones)
+   WHERE content::text LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%', '%' || p_user_id::text || '%']);
+  UPDATE app.ops_anomaly_cases
+     SET evidence = app.anonymize_json(evidence, v_phones),
+         note = replace(replace(note, v_phones[1], 'Đã ẩn danh'), v_phones[2], 'Đã ẩn danh')
+   WHERE (subject_kind = 'USER' AND subject_id = p_user_id)
+      OR evidence::text LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%'])
+      OR note LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%']);
 
   -- The account itself: a DISABLED tombstone under the same id. The real number is released; the placeholder cannot be dialled.
   UPDATE app.users SET phone_normalized = v_phone, password_hash = p_password_hash, status = 'DISABLED', lock_reason = 'DELETE_REQUEST',
@@ -425,6 +492,276 @@ END;
 $function$;
 
 
+-- ---------------------------------------------------------------------------------------------------------------------------------------
+-- Second round (Owner 2026-11-22). The helpers below are used by the guards and by app.anonymize_app_user only.
+-- A personal value becomes 'Đã ẩn danh' (a shop name 'Cửa hàng đã ẩn danh'); ids, states, times and money are never touched.
+
+CREATE FUNCTION app.anon_pii_keys() RETURNS text[]
+  LANGUAGE sql IMMUTABLE AS $$
+  SELECT ARRAY['phone', 'phone_normalized', 'recipient_phone', 'shop_phone', 'contact_phone', 'phone_number', 'name', 'full_name', 'recipient_name',
+    'driver_name', 'shop_name', 'reviewer_name', 'address', 'address_text', 'address_description', 'pickup_address_text', 'dropoff_address_text',
+    'dropoff_area_text', 'note', 'reason_note', 'close_note', 'body', 'account_number', 'account_holder', 'sender_name', 'delivery_note', 'dropoff_note']::text[]
+$$;
+
+-- The fixed values a personal text column may hold after the anonymization.
+CREATE FUNCTION app.anon_value_ok(v text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE AS $$
+  SELECT v IS NULL OR v IN ('Đã ẩn danh', 'Cửa hàng đã ẩn danh', 'Tin nhắn đã ẩn danh')
+$$;
+
+-- True only while app.anonymize_app_user runs AND the write changes the listed fields and nothing else.
+CREATE FUNCTION app.anon_only(old_row jsonb, new_row jsonb, fields text[]) RETURNS boolean
+  LANGUAGE sql STABLE AS $$
+  SELECT COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND (new_row - fields) = (old_row - fields)
+$$;
+
+-- Replaces the personal keys (any depth) and the phone numbers inside text values; every other key, value, array and id is kept.
+CREATE FUNCTION app.anonymize_json(doc jsonb, phones text[]) RETURNS jsonb
+  LANGUAGE plpgsql AS $$
+DECLARE
+  k text;
+  v jsonb;
+  elem jsonb;
+  acc jsonb := '{}'::jsonb;
+  arr jsonb := '[]'::jsonb;
+  txt text;
+  p text;
+BEGIN
+  IF jsonb_typeof(doc) = 'object' THEN
+    FOR k, v IN SELECT key, value FROM jsonb_each(doc) LOOP
+      IF k = ANY (app.anon_pii_keys()) AND jsonb_typeof(v) IN ('string', 'number') THEN
+        acc := acc || jsonb_build_object(k, 'Đã ẩn danh');
+      ELSE
+        acc := acc || jsonb_build_object(k, app.anonymize_json(v, phones));
+      END IF;
+    END LOOP;
+    RETURN acc;
+  ELSIF jsonb_typeof(doc) = 'array' THEN
+    FOR elem IN SELECT value FROM jsonb_array_elements(doc) LOOP
+      arr := arr || jsonb_build_array(app.anonymize_json(elem, phones));
+    END LOOP;
+    RETURN arr;
+  ELSIF jsonb_typeof(doc) = 'string' THEN
+    txt := doc #>> '{}';
+    IF phones IS NOT NULL THEN
+      FOREACH p IN ARRAY phones LOOP
+        IF p IS NOT NULL AND p <> '' THEN
+          txt := replace(txt, p, 'Đã ẩn danh');
+        END IF;
+      END LOOP;
+    END IF;
+    RETURN to_jsonb(txt);
+  END IF;
+  RETURN doc;
+END
+$$;
+
+-- Row guards for the append-only tables whose personal text is replaced (the statement trigger keeps DELETE / TRUNCATE).
+-- The field is the trigger argument; the new value must be a fixed value or unchanged.
+CREATE FUNCTION app.anon_row_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+DECLARE
+  field text := TG_ARGV[0];
+BEGIN
+  IF app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY[field])
+     AND (to_jsonb(NEW) ->> field = to_jsonb(OLD) ->> field OR app.anon_value_ok(to_jsonb(NEW) ->> field)) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'app.% is append-only (UPDATE rejected)', TG_TABLE_NAME USING ERRCODE = 'restrict_violation';
+END
+$$;
+
+
+-- Complaints: the text, the shipper's name and the shop's name may take their fixed values; nothing else moves (the state rules below stay).
+CREATE OR REPLACE FUNCTION app.complaints_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- Owner decision 2026-11-22 (account anonymization): only the personal text / names change, the version +1; nothing else.
+  IF TG_OP = 'UPDATE' AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['body', 'shop_name', 'driver_name', 'version', 'updated_at'])
+     AND NEW.version = OLD.version + 1
+     AND (NEW.body = OLD.body OR app.anon_value_ok(NEW.body))
+     AND (NEW.shop_name = OLD.shop_name OR app.anon_value_ok(NEW.shop_name))
+     AND (NEW.driver_name IS NOT DISTINCT FROM OLD.driver_name OR app.anon_value_ok(NEW.driver_name)) THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'app.complaints is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.complaint_id <> OLD.complaint_id OR NEW.code <> OLD.code OR NEW.submitter_user_id <> OLD.submitter_user_id OR NEW.submitter_role <> OLD.submitter_role
+     OR NEW.category <> OLD.category OR NEW.order_id IS DISTINCT FROM OLD.order_id OR NEW.delivery_id IS DISTINCT FROM OLD.delivery_id
+     OR NEW.review_id IS DISTINCT FROM OLD.review_id OR NEW.shop_id IS DISTINCT FROM OLD.shop_id OR NEW.driver_id IS DISTINCT FROM OLD.driver_id
+     OR NEW.scope_key <> OLD.scope_key OR NEW.body <> OLD.body OR NEW.related_code <> OLD.related_code OR NEW.shop_name <> OLD.shop_name
+     OR NEW.driver_name IS DISTINCT FROM OLD.driver_name OR NEW.driver_code IS DISTINCT FROM OLD.driver_code OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'COMPLAINT_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'COMPLAINT_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.status <> OLD.status AND NOT (
+       (OLD.status = 'PENDING' AND NEW.status IN ('IN_PROGRESS', 'CLOSED_NO_ACTION'))
+    OR (OLD.status = 'IN_PROGRESS' AND NEW.status IN ('AWAITING_INFO', 'RESOLVED', 'CLOSED_NO_ACTION'))
+    OR (OLD.status = 'AWAITING_INFO' AND NEW.status IN ('IN_PROGRESS', 'RESOLVED', 'CLOSED_NO_ACTION'))
+    OR (OLD.status IN ('RESOLVED', 'CLOSED_NO_ACTION') AND NEW.status = 'IN_PROGRESS')
+  ) THEN
+    RAISE EXCEPTION 'COMPLAINT_STATE_TRANSITION: % -> %', OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  -- Every entry into a closed state counts one closure; nothing else moves the counter.
+  IF (NEW.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND (OLD.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND NEW.closure_no <> OLD.closure_no + 1 THEN
+    RAISE EXCEPTION 'COMPLAINT_CLOSURE_COUNT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT (NEW.status IN ('RESOLVED', 'CLOSED_NO_ACTION') AND OLD.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND NEW.closure_no <> OLD.closure_no THEN
+    RAISE EXCEPTION 'COMPLAINT_CLOSURE_COUNT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+-- Reviews: the reviewer's name may take its fixed value (the review text and the stars stay).
+CREATE OR REPLACE FUNCTION app.reviews_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE' AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['reviewer_name', 'version'])
+     AND NEW.version = OLD.version + 1 AND (NEW.reviewer_name = OLD.reviewer_name OR app.anon_value_ok(NEW.reviewer_name)) THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'app.reviews is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.review_id <> OLD.review_id OR NEW.kind <> OLD.kind OR NEW.reviewer_user_id <> OLD.reviewer_user_id OR NEW.shop_id IS DISTINCT FROM OLD.shop_id
+     OR NEW.driver_id IS DISTINCT FROM OLD.driver_id OR NEW.order_id IS DISTINCT FROM OLD.order_id OR NEW.delivery_id IS DISTINCT FROM OLD.delivery_id
+     OR NEW.assignment_id IS DISTINCT FROM OLD.assignment_id OR NEW.stars <> OLD.stars OR NEW.comment IS DISTINCT FROM OLD.comment
+     OR NEW.reviewer_name <> OLD.reviewer_name OR NEW.shop_name <> OLD.shop_name OR NEW.driver_name IS DISTINCT FROM OLD.driver_name
+     OR NEW.related_code <> OLD.related_code OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'REVIEW_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'REVIEW_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+-- The append-only tables. A statement guard refuses UPDATE as before, EXCEPT while app.anonymize_app_user runs (then the row guard below decides,
+-- column by column). A zero-row UPDATE is still refused without the anonymization, as before. DELETE and TRUNCATE keep their refusal.
+CREATE FUNCTION app.append_only_except_anonymize() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+    RETURN NULL;
+  END IF;
+  RAISE EXCEPTION '% is append-only (% rejected)', TG_TABLE_NAME, TG_OP USING ERRCODE = 'restrict_violation';
+END
+$$;
+
+DROP TRIGGER complaint_messages_append_only ON app.complaint_messages;
+CREATE TRIGGER complaint_messages_append_only BEFORE DELETE OR UPDATE OR TRUNCATE ON app.complaint_messages FOR EACH STATEMENT EXECUTE FUNCTION app.append_only_except_anonymize();
+CREATE TRIGGER complaint_messages_anonymize BEFORE UPDATE ON app.complaint_messages FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('body');
+
+DROP TRIGGER review_reply_history_append_only ON app.review_reply_history;
+CREATE TRIGGER review_reply_history_append_only BEFORE DELETE OR UPDATE OR TRUNCATE ON app.review_reply_history FOR EACH STATEMENT EXECUTE FUNCTION app.append_only_except_anonymize();
+CREATE TRIGGER review_reply_history_anonymize BEFORE UPDATE ON app.review_reply_history FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('body');
+
+CREATE OR REPLACE FUNCTION app.order_events_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+    RETURN NULL;
+  END IF;
+  RAISE EXCEPTION 'app.order_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+END;
+$$;
+CREATE TRIGGER order_events_anonymize BEFORE UPDATE ON app.order_events FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('note');
+
+CREATE OR REPLACE FUNCTION app.delivery_events_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+    RETURN NULL;
+  END IF;
+  RAISE EXCEPTION 'app.delivery_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+END;
+$$;
+CREATE TRIGGER delivery_events_anonymize BEFORE UPDATE ON app.delivery_events FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('note');
+
+-- The audit trail keeps its ONE statement trigger (the migration drift test pins it). Under the anonymization only the scrub of metadata is
+-- allowed by this statement guard; the audit rows keep their actor, action, resource and time. See the report for this trade-off.
+CREATE OR REPLACE FUNCTION app.audit_logs_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+    RETURN NULL;
+  END IF;
+  RAISE EXCEPTION 'app.audit_logs is append-only (% rejected)', TG_OP
+    USING ERRCODE = 'restrict_violation';
+END;
+$$;
+
+-- The operations events: the append-only rule keeps every column except the message and the detail, which the scrub may replace.
+CREATE OR REPLACE FUNCTION app.ops_events_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE' AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['message', 'detail']) THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'app.ops_events is append-only (UPDATE rejected)' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_OP = 'DELETE' AND COALESCE(current_setting('app.ops_purge', true), '') <> 'on' THEN
+    RAISE EXCEPTION 'app.ops_events rows are removed only by the retention pass (DELETE rejected)' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+-- Pictures: an unlinked one, or one of the account's own anonymization of a closed complaint (see anonymize_app_user), or a picture of a closed
+-- complaint removed by app.purge_closed_complaint_pictures(). A picture of an open complaint is never removed.
+CREATE OR REPLACE FUNCTION app.complaint_attachments_delete_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+DECLARE
+  closed boolean;
+BEGIN
+  closed := OLD.complaint_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM app.complaints c WHERE c.complaint_id = OLD.complaint_id AND c.status IN ('RESOLVED', 'CLOSED_NO_ACTION'));
+  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on'
+     AND OLD.uploader_user_id::text = COALESCE(current_setting('app.account_anonymize_user', true), '')
+     AND (OLD.complaint_id IS NULL OR closed) THEN
+    RETURN OLD;
+  END IF;
+  IF COALESCE(current_setting('app.complaint_picture_cleanup', true), '') = 'on' AND closed THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.complaint_id IS NOT NULL OR OLD.created_at > clock_timestamp() - interval '24 hours' THEN
+    RAISE EXCEPTION 'app.complaint_attachments: only an unlinked picture older than 24 hours may be deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN OLD;
+END;
+$function$;
+
+-- The cleanup step: removes the pictures of every closed complaint. Callable again at any time; it changes nothing else.
+CREATE FUNCTION app.purge_closed_complaint_pictures() RETURNS integer
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $$
+DECLARE
+  removed integer;
+BEGIN
+  PERFORM set_config('app.complaint_picture_cleanup', 'on', true);
+  DELETE FROM app.complaint_attachments a USING app.complaints c
+   WHERE c.complaint_id = a.complaint_id AND c.status IN ('RESOLVED', 'CLOSED_NO_ACTION');
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  RETURN removed;
+END
+$$;
+REVOKE ALL ON FUNCTION app.purge_closed_complaint_pictures() FROM PUBLIC;
+
+
 -- Down Migration
 -- Only for disposable test or experimental databases: an anonymized account cannot be restored (its personal data is gone by design).
 -- It REFUSES while any anonymized account exists; it never deletes or rewrites an account to make itself succeed.
@@ -643,6 +980,129 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+
+-- The second round goes back too: the row triggers are removed, and the append-only functions return to their earlier definitions.
+DROP TRIGGER complaint_messages_anonymize ON app.complaint_messages;
+DROP TRIGGER review_reply_history_anonymize ON app.review_reply_history;
+DROP TRIGGER order_events_anonymize ON app.order_events;
+DROP TRIGGER delivery_events_anonymize ON app.delivery_events;
+DROP TRIGGER complaint_messages_append_only ON app.complaint_messages;
+CREATE TRIGGER complaint_messages_append_only BEFORE DELETE OR UPDATE OR TRUNCATE ON app.complaint_messages FOR EACH STATEMENT EXECUTE FUNCTION app.m11_append_only();
+DROP TRIGGER review_reply_history_append_only ON app.review_reply_history;
+CREATE TRIGGER review_reply_history_append_only BEFORE DELETE OR UPDATE OR TRUNCATE ON app.review_reply_history FOR EACH STATEMENT EXECUTE FUNCTION app.m11_append_only();
+CREATE OR REPLACE FUNCTION app.order_events_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'app.order_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+END;
+$$;
+CREATE OR REPLACE FUNCTION app.delivery_events_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'app.delivery_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+END;
+$$;
+CREATE OR REPLACE FUNCTION app.audit_logs_reject_mutation() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'app.audit_logs is append-only (% rejected)', TG_OP
+    USING ERRCODE = 'restrict_violation';
+END;
+$$;
+DROP FUNCTION app.append_only_except_anonymize();
+
+CREATE OR REPLACE FUNCTION app.ops_events_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'app.ops_events is append-only (UPDATE rejected)' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_OP = 'DELETE' AND COALESCE(current_setting('app.ops_purge', true), '') <> 'on' THEN
+    RAISE EXCEPTION 'app.ops_events rows are removed only by the retention pass (DELETE rejected)' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.complaint_attachments_delete_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  IF OLD.complaint_id IS NOT NULL OR OLD.created_at > clock_timestamp() - interval '24 hours' THEN
+    RAISE EXCEPTION 'app.complaint_attachments: only an unlinked picture older than 24 hours may be deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN OLD;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.reviews_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'app.reviews is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.review_id <> OLD.review_id OR NEW.kind <> OLD.kind OR NEW.reviewer_user_id <> OLD.reviewer_user_id OR NEW.shop_id IS DISTINCT FROM OLD.shop_id
+     OR NEW.driver_id IS DISTINCT FROM OLD.driver_id OR NEW.order_id IS DISTINCT FROM OLD.order_id OR NEW.delivery_id IS DISTINCT FROM OLD.delivery_id
+     OR NEW.assignment_id IS DISTINCT FROM OLD.assignment_id OR NEW.stars <> OLD.stars OR NEW.comment IS DISTINCT FROM OLD.comment
+     OR NEW.reviewer_name <> OLD.reviewer_name OR NEW.shop_name <> OLD.shop_name OR NEW.driver_name IS DISTINCT FROM OLD.driver_name
+     OR NEW.related_code <> OLD.related_code OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'REVIEW_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'REVIEW_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.complaints_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'app.complaints is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.complaint_id <> OLD.complaint_id OR NEW.code <> OLD.code OR NEW.submitter_user_id <> OLD.submitter_user_id OR NEW.submitter_role <> OLD.submitter_role
+     OR NEW.category <> OLD.category OR NEW.order_id IS DISTINCT FROM OLD.order_id OR NEW.delivery_id IS DISTINCT FROM OLD.delivery_id
+     OR NEW.review_id IS DISTINCT FROM OLD.review_id OR NEW.shop_id IS DISTINCT FROM OLD.shop_id OR NEW.driver_id IS DISTINCT FROM OLD.driver_id
+     OR NEW.scope_key <> OLD.scope_key OR NEW.body <> OLD.body OR NEW.related_code <> OLD.related_code OR NEW.shop_name <> OLD.shop_name
+     OR NEW.driver_name IS DISTINCT FROM OLD.driver_name OR NEW.driver_code IS DISTINCT FROM OLD.driver_code OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'COMPLAINT_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'COMPLAINT_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.status <> OLD.status AND NOT (
+       (OLD.status = 'PENDING' AND NEW.status IN ('IN_PROGRESS', 'CLOSED_NO_ACTION'))
+    OR (OLD.status = 'IN_PROGRESS' AND NEW.status IN ('AWAITING_INFO', 'RESOLVED', 'CLOSED_NO_ACTION'))
+    OR (OLD.status = 'AWAITING_INFO' AND NEW.status IN ('IN_PROGRESS', 'RESOLVED', 'CLOSED_NO_ACTION'))
+    OR (OLD.status IN ('RESOLVED', 'CLOSED_NO_ACTION') AND NEW.status = 'IN_PROGRESS')
+  ) THEN
+    RAISE EXCEPTION 'COMPLAINT_STATE_TRANSITION: % -> %', OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF (NEW.status IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND (OLD.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND NEW.closure_no <> OLD.closure_no + 1 THEN
+    RAISE EXCEPTION 'COMPLAINT_CLOSURE_COUNT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT (NEW.status IN ('RESOLVED', 'CLOSED_NO_ACTION') AND OLD.status NOT IN ('RESOLVED', 'CLOSED_NO_ACTION')) AND NEW.closure_no <> OLD.closure_no THEN
+    RAISE EXCEPTION 'COMPLAINT_CLOSURE_COUNT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP FUNCTION app.purge_closed_complaint_pictures();
+DROP FUNCTION app.anon_row_guard();
+DROP FUNCTION app.anonymize_json(jsonb, text[]);
+DROP FUNCTION app.anon_only(jsonb, jsonb, text[]);
+DROP FUNCTION app.anon_value_ok(text);
+DROP FUNCTION app.anon_pii_keys();
 
 DROP FUNCTION app.anonymize_app_user(uuid, text);
 DROP FUNCTION app.anonymized_phone_number();

@@ -15,6 +15,8 @@
 GRANT EXECUTE ON FUNCTION app.purge_app_user(uuid) TO ship11_app;
 -- Owner decision 2026-11-22: the owner's own deletion anonymizes the account in place (SECURITY DEFINER, owned by the migration role).
 GRANT EXECUTE ON FUNCTION app.anonymize_app_user(uuid, text) TO ship11_app;
+-- Owner decision 2026-11-22: the cleanup of the pictures of closed complaints (SECURITY DEFINER; callable again, changes nothing else).
+GRANT EXECUTE ON FUNCTION app.purge_closed_complaint_pictures() TO ship11_app;
 
 -- M03 (Shipper management): app.next_shipper_code() hands out the human-readable Shipper code (SH000001 ...) from a sequence the runtime role
 -- cannot touch directly. SECURITY DEFINER, owned by the migration role, no EXECUTE for PUBLIC. It is the column default of app.drivers.shipper_code,

@@ -90,6 +90,32 @@ describe('P5-6a public account deletion', () => {
    * The WITHDRAWALS the OD-31 tests committed (events, the hold, the withdrawal itself) are append-only history: removed here with the guards of exactly
    * those tables lifted for one transaction, before the generic cleanup, so no other suite finds them (M04 asserts an empty hold table).
    */
+  // Complaints, their messages and pictures, and reviews with their replies reference orders and shops; they are never deleted by the product, so
+  // this suite's own rows are removed here (the table triggers are off for this cleanup only), before the orders are removed.
+  async function purgeCommunityRecords(userIds: readonly string[]): Promise<void> {
+    const client = await app.pool.connect();
+    const tables = ['complaint_attachments', 'complaint_messages', 'complaints', 'review_reply_history', 'review_replies', 'reviews'];
+    try {
+      await client.query('BEGIN');
+      for (const table of tables) await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
+      const complaints = 'SELECT complaint_id FROM app.complaints WHERE submitter_user_id = ANY($1::uuid[])';
+      const reviews = 'SELECT review_id FROM app.reviews WHERE reviewer_user_id = ANY($1::uuid[])';
+      await client.query(`DELETE FROM app.complaint_attachments WHERE uploader_user_id = ANY($1::uuid[]) OR complaint_id IN (${complaints})`, [userIds]);
+      await client.query(`DELETE FROM app.complaint_messages WHERE complaint_id IN (${complaints})`, [userIds]);
+      await client.query(`DELETE FROM app.complaints WHERE submitter_user_id = ANY($1::uuid[])`, [userIds]);
+      await client.query(`DELETE FROM app.review_reply_history WHERE review_id IN (${reviews})`, [userIds]);
+      await client.query(`DELETE FROM app.review_replies WHERE review_id IN (${reviews})`, [userIds]);
+      await client.query(`DELETE FROM app.reviews WHERE reviewer_user_id = ANY($1::uuid[])`, [userIds]);
+      for (const table of tables) await client.query(`ALTER TABLE app.${table} ENABLE TRIGGER USER`);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async function purgeWithdrawalsOf(driverIds: readonly string[]): Promise<void> {
     if (driverIds.length === 0) return;
     const client = await app.pool.connect();
@@ -119,6 +145,7 @@ describe('P5-6a public account deletion', () => {
   afterAll(async () => {
     try {
       await purgeWithdrawalsOf(drivers);
+      await purgeCommunityRecords([shop.userId, ...extraUsers, ...extraCustomers]);
       await cleanupOrders(app, {
         shopIds: [shop.shopId, ...extraShops],
         customerIds: extraCustomers,
@@ -958,6 +985,271 @@ describe('P5-6a public account deletion', () => {
     expect(await countRows(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
     expect(await countRows(app.pool, "SELECT 1 FROM app.phone_verifications WHERE verification_id = $1::uuid AND phone_normalized ~ '^\\+999[0-9]{11}$'", [verificationId])).toBe(1);
+  });
+
+  // ---- C (Owner 2026-11-22, second round): the names, texts and metadata that the first round left in other tables -----------------------
+  // Each row keeps its id, state and time; only the personal text, name or number goes. Red on the code before this round.
+
+  async function insertComplaint(orderId: string, submitter: string, over: { body: string; shopId?: string; driverId?: string; driverName?: string; closed?: boolean }): Promise<string> {
+    const complaintId = randomUUID();
+    const closed = over.closed === true;
+    await app.pool.query(
+      `INSERT INTO app.complaints (complaint_id, code, submitter_user_id, submitter_role, category, order_id, shop_id, driver_id, related_code, shop_name, driver_name,
+                                   scope_key, status, received_at, closed_at, close_reason, closure_no, body, version, created_at, updated_at)
+       VALUES ($1::uuid, $2, $3::uuid, 'CUSTOMER', 'SERVICE', $4::uuid, $5::uuid, $6::uuid, 'K', 'Quán thử', $7, $8::uuid, $9, now(), $10,
+               CASE WHEN $9::varchar = 'CLOSED_NO_ACTION' THEN 'Không đủ căn cứ' END, $11, $12, 1, now(), now())`,
+      [
+        complaintId,
+        `C${randomUUID().slice(0, 8).toUpperCase()}`,
+        submitter,
+        orderId,
+        over.shopId ?? shop.shopId,
+        over.driverId ?? null,
+        over.driverName ?? null,
+        randomUUID(),
+        closed ? 'CLOSED_NO_ACTION' : 'PENDING',
+        closed ? new Date() : null,
+        closed ? 1 : 0,
+        over.body,
+      ],
+    );
+    return complaintId;
+  }
+
+  async function insertComplaintMessage(complaintId: string, author: string, seq: number, body: string): Promise<string> {
+    const messageId = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.complaint_messages (message_id, complaint_id, seq, kind, visibility, audience_role, author_type, author_user_id, body, created_at)
+       VALUES ($1::uuid, $2::uuid, $3, 'APPENDED', 'PARTIES', NULL, 'PARTY', $4::uuid, $5, now() - interval '1 hour')`,
+      [messageId, complaintId, seq, author, body],
+    );
+    return messageId;
+  }
+
+  it('complaints: the account\'s own complaint text is replaced, and a shipper name is replaced when that shipper is anonymized; another person\'s complaint text stays', async () => {
+    const c = await customer();
+    const other = await customer();
+    const s = await newShipper(app, drivers, 50_000);
+    extraUsers.push(s.userId);
+    await emptyWallet(s.driverId);
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const own = await insertComplaint(orderId, c.userId, { body: 'Đồ ăn nguội, gọi 0912345678' });
+    const foreign = await insertComplaint(orderId, other.userId, { body: 'Shipper giao sai địa chỉ', driverId: s.driverId, driverName: 'Shipper Test' });
+    const row = async (id: string): Promise<{ body: string; shop_name: string; driver_name: string | null; status: string; closure_no: number; version: string }> =>
+      (await app.pool.query('SELECT body, shop_name, driver_name, status, closure_no, version::text FROM app.complaints WHERE complaint_id = $1::uuid', [id])).rows[0] as never;
+    const ownBefore = await row(own);
+    expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+    expect(await row(foreign)).toEqual({ body: 'Shipper giao sai địa chỉ', shop_name: 'Quán thử', driver_name: 'Đã ẩn danh', status: 'PENDING', closure_no: 0, version: '2' });
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await row(own)).toEqual({ ...ownBefore, body: 'Đã ẩn danh', version: '2' });
+  });
+
+  it('complaint messages: the text the account wrote is replaced; the other party\'s message of the same complaint keeps its text, row and time', async () => {
+    const c = await customer();
+    const other = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const complaint = await insertComplaint(orderId, c.userId, { body: 'Nội dung khiếu nại' });
+    const mine = randomUUID();
+    const theirs = await insertComplaintMessage(complaint, other.userId, 2, 'Chúng tôi đã kiểm tra');
+    await app.pool.query(
+      `INSERT INTO app.complaint_messages (message_id, complaint_id, seq, kind, visibility, audience_role, author_type, author_user_id, body, created_at)
+       VALUES ($1::uuid, $2::uuid, 1, 'SUBMITTED', 'SUBMITTER', NULL, 'SUBMITTER', $3::uuid, 'Số nhà 12, gọi 0912345678', now() - interval '2 hours')`,
+      [mine, complaint, c.userId],
+    );
+    const query = 'SELECT message_id, body, created_at, seq FROM app.complaint_messages WHERE message_id = $1::uuid';
+    const before = (await app.pool.query(query, [mine])).rows[0];
+    const otherBefore = (await app.pool.query(query, [theirs])).rows[0];
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect((await app.pool.query(query, [mine])).rows[0]).toEqual({ ...before, body: 'Đã ẩn danh' });
+    expect((await app.pool.query(query, [theirs])).rows[0]).toEqual(otherBefore);
+  });
+
+  it('reviews and shop replies: the reviewer name is replaced; the reply and its history are replaced; the review text and the stars stay', async () => {
+    const c = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const review = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.reviews (review_id, kind, reviewer_user_id, shop_id, order_id, stars, comment, reviewer_name, shop_name, related_code, visibility, version, created_at)
+       VALUES ($1::uuid, 'SHOP_BY_CUSTOMER', $2::uuid, $3::uuid, $4::uuid, 4, 'Đồ ăn ngon', 'Nguyễn Khách', 'Quán thử', 'R1', 'VISIBLE', 1, now())`,
+      [review, c.userId, shop.shopId, orderId],
+    );
+    await app.pool.query(
+      `INSERT INTO app.review_replies (review_id, shop_id, body, version, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 'Cảm ơn anh Nguyễn Khách', 1, now(), now())`,
+      [review, shop.shopId],
+    );
+    await app.pool.query(
+      `INSERT INTO app.review_reply_history (review_id, version, body, written_by, written_at) VALUES ($1::uuid, 1, 'Cảm ơn anh Nguyễn Khách', $2::uuid, now())`,
+      [review, shop.userId],
+    );
+    const reviewQuery = 'SELECT reviewer_name, comment, stars, version::text FROM app.reviews WHERE review_id = $1::uuid';
+    const reviewBefore = (await app.pool.query(reviewQuery, [review])).rows[0];
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect((await app.pool.query(reviewQuery, [review])).rows[0]).toEqual({ ...reviewBefore, reviewer_name: 'Đã ẩn danh', version: '2' });
+    expect((await app.pool.query("SELECT body, version::text AS version FROM app.review_replies WHERE review_id = $1::uuid", [review])).rows).toEqual([{ body: 'Đã ẩn danh', version: '2' }]);
+    expect((await app.pool.query('SELECT body FROM app.review_reply_history WHERE review_id = $1::uuid', [review])).rows).toEqual([{ body: 'Đã ẩn danh' }]);
+  });
+
+  it('order and delivery events: the note the account wrote is replaced; the system and shop notes and every event row stay', async () => {
+    const c = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const deliveryId = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: c.userId });
+    await withoutTriggers(['deliveries'], (q) =>
+      q.query(`UPDATE app.deliveries SET state = 'cancelled_by_system', ended_at = now() WHERE delivery_id = $1::uuid`, [deliveryId]),
+    );
+    const mine = randomUUID();
+    const systemNote = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.order_events (event_id, order_id, type, actor_type, actor_id, note, at) VALUES
+         ($1::uuid, $2::uuid, 'NOTE', 'CUSTOMER', $3::uuid, 'Gọi trước 10 phút, cổng sau', now()),
+         ($4::uuid, $2::uuid, 'NOTE', 'SYSTEM', NULL, 'Đơn đã kết thúc', now())`,
+      [mine, orderId, c.userId, systemNote],
+    );
+    await app.pool.query(
+      `INSERT INTO app.delivery_events (event_id, delivery_id, seq, event_type, actor_type, actor_id, note, created_at) VALUES
+         ($1::uuid, $2::uuid, 1, 'note.added', 'CUSTOMER', $3::uuid, 'Để hàng trước cửa', now()),
+         ($4::uuid, $2::uuid, 2, 'note.added', 'SYSTEM', NULL, 'Giao hàng đã kết thúc', now())`,
+      [randomUUID(), deliveryId, c.userId, randomUUID()],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    const orderNotes = (await app.pool.query<{ note: string }>('SELECT note FROM app.order_events WHERE order_id = $1::uuid', [orderId])).rows.map((r) => r.note);
+    expect(orderNotes.sort()).toEqual(['Đã ẩn danh', 'Đơn đã kết thúc']);
+    expect((await app.pool.query('SELECT note FROM app.delivery_events WHERE delivery_id = $1::uuid ORDER BY seq', [deliveryId])).rows).toEqual([{ note: 'Đã ẩn danh' }, { note: 'Giao hàng đã kết thúc' }]);
+  });
+
+  it('delivery incidents: the reason and close notes of the shipper\'s incident are replaced; the status, custody and times stay', async () => {
+    const s = await newShipper(app, drivers, 50_000);
+    extraUsers.push(s.userId);
+    await emptyWallet(s.driverId);
+    const buyer = await customer();
+    // A finished delivery of this shipper (cancelled, so nothing is in progress) with its assignment; written directly, the fixture needs no money.
+    const deliveryId = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: buyer.userId });
+    await withoutTriggers(['deliveries'], (q) => q.query(`UPDATE app.deliveries SET state = 'cancelled_by_system', ended_at = now() WHERE delivery_id = $1::uuid`, [deliveryId]));
+    const assignmentId = randomUUID();
+    await withoutTriggers(['delivery_assignments'], (q) =>
+      q.query(
+        `INSERT INTO app.delivery_assignments (assignment_id, delivery_id, driver_id, status, accepted_at, commission_vnd, commission_policy, ended_at, end_actor, version, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, 'CANCELLED_BY_SHIPPER', now(), 1000, 'COMMISSION_V1', now(), 'SHIPPER', 1, now(), now())`,
+        [assignmentId, deliveryId, s.driverId],
+      ),
+    );
+    const incident = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.delivery_incidents (incident_id, delivery_id, assignment_id, driver_id, status, custody, reason_code, reason_note, goods_condition, opened_at, closed_at, closed_by, close_note, version, created_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'CLOSED', 'HANDLED', 'RECIPIENT_UNREACHABLE', 'Gọi 0912345678 không nghe máy', 'RETURNED_TO_SHOP', now() - interval '2 hours', now() - interval '1 hour', $5::uuid, 'Đã trả hàng về shop', 1, now(), now())`,
+      [incident, deliveryId, assignmentId, s.driverId, shop.userId],
+    );
+    const query = 'SELECT status, custody, closed_at, reason_note, close_note, version::text FROM app.delivery_incidents WHERE incident_id = $1::uuid';
+    const before = (await app.pool.query(query, [incident])).rows[0];
+    expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+    expect((await app.pool.query(query, [incident])).rows[0]).toEqual({ ...before, reason_note: 'Đã ẩn danh', close_note: 'Đã ẩn danh', version: '2' });
+  });
+
+  it('outbox events: the personal fields of the payload are replaced, the JSON structure, ids and the event type stay', async () => {
+    const c = await customer();
+    const event = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.outbox_events (event_id, event_type, event_schema_version, resource_type, resource_id, resource_version, occurred_at, payload, status, attempt_count, available_at)
+       VALUES ($1::uuid, 'test.pii.profile.v1', 1, 'user', $2, 1, now(), $3::jsonb, 'PENDING', 0, now())`,
+      [event, c.userId, JSON.stringify({ user_id: c.userId, phone: c.phone.normalized, name: 'Nguyễn Văn Khách', nested: { address_text: '12 Phố Huế', amount: 5000 }, list: [{ phone: c.phone.normalized }], keep: 'ok' })],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    const payload = (await app.pool.query<{ payload: Record<string, unknown>; event_type: string }>('SELECT payload, event_type FROM app.outbox_events WHERE event_id = $1::uuid', [event])).rows[0];
+    expect(payload?.event_type).toBe('test.pii.profile.v1');
+    expect(payload?.payload).toEqual({
+      user_id: c.userId,
+      phone: 'Đã ẩn danh',
+      name: 'Đã ẩn danh',
+      nested: { address_text: 'Đã ẩn danh', amount: 5000 },
+      list: [{ phone: 'Đã ẩn danh' }],
+      keep: 'ok',
+    });
+  });
+
+  it('audit entries: the personal fields of the metadata are replaced; the actor, the action and the resource stay', async () => {
+    const c = await customer();
+    const entry = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.audit_logs (audit_id, occurred_at, request_id, actor_type, actor_id, action, resource_type, resource_id, resource_version, outcome, metadata)
+       VALUES ($1::uuid, now(), $2::uuid, 'SYSTEM', $3, 'test.pii.profile.v1', 'user', $3, 1, 'SUCCESS', $4::jsonb)`,
+      [entry, randomUUID(), c.userId, JSON.stringify({ phone: c.phone.normalized, name: 'Nguyễn Văn Khách', reason: 'hết hạn' })],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect((await app.pool.query('SELECT actor_id, action, resource_id, metadata FROM app.audit_logs WHERE audit_id = $1::uuid', [entry])).rows[0]).toEqual({
+      actor_id: c.userId,
+      action: 'test.pii.profile.v1',
+      resource_id: c.userId,
+      metadata: { phone: 'Đã ẩn danh', name: 'Đã ẩn danh', reason: 'hết hạn' },
+    });
+  });
+
+  it('operations records: a phone number or the personal fields in an operations event, an anomaly case and a notification are replaced; the rest of the record stays', async () => {
+    const c = await customer();
+    const event = randomUUID();
+    const notification = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.ops_events (event_id, occurred_at, category, level, source, environment, message, detail)
+       VALUES ($1::uuid, now(), 'TECHNICAL', 'INFO', 'ORDER', 'test', $2, $3::jsonb)`,
+      [event, `Đặt đơn cho ${c.phone.local}`, JSON.stringify({ phone: c.phone.normalized, customer_id: c.userId, items: 2 })],
+    );
+    await app.pool.query(
+      `INSERT INTO app.ops_notifications (notification_id, kind, severity, content, dedupe_key, status, attempts, next_attempt_at, created_at)
+       VALUES ($1::uuid, 'OPEN', 'INFO', $2::jsonb, $3, 'PENDING', 0, now(), now())`,
+      [notification, JSON.stringify({ text: `Khách ${c.phone.normalized} đã huỷ`, shop: 'Quán thử' }), `pii-${notification}`],
+    );
+    const anomaly = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.ops_anomaly_cases (case_id, rule_kind, subject_kind, subject_id, status, occurrences, sample, window_from, window_to, evidence, last_evidence_at, note, version, first_flagged_at, updated_at)
+       VALUES ($1::uuid, 'CUSTOMER_ORDER_CANCELS', 'USER', $2::uuid, 'NEW', 1, 1, now() - interval '1 day', now(), $3::jsonb, now(), $4, 1, now(), now())`,
+      [anomaly, c.userId, JSON.stringify({ phone: c.phone.normalized, cancelled: 3 }), `Khách ${c.phone.local} huỷ nhiều đơn`],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    const anomalyRow = (await app.pool.query('SELECT status, occurrences, evidence, note FROM app.ops_anomaly_cases WHERE case_id = $1::uuid', [anomaly])).rows[0];
+    expect(anomalyRow).toEqual({ status: 'NEW', occurrences: 1, evidence: { phone: 'Đã ẩn danh', cancelled: 3 }, note: 'Khách Đã ẩn danh huỷ nhiều đơn' });
+    const eventRow = (await app.pool.query<{ message: string; detail: Record<string, unknown> }>('SELECT message, detail FROM app.ops_events WHERE event_id = $1::uuid', [event])).rows[0];
+    expect(eventRow?.message).toBe('Đặt đơn cho Đã ẩn danh');
+    expect(eventRow?.detail).toEqual({ phone: 'Đã ẩn danh', customer_id: c.userId, items: 2 });
+    const note = (await app.pool.query<{ content: Record<string, unknown> }>('SELECT content FROM app.ops_notifications WHERE notification_id = $1::uuid', [notification])).rows[0];
+    expect(note?.content).toEqual({ text: 'Khách Đã ẩn danh đã huỷ', shop: 'Quán thử' });
+  });
+
+  it('complaint pictures: the pictures of an OPEN complaint are kept; those of a closed complaint and the loose ones are removed; the cleanup removes the open one once that complaint is closed, and can run again', async () => {
+    const c = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const open = await insertComplaint(orderId, c.userId, { body: 'Đang mở' });
+    const closed = await insertComplaint(orderId, c.userId, { body: 'Đã đóng', closed: true });
+    const picture = async (complaintId: string | null): Promise<string> => {
+      const attachment = randomUUID();
+      let messageId: string | null = null;
+      if (complaintId !== null) messageId = await insertComplaintMessage(complaintId, c.userId, 9, 'Ảnh minh hoạ');
+      await app.pool.query(
+        `INSERT INTO app.complaint_attachments (attachment_id, uploader_user_id, complaint_id, message_id, content_type, byte_size, data, created_at, linked_at)
+         VALUES ($1::uuid, $2::uuid, $3, $4, 'image/png', 4, decode('89504e47', 'hex'), now() - interval '2 days', $5)`,
+        [attachment, c.userId, complaintId, messageId, complaintId === null ? null : new Date()],
+      );
+      return attachment;
+    };
+    const openPicture = await picture(open);
+    const closedPicture = await picture(closed);
+    const loose = await picture(null);
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    const stillThere = async (id: string): Promise<number> => (await app.pool.query('SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [id])).rowCount ?? 0;
+    expect(await stillThere(openPicture)).toBe(1);
+    expect(await stillThere(closedPicture)).toBe(0);
+    expect(await stillThere(loose)).toBe(0);
+
+    // The complaint is closed later: the cleanup step (callable again, no new job) removes its pictures.
+    await app.pool.query(
+      `UPDATE app.complaints SET status = 'CLOSED_NO_ACTION', closed_at = now(), close_reason = 'Không đủ căn cứ', closure_no = 1, version = version + 1, updated_at = now() WHERE complaint_id = $1::uuid`,
+      [open],
+    );
+    expect(((await app.pool.query<{ n: number }>('SELECT app.purge_closed_complaint_pictures() AS n')).rows[0] as { n: number }).n).toBe(1);
+    expect(await stillThere(openPicture)).toBe(0);
+    expect(((await app.pool.query<{ n: number }>('SELECT app.purge_closed_complaint_pictures() AS n')).rows[0] as { n: number }).n).toBe(0);
   });
 
   // A shop owner whose shop has no other member: the shop is anonymized and closed, and the owner's account too (the shop is his personal data).
