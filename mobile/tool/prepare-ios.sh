@@ -38,6 +38,8 @@ printf '%s\n' '{"images":[{"filename":"AppIcon-1024.png","idiom":"universal","pl
 
 # iOS 15 is the floor (instance-level CLLocationManager authorization, MapLibre, background location); the generated Podfile leaves the platform to the project's own target.
 sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/' "$dest/Runner.xcodeproj/project.pbxproj"
+# iPhone only: the Flutter default declares iPad too (TARGETED_DEVICE_FAMILY "1,2"), which makes App Store review require iPad screenshots.
+sed -i '' -E 's/TARGETED_DEVICE_FAMILY = "1,2";/TARGETED_DEVICE_FAMILY = "1";/' "$dest/Runner.xcodeproj/project.pbxproj"
 
 # The bundle id must be the App ID the owner registered with Apple, for the app and its test target alike.
 grep -q "PRODUCT_BUNDLE_IDENTIFIER = $app_id;" "$dest/Runner.xcodeproj/project.pbxproj" || { echo "bundle id $app_id not found in the generated project" >&2; exit 1; }
