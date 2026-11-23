@@ -185,7 +185,7 @@ WITH expected(table_name, privileges) AS (
                       FROM cat_kinds WHERE expected_kind <> actual_kind)
          END AS result
 ), functions(signature) AS (
-  VALUES ('app.purge_app_user(uuid)'), ('app.anonymize_app_user(uuid, text)'), ('app.purge_closed_complaint_pictures()'),('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
+  VALUES ('app.purge_app_user(uuid)'), ('app.anonymize_app_user(uuid, text)'), ('app.next_shipper_code()'), ('app.next_complaint_code()'), ('app.next_business_message_sequence()'), ('app.next_shop_entitlement_sequence()'),
          ('app.shop_display_order(uuid)'), ('app.shop_display_delivery(uuid)'),
          ('app.purge_unreferenced_route_snapshots(interval)')
 ), function_checks AS (

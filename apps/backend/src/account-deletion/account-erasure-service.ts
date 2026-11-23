@@ -1,22 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { AccountDeletionFinalizer } from '../account-lifecycle/account-deletion-finalizer';
+import { AccountActivityRegistry } from '../account-lifecycle/account-activity-registry';
 import { AdminUserAccountParticipant, OrdinaryAccount } from '../auth/admin-user-account-participant';
-import { UserRepository } from '../auth/user-repository';
+import { ACCOUNT_ERASURE_PURPOSE } from '../auth/auth-constants';
 import { VerificationService, OtpRequestResult } from '../auth/verification-service';
-import { AppError, TechnicalError } from '../common/app-errors';
+import { AppError } from '../common/app-errors';
 import { DriverEligibilityReader } from '../driver/driver-eligibility-reader';
 import { ShipperWalletParametersReader } from '../driver/shipper-wallet-parameters';
 import { AuditWriter } from '../audit/audit-writer';
 import { OutboxWriter } from '../outbox/outbox-writer';
-import { WalletAdjustmentService } from '../wallet/wallet-adjustment-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AccountErasureRepository } from './account-erasure-repository';
 import { ACCOUNT_DELETE_REQUESTED_ACTION, RESOURCE_USER } from './account-deletion-service';
 import { AuthPrincipal } from '../auth/auth-principal';
+import { ErasureCodeInput, ErasureConfirmInput } from './account-erasure-validation';
 
-/** The purpose of the OTP that proves the owner's erasure request (the SMS category stays the same as the other OTPs). */
-export const ACCOUNT_ERASURE_PURPOSE = 'ACCOUNT_DELETE';
 /** How long the one-time erasure request stays usable after the OTP was confirmed. Short by design: the job runs within a minute. */
 export const ACCOUNT_ERASURE_REQUEST_TTL_SECONDS = 300;
 
@@ -30,28 +28,14 @@ export type ErasurePrecheck =
   | { readonly kind: 'READY'; readonly balanceVnd: bigint; readonly forfeitVnd: bigint; readonly withdrawMinVnd: bigint }
   | { readonly kind: 'BLOCKED'; readonly blockers: readonly ErasureBlocker[] };
 
-/**
- * The owner's own erasure (Owner order 2026-11-23, Apple 5.1.1(v)), started from the signed-in app:
- *  1. precheck: no work in progress, no open withdrawal, no held money, and a balance below the minimum withdrawal. A blocker is answered
- *     WITHOUT any OTP;
- *  2. a balance that is below the minimum but not zero is FORFEITED: the app must say so and the owner must agree (acceptForfeit). The amount is
- *     posted to the wallet ledger as a charge (wallet_adjustments, source ACCOUNT_DELETE) in the same transaction, so the balance reaches zero and
- *     the record stays for reconciliation;
- *  3. requestCode sends a one-time code by SMS (purpose ACCOUNT_DELETE) to the account's own phone;
- *  4. confirm checks that the challenge belongs to this account's phone and purpose, verifies the code (a wrong or expired code creates nothing),
- *     and then, in one transaction: re-runs the pre-check under the account lock, posts the forfeit, locks the account (DELETE_REQUEST, every session
- *     revoked) and writes the one-time request (short-lived). The erasure job (AccountDeletionSweeper) anonymizes the account within a minute;
- *     app.anonymize_app_user refuses any account without such a request.
- */
+/** Validates the owner's OTP and schedules erasure with the agreed wallet amount. */
 @Injectable()
 export class AccountErasureService {
   constructor(
     private readonly transactions: TransactionManager,
-    private readonly users: UserRepository,
     private readonly accounts: AdminUserAccountParticipant,
-    private readonly finalizer: AccountDeletionFinalizer,
+    private readonly activity: AccountActivityRegistry,
     private readonly verification: VerificationService,
-    private readonly wallets: WalletAdjustmentService,
     private readonly parameters: ShipperWalletParametersReader,
     private readonly drivers: DriverEligibilityReader,
     private readonly repository: AccountErasureRepository,
@@ -65,18 +49,18 @@ export class AccountErasureService {
   }
 
   /** Step 3: the code. Nothing is sent while a blocker stands or while a forfeit is not agreed. */
-  async requestCode(principal: AuthPrincipal, input: { readonly acceptForfeit: boolean }, clientIp: string): Promise<OtpRequestResult> {
-    await this.#assertReady(principal, input.acceptForfeit);
+  async requestCode(principal: AuthPrincipal, input: ErasureCodeInput, clientIp: string): Promise<OtpRequestResult> {
+    this.#assertReady(await this.precheck(principal), input);
     return this.verification.requestOtp(principal.phoneNormalized, ACCOUNT_ERASURE_PURPOSE, clientIp);
   }
 
   /** Step 4: the code is checked; then the account is locked and the one-time request written, in one transaction. */
   async confirm(
     principal: AuthPrincipal,
-    input: { readonly verificationId: string; readonly otp: string; readonly acceptForfeit: boolean },
+    input: ErasureConfirmInput,
     requestId: string,
   ): Promise<{ readonly result: 'ERASURE_SCHEDULED' }> {
-    await this.#assertReady(principal, input.acceptForfeit);
+    this.#assertReady(await this.precheck(principal), input);
     // The challenge must be this account's own: its phone and its purpose. Any other challenge is the same refusal as a wrong code.
     const bound = await this.transactions.withTransaction((context) => this.repository.verification(context, input.verificationId));
     if (bound === undefined || bound.purpose !== ACCOUNT_ERASURE_PURPOSE || bound.phoneNormalized !== principal.phoneNormalized) {
@@ -87,44 +71,21 @@ export class AccountErasureService {
 
     await this.transactions.withTransaction(async (context) => {
       const account = await this.accounts.lockOrdinary(context, principal.userId, 'write');
-      if (account === undefined || account.status !== 'ACTIVE') {
+      if (account === undefined || account.status !== 'ACTIVE' || (await this.repository.validRequest(context, principal.userId)) !== undefined) {
         throw new AppError('ACCOUNT_ERASURE_BLOCKED');
       }
-      const decision = await this.#precheck(context, principal.userId);
-      if (decision.kind !== 'READY') {
-        throw new AppError('ACCOUNT_ERASURE_BLOCKED');
-      }
-      if (decision.forfeitVnd > 0n) {
-        if (!input.acceptForfeit) {
-          throw new AppError('ACCOUNT_ERASURE_CONSENT_REQUIRED');
-        }
-        const driverId = await this.drivers.driverIdOf(context, principal.userId);
-        if (driverId === undefined) {
-          throw new TechnicalError('internal', 'Balance without a wallet owner');
-        }
-        const posted = await this.wallets.post(context, {
-          driverId,
-          sourceType: 'ACCOUNT_DELETE',
-          sourceId: requestId,
-          direction: 'CHARGE_TO_SHIPPER',
-          amountVnd: decision.forfeitVnd,
-          postedByUserId: principal.userId,
-        });
-        if (posted.kind !== 'POSTED') {
-          throw new TechnicalError('internal', 'Forfeit could not be posted');
-        }
-      }
-      await this.#lock(context, account, requestId, decision.forfeitVnd, input.verificationId);
+      await this.activity.lockWorkSources(context, principal.userId);
+      this.#assertReady(await this.#precheck(context, principal.userId), input);
+      await this.#lock(context, account, requestId, input.forfeitVnd, input.verificationId);
     });
     return { result: 'ERASURE_SCHEDULED' };
   }
 
-  async #assertReady(principal: AuthPrincipal, acceptForfeit: boolean): Promise<void> {
-    const decision = await this.precheck(principal);
+  #assertReady(decision: ErasurePrecheck, input: ErasureCodeInput): void {
     if (decision.kind !== 'READY') {
       throw new AppError('ACCOUNT_ERASURE_BLOCKED');
     }
-    if (decision.forfeitVnd > 0n && !acceptForfeit) {
+    if (decision.forfeitVnd !== input.forfeitVnd || (decision.forfeitVnd > 0n && !input.acceptForfeit)) {
       throw new AppError('ACCOUNT_ERASURE_CONSENT_REQUIRED');
     }
   }
@@ -138,7 +99,7 @@ export class AccountErasureService {
     if (account.status === 'DISABLED') {
       blockers.push({ code: 'ALREADY_LOCKED' });
     }
-    const active = await this.finalizer.activeWork(context, userId);
+    const active = await this.activity.activeWork(context, userId);
     if (active.length > 0) {
       blockers.push({ code: 'ACTIVE_WORK', items: [...active] });
     }
@@ -164,7 +125,7 @@ export class AccountErasureService {
     if (changed === undefined) {
       throw new AppError('USER_ACCOUNT_VERSION_CONFLICT');
     }
-    await this.repository.insertRequest(context, { requestId, userId: account.userId, verificationId, ttlSeconds: ACCOUNT_ERASURE_REQUEST_TTL_SECONDS });
+    await this.repository.insertRequest(context, { requestId, userId: account.userId, verificationId, forfeitVnd, ttlSeconds: ACCOUNT_ERASURE_REQUEST_TTL_SECONDS });
     await this.audit.append(context, {
       requestId,
       actorType: 'USER',

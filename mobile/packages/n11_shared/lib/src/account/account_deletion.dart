@@ -9,9 +9,9 @@ import 'session_controller.dart';
 // The owner's own account deletion, started inside the app (Apple 5.1.1(v) and Google Play require it in-app). Owner order 2026-11-23, the
 // signed-in app only:
 //   1. GET  /v1/account/deletion/precheck   -> READY (balance, forfeit, minimum) or BLOCKED (what must be done first). Nothing is sent.
-//   2. POST /v1/account/deletion/code       {accept_forfeit} -> a one-time code by SMS to the account's phone. Refused while BLOCKED, or while a
+//   2. POST /v1/account/deletion/code       {accept_forfeit, forfeit_vnd} -> a one-time code by SMS to the account's phone. Refused while BLOCKED, or while a
 //                                            balance below the minimum withdrawal is not agreed (it is then forfeited).
-//   3. POST /v1/account/deletion/confirm    {verification_id, otp, accept_forfeit} -> ERASURE_SCHEDULED: the account is locked, every session
+//   3. POST /v1/account/deletion/confirm    {verification_id, otp, accept_forfeit, forfeit_vnd} -> ERASURE_SCHEDULED: the account is locked, every session
 //                                            is revoked and the erasure follows within about a minute. The device forgets its token at once.
 // No password is asked again. The web page /delete-account keeps its own password route and only locks the account.
 
@@ -96,6 +96,8 @@ class AccountDeletionController extends ChangeNotifier {
       return;
     }
     await _run(() async {
+      _verificationId = null;
+      _precheck = null;
       final ApiResponse response = await session.protectedCall('GET', precheckPath);
       final Object? data = response.data;
       _precheck = ErasurePrecheck.fromData(data is Map<String, Object?> ? data : <String, Object?>{});
@@ -103,12 +105,12 @@ class AccountDeletionController extends ChangeNotifier {
   }
 
   /// Asks for the one-time code. [acceptForfeit] must be true when the pre-check shows a balance that will be forfeited.
-  Future<bool> sendCode({required bool acceptForfeit}) async {
+  Future<bool> sendCode({required bool acceptForfeit, required int forfeitVnd}) async {
     if (_busy || _outcome != null) {
       return false;
     }
     return _run(() async {
-      final ApiResponse response = await session.protectedCall('POST', codePath, body: jsonEncode(<String, Object?>{'accept_forfeit': acceptForfeit}));
+      final ApiResponse response = await session.protectedCall('POST', codePath, body: jsonEncode(<String, Object?>{'accept_forfeit': acceptForfeit, 'forfeit_vnd': forfeitVnd.toString()}));
       final Object? data = response.data;
       final Object? id = data is Map<String, Object?> ? data['verification_id'] : null;
       if (id is! String) {
@@ -119,7 +121,7 @@ class AccountDeletionController extends ChangeNotifier {
   }
 
   /// Confirms the code. On success the account is locked and this device signs out at once.
-  Future<bool> confirm({required String otp, required bool acceptForfeit}) async {
+  Future<bool> confirm({required String otp, required bool acceptForfeit, required int forfeitVnd}) async {
     final String? verificationId = _verificationId;
     if (_busy || _outcome != null || verificationId == null) {
       return false;
@@ -128,7 +130,7 @@ class AccountDeletionController extends ChangeNotifier {
       final ApiResponse response = await session.protectedCall(
         'POST',
         confirmPath,
-        body: jsonEncode(<String, Object?>{'verification_id': verificationId, 'otp': otp, 'accept_forfeit': acceptForfeit}),
+        body: jsonEncode(<String, Object?>{'verification_id': verificationId, 'otp': otp, 'accept_forfeit': acceptForfeit, 'forfeit_vnd': forfeitVnd.toString()}),
       );
       final Object? data = response.data;
       final Object? result = data is Map<String, Object?> ? data['result'] : null;

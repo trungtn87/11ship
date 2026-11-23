@@ -4,6 +4,7 @@ import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { SessionAuthorizationParticipant } from '../../apps/backend/src/auth/session-authorization-participant';
+import { ShopAvailabilityReader } from '../../apps/backend/src/shop/shop-availability-reader';
 import { TransactionManager } from '../../apps/backend/src/transaction/transaction-manager';
 import { runSmsGatewayCli } from '../../apps/backend/src/sms-gateway/cli/sms-gateway-cli';
 import { SmsGatewayConfig } from '../../apps/backend/src/config/sms-gateway-config';
@@ -640,12 +641,13 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(await exists(system.account.userId)).toBe(1);
     });
 
-    it('case 8 — an account with related data is ANONYMIZED too (Owner 2026-11-22): the shop with no other member is anonymized and closed, the driver profile loses its name and plate, roles and money records stay; an administrator cannot unlock it', async () => {
+    it('case 8 — an account with related data is ANONYMIZED too (Owner 2026-11-22): the sole owner’s shop and driver name are anonymized, roles and money records stay; an administrator cannot unlock it', async () => {
       const owner = await seedUser({ roles: ['CUSTOMER', 'SHOP', 'DRIVER'] });
       const [food, ship] = [tokenOf(await loginClient(owner.phone)), tokenOf(await loginClient(owner.phone, PASSWORD, SHIP))];
       const rolesBefore = (await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows;
       const shopId = (await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).rows[0]?.shop_id as string;
-      const driverBefore = (await app.pool.query('SELECT status FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows;
+      const driverBefore = (await app.pool.query('SELECT status, plate_number FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows;
+      const shopBefore = (await app.pool.query('SELECT status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows[0];
 
       const shown = adminData(await detail(owner.id));
       expect(shown.lifecycle).toMatchObject({ related_data: ['SHOP', 'DRIVER_PROFILE'], delete_effect: 'DELETE_PERMANENTLY', lock_reason: null });
@@ -658,11 +660,11 @@ describe('account lifecycle, scopes and system settings', () => {
       expect((await requestErasure(owner.id)).failed).toBe(0);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [owner.id])).toBe(1);
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
-      // Roles stay (the tombstone keeps its links); the shop with no other member is anonymized and closed, and the owner is no longer a member.
+      // Roles and shop membership retain their links to the tombstone.
       expect((await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows).toEqual(rolesBefore);
-      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: 'DISABLED' }]);
-      expect(await count(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).toBe(0);
-      expect((await app.pool.query('SELECT status, full_name FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows).toEqual([{ status: driverBefore[0]?.status, full_name: 'Đã ẩn danh' }]);
+      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: shopBefore.status }]);
+      expect(await count(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).toBe(1);
+      expect((await app.pool.query('SELECT status, plate_number, full_name FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows).toEqual([{ ...driverBefore[0], full_name: 'Đã ẩn danh' }]);
       expect(await count(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [owner.id])).toBe(0);
       expect((await me(food)).status).toBe(401);
       expect((await me(ship)).status).toBe(401);
@@ -672,7 +674,7 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(after.allowed_actions).not.toContain('UNLOCK');
       expect(codeOf(await command('unlock', owner.id, lockBody(Number(after.version))))).toEqual({ status: 409, code: 'USER_ACCOUNT_ANONYMIZED' });
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
-      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: 'DISABLED' }]);
+      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: shopBefore.status }]);
     });
 
     it('case 9 — orders or deliveries still being processed block the lock (and a delete that would lock); finished or cancelled ones do not', async () => {
@@ -889,7 +891,9 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(await nextSms()).toBeNull();
       const version = Number(adminData(await detail(owner.id)).version);
       expect(codeOf(await command('unlock', owner.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_ANONYMIZED' });
-      expect((await app.pool.query<{ status: string }>('SELECT status FROM app.shops WHERE shop_id = $1::uuid', [owner.shopId])).rows[0]?.status).toBe('DISABLED');
+      const transactions = app.running.app.get(TransactionManager, { strict: false });
+      const shops = app.running.app.get(ShopAvailabilityReader, { strict: false });
+      expect(await transactions.withTransaction((context) => shops.snapshotOfShop(context, owner.shopId))).toMatchObject({ ownerLocked: true });
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
       expect((await loginClient(owner.phone)).status).toBe(401);
     });

@@ -7,6 +7,8 @@ import { AddressInfo } from 'node:net';
 import argon2 = require('argon2');
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { PoolClient } from 'pg';
+import { AccountDeletionService } from '../../apps/backend/src/account-deletion/account-deletion-service';
+import type { OtpDelivery } from '../../apps/backend/src/auth/otp-provider';
 import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/account-deletion-limiter';
 import { DEFAULT_ACCOUNT_DELETION_CONFIG } from '../../apps/backend/src/config/account-deletion-config';
@@ -65,6 +67,7 @@ describe('P5-6a public account deletion', () => {
         relaxTimeouts: true,
         configOverride: {
           clientAuth: { termsVersion: TERMS, privacyVersion: PRIVACY },
+          accountRecoveryMode: 'SMS_OTP',
           // The address budget is lifted for the many requests of this suite (all from one loopback address); the phone budget is the default 5/15 min.
           accountDeletion: { ...DEFAULT_ACCOUNT_DELETION_CONFIG, publicOrigin: PUBLIC_ORIGIN, ip: { limit: 10_000, windowSeconds: 600 } },
         },
@@ -199,11 +202,13 @@ describe('P5-6a public account deletion', () => {
     await ageChallenges(normalized);
     const signedIn = await login({ local: phone.local });
     const token = String(signedIn.body.data?.access_token);
-    const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: acceptForfeit } });
+    const precheck = await app.call('GET', '/account/deletion/precheck', { bearer: token });
+    const consent = { accept_forfeit: acceptForfeit, forfeit_vnd: String(precheck.body.data?.forfeit_vnd ?? '0') };
+    const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: consent });
     if (code.status !== 200) return codeOf(code) ?? code.status;
     const otp = app.provider.lastOtpFor(normalized);
     const verificationId = String(code.body.data?.verification_id);
-    const done = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: acceptForfeit } });
+    const done = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, ...consent } });
     if (done.status !== 200) return codeOf(done) ?? done.status;
     await sweeper().sweep();
     const request = (await app.pool.query<{ user_id: string }>('SELECT user_id FROM app.account_deletion_requests WHERE verification_id = $1::uuid', [verificationId])).rows[0];
@@ -426,10 +431,11 @@ describe('P5-6a public account deletion', () => {
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
   });
 
-  it('money and orders to keep, nothing in progress: the account is anonymized, the order keeps its money and state, only its personal snapshot goes', async () => {
+  it('money and orders to keep, nothing in progress: the account is anonymized, the order keeps its money, state and recipient snapshot', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
+    const before = (await app.pool.query('SELECT status, recipient_name, recipient_phone, shop_name FROM app.orders WHERE order_id = $1::uuid', [orderId])).rows[0];
     expect(await erase(c.phone)).toBe('DELETED');
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
     expect(await anonymized(c.userId)).toBe(true);
@@ -439,7 +445,7 @@ describe('P5-6a public account deletion', () => {
       'SELECT status, recipient_name, recipient_phone, shop_name FROM app.orders WHERE order_id = $1::uuid',
       [orderId],
     )).rows[0];
-    expect(order).toEqual({ status: 'CANCELLED_BY_SHOP', recipient_name: 'Đã ẩn danh', recipient_phone: expect.stringMatching(/^\+999\d{11}$/), shop_name: 'Quán thử' });
+    expect(order).toEqual(before);
     expect(await countRows(app.pool, `SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid`, [c.userId])).toBeGreaterThan(0);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
     // A retry (same key, or a new one) is answered; nothing is written twice.
@@ -633,7 +639,7 @@ describe('P5-6a public account deletion', () => {
 
   // Owner decision 2026-11-22 (Apple 5.1.1(v)). The case a reviewer can meet: an account with NO order that still holds a saved address, a cart, a
   // push token and a notification. The old rule only locked it (every such row counted as "data to keep"); now it is anonymized and the number is free.
-  it('a customer with NO order but a saved address, a cart, a push token and a notification is anonymized completely, and the same number registers a NEW account', async () => {
+  it('account tokens and profile are removed, other records stay and the number can register a new account', async () => {
     const c = await customer();
     const sessionId = (await app.pool.query<{ session_id: string }>('SELECT session_id FROM app.sessions WHERE user_id = $1::uuid LIMIT 1', [c.userId])).rows[0]?.session_id;
     expect(sessionId).toBeDefined();
@@ -662,10 +668,10 @@ describe('P5-6a public account deletion', () => {
 
     expect(await erase(c.phone)).toBe('DELETED');
     expect(await anonymized(c.userId)).toBe(true);
-    expect(await countRows(app.pool, addresses, [c.userId])).toBe(0);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_carts WHERE user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, addresses, [c.userId])).toBe(1);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_carts WHERE user_id = $1::uuid', [c.userId])).toBe(1);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.notification_push_tokens WHERE user_id = $1::uuid', [c.userId])).toBe(0);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.notifications WHERE recipient_user_id = $1::uuid', [c.userId])).toBe(1);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [c.userId])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_profiles WHERE user_id = $1::uuid', [c.userId])).toBe(0);
     // The tombstone is never signed in to, and the old number no longer finds it.
@@ -697,7 +703,7 @@ describe('P5-6a public account deletion', () => {
   // Each record keeps its row, its money, its state and its time; only the personal text, number or name goes. These cases are red on the
   // code before migration 1798243200000, where those records still carried the data after the deletion.
 
-  it('the notes the customer wrote (order, order line, delivery) are replaced by one fixed text; the order and the delivery keep their state, money and time', async () => {
+  it('order and delivery addresses, coordinates, notes and financial snapshots stay intact', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     const deliveryId = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: c.userId });
@@ -710,8 +716,8 @@ describe('P5-6a public account deletion', () => {
       );
     });
     await finishOrder(orderId);
-    const orderQuery = 'SELECT status, paid_vnd::text AS paid, items_total_vnd::text AS total, created_at, note, delivery_note FROM app.orders WHERE order_id = $1::uuid';
-    const deliveryQuery = 'SELECT state, fee_vnd::text AS fee, created_at, note, dropoff_note FROM app.deliveries WHERE delivery_id = $1::uuid';
+    const orderQuery = 'SELECT status, paid_vnd::text AS paid, items_total_vnd::text AS total, created_at, address_text, address_lat, address_lng, note, delivery_note FROM app.orders WHERE order_id = $1::uuid';
+    const deliveryQuery = 'SELECT state, fee_vnd::text AS fee, created_at, dropoff_address_text, dropoff_lat, dropoff_lng, note, dropoff_note FROM app.deliveries WHERE delivery_id = $1::uuid';
     const itemQuery = 'SELECT note FROM app.order_items WHERE order_id = $1::uuid';
     const orderBefore = (await app.pool.query(orderQuery, [orderId])).rows[0];
     const deliveryBefore = (await app.pool.query(deliveryQuery, [deliveryId])).rows[0];
@@ -719,13 +725,13 @@ describe('P5-6a public account deletion', () => {
     expect(await erase(c.phone)).toBe('DELETED');
     expect(await anonymized(c.userId)).toBe(true);
     const orderAfter = (await app.pool.query(orderQuery, [orderId])).rows[0];
-    expect(orderAfter).toEqual({ ...orderBefore, note: 'Đã ẩn danh', delivery_note: 'Đã ẩn danh' });
+    expect(orderAfter).toEqual(orderBefore);
     const deliveryAfter = (await app.pool.query(deliveryQuery, [deliveryId])).rows[0];
-    expect(deliveryAfter).toEqual({ ...deliveryBefore, note: 'Đã ẩn danh', dropoff_note: 'Đã ẩn danh' });
-    expect((await app.pool.query<{ note: string }>(itemQuery, [orderId])).rows.map((row) => row.note)).toEqual(['Đã ẩn danh']);
+    expect(deliveryAfter).toEqual(deliveryBefore);
+    expect((await app.pool.query<{ note: string }>(itemQuery, [orderId])).rows.map((row) => row.note)).toEqual(['Không hành']);
   });
 
-  it('the chat messages the account sent keep their place and time; their text and sender name are replaced, and the shop message of the same order is not touched', async () => {
+  it('order chat history is preserved for both participants', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
@@ -742,7 +748,7 @@ describe('P5-6a public account deletion', () => {
     const shopBefore = (await app.pool.query(chatQuery, [theirs])).rows[0];
 
     expect(await erase(c.phone)).toBe('DELETED');
-    expect((await app.pool.query(chatQuery, [mine])).rows[0]).toEqual({ ...before, body: 'Tin nhắn đã ẩn danh', sender_name: 'Đã ẩn danh' });
+    expect((await app.pool.query(chatQuery, [mine])).rows[0]).toEqual(before);
     expect((await app.pool.query(chatQuery, [theirs])).rows[0]).toEqual(shopBefore);
   });
 
@@ -867,7 +873,7 @@ describe('P5-6a public account deletion', () => {
     expect((await app.pool.query(query, [theirs])).rows[0]).toEqual(otherBefore);
   });
 
-  it('reviews and shop replies: the reviewer name and the review text are replaced (a NULL text stays NULL); the reply and its history are replaced; the stars and the shop side stay', async () => {
+  it('review text and reviewer name are hidden, while shop replies and history stay intact', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
@@ -889,8 +895,8 @@ describe('P5-6a public account deletion', () => {
     const reviewBefore = (await app.pool.query(reviewQuery, [review])).rows[0];
     expect(await erase(c.phone)).toBe('DELETED');
     expect((await app.pool.query(reviewQuery, [review])).rows[0]).toEqual({ ...reviewBefore, reviewer_name: 'Đã ẩn danh', comment: 'Đã ẩn danh', version: '2' });
-    expect((await app.pool.query("SELECT body, version::text AS version FROM app.review_replies WHERE review_id = $1::uuid", [review])).rows).toEqual([{ body: 'Đã ẩn danh', version: '2' }]);
-    expect((await app.pool.query('SELECT body FROM app.review_reply_history WHERE review_id = $1::uuid', [review])).rows).toEqual([{ body: 'Đã ẩn danh' }]);
+    expect((await app.pool.query("SELECT body, version::text AS version FROM app.review_replies WHERE review_id = $1::uuid", [review])).rows).toEqual([{ body: 'Cảm ơn anh Nguyễn Khách', version: '1' }]);
+    expect((await app.pool.query('SELECT body FROM app.review_reply_history WHERE review_id = $1::uuid', [review])).rows).toEqual([{ body: 'Cảm ơn anh Nguyễn Khách' }]);
   });
 
   // The exception of the guards is opened by app.anonymize_app_user only. A session of the RUNTIME role may hold UPDATE/DELETE on these tables
@@ -1027,7 +1033,7 @@ describe('P5-6a public account deletion', () => {
       expect((await app.pool.query('SELECT reason, status FROM app.complaint_reconsiderations WHERE request_id = $1::uuid', [request])).rows[0]).toEqual({ reason: 'Đã ẩn danh', status: 'PENDING' });
     });
 
-    it("review moderation notes: the note on the account's own review is replaced; the moderation row, its action and reason code stay", async () => {
+    it("review moderation notes: the reviewer does not erase another party's moderation note", async () => {
       const c = await customer();
       const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
       await finishOrder(orderId);
@@ -1042,15 +1048,15 @@ describe('P5-6a public account deletion', () => {
       await app.pool.query(
         `INSERT INTO app.review_moderations (moderation_id, review_id, action, reason_code, reason_note, actor_user_id, created_at)
          VALUES ($1::uuid, $2::uuid, 'HIDE', 'OTHER', $3, $4::uuid, now())`,
-        [moderation, review, mine, c.userId],
+        [moderation, review, mine, shop.userId],
       );
       expect(await erase(c.phone)).toBe('DELETED');
-      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.review_moderations t WHERE moderation_id = $1::uuid', [moderation])).not.toContain(mine);
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.review_moderations t WHERE moderation_id = $1::uuid', [moderation])).toContain(mine);
       expect((await app.pool.query('SELECT reason_note, action, reason_code FROM app.review_moderations WHERE moderation_id = $1::uuid', [moderation])).rows[0])
-        .toEqual({ reason_note: 'Đã ẩn danh', action: 'HIDE', reason_code: 'OTHER' });
+        .toEqual({ reason_note: mine, action: 'HIDE', reason_code: 'OTHER' });
     });
 
-    it("driver events: the reason and the detail of the account's driver are replaced; the event, its type and its time stay", async () => {
+    it("driver events: the driver's event reason and detail stay intact", async () => {
       // No balance: a Shipper with money stays PENDING (the rule tested above), this case is about the data of the driver.
       const s = await newShipper(app, drivers, 0);
       const event = randomUUID();
@@ -1061,12 +1067,12 @@ describe('P5-6a public account deletion', () => {
         [event, s.driverId, s.userId, mine],
       );
       expect(await erase(await phoneOf(s.userId))).toBe('DELETED');
-      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.driver_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.driver_events t WHERE event_id = $1::uuid', [event])).toContain(mine);
       expect((await app.pool.query('SELECT event_type, reason, detail FROM app.driver_events WHERE event_id = $1::uuid', [event])).rows[0])
-        .toEqual({ event_type: 'driver.note', reason: 'Đã ẩn danh', detail: {} });
+        .toEqual({ event_type: 'driver.note', reason: mine, detail: { note: mine } });
     });
 
-    it('operations anomaly events: the note about the account (its case or its own actions) is replaced; the case status and the event stay', async () => {
+    it('operations anomaly events: the note and case status stay intact', async () => {
       const c = await customer();
       const anomaly = randomUUID();
       await app.pool.query(
@@ -1082,14 +1088,14 @@ describe('P5-6a public account deletion', () => {
         [event, anomaly, mine, c.userId],
       );
       expect(await erase(c.phone)).toBe('DELETED');
-      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.ops_anomaly_case_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.ops_anomaly_case_events t WHERE event_id = $1::uuid', [event])).toContain(mine);
       expect((await app.pool.query('SELECT note, to_status FROM app.ops_anomaly_case_events WHERE event_id = $1::uuid', [event])).rows[0])
-        .toEqual({ note: 'Đã ẩn danh', to_status: 'NEW' });
+        .toEqual({ note: mine, to_status: 'NEW' });
     });
 
   });
 
-  it('order and delivery events: the note the account wrote is replaced; the system and shop notes and every event row stay', async () => {
+  it('all order and delivery event notes stay intact', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
@@ -1111,13 +1117,14 @@ describe('P5-6a public account deletion', () => {
          ($4::uuid, $2::uuid, 2, 'note.added', 'SYSTEM', NULL, 'Giao hàng đã kết thúc', now())`,
       [randomUUID(), deliveryId, c.userId, randomUUID()],
     );
+    const orderBefore = (await app.pool.query('SELECT note FROM app.order_events WHERE order_id = $1::uuid ORDER BY at, event_id', [orderId])).rows;
+    const deliveryBefore = (await app.pool.query('SELECT note FROM app.delivery_events WHERE delivery_id = $1::uuid ORDER BY seq', [deliveryId])).rows;
     expect(await erase(c.phone)).toBe('DELETED');
-    const orderNotes = (await app.pool.query<{ note: string }>('SELECT note FROM app.order_events WHERE order_id = $1::uuid', [orderId])).rows.map((r) => r.note);
-    expect(orderNotes.sort()).toEqual(['Đã ẩn danh', 'Đơn đã kết thúc']);
-    expect((await app.pool.query('SELECT note FROM app.delivery_events WHERE delivery_id = $1::uuid ORDER BY seq', [deliveryId])).rows).toEqual([{ note: 'Đã ẩn danh' }, { note: 'Giao hàng đã kết thúc' }]);
+    expect((await app.pool.query('SELECT note FROM app.order_events WHERE order_id = $1::uuid ORDER BY at, event_id', [orderId])).rows).toEqual(orderBefore);
+    expect((await app.pool.query('SELECT note FROM app.delivery_events WHERE delivery_id = $1::uuid ORDER BY seq', [deliveryId])).rows).toEqual(deliveryBefore);
   });
 
-  it('delivery incidents: the reason and close notes of the shipper\'s incident are replaced; the status, custody and times stay', async () => {
+  it('delivery incidents: the shipper\'s incident and its notes stay intact', async () => {
     const s = await newShipper(app, drivers, 50_000);
     extraUsers.push(s.userId);
     await emptyWallet(s.driverId);
@@ -1142,7 +1149,7 @@ describe('P5-6a public account deletion', () => {
     const query = 'SELECT status, custody, closed_at, reason_note, close_note, version::text FROM app.delivery_incidents WHERE incident_id = $1::uuid';
     const before = (await app.pool.query(query, [incident])).rows[0];
     expect(await erase(await phoneOf(s.userId))).toBe('DELETED');
-    expect((await app.pool.query(query, [incident])).rows[0]).toEqual({ ...before, reason_note: 'Đã ẩn danh', close_note: 'Đã ẩn danh', version: '2' });
+    expect((await app.pool.query(query, [incident])).rows[0]).toEqual(before);
   });
 
   it('outbox events: the personal fields of the payload are replaced, the JSON structure, ids and the event type stay', async () => {
@@ -1160,7 +1167,7 @@ describe('P5-6a public account deletion', () => {
       user_id: c.userId,
       phone: 'Đã ẩn danh',
       name: 'Đã ẩn danh',
-      nested: { address_text: 'Đã ẩn danh', amount: 5000 },
+      nested: { address_text: '12 Phố Huế', amount: 5000 },
       list: [{ phone: 'Đã ẩn danh' }],
       keep: 'ok',
     });
@@ -1183,37 +1190,7 @@ describe('P5-6a public account deletion', () => {
     });
   });
 
-  it('operations records: a phone number or the personal fields in an operations event, an anomaly case and a notification are replaced; the rest of the record stays', async () => {
-    const c = await customer();
-    const event = randomUUID();
-    const notification = randomUUID();
-    await app.pool.query(
-      `INSERT INTO app.ops_events (event_id, occurred_at, category, level, source, environment, message, detail)
-       VALUES ($1::uuid, now(), 'TECHNICAL', 'INFO', 'ORDER', 'test', $2, $3::jsonb)`,
-      [event, `Đặt đơn cho ${c.phone.local}`, JSON.stringify({ phone: c.phone.normalized, customer_id: c.userId, items: 2 })],
-    );
-    await app.pool.query(
-      `INSERT INTO app.ops_notifications (notification_id, kind, severity, content, dedupe_key, status, attempts, next_attempt_at, created_at)
-       VALUES ($1::uuid, 'OPEN', 'INFO', $2::jsonb, $3, 'PENDING', 0, now(), now())`,
-      [notification, JSON.stringify({ text: `Khách ${c.phone.normalized} đã huỷ`, shop: 'Quán thử' }), `pii-${notification}`],
-    );
-    const anomaly = randomUUID();
-    await app.pool.query(
-      `INSERT INTO app.ops_anomaly_cases (case_id, rule_kind, subject_kind, subject_id, status, occurrences, sample, window_from, window_to, evidence, last_evidence_at, note, version, first_flagged_at, updated_at)
-       VALUES ($1::uuid, 'CUSTOMER_ORDER_CANCELS', 'USER', $2::uuid, 'NEW', 1, 1, now() - interval '1 day', now(), $3::jsonb, now(), $4, 1, now(), now())`,
-      [anomaly, c.userId, JSON.stringify({ phone: c.phone.normalized, cancelled: 3 }), `Khách ${c.phone.local} huỷ nhiều đơn`],
-    );
-    expect(await erase(c.phone)).toBe('DELETED');
-    const anomalyRow = (await app.pool.query('SELECT status, occurrences, evidence, note FROM app.ops_anomaly_cases WHERE case_id = $1::uuid', [anomaly])).rows[0];
-    expect(anomalyRow).toEqual({ status: 'NEW', occurrences: 1, evidence: { phone: 'Đã ẩn danh', cancelled: 3 }, note: 'Khách Đã ẩn danh huỷ nhiều đơn' });
-    const eventRow = (await app.pool.query<{ message: string; detail: Record<string, unknown> }>('SELECT message, detail FROM app.ops_events WHERE event_id = $1::uuid', [event])).rows[0];
-    expect(eventRow?.message).toBe('Đặt đơn cho Đã ẩn danh');
-    expect(eventRow?.detail).toEqual({ phone: 'Đã ẩn danh', customer_id: c.userId, items: 2 });
-    const note = (await app.pool.query<{ content: Record<string, unknown> }>('SELECT content FROM app.ops_notifications WHERE notification_id = $1::uuid', [notification])).rows[0];
-    expect(note?.content).toEqual({ text: 'Khách Đã ẩn danh đã huỷ', shop: 'Quán thử' });
-  });
-
-  it('complaint pictures: the pictures of an OPEN complaint are kept; those of a closed complaint and the loose ones are removed; the cleanup removes the open one once that complaint is closed, and can run again', async () => {
+  it('complaint pictures from the erasing account are hidden even while the complaint is open', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
@@ -1235,40 +1212,26 @@ describe('P5-6a public account deletion', () => {
     const loose = await picture(null);
     expect(await erase(c.phone)).toBe('DELETED');
     const stillThere = async (id: string): Promise<number> => (await app.pool.query('SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [id])).rowCount ?? 0;
-    expect(await stillThere(openPicture)).toBe(1);
+    expect(await stillThere(openPicture)).toBe(0);
     expect(await stillThere(closedPicture)).toBe(0);
     expect(await stillThere(loose)).toBe(0);
 
-    // The complaint is closed later: the cleanup step (callable again, no new job) removes its pictures.
-    await app.pool.query(
-      `UPDATE app.complaints SET status = 'CLOSED_NO_ACTION', closed_at = now(), close_reason = 'Không đủ căn cứ', closure_no = 1, version = version + 1, updated_at = now() WHERE complaint_id = $1::uuid`,
-      [open],
-    );
-    expect(((await app.pool.query<{ n: number }>('SELECT app.purge_closed_complaint_pictures() AS n')).rows[0] as { n: number }).n).toBe(1);
-    expect(await stillThere(openPicture)).toBe(0);
-    expect(((await app.pool.query<{ n: number }>('SELECT app.purge_closed_complaint_pictures() AS n')).rows[0] as { n: number }).n).toBe(0);
+
   });
 
-  // A shop owner whose shop has no other member: the shop is anonymized and closed, and the owner's account too (the shop is his personal data).
-  it('a shop owner with no other member: the shop is anonymized and closed, and the account is anonymized', async () => {
+  it('the sole owner’s shop profile loses its name and contact phone while locality and membership stay intact', async () => {
     const owner = await createShopOwner(app);
     extraUsers.push(owner.userId);
     extraShops.push(owner.shopId);
+    const query = 'SELECT name, status, accepting_orders, address_text, pickup_lat, pickup_lng, contact_phone_normalized FROM app.shops WHERE shop_id = $1::uuid';
+    const before = (await app.pool.query(query, [owner.shopId])).rows[0];
     expect(await erase(await phoneOf(owner.userId))).toBe('DELETED');
     expect(await anonymized(owner.userId)).toBe(true);
-    expect(await app.pool.query<{ name: string; status: string; accepting_orders: boolean; address_text: string; contact_phone_normalized: string }>(
-      'SELECT name, status, accepting_orders, address_text, contact_phone_normalized FROM app.shops WHERE shop_id = $1::uuid',
-      [owner.shopId],
-    ).then((r) => r.rows[0])).toEqual({
-      name: 'Cửa hàng đã ẩn danh',
-      status: 'DISABLED',
-      accepting_orders: false,
-      address_text: 'Đã ẩn danh',
-      contact_phone_normalized: expect.stringMatching(/^\+999\d{11}$/),
+    expect((await app.pool.query(query, [owner.shopId])).rows[0]).toEqual({
+      ...before, name: 'Cửa hàng đã ẩn danh', contact_phone_normalized: expect.stringMatching(/^\+999\d{11}$/),
     });
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.userId])).toBe(1);
   });
-
 
   // ---- races ----------------------------------------------------------------------------------------------------------------------
 
@@ -1414,7 +1377,7 @@ describe('P5-6a public account deletion', () => {
       const blocked = await app.call('GET', '/account/deletion/precheck', { bearer: token });
       expect(blocked.body.data?.status).toBe('BLOCKED');
       expect(codesOf(blocked)).toContain('ACTIVE_WORK');
-      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
+      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true, forfeit_vnd: '0' } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
       expect(await codeCount(c.phone.normalized)).toBe(0);
       await finishOrder(orderId);
 
@@ -1423,59 +1386,192 @@ describe('P5-6a public account deletion', () => {
       const sToken = await tokenOf(shipperPhone);
       const money = await app.call('GET', '/account/deletion/precheck', { bearer: sToken });
       expect(codesOf(money)).toContain('WALLET_AT_OR_ABOVE_MINIMUM');
-      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: sToken, body: { accept_forfeit: true } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
+      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: sToken, body: { accept_forfeit: true, forfeit_vnd: '0' } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
       expect(await codeCount(normalizedOf(shipperPhone))).toBe(0);
       expect(await anonymized(shipper.userId)).toBe(false);
     });
 
-    it('a balance below the minimum is forfeited only with the owner agreement; the amount goes to the ledger and the account is erased', async () => {
+    it('records the agreed balance at confirmation and posts it only if anonymization commits', async () => {
       const shipper = await newShipper(app, drivers, 5_000);
       const phone = await phoneOf(shipper.userId);
       const token = await tokenOf(phone);
-      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: false } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_CONSENT_REQUIRED' });
+      const consent = { accept_forfeit: true, forfeit_vnd: '5000' };
+      const codePath = '/account/deletion/code';
+      const confirmPath = '/account/deletion/confirm';
+      expect(refused(await app.call('POST', codePath, { bearer: token, body: { ...consent, accept_forfeit: false } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_CONSENT_REQUIRED' });
       expect(await codeCount(normalizedOf(phone))).toBe(0);
-      expect(await erase(phone, true)).toBe('DELETED');
+      const code = await app.call('POST', codePath, { bearer: token, body: consent });
+      expect(code.status).toBe(200);
+      const verificationId = String(dataOf(code).verification_id);
+      const otp = app.provider.lastOtpFor(normalizedOf(phone));
+      const confirmation = { verification_id: verificationId, otp, ...consent };
+      expect(refused(await app.call('POST', confirmPath, { bearer: token, body: { ...confirmation, forfeit_vnd: '4000' } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_CONSENT_REQUIRED' });
+      expect(await requestCount(shipper.userId)).toBe(0);
+      expect(resultOf(await app.call('POST', confirmPath, { bearer: token, body: confirmation }))).toBe('ERASURE_SCHEDULED');
+      const request = (await app.pool.query('SELECT request_id, forfeit_vnd::text, consumed_at FROM app.account_deletion_requests WHERE verification_id = $1::uuid', [verificationId])).rows[0];
+      expect(request).toMatchObject({ forfeit_vnd: '5000', consumed_at: null });
+
+      const adjustmentCount = (): Promise<number> => countRows(app.pool, "SELECT 1 FROM app.wallet_adjustments WHERE source_id = $1::uuid AND source_type = 'ACCOUNT_DELETE'", [request.request_id]);
+      expect(await walletOf(shipper.driverId)).toEqual({ balance: '5000', held: '0' });
+      expect(await adjustmentCount()).toBe(0);
+
+      const deletion = app.running.app.get(AccountDeletionService, { strict: false });
+      const record = jest.spyOn(deletion, 'recordFinalized').mockRejectedValueOnce(new Error('abort erasure transaction'));
+      try {
+        expect((await sweeper().sweep()).failed).toBe(1);
+      } finally {
+        record.mockRestore();
+      }
+      expect(await walletOf(shipper.driverId)).toEqual({ balance: '5000', held: '0' });
+      expect(await adjustmentCount()).toBe(0);
+      expect(await anonymized(shipper.userId)).toBe(false);
+      expect(await countRows(app.pool, 'SELECT 1 FROM app.account_deletion_requests WHERE verification_id = $1::uuid AND consumed_at IS NULL', [verificationId])).toBe(1);
+
+      expect((await sweeper().sweep()).failed).toBe(0);
       expect(await anonymized(shipper.userId)).toBe(true);
-      const ledger = (await app.pool.query<{ kind: string; delta: string; after: string }>(
+      const ledger = (await app.pool.query(
         'SELECT e.entry_kind AS kind, e.delta_vnd::text AS delta, e.balance_after_vnd::text AS after FROM app.wallet_ledger_entries e JOIN app.driver_wallets w ON w.wallet_id = e.wallet_id WHERE w.driver_id = $1::uuid ORDER BY e.sequence_no DESC LIMIT 1',
         [shipper.driverId],
       )).rows[0];
       expect(ledger).toEqual({ kind: 'ADJUSTMENT_DEBIT', delta: '-5000', after: '0' });
-      expect(await countRows(app.pool, "SELECT 1 FROM app.wallet_adjustments a JOIN app.driver_wallets w ON w.wallet_id = a.wallet_id WHERE w.driver_id = $1::uuid AND a.source_type = 'ACCOUNT_DELETE'", [shipper.driverId])).toBe(1);
+      expect(await adjustmentCount()).toBe(1);
+    });
+
+    it('keeps a cancelled withdrawal and its bank destination unchanged', async () => {
+      const shipper = await newShipper(app, drivers, 5_000);
+      await markPending(shipper.userId);
+      const created = await withdraw(shipper.token, 5_000);
+      expect(created.status).toBe(201);
+      const withdrawal = dataOf(created);
+      const id = String(withdrawal.withdrawal_id);
+      expect((await app.call('POST', `/driver/wallet/withdrawals/${id}/cancel`, {
+        bearer: shipper.token,
+        headers: { 'idempotency-key': randomUUID() },
+        body: { expected_version: withdrawal.version },
+      })).status).toBe(200);
+      const query = 'SELECT * FROM app.wallet_withdrawals WHERE withdrawal_id = $1::uuid';
+      const before = (await app.pool.query(query, [id])).rows[0];
+      expect(before).toMatchObject({ state: 'CANCELLED', account_number: expect.any(String) });
+      await app.pool.query('UPDATE app.users SET delete_requested_at = NULL WHERE user_id = $1::uuid', [shipper.userId]);
+      expect(await erase(await phoneOf(shipper.userId))).toBe('DELETED');
+      expect((await app.pool.query(query, [id])).rows[0]).toEqual(before);
+    });
+
+    it('counts deletion SMS toward the shared phone cooldown and hourly limit', async () => {
+      const c = await customer();
+      const other = await customer();
+      const token = await tokenOf(c.phone);
+      const otherToken = await tokenOf(other.phone);
+      const body = { accept_forfeit: false, forfeit_vnd: '0' };
+      const codePath = '/account/deletion/code';
+      const policy = (await app.pool.query('SELECT phone_per_hour FROM app.otp_policy WHERE policy_id = 1')).rows[0];
+      await withoutTriggers(['otp_policy'], (q) => q.query('UPDATE app.otp_policy SET phone_per_hour = 1 WHERE policy_id = 1'));
+      try {
+        const sent = app.provider.sentCount();
+        expect((await app.call('POST', codePath, { bearer: token, body })).status).toBe(200);
+        const cooldown = await app.call('POST', codePath, { bearer: token, body });
+        expect(cooldown.body.error).toMatchObject({ code: 'OTP_RATE_LIMITED', details: { reason: 'COOLDOWN' } });
+        await withoutTriggers(['phone_verifications'], (q) => q.query(
+          "UPDATE app.phone_verifications SET created_at = created_at - interval '11 minutes' WHERE phone_normalized = $1 AND purpose = 'ACCOUNT_DELETE'", [c.phone.normalized],
+        ));
+        const hourly = await app.call('POST', codePath, { bearer: token, body });
+        expect(hourly.body.error).toMatchObject({ code: 'OTP_RATE_LIMITED', details: { reason: 'PHONE_HOUR' } });
+        expect(await codeCount(c.phone.normalized)).toBe(1);
+        expect(app.provider.sentCount()).toBe(sent + 1);
+        expect((await app.call('POST', codePath, { bearer: otherToken, body })).status).toBe(200);
+      } finally {
+        await withoutTriggers(['otp_policy'], (q) => q.query('UPDATE app.otp_policy SET phone_per_hour = $1 WHERE policy_id = 1', [policy.phone_per_hour]));
+      }
     });
 
     it('a wrong code and an expired code create no request and leave the account active', async () => {
       const c = await customer();
       const token = await tokenOf(c.phone);
-      const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } });
+      const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true, forfeit_vnd: '0' } });
       expect(code.status).toBe(200);
       const verificationId = String(code.body.data?.verification_id);
-      const wrong = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: '000000', accept_forfeit: true } });
+      const wrong = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: '000000', accept_forfeit: true, forfeit_vnd: '0' } });
       expect(wrong.status).not.toBe(200);
       expect(await requestCount(c.userId)).toBe(0);
       expect(await statusOf(c.userId)).toBe('ACTIVE');
       await withoutTriggers(['phone_verifications'], (q) => q.query("UPDATE app.phone_verifications SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute' WHERE verification_id = $1::uuid", [verificationId]));
-      const expired = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: app.provider.lastOtpFor(c.phone.normalized), accept_forfeit: true } });
+      const expired = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: app.provider.lastOtpFor(c.phone.normalized), accept_forfeit: true, forfeit_vnd: '0' } });
       expect(expired.status).not.toBe(200);
       expect(await requestCount(c.userId)).toBe(0);
       expect(await statusOf(c.userId)).toBe('ACTIVE');
     });
 
-    it('a used code and its request cannot be used again: a second confirmation with the same code is refused', async () => {
+    it('blocks recovery while erasure is pending, then allows a fresh code after expiry without replaying the old code', async () => {
       const c = await customer();
       const token = await tokenOf(c.phone);
-      const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } });
-      const verificationId = String(code.body.data?.verification_id);
-      const otp = app.provider.lastOtpFor(c.phone.normalized);
-      const first = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: true } });
-      expect(resultOf(first)).toBe('ERASURE_SCHEDULED');
+      const consent = { accept_forfeit: false, forfeit_vnd: '0' };
+      const codePath = '/account/deletion/code';
+      const confirmPath = '/account/deletion/confirm';
+      const recoveryPath = '/account-recovery/locked';
+      const code = await app.call('POST', codePath, { bearer: token, body: consent });
+      expect(code.status).toBe(200);
+      const expiredId = String(dataOf(code).verification_id);
+      const oldOtp = app.provider.lastOtpFor(c.phone.normalized);
+      const oldConfirmation = { verification_id: expiredId, otp: oldOtp, ...consent };
+      expect(resultOf(await app.call('POST', confirmPath, { bearer: token, body: oldConfirmation }))).toBe('ERASURE_SCHEDULED');
+
+      // Simulate a gateway delivery receipt for the existing OTP recovery route.
+      const provider = Object.assign(app.provider, {
+        assertReady: async () => ({ deliverable: true }),
+        sendResetOtp: async (phone: string, otp: string, delivery: OtpDelivery) => {
+          await app.provider.sendRegisterOtp(phone, otp);
+          await app.pool.query("UPDATE app.phone_verifications SET status = 'PENDING' WHERE verification_id = $1::uuid", [delivery.verificationId]);
+        },
+      });
+      try {
+        await ageChallenges(c.phone.normalized);
+        const sent = app.provider.sentCount();
+        expect((await app.call('POST', `${recoveryPath}/otp`, { body: { phone: c.phone.local } })).status).toBe(200);
+        expect(app.provider.sentCount()).toBe(sent);
+        expect(await statusOf(c.userId)).toBe('DISABLED');
+
+        await app.pool.query(
+          "UPDATE app.account_deletion_requests SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute' WHERE verification_id = $1::uuid",
+          [expiredId],
+        );
+        await ageChallenges(c.phone.normalized);
+        const recoveryCode = await app.call('POST', `${recoveryPath}/otp`, { body: { phone: c.phone.local } });
+        expect(app.provider.sentCount()).toBe(sent + 1);
+        const verified = await app.call('POST', `${recoveryPath}/otp/${String(dataOf(recoveryCode).verification_id)}/verify`, {
+          body: { otp: app.provider.lastOtpFor(c.phone.normalized) },
+        });
+        expect(verified.status).toBe(200);
+        expect((await app.call('POST', `${recoveryPath}/recover`, {
+          headers: { 'idempotency-key': randomUUID() },
+          body: { verification_token: dataOf(verified).verification_token, password: PASSWORD },
+        })).status).toBe(200);
+      } finally {
+        Reflect.deleteProperty(provider, 'assertReady');
+        Reflect.deleteProperty(provider, 'sendResetOtp');
+      }
+
+      const freshSession = await tokenOf(c.phone);
+      expect((await me(freshSession)).status).toBe(200);
+      expect(refused(await app.call('POST', confirmPath, { bearer: freshSession, body: oldConfirmation })).code).toBe('OTP_ALREADY_USED');
       expect(await requestCount(c.userId)).toBe(1);
-      expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: true } })).status).not.toBe(200);
-      expect(await sweeper().sweep()).toMatchObject({ failed: 0 });
-      expect(await anonymized(c.userId)).toBe(true);
-      expect(await requestCount(c.userId)).toBe(1);
-      await expect(app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text)', [c.userId, 'x'])).resolves.toBeDefined();
-      expect(await anonymized(c.userId)).toBe(true);
+
+      const freshCode = await app.call('POST', codePath, { bearer: freshSession, body: consent });
+      expect(freshCode.status).toBe(200);
+      const freshId = String(dataOf(freshCode).verification_id);
+      expect(resultOf(await app.call('POST', confirmPath, { bearer: freshSession, body: {
+        verification_id: freshId, otp: app.provider.lastOtpFor(c.phone.normalized), ...consent,
+      } }))).toBe('ERASURE_SCHEDULED');
+
+      const requests = async (): Promise<Array<{ verification_id: string; consumed_at: Date | null }>> => (await app.pool.query(
+        'SELECT verification_id, consumed_at FROM app.account_deletion_requests WHERE user_id = $1::uuid ORDER BY created_at', [c.userId],
+      )).rows;
+      expect(await requests()).toEqual([{ verification_id: expiredId, consumed_at: null }, { verification_id: freshId, consumed_at: null }]);
+      expect(await sweeper().sweep()).toMatchObject({ finalized: 1, failed: 0 });
+      const recorded = await requests();
+      expect(recorded).toEqual([{ verification_id: expiredId, consumed_at: null }, { verification_id: freshId, consumed_at: expect.any(Date) }]);
+      expect(await sweeper().sweep()).toMatchObject({ finalized: 0, failed: 0 });
+      await expect(app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [c.userId, 'x'])).resolves.toMatchObject({ rows: [{ done: false }] });
+      expect(await requests()).toEqual(recorded);
     });
 
     it('the code of account A cannot erase account B: a challenge of another phone is refused with the wrong-code answer', async () => {
@@ -1483,10 +1579,10 @@ describe('P5-6a public account deletion', () => {
       const b = await customer();
       const tokenA = await tokenOf(a.phone);
       const tokenB = await tokenOf(b.phone);
-      const code = await app.call('POST', '/account/deletion/code', { bearer: tokenA, body: { accept_forfeit: true } });
+      const code = await app.call('POST', '/account/deletion/code', { bearer: tokenA, body: { accept_forfeit: true, forfeit_vnd: '0' } });
       const verificationId = String(code.body.data?.verification_id);
       const otpOfB = app.provider.lastOtpFor(b.phone.normalized);
-      expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: tokenB, body: { verification_id: verificationId, otp: otpOfB, accept_forfeit: true } })).code).toBe('OTP_INVALID');
+      expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: tokenB, body: { verification_id: verificationId, otp: otpOfB, accept_forfeit: true, forfeit_vnd: '0' } })).code).toBe('OTP_INVALID');
       expect(await requestCount(b.userId)).toBe(0);
       expect(await statusOf(b.userId)).toBe('ACTIVE');
     });

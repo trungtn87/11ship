@@ -32,12 +32,12 @@ export class AccountErasureRepository {
 
   async insertRequest(
     context: TransactionContext,
-    input: { readonly requestId: string; readonly userId: string; readonly verificationId: string; readonly ttlSeconds: number },
+    input: { readonly requestId: string; readonly userId: string; readonly verificationId: string; readonly forfeitVnd: bigint; readonly ttlSeconds: number },
   ): Promise<void> {
     await context.query(
-      `INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, now(), now() + ($4::int * interval '1 second'))`,
-      [input.requestId, input.userId, input.verificationId, input.ttlSeconds],
+      `INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, forfeit_vnd, created_at, expires_at)
+       SELECT $1::uuid, $2::uuid, $3::uuid, $4::bigint, t, t + ($5::int * interval '1 second') FROM (SELECT clock_timestamp() AS t) AS clock`,
+      [input.requestId, input.userId, input.verificationId, input.forfeitVnd.toString(), input.ttlSeconds],
     );
   }
 
@@ -50,11 +50,14 @@ export class AccountErasureRepository {
     return result.rows.map((row) => row.user_id);
   }
 
-  async hasValidRequest(context: TransactionContext, userId: string): Promise<boolean> {
-    const result = await context.query<{ found: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM app.account_deletion_requests WHERE user_id = $1::uuid AND consumed_at IS NULL AND expires_at > now()) AS found`,
+  async validRequest(context: TransactionContext, userId: string): Promise<{ readonly requestId: string; readonly forfeitVnd: bigint } | undefined> {
+    const result = await context.query<{ request_id: string; forfeit_vnd: string }>(
+      `SELECT request_id, forfeit_vnd::text FROM app.account_deletion_requests
+        WHERE user_id = $1::uuid AND consumed_at IS NULL AND expires_at > clock_timestamp()
+        ORDER BY created_at DESC, request_id LIMIT 1`,
       [userId],
     );
-    return result.rows[0]?.found === true;
+    const row = result.rows[0];
+    return row === undefined ? undefined : { requestId: row.request_id, forfeitVnd: BigInt(row.forfeit_vnd) };
   }
 }

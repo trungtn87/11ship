@@ -80,14 +80,15 @@ export class AccountDeletionSweeper {
    */
   async #one(context: TransactionContext, userId: string): Promise<'FINALIZED' | 'WAITING' | 'SKIPPED'> {
     const user = await this.users.lockByIdSkipLocked(context, userId);
-    if (user === undefined || !(await this.erasures.hasValidRequest(context, userId))) {
+    if (user === undefined) {
       return 'SKIPPED';
     }
+    const request = await this.erasures.validRequest(context, userId);
     const account = await this.accounts.lockOrdinary(context, userId, 'write');
-    if (account === undefined || account.status !== 'DISABLED' || account.lockReason !== 'DELETE_REQUEST') {
+    if (request === undefined || account === undefined || account.status !== 'DISABLED' || account.lockReason !== 'DELETE_REQUEST') {
       return 'SKIPPED';
     }
-    const outcome = await this.finalizer.finalize(context, account);
+    const outcome = await this.finalizer.finalize(context, account, request);
     if (outcome.kind === 'DELETED') {
       await this.deletion.recordFinalized(context, { userId, version: account.version, result: 'DELETED', trigger: 'SWEEPER', relatedData: outcome.relatedData, revokedSessions: 0 });
       return 'FINALIZED';

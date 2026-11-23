@@ -98,7 +98,7 @@ void main() {
     await tester.tap(find.byKey(const Key('delete-send-code')));
     await tester.pumpAndSettle();
     final List<Map<String, Object?>> sent = env.api.to('POST', '/v1/account/deletion/code').map((RecordedRequest call) => jsonDecode(call.body) as Map<String, Object?>).toList();
-    expect(sent, <Map<String, Object?>>[<String, Object?>{'accept_forfeit': true}]);
+    expect(sent, <Map<String, Object?>>[<String, Object?>{'accept_forfeit': true, 'forfeit_vnd': '5000'}]);
     expect(find.byKey(const Key('delete-otp')), findsOneWidget);
   });
 
@@ -118,8 +118,38 @@ void main() {
     await tester.tap(find.byKey(const Key('delete-confirm-yes')));
     await tester.pumpAndSettle();
     final List<Map<String, Object?>> confirmed = env.api.to('POST', '/v1/account/deletion/confirm').map((RecordedRequest call) => jsonDecode(call.body) as Map<String, Object?>).toList();
-    expect(confirmed, <Map<String, Object?>>[<String, Object?>{'verification_id': 'v-1', 'otp': '123456', 'accept_forfeit': false}]);
+    expect(confirmed, <Map<String, Object?>>[<String, Object?>{'verification_id': 'v-1', 'otp': '123456', 'accept_forfeit': false, 'forfeit_vnd': '0'}]);
     expect(env.session.status, isNot(SessionStatus.signedIn));
+  });
+
+  testWidgets('a changed balance clears the old consent and asks the owner to confirm the new amount', (WidgetTester tester) async {
+    final _Env env = await _signedIn();
+    int balance = 5000;
+    _route(env.api, 'GET /v1/account/deletion/precheck', (String _) => _precheck(balance: balance));
+    _route(env.api, 'POST /v1/account/deletion/code', (String _) => json(200, <String, Object?>{'data': <String, Object?>{'verification_id': 'v-1'}}));
+    _route(env.api, 'POST /v1/account/deletion/confirm', (String body) {
+      expect((jsonDecode(body) as Map<String, Object?>)['forfeit_vnd'], '5000');
+      balance = 7000;
+      return json(409, <String, Object?>{'error': <String, Object?>{'code': 'ACCOUNT_ERASURE_CONSENT_REQUIRED'}});
+    });
+    await _pumpAccount(tester, env.session);
+    await _openScreen(tester);
+    await tester.tap(find.byKey(const Key('delete-forfeit-agree')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-send-code')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('delete-otp')), '123456');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-submit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-confirm-yes')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('7.000 đ'), findsOneWidget);
+    expect(find.byKey(const Key('delete-otp')), findsNothing);
+    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('delete-forfeit-agree'))).value, isFalse);
+    expect(tester.widget<N11Button>(find.byKey(const Key('delete-send-code'))).onPressed, isNull);
+    expect(env.session.status, SessionStatus.signedIn);
   });
 
   testWidgets('a wrong code keeps the form and says so; the session stays', (WidgetTester tester) async {

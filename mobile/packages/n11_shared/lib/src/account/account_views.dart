@@ -1117,6 +1117,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
   late final AccountDeletionController _controller = AccountDeletionController(session: widget.session);
   bool _agreeForfeit = false;
+  bool _balanceChanged = false;
 
   @override
   void initState() {
@@ -1149,7 +1150,8 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   Future<void> _sendCode() async {
     final ErasurePrecheck? pre = _controller.precheck;
     if (pre == null || !pre.ready) return;
-    await _controller.sendCode(acceptForfeit: pre.hasForfeit && _agreeForfeit);
+    await _controller.sendCode(acceptForfeit: pre.hasForfeit && _agreeForfeit, forfeitVnd: pre.forfeitVnd);
+    await _reloadChangedBalance();
   }
 
   Future<void> _confirmAndSubmit() async {
@@ -1166,8 +1168,19 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
       ),
     );
     if (yes == true && pre != null) {
-      await _controller.confirm(otp: _otp.text, acceptForfeit: pre.hasForfeit && _agreeForfeit);
+      await _controller.confirm(otp: _otp.text, acceptForfeit: pre.hasForfeit && _agreeForfeit, forfeitVnd: pre.forfeitVnd);
+      await _reloadChangedBalance();
     }
+  }
+
+  Future<void> _reloadChangedBalance() async {
+    if (!mounted || _controller.failure?.code != 'ACCOUNT_ERASURE_CONSENT_REQUIRED') return;
+    _otp.clear();
+    setState(() {
+      _agreeForfeit = false;
+      _balanceChanged = true;
+    });
+    await _controller.loadPrecheck();
   }
 
   @override
@@ -1205,6 +1218,13 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
           kind: BannerKind.error,
           title: 'Chưa thể xóa tài khoản',
           text: pre.blockers.map(_blockerText).join('\n'),
+        ),
+      if (_balanceChanged && !finished && !c.codeSent)
+        const N11Banner(
+          key: Key('delete-balance-changed'),
+          kind: BannerKind.warn,
+          title: 'Số dư đã thay đổi',
+          text: 'Hãy xem lại số dư trước khi tiếp tục.',
         ),
       if (pre != null && needsAgreement)
         N11Banner(

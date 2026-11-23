@@ -443,6 +443,17 @@ export class UserRepository {
     return result.rows[0]?.allowed === true;
   }
 
+  async hasPendingErasure(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query<{ found: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM app.account_deletion_requests
+          WHERE user_id = $1::uuid AND consumed_at IS NULL AND expires_at > clock_timestamp()
+       ) AS found`,
+      [userId],
+    );
+    return result.rows[0]?.found === true;
+  }
+
   /** OD-31: true only for an account locked FOR ITS OWN DELETION REQUEST (status DISABLED, lock_reason DELETE_REQUEST). Any other lock is false. Read under the caller's user lock. */
   async isLockedForDeletion(context: TransactionContext, userId: string): Promise<boolean> {
     const result = await context.query<{ locked: boolean }>("SELECT (status = 'DISABLED' AND lock_reason = 'DELETE_REQUEST') AS locked FROM app.users WHERE user_id = $1::uuid", [userId]);
