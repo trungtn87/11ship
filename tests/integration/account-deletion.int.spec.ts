@@ -217,9 +217,12 @@ describe('P5-6a public account deletion', () => {
    * hold settled, and balance and held amount are set to zero. Only the gate of the account lifecycle is under test.
    */
   async function emptyWallet(driverId: string): Promise<void> {
-    await withoutTriggers(['wallet_withdrawals', 'wallet_holds', 'driver_wallets'], async (q) => {
+    // The database state must stay consistent (the withdrawal and wallet invariants run whenever a withdrawal row is written again): an open
+    // request closed as CANCELLED_BY_SHIPPER releases its hold (no debit), and the balance leaves the wallet through ONE ledger debit of the
+    // same amount, so balance = ledger sum and the last balance = 0.
+    await withoutTriggers(['wallet_withdrawals', 'wallet_holds', 'driver_wallets', 'wallet_ledger_entries'], async (q) => {
       await q.query(
-        `UPDATE app.wallet_holds SET status = 'CAPTURED', resolved_at = now()
+        `UPDATE app.wallet_holds SET status = 'RELEASED', resolved_at = now()
           WHERE status = 'ACTIVE' AND withdrawal_id IN (SELECT withdrawal_id FROM app.wallet_withdrawals WHERE driver_id = $1::uuid)`,
         [driverId],
       );
@@ -229,6 +232,15 @@ describe('P5-6a public account deletion', () => {
           WHERE driver_id = $1::uuid AND state IN ('PENDING', 'PROCESSING', 'RECONCILIATION')`,
         [driverId],
       );
+      await q.query(
+        `INSERT INTO app.wallet_ledger_entries (entry_id, wallet_id, sequence_no, entry_kind, delta_vnd, balance_after_vnd, created_at)
+         SELECT gen_random_uuid(), w.wallet_id, COALESCE((SELECT max(l.sequence_no) FROM app.wallet_ledger_entries l WHERE l.wallet_id = w.wallet_id), 0) + 1,
+                'ADJUSTMENT_DEBIT', -w.balance_vnd, 0, now()
+           FROM app.driver_wallets w WHERE w.driver_id = $1::uuid AND w.balance_vnd > 0`,
+        [driverId],
+      );
+      // The deferred foreign-key checks of the inserted row run now, so the table can be re-enabled in this transaction.
+      await q.query('SET CONSTRAINTS ALL IMMEDIATE');
       await q.query('UPDATE app.driver_wallets SET balance_vnd = 0, held_vnd = 0 WHERE driver_id = $1::uuid', [driverId]);
     });
   }
@@ -819,6 +831,133 @@ describe('P5-6a public account deletion', () => {
     expect(resultOf(await confirm(c.phone))).toBe('DELETED');
     await expect(app.pool.query(`UPDATE app.users SET status = 'ACTIVE', lock_reason = NULL, locked_at = NULL WHERE user_id = $1::uuid`, [c.userId])).rejects.toMatchObject({ code: '23514' });
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+  });
+
+  // ---- B (Owner 2026-11-22): every personal record of the account, not only the profile ----------------------------------------------------
+  // Each record keeps its row, its money, its state and its time; only the personal text, number or name goes. These cases are red on the
+  // code before migration 1798243200000, where those records still carried the data after the deletion.
+
+  it('the notes the customer wrote (order, order line, delivery) are replaced by one fixed text; the order and the delivery keep their state, money and time', async () => {
+    const c = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    const deliveryId = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: c.userId });
+    await withoutTriggers(['orders', 'order_items', 'deliveries'], async (q) => {
+      await q.query(`UPDATE app.orders SET note = 'Gọi trước 10 phút', delivery_note = 'Để trước cửa, nhà số 12' WHERE order_id = $1::uuid`, [orderId]);
+      await q.query(`UPDATE app.order_items SET note = 'Không hành' WHERE order_id = $1::uuid`, [orderId]);
+      await q.query(
+        `UPDATE app.deliveries SET note = 'Hàng dễ vỡ', dropoff_note = 'Cổng sau, gọi 0912345678', state = 'cancelled_by_system', ended_at = now() WHERE delivery_id = $1::uuid`,
+        [deliveryId],
+      );
+    });
+    await finishOrder(orderId);
+    const orderQuery = 'SELECT status, paid_vnd::text AS paid, items_total_vnd::text AS total, created_at, note, delivery_note FROM app.orders WHERE order_id = $1::uuid';
+    const deliveryQuery = 'SELECT state, fee_vnd::text AS fee, created_at, note, dropoff_note FROM app.deliveries WHERE delivery_id = $1::uuid';
+    const itemQuery = 'SELECT note FROM app.order_items WHERE order_id = $1::uuid';
+    const orderBefore = (await app.pool.query(orderQuery, [orderId])).rows[0];
+    const deliveryBefore = (await app.pool.query(deliveryQuery, [deliveryId])).rows[0];
+
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await anonymized(c.userId)).toBe(true);
+    const orderAfter = (await app.pool.query(orderQuery, [orderId])).rows[0];
+    expect(orderAfter).toEqual({ ...orderBefore, note: 'Đã ẩn danh', delivery_note: 'Đã ẩn danh' });
+    const deliveryAfter = (await app.pool.query(deliveryQuery, [deliveryId])).rows[0];
+    expect(deliveryAfter).toEqual({ ...deliveryBefore, note: 'Đã ẩn danh', dropoff_note: 'Đã ẩn danh' });
+    expect((await app.pool.query<{ note: string }>(itemQuery, [orderId])).rows.map((row) => row.note)).toEqual(['Đã ẩn danh']);
+  });
+
+  it('the chat messages the account sent keep their place and time; their text and sender name are replaced, and the shop message of the same order is not touched', async () => {
+    const c = await customer();
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
+    const mine = randomUUID();
+    const theirs = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.order_chat_messages (message_id, room_type, order_id, sender_user_id, sender_role, sender_name, body, client_key, created_at)
+       VALUES ($1::uuid, 'ORDER', $2::uuid, $3::uuid, 'CUSTOMER', 'Nguyễn Văn Khách', 'Nhà số 12 ngõ 5, gọi 0912345678', $4::uuid, now() - interval '1 hour'),
+              ($5::uuid, 'ORDER', $2::uuid, $6::uuid, 'SHOP', 'Quán thử', 'Quán nhận đơn rồi ạ', $7::uuid, now() - interval '1 hour')`,
+      [mine, orderId, c.userId, randomUUID(), theirs, shop.userId, randomUUID()],
+    );
+    const chatQuery = 'SELECT message_id, body, sender_name, created_at FROM app.order_chat_messages WHERE message_id = $1::uuid';
+    const before = (await app.pool.query(chatQuery, [mine])).rows[0];
+    const shopBefore = (await app.pool.query(chatQuery, [theirs])).rows[0];
+
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect((await app.pool.query(chatQuery, [mine])).rows[0]).toEqual({ ...before, body: 'Tin nhắn đã ẩn danh', sender_name: 'Đã ẩn danh' });
+    expect((await app.pool.query(chatQuery, [theirs])).rows[0]).toEqual(shopBefore);
+  });
+
+  it('the pictures the account uploaded for a complaint are deleted at once, fresh or old; the pictures of other people are not touched', async () => {
+    const c = await customer();
+    const other = await customer();
+    const fresh = randomUUID();
+    const old = randomUUID();
+    const foreign = randomUUID();
+    const png = "decode('89504e47', 'hex')";
+    await app.pool.query(
+      `INSERT INTO app.complaint_attachments (attachment_id, uploader_user_id, content_type, byte_size, data, created_at)
+       VALUES ($1::uuid, $4::uuid, 'image/png', 4, ${png}, now()),
+              ($2::uuid, $4::uuid, 'image/png', 4, ${png}, now() - interval '3 days'),
+              ($3::uuid, $5::uuid, 'image/png', 4, ${png}, now())`,
+      [fresh, old, foreign, c.userId, other.userId],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.complaint_attachments WHERE uploader_user_id = $1::uuid', [c.userId])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [foreign])).toBe(1);
+    // Cleanup of this case only: the other customer's picture is removed here, so the suite can purge that customer at the end.
+    await withoutTriggers(['complaint_attachments'], (q) => q.query('DELETE FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [foreign]));
+  });
+
+  it('the bank account number and holder of every withdrawal of the account are replaced; each withdrawal keeps its amount, state and money trail', async () => {
+    const shipper = await newShipper(app, drivers, 50_000);
+    extraUsers.push(shipper.userId);
+    const phone = await phoneOf(shipper.userId);
+    expect(resultOf(await confirm(phone))).toBe('PENDING');
+    const first = await withdraw(shipper.token, 50_000);
+    expect(first.status).toBe(201);
+    const cancelled = await app.call('POST', `/driver/wallet/withdrawals/${String(dataOf(first).withdrawal_id)}/cancel`, {
+      bearer: shipper.token,
+      headers: { 'idempotency-key': randomUUID() },
+      body: { expected_version: Number(dataOf(first).version) },
+    });
+    expect(cancelled.status).toBe(200);
+    expect((await withdraw(shipper.token, 50_000)).status).toBe(201);
+    const withdrawalsQuery =
+      'SELECT withdrawal_id, amount_vnd::text AS amount, state, account_number, account_holder FROM app.wallet_withdrawals WHERE driver_id = $1::uuid ORDER BY created_at';
+    const realNumbers = (await app.pool.query<{ account_number: string }>('SELECT account_number FROM app.wallet_withdrawals WHERE driver_id = $1::uuid', [shipper.driverId])).rows;
+    expect(realNumbers).toHaveLength(2);
+    expect(realNumbers.every((row) => /^[0-9]{6,20}$/.test(row.account_number) && row.account_number !== '000000')).toBe(true);
+    await emptyWallet(shipper.driverId);
+    const before = (await app.pool.query<{ withdrawal_id: string; amount: string; state: string; account_number: string; account_holder: string }>(withdrawalsQuery, [shipper.driverId])).rows;
+    expect(before.map((row) => row.state)).toEqual(['CANCELLED', 'CANCELLED']);
+    expect((await sweeper().sweep()).failed).toBe(0);
+    expect(await anonymized(shipper.userId)).toBe(true);
+    const after = (await app.pool.query<{ withdrawal_id: string; amount: string; state: string; account_number: string; account_holder: string }>(withdrawalsQuery, [shipper.driverId])).rows;
+    const money = (rows: { withdrawal_id: string; amount: string; state: string }[]): unknown[] => rows.map((row) => [row.withdrawal_id, row.amount, row.state]);
+    expect(money(after)).toEqual(money(before));
+    expect(after.map((row) => [row.account_number, row.account_holder])).toEqual([
+      ['000000', 'Đã ẩn danh'],
+      ['000000', 'Đã ẩn danh'],
+    ]);
+  });
+
+  it('the phone of the account is gone from the OTP records: queued SMS jobs are removed, the verification rows keep their history under a placeholder number', async () => {
+    const c = await customer();
+    const verificationId = randomUUID();
+    await app.pool.query(
+      `INSERT INTO app.phone_verifications (verification_id, phone_normalized, purpose, otp_digest, status, attempt_count, expires_at, resend_not_before, invalidated_at, created_at)
+       VALUES ($1::uuid, $2, 'REGISTER', $3, 'INVALIDATED', 0, now() + interval '5 minutes', now(), now(), now())`,
+      [verificationId, c.phone.normalized, 'a'.repeat(64)],
+    );
+    await app.pool.query(
+      `INSERT INTO app.sms_jobs (job_id, verification_id, purpose, phone_normalized, status, payload_iv, payload_tag, payload_ciphertext, crypto_key_id, created_at, expires_at)
+       VALUES (gen_random_uuid(), $1::uuid, 'REGISTER', $2, 'QUEUED', decode(repeat('01', 12), 'hex'), decode(repeat('02', 16), 'hex'), decode('0304', 'hex'), 'test-key', now(), now() + interval '5 minutes')`,
+      [verificationId, c.phone.normalized],
+    );
+    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.sms_jobs WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
+    expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
+    expect(await countRows(app.pool, "SELECT 1 FROM app.phone_verifications WHERE verification_id = $1::uuid AND phone_normalized ~ '^\\+999[0-9]{11}$'", [verificationId])).toBe(1);
   });
 
   // A shop owner whose shop has no other member: the shop is anonymized and closed, and the owner's account too (the shop is his personal data).

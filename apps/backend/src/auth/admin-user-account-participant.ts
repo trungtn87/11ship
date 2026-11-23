@@ -16,6 +16,8 @@ export interface OrdinaryAccount {
   readonly lockReason?: LockReason;
   /** The owner asked for the deletion and it is not carried out yet (P5-6a): the administration lock keeps that request. */
   readonly deleteRequested: boolean;
+  /** The personal data was removed by the owner's deletion (anonymized_at): the account is never unlocked again (Owner 2026-11-22). */
+  readonly anonymized: boolean;
 }
 
 /**
@@ -62,6 +64,7 @@ export class AdminUserAccountParticipant {
       version: row.version,
       roles: await this.users.allRoles(context, userId),
       deleteRequested: row.deleteRequested === true,
+      anonymized: row.anonymized === true,
       ...(row.lockReason === undefined ? {} : { lockReason: row.lockReason }),
     };
   }

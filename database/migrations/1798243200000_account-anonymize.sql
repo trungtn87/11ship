@@ -10,10 +10,19 @@
 --  * app.anonymize_app_user(user_id, password_hash): ONE transaction. It deletes sessions, device bindings and keys, saved addresses, carts,
 --    profile, push tokens and subscriptions, notifications and their pushes / reminders / settings, bank account rows; and scrubs the personal
 --    snapshots (names, phones, addresses, coordinates) of the account's orders, deliveries, address change requests, shops and driver profile.
---    It NEVER deletes an order, delivery, wallet, ledger, withdrawal, review, complaint or consent row.
---  * orders_guard / deliveries_guard: ONE exception, active only while app.anonymize_app_user runs (transaction setting
---    app.account_anonymize = 'on') and only for a write that changes the personal columns and nothing else. Every other write still meets every
---    rule of these guards (identity, state, money, notes, version, terminal rows) exactly as before.
+--    It NEVER deletes an order, delivery, wallet, ledger, withdrawal, review, complaint text or consent row.
+--  * Further personal records, all in the same transaction: the customer notes of orders, order lines and deliveries (orders.note,
+--    orders.delivery_note, order_items.note, deliveries.note, deliveries.dropoff_note) become the fixed text "Đã ẩn danh"; the chat messages the
+--    account sent keep their row and time but their text and sender name become fixed texts; the pictures the account uploaded for a complaint
+--    (complaint_attachments, linked or not) are DELETED (the complaint text stays); the bank account number and holder of CLOSED withdrawals
+--    become fixed values ('000000' / 'Đã ẩn danh') while amount, state and money trail stay (an OPEN withdrawal refuses the anonymization);
+--    the SMS jobs of the phone are deleted (sms_jobs_phone_ck allows only +84 numbers, so they cannot keep a placeholder) and the verification and
+--    proof rows of the phone get a placeholder number. There is no "ảnh giấy tờ" table in this schema; menu_images are dish photos and are kept.
+--  * Controlled exceptions, each active ONLY while app.anonymize_app_user runs (transaction setting app.account_anonymize = 'on', and for the
+--    complaint pictures also app.account_anonymize_user = the account) and ONLY for a write that changes the listed personal columns to their
+--    fixed value and nothing else: orders_guard, deliveries_guard, order_items_guard, order_chat_messages_reject_update,
+--    complaint_attachments_delete_guard, wallet_withdrawals_guard and address_note_snapshot_guard. Every other write still meets every rule of
+--    these guards (identity, state, money, notes, version, terminal rows) exactly as before. No trigger is disabled by this migration.
 
 
 ALTER TABLE app.users ADD COLUMN anonymized_at timestamptz;
@@ -34,6 +43,7 @@ CREATE FUNCTION app.anonymize_app_user(p_user_id uuid, p_password_hash text) RET
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $$
 DECLARE
   v_phone text;
+  v_old_phone text;
   v_keys uuid[];
   v_shop record;
   v_driver_id uuid;
@@ -43,6 +53,9 @@ BEGIN
     RETURN false;
   END IF;
   PERFORM set_config('app.account_anonymize', 'on', true);
+  -- Read by the complaint-picture delete guard: only the pictures this account uploaded may go, in this transaction.
+  PERFORM set_config('app.account_anonymize_user', p_user_id::text, true);
+  SELECT phone_normalized INTO v_old_phone FROM app.users WHERE user_id = p_user_id;
   v_phone := app.anonymized_phone_number();
 
   -- Records that carry this account's personal data (never a money row): removed before the sessions and tokens they point at.
@@ -105,17 +118,49 @@ BEGIN
   END IF;
 
   -- Personal snapshots of the account's orders, deliveries and change requests. Money, state and identity columns are not touched.
+  -- Notes the customer wrote (order, its delivery instruction, the delivery note) become one fixed text; an empty note stays empty.
   UPDATE app.orders SET recipient_name = 'Đã ẩn danh', recipient_phone = app.anonymized_phone_number(), address_text = 'Đã ẩn danh',
-         address_lat = NULL, address_lng = NULL, version = version + 1, updated_at = now()
+         address_lat = NULL, address_lng = NULL, note = CASE WHEN note IS NULL THEN NULL ELSE 'Đã ẩn danh' END,
+         delivery_note = CASE WHEN delivery_note IS NULL THEN NULL ELSE 'Đã ẩn danh' END, version = version + 1, updated_at = now()
    WHERE customer_user_id = p_user_id;
+  UPDATE app.order_items SET note = 'Đã ẩn danh'
+   WHERE note IS NOT NULL AND order_id IN (SELECT order_id FROM app.orders WHERE customer_user_id = p_user_id);
   UPDATE app.deliveries SET recipient_name = 'Đã ẩn danh', recipient_phone = app.anonymized_phone_number(), dropoff_address_text = 'Đã ẩn danh',
-         dropoff_area_text = NULL, dropoff_lat = NULL, dropoff_lng = NULL, version = version + 1, updated_at = now()
+         dropoff_area_text = NULL, dropoff_lat = NULL, dropoff_lng = NULL,
+         note = CASE WHEN note IS NULL THEN NULL ELSE 'Đã ẩn danh' END, dropoff_note = CASE WHEN dropoff_note IS NULL THEN NULL ELSE 'Đã ẩn danh' END,
+         version = version + 1, updated_at = now()
    WHERE requested_by = p_user_id;
   UPDATE app.address_change_requests SET original_recipient_name = 'Đã ẩn danh', original_recipient_phone = app.anonymized_phone_number(),
          original_address_text = 'Đã ẩn danh', original_lat = NULL, original_lng = NULL,
          new_recipient_name = 'Đã ẩn danh', new_recipient_phone = app.anonymized_phone_number(), new_address_text = 'Đã ẩn danh',
          new_lat = NULL, new_lng = NULL, note = NULL, reject_reason = NULL, version = version + 1, updated_at = now()
    WHERE requested_by = p_user_id;
+
+  -- Chat messages the account sent: the text and the sender name go, the row, its order and its time stay (order_chat_messages_reject_update
+  -- lets exactly this change through while the anonymization runs).
+  UPDATE app.order_chat_messages SET body = 'Tin nhắn đã ẩn danh', sender_name = 'Đã ẩn danh'
+   WHERE sender_user_id = p_user_id AND (body <> 'Tin nhắn đã ẩn danh' OR sender_name <> 'Đã ẩn danh');
+
+  -- Pictures the account uploaded for a complaint (linked or not): the rows are deleted (complaint_attachments_delete_guard lets exactly these through).
+  DELETE FROM app.complaint_attachments WHERE uploader_user_id = p_user_id;
+
+  -- Bank account numbers kept in withdrawals: a withdrawal that is still open would keep the real number, so the account is refused first.
+  -- A closed one (paid or cancelled) keeps its amount, state and money trail; only the destination number and holder are replaced.
+  IF EXISTS (
+    SELECT 1 FROM app.wallet_withdrawals w JOIN app.drivers d ON d.driver_id = w.driver_id
+     WHERE d.user_id = p_user_id AND w.state NOT IN ('PAID', 'CANCELLED')
+  ) THEN
+    RAISE EXCEPTION 'ACCOUNT_ANONYMIZE_OPEN_WITHDRAWAL' USING ERRCODE = 'restrict_violation';
+  END IF;
+  UPDATE app.wallet_withdrawals w SET account_number = '000000', account_holder = 'Đã ẩn danh', version = w.version + 1
+    FROM app.drivers d
+   WHERE d.driver_id = w.driver_id AND d.user_id = p_user_id AND (w.account_number <> '000000' OR w.account_holder <> 'Đã ẩn danh');
+
+  -- OTP records of the phone. An SMS job cannot carry a placeholder number (sms_jobs_phone_ck: +84 only), so the account's queued or sent
+  -- jobs are deleted with their encrypted payloads. The verification and proof rows keep their history under a placeholder number.
+  DELETE FROM app.sms_jobs WHERE phone_normalized = v_old_phone AND verification_id IS NOT NULL;
+  UPDATE app.verification_proofs SET phone_normalized = app.anonymized_phone_number() WHERE phone_normalized = v_old_phone;
+  UPDATE app.phone_verifications SET phone_normalized = app.anonymized_phone_number() WHERE phone_normalized = v_old_phone;
 
   -- The account itself: a DISABLED tombstone under the same id. The real number is released; the placeholder cannot be dialled.
   UPDATE app.users SET phone_normalized = v_phone, password_hash = p_password_hash, status = 'DISABLED', lock_reason = 'DELETE_REQUEST',
@@ -139,7 +184,7 @@ BEGIN
   -- Owner decision 2026-11-22 (account anonymization, app.anonymize_app_user): a change to personal columns ONLY is allowed on a finished row
   -- while the anonymization runs. Every other column (identity, state, money, notes), the version rule and every rule below still apply.
   IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.version = OLD.version + 1
-     AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'version', 'updated_at']) THEN
+     AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'note', 'delivery_note', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'note', 'delivery_note', 'version', 'updated_at']) THEN
     RETURN NEW;
   END IF;
   IF TG_OP <> 'UPDATE' THEN
@@ -207,7 +252,7 @@ BEGIN
   -- Owner decision 2026-11-22 (account anonymization, app.anonymize_app_user): a change to personal columns ONLY is allowed on a finished row
   -- while the anonymization runs. Every other column (identity, state, money, notes), the version rule and every rule below still apply.
   IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.version = OLD.version + 1
-     AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'version', 'updated_at']) THEN
+     AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'note', 'dropoff_note', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'note', 'dropoff_note', 'version', 'updated_at']) THEN
     RETURN NEW;
   END IF;
   IF TG_OP <> 'UPDATE' THEN
@@ -244,6 +289,136 @@ BEGIN
   END IF;
   IF OLD.state IN ('completed', 'failed','cancelled_by_merchant','cancelled_by_system') AND NEW.state <> OLD.state THEN
     RAISE EXCEPTION 'DELIVERY_TERMINAL' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+
+-- The four other guards that refuse a change to a personal record. Each keeps its full earlier rule and adds ONE exception, active only while
+-- app.anonymize_app_user runs and only for the fixed anonymized value and nothing else.
+CREATE OR REPLACE FUNCTION app.order_items_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+DECLARE
+  parent_status varchar;
+BEGIN
+  IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'app.order_items is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  -- Owner decision 2026-11-22 (account anonymization): the line note becomes the fixed text; nothing else on the line changes.
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.note = 'Đã ẩn danh'
+     AND (to_jsonb(NEW) - ARRAY['note']) = (to_jsonb(OLD) - ARRAY['note']) THEN
+    RETURN NEW;
+  END IF;
+  SELECT o.status INTO parent_status FROM app.orders o WHERE o.order_id = NEW.order_id;
+  IF TG_OP = 'INSERT' THEN
+    IF parent_status IS DISTINCT FROM 'PENDING_CONFIRMATION' OR NEW.removed_at IS NOT NULL OR NEW.superseded_at IS NOT NULL
+       OR NEW.unit_price_vnd <> NEW.orig_unit_price_vnd OR NEW.quantity <> NEW.orig_quantity THEN
+      RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.line_id <> OLD.line_id OR NEW.order_id <> OLD.order_id OR NEW.line_no <> OLD.line_no OR NEW.menu_item_id <> OLD.menu_item_id OR NEW.name <> OLD.name
+     OR NEW.note IS DISTINCT FROM OLD.note OR NEW.orig_unit_price_vnd <> OLD.orig_unit_price_vnd OR NEW.orig_quantity <> OLD.orig_quantity OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'ORDER_ITEM_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF parent_status IS DISTINCT FROM 'PENDING_CONFIRMATION' THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  -- A replaced line is history: it never changes again. Being replaced is one-way and changes nothing else on the line.
+  IF OLD.superseded_at IS NOT NULL OR (NEW.superseded_at IS NOT NULL AND (NEW.quantity <> OLD.quantity OR NEW.unit_price_vnd <> OLD.unit_price_vnd OR NEW.removed_at IS DISTINCT FROM OLD.removed_at)) THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  -- A removed line stays removed.
+  IF OLD.removed_at IS NOT NULL AND (NEW.removed_at IS DISTINCT FROM OLD.removed_at OR NEW.quantity <> OLD.quantity OR NEW.unit_price_vnd <> OLD.unit_price_vnd) THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.order_chat_messages_reject_update() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  -- Owner decision 2026-11-22 (account anonymization): only the text and the sender name of a message become the fixed values.
+  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.body = 'Tin nhắn đã ẩn danh' AND NEW.sender_name = 'Đã ẩn danh'
+     AND (to_jsonb(NEW) - ARRAY['body', 'sender_name']) = (to_jsonb(OLD) - ARRAY['body', 'sender_name']) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'app.order_chat_messages rows are never updated' USING ERRCODE = 'restrict_violation';
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION app.complaint_attachments_delete_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  -- Owner decision 2026-11-22 (account anonymization): the pictures this account uploaded, linked or not, are deleted in that transaction.
+  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on'
+     AND OLD.uploader_user_id::text = COALESCE(current_setting('app.account_anonymize_user', true), '') THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.complaint_id IS NOT NULL OR OLD.created_at > clock_timestamp() - interval '24 hours' THEN
+    RAISE EXCEPTION 'app.complaint_attachments: only an unlinked picture older than 24 hours may be deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN OLD;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.wallet_withdrawals_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  PERFORM 1 FROM app.driver_wallets WHERE wallet_id = NEW.wallet_id FOR UPDATE;
+  -- Owner decision 2026-11-22 (account anonymization): a CLOSED withdrawal keeps its amount, state and money trail; only the destination number
+  -- and holder become the fixed values (version +1). Nothing else changes.
+  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND OLD.state IN ('PAID', 'CANCELLED')
+     AND NEW.state = OLD.state AND NEW.account_number = '000000' AND NEW.account_holder = 'Đã ẩn danh' AND NEW.version = OLD.version + 1
+     AND (to_jsonb(NEW) - ARRAY['account_number', 'account_holder', 'version']) = (to_jsonb(OLD) - ARRAY['account_number', 'account_holder', 'version']) THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'PENDING' OR NEW.version <> 1 THEN
+      RAISE EXCEPTION 'WALLET_WITHDRAWAL_MUST_START_PENDING' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.withdrawal_id <> OLD.withdrawal_id OR NEW.wallet_id <> OLD.wallet_id OR NEW.driver_id <> OLD.driver_id OR NEW.hold_id <> OLD.hold_id
+     OR NEW.amount_vnd <> OLD.amount_vnd OR NEW.created_by_user_id <> OLD.created_by_user_id OR NEW.created_at <> OLD.created_at
+     OR NEW.bank_code <> OLD.bank_code OR NEW.bank_name <> OLD.bank_name OR NEW.account_number <> OLD.account_number OR NEW.account_holder <> OLD.account_holder
+     OR NEW.bank_snapshot_at <> OLD.bank_snapshot_at OR NEW.bank_verified_at <> OLD.bank_verified_at THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  -- Written once, never rewritten: the claim, the reconciliation report, the outgoing record and the resolution.
+  IF (OLD.processing_owner_user_id IS NOT NULL AND (NEW.processing_owner_user_id IS DISTINCT FROM OLD.processing_owner_user_id OR NEW.processing_attempt_id IS DISTINCT FROM OLD.processing_attempt_id OR NEW.processing_started_at IS DISTINCT FROM OLD.processing_started_at))
+     OR (OLD.reconciliation_reason IS NOT NULL AND (NEW.reconciliation_reason IS DISTINCT FROM OLD.reconciliation_reason OR NEW.reconciliation_reported_by_user_id IS DISTINCT FROM OLD.reconciliation_reported_by_user_id OR NEW.reconciliation_reported_at IS DISTINCT FROM OLD.reconciliation_reported_at))
+     OR (OLD.bank_record_id IS NOT NULL AND NEW.bank_record_id IS DISTINCT FROM OLD.bank_record_id) THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_EVIDENCE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT ((OLD.state = 'PENDING' AND NEW.state IN ('PROCESSING', 'CANCELLED'))
+       OR (OLD.state = 'PROCESSING' AND NEW.state IN ('PAID', 'RECONCILIATION'))
+       OR (OLD.state = 'RECONCILIATION' AND NEW.state IN ('RECONCILIATION', 'PAID', 'CANCELLED'))) THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_TRANSITION_REFUSED: % -> %', OLD.state, NEW.state USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+
+-- The drop-off note snapshots (orders.delivery_note, deliveries.dropoff_note) are immutable except inside the customer's edit; the anonymization
+-- may replace them by the fixed text only (same switch as the other exceptions above).
+CREATE OR REPLACE FUNCTION app.address_note_snapshot_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  IF TG_TABLE_NAME = 'orders' AND to_jsonb(NEW)->'delivery_note' IS DISTINCT FROM to_jsonb(OLD)->'delivery_note'
+     AND COALESCE(current_setting('app.customer_order_edit', true), '') <> 'on'
+     AND NOT (COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND to_jsonb(NEW)->>'delivery_note' = 'Đã ẩn danh') THEN
+    RAISE EXCEPTION 'ORDER_DELIVERY_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_TABLE_NAME = 'deliveries' AND to_jsonb(NEW)->'dropoff_note' IS DISTINCT FROM to_jsonb(OLD)->'dropoff_note'
+     AND NOT (COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND to_jsonb(NEW)->>'dropoff_note' = 'Đã ẩn danh') THEN
+    RAISE EXCEPTION 'DELIVERY_DROPOFF_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END;
@@ -366,6 +541,104 @@ BEGIN
   END IF;
   IF OLD.state IN ('completed', 'failed','cancelled_by_merchant','cancelled_by_system') AND NEW.state <> OLD.state THEN
     RAISE EXCEPTION 'DELIVERY_TERMINAL' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+-- The four guards go back to their definitions before this migration (no exception).
+CREATE OR REPLACE FUNCTION app.order_items_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+DECLARE
+  parent_status varchar;
+BEGIN
+  IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'app.order_items is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
+  END IF;
+  SELECT o.status INTO parent_status FROM app.orders o WHERE o.order_id = NEW.order_id;
+  IF TG_OP = 'INSERT' THEN
+    IF parent_status IS DISTINCT FROM 'PENDING_CONFIRMATION' OR NEW.removed_at IS NOT NULL OR NEW.superseded_at IS NOT NULL
+       OR NEW.unit_price_vnd <> NEW.orig_unit_price_vnd OR NEW.quantity <> NEW.orig_quantity THEN
+      RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.line_id <> OLD.line_id OR NEW.order_id <> OLD.order_id OR NEW.line_no <> OLD.line_no OR NEW.menu_item_id <> OLD.menu_item_id OR NEW.name <> OLD.name
+     OR NEW.note IS DISTINCT FROM OLD.note OR NEW.orig_unit_price_vnd <> OLD.orig_unit_price_vnd OR NEW.orig_quantity <> OLD.orig_quantity OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'ORDER_ITEM_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF parent_status IS DISTINCT FROM 'PENDING_CONFIRMATION' THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.superseded_at IS NOT NULL OR (NEW.superseded_at IS NOT NULL AND (NEW.quantity <> OLD.quantity OR NEW.unit_price_vnd <> OLD.unit_price_vnd OR NEW.removed_at IS DISTINCT FROM OLD.removed_at)) THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.removed_at IS NOT NULL AND (NEW.removed_at IS DISTINCT FROM OLD.removed_at OR NEW.quantity <> OLD.quantity OR NEW.unit_price_vnd <> OLD.unit_price_vnd) THEN
+    RAISE EXCEPTION 'ORDER_ITEMS_LOCKED' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.order_chat_messages_reject_update() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  RAISE EXCEPTION 'app.order_chat_messages rows are never updated' USING ERRCODE = 'restrict_violation';
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION app.complaint_attachments_delete_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  IF OLD.complaint_id IS NOT NULL OR OLD.created_at > clock_timestamp() - interval '24 hours' THEN
+    RAISE EXCEPTION 'app.complaint_attachments: only an unlinked picture older than 24 hours may be deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN OLD;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.wallet_withdrawals_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  PERFORM 1 FROM app.driver_wallets WHERE wallet_id = NEW.wallet_id FOR UPDATE;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'PENDING' OR NEW.version <> 1 THEN
+      RAISE EXCEPTION 'WALLET_WITHDRAWAL_MUST_START_PENDING' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.withdrawal_id <> OLD.withdrawal_id OR NEW.wallet_id <> OLD.wallet_id OR NEW.driver_id <> OLD.driver_id OR NEW.hold_id <> OLD.hold_id
+     OR NEW.amount_vnd <> OLD.amount_vnd OR NEW.created_by_user_id <> OLD.created_by_user_id OR NEW.created_at <> OLD.created_at
+     OR NEW.bank_code <> OLD.bank_code OR NEW.bank_name <> OLD.bank_name OR NEW.account_number <> OLD.account_number OR NEW.account_holder <> OLD.account_holder
+     OR NEW.bank_snapshot_at <> OLD.bank_snapshot_at OR NEW.bank_verified_at <> OLD.bank_verified_at THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF (OLD.processing_owner_user_id IS NOT NULL AND (NEW.processing_owner_user_id IS DISTINCT FROM OLD.processing_owner_user_id OR NEW.processing_attempt_id IS DISTINCT FROM OLD.processing_attempt_id OR NEW.processing_started_at IS DISTINCT FROM OLD.processing_started_at))
+     OR (OLD.reconciliation_reason IS NOT NULL AND (NEW.reconciliation_reason IS DISTINCT FROM OLD.reconciliation_reason OR NEW.reconciliation_reported_by_user_id IS DISTINCT FROM OLD.reconciliation_reported_by_user_id OR NEW.reconciliation_reported_at IS DISTINCT FROM OLD.reconciliation_reported_at))
+     OR (OLD.bank_record_id IS NOT NULL AND NEW.bank_record_id IS DISTINCT FROM OLD.bank_record_id) THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_EVIDENCE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT ((OLD.state = 'PENDING' AND NEW.state IN ('PROCESSING', 'CANCELLED'))
+       OR (OLD.state = 'PROCESSING' AND NEW.state IN ('PAID', 'RECONCILIATION'))
+       OR (OLD.state = 'RECONCILIATION' AND NEW.state IN ('RECONCILIATION', 'PAID', 'CANCELLED'))) THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_TRANSITION_REFUSED: % -> %', OLD.state, NEW.state USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.version <> OLD.version + 1 THEN
+    RAISE EXCEPTION 'WALLET_WITHDRAWAL_VERSION_CONFLICT' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION app.address_note_snapshot_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $function$
+BEGIN
+  IF TG_TABLE_NAME = 'orders' AND to_jsonb(NEW)->'delivery_note' IS DISTINCT FROM to_jsonb(OLD)->'delivery_note'
+     AND COALESCE(current_setting('app.customer_order_edit', true), '') <> 'on' THEN
+    RAISE EXCEPTION 'ORDER_DELIVERY_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF TG_TABLE_NAME = 'deliveries' AND to_jsonb(NEW)->'dropoff_note' IS DISTINCT FROM to_jsonb(OLD)->'dropoff_note' THEN
+    RAISE EXCEPTION 'DELIVERY_DROPOFF_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END;

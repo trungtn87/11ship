@@ -82,6 +82,8 @@ export interface AdminLockTargetRow {
   readonly lockReason?: LockReason;
   /** The owner asked for the deletion and it is not carried out yet (delete_requested_at). Read by the administration lock; absent on other readers. */
   readonly deleteRequested?: boolean;
+  /** anonymized_at is set (Owner 2026-11-22). Read by the administration lock; absent on other readers. */
+  readonly anonymized?: boolean;
 }
 
 /** What the no-OTP test password reset (M01-RESET) classifies on a locked row. Nothing secret. */
@@ -345,7 +347,7 @@ export class UserRepository {
    */
   async lockAdminTarget(context: TransactionContext, userId: string, mode: 'write' | 'read'): Promise<AdminLockTargetRow | undefined> {
     const columns = `SELECT u.user_id, u.phone_normalized, u.status, u.version::text AS version, u.account_origin, u.account_scope, u.lock_reason,
-              (u.phone_verified_at IS NOT NULL) AS phone_verified, (u.delete_requested_at IS NOT NULL) AS delete_requested,
+              (u.phone_verified_at IS NOT NULL) AS phone_verified, (u.delete_requested_at IS NOT NULL) AS delete_requested, (u.anonymized_at IS NOT NULL) AS anonymized,
               EXISTS (SELECT 1 FROM app.admin_memberships am WHERE am.user_id = u.user_id) AS has_membership
          FROM app.users u
         WHERE u.user_id = $1::uuid AND u.account_scope = 'APP_USER'`;
@@ -360,6 +362,7 @@ export class UserRepository {
       lock_reason: string | null;
       phone_verified: boolean;
       delete_requested: boolean;
+      anonymized: boolean;
       has_membership: boolean;
     }>(mode === 'write' ? columns + ' FOR UPDATE OF u' : columns + ' FOR SHARE OF u', [userId]);
     const row = result.rows[0];
@@ -379,6 +382,7 @@ export class UserRepository {
       phoneVerified: row.phone_verified,
       hasAdminMembership: row.has_membership,
       deleteRequested: row.delete_requested,
+      anonymized: row.anonymized === true,
       ...(isLockReason(row.lock_reason) ? { lockReason: row.lock_reason } : {}),
     };
   }

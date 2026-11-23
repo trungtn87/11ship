@@ -92,6 +92,10 @@ export class AdminAccountLockService {
         if (kind === 'delete') {
           return this.#delete(context, auth, userId, body, meta);
         }
+        if (kind === 'unlock' && auth.target.anonymized) {
+          // Owner decision 2026-11-22: the anonymized tombstone is never reactivated by an administrator (the database refuses it too).
+          throw new AppError('USER_ACCOUNT_ANONYMIZED');
+        }
         const wanted = kind === 'lock' ? 'DISABLED' : 'ACTIVE';
         if (auth.target.status === wanted) {
           throw new AppError('USER_ACCOUNT_ALREADY_IN_STATE');

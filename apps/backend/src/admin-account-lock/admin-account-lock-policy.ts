@@ -66,9 +66,11 @@ export function detailAllowedActions(input: {
     phoneVerified: row.lock.phoneVerified,
     hasAdminMembership: false,
   });
-  return allowedLockActions({
+  const actions = allowedLockActions({
     eligible: ordinary && lockEligibility(input.actor, row.lock.allRoles) === 'OK',
     gateOpen: input.gateOpen,
     status: row.status,
   });
+  // Owner decision 2026-11-22: an anonymized account is never unlocked or reactivated by an administrator (the database refuses it too).
+  return row.lock.anonymized ? actions.filter((action) => action !== 'UNLOCK') : actions;
 }

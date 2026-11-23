@@ -293,6 +293,8 @@ export const APP_ERROR_DEFINITIONS = {
   // Lock / unlock of a USER account (M01-ADMIN, D15). Fixed messages: nothing the client sent (reason, id) is echoed.
   USER_ACCOUNT_VERSION_CONFLICT: { status: 409, message: 'The account was changed by another request' },
   USER_ACCOUNT_ALREADY_IN_STATE: { status: 409, message: 'The account is already in the requested state' },
+  // Owner decision 2026-11-22: the personal data of a deleted account is gone; it is a tombstone and is never unlocked or reactivated.
+  USER_ACCOUNT_ANONYMIZED: { status: 409, message: 'The account was deleted and its personal data removed: it cannot be unlocked' },
   // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
   USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
   // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
