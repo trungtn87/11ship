@@ -25,7 +25,8 @@ export type Draft = { readonly type: 'NOTIFY'; readonly draft: DraftBase } | { r
 export interface DeliveryChangePayload {
   readonly deliveryId: string;
   readonly code: string;
-  readonly shopId: string;
+  /** Null only for a CUSTOMER courier call (no shop); the event service admits that case for `cancelled_by_system` alone. */
+  readonly shopId: string | null;
   readonly change: string;
   readonly state: string;
   readonly version: number;
@@ -35,7 +36,7 @@ export interface DeliveryChangePayload {
   readonly orderId?: string | null;
   /** Who pays the delivery fee and where the request came from: they decide who is asked about a fee proposal. */
   readonly feePayer?: 'CUSTOMER' | 'SHOP' | null;
-  readonly source?: 'ORDER' | 'DIRECT' | null;
+  readonly source?: 'ORDER' | 'DIRECT' | 'CUSTOMER' | null;
 }
 
 /** The fee of an ORDER paid by the customer is decided by the customer in 11Food; every other fee is decided by the shop. */
@@ -75,7 +76,10 @@ export function composeDeliveryChange(p: DeliveryChangePayload): Draft[] {
 
 function composeForCustomer(p: DeliveryChangePayload): Draft[] {
   if (p.orderId === undefined || p.orderId === null) {
-    return [];
+    // A CUSTOMER courier call (no Order) tells its requester only when the system cancels it on the timeout (Owner 2026-11-20, #414).
+    return p.change === 'cancelled_by_system' && p.source === 'CUSTOMER'
+      ? [delivery(p, 'CUSTOMER', 'DELIVERY_CANCELLED', 'Hệ thống đã hủy yêu cầu gọi shipper', `Yêu cầu ${p.code} đã bị hủy vì quá thời gian chờ shipper nhận. Bạn có thể gọi lại.`)]
+      : [];
   }
   const orderId = p.orderId;
   const notify = (kind: NotificationKind, title: string, body: string): Draft => ({
@@ -136,8 +140,17 @@ function composeForShopAndShipper(p: DeliveryChangePayload): Draft[] {
       return [delivery(p, 'SHOP', 'DELIVERY_COMPLETED', 'Giao hàng thành công', `Đơn ${code} đã giao thành công.`), reviewReminder(p)];
     case 'failed':
       return [delivery(p, 'SHOP', 'DELIVERY_FAILED', 'Giao hàng không thành công', `Đơn ${code} giao không thành công. Cần bạn xử lý hàng.`), reviewReminder(p)];
-    case 'cancelled_by_system':
-      return p.driverId===null?[]:[delivery(p,'DRIVER','DELIVERY_CANCELLED','Hệ thống đã hủy đơn quá hạn',`Đơn ${code} đã bị hủy trước khi lấy hàng. Khoản giữ hoa hồng đã được giải phóng.`)];
+    case 'cancelled_by_system': {
+      // The Shipper (if any) is told as before. A DIRECT call's shop placed it, so the shop is told too; an ORDER's shop is told by the Order's own notice.
+      const out: Draft[] = [];
+      if (p.driverId !== null) {
+        out.push(delivery(p, 'DRIVER', 'DELIVERY_CANCELLED', 'Hệ thống đã hủy đơn quá hạn', `Đơn ${code} đã bị hủy trước khi lấy hàng. Khoản giữ hoa hồng đã được giải phóng.`));
+      }
+      if (p.source === 'DIRECT') {
+        out.push(delivery(p, 'SHOP', 'DELIVERY_CANCELLED', 'Hệ thống đã hủy đơn quá hạn', `Đơn ${code} đã bị hủy vì quá thời gian chờ shipper. Bạn có thể gọi lại.`));
+      }
+      return out;
+    }
     case 'pickup_timeout_warning':
       return [delivery(p,'SHOP','PICKUP_TIMEOUT_WARNING','Shipper chưa lấy hàng',`Đơn ${code}: shipper chưa lấy hàng trong thời hạn cảnh báo.`),...(p.driverId===null?[]:[delivery(p,'DRIVER','PICKUP_TIMEOUT_WARNING','Vui lòng lấy hàng',`Đơn ${code}: bạn chưa lấy hàng trong thời hạn cảnh báo.`)])];
     case 'cancelled_by_shop':

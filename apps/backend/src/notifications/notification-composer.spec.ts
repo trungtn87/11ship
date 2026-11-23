@@ -91,3 +91,48 @@ describe('M08 composer — order confirmed with an updated dish money (issue #26
     expect(updated[0]?.dedupeKey).toBe(plain[0]?.dedupeKey);
   });
 });
+
+// Issue #414: the timeout cancellation of a call without an Order tells whoever placed it and the Shipper, if any (Owner 2026-11-20).
+describe('M08 composer — timeout cancellation of a call without an Order (issue #414)', () => {
+  const cancelled: DeliveryChangePayload = { ...base, change: 'cancelled_by_system', state: 'cancelled_by_system', orderId: null, feePayer: 'CUSTOMER', source: 'DIRECT' };
+
+  it('a DIRECT call: the shop that placed it is told, and the Shipper of the call too', () => {
+    const drafts = notifies(composeDeliveryChange(cancelled));
+    expect(drafts.map((d) => [d.audience, d.app, d.kind])).toEqual([
+      ['DRIVER', 'SHIP', 'DELIVERY_CANCELLED'],
+      ['SHOP', 'FOOD', 'DELIVERY_CANCELLED'],
+    ]);
+    expect(drafts.every((d) => d.targetType === 'DELIVERY' && d.targetId === cancelled.deliveryId)).toBe(true);
+  });
+
+  it('a DIRECT call without a Shipper (searching ran out): the shop is told, nobody else', () => {
+    const drafts = notifies(composeDeliveryChange({ ...cancelled, driverId: null, assignmentId: null, state: 'cancelled_by_system' }));
+    expect(drafts.map((d) => [d.audience, d.kind])).toEqual([['SHOP', 'DELIVERY_CANCELLED']]);
+  });
+
+  it('a CUSTOMER courier call (no shop, no Order): the requester is told, and the Shipper if any; the shop audience never appears', () => {
+    const customer: DeliveryChangePayload = { ...cancelled, shopId: null, source: 'CUSTOMER' };
+    expect(notifies(composeDeliveryChange(customer)).map((d) => [d.audience, d.app, d.kind])).toEqual([
+      ['DRIVER', 'SHIP', 'DELIVERY_CANCELLED'],
+      ['CUSTOMER', 'FOOD', 'DELIVERY_CANCELLED'],
+    ]);
+    expect(notifies(composeDeliveryChange({ ...customer, driverId: null, assignmentId: null })).map((d) => d.audience)).toEqual(['CUSTOMER']);
+  });
+
+  it('an ORDER delivery keeps its own notices: the Shipper only here (the shop and the customer are told by the Order\'s timeout)', () => {
+    const order = { ...cancelled, orderId: '44444444-4444-4444-8444-444444444444', source: 'ORDER' as const };
+    expect(notifies(composeDeliveryChange(order)).map((d) => d.audience)).toEqual(['DRIVER']);
+  });
+
+  it('a CUSTOMER call tells its requester only about the timeout cancellation, never about the other steps', () => {
+    const customer = { ...base, shopId: null, source: 'CUSTOMER' as const, orderId: null, change: 'cancelled_by_shop', state: 'cancelled_by_merchant' };
+    expect(notifies(composeDeliveryChange(customer)).map((d) => d.audience)).toEqual(['DRIVER']);
+  });
+
+  it('the requester\'s notice is one per delivery and version, so a repeated event adds no second card', () => {
+    const [first] = notifies(composeDeliveryChange({ ...cancelled, shopId: null, source: 'CUSTOMER' })).filter((d) => d.audience === 'CUSTOMER');
+    const [again] = notifies(composeDeliveryChange({ ...cancelled, shopId: null, source: 'CUSTOMER' })).filter((d) => d.audience === 'CUSTOMER');
+    expect(first?.dedupeKey).toBe(again?.dedupeKey);
+    expect(first?.body).not.toMatch(/[0-9]{9,}|@|\+84/);
+  });
+});
