@@ -29,7 +29,7 @@ Shipper chỉ còn **một nút online**. Bật online tự bật chia sẻ vị
 - `ShipOnline` (`ship_online.dart`) sống theo phiên, không theo màn hình; Home, màn giao hàng và công tắc ở hồ sơ dùng cùng nguồn (công tắc hồ sơ đi qua cùng `acceptingHandler`).
 - Bật: bắt đầu chia sẻ → chờ vị trí hợp lệ đã **đến máy chủ** → mới gọi bật. Lỗi ở bước nào cũng dọn: dừng dịch vụ vừa bật nếu không còn lý do; nếu câu trả lời bị mất thì đọc lại máy chủ rồi quyết định (không đoán). Bấm lặp chỉ chạy một lần.
 - Mở lại app/đăng nhập: đọc máy chủ, tự khôi phục nếu còn ý định online hoặc còn đơn; thiếu quyền thì hiện hướng dẫn, không hỏi lặp cho tới khi shipper bấm "Thử lại" hoặc quay lại app.
-- Giao diện: một dòng nhỏ ("Đang chia sẻ vị trí", "Đang lấy vị trí…", "Đang giao đơn · Vẫn chia sẻ vị trí", "Chưa có vị trí · Tạm dừng nhận đơn"); hướng dẫn + nút ("Thử lại", "Mở cài đặt", "Mở cài đặt vị trí", "Mở cài đặt thông báo") chỉ khi có vấn đề. Không hiện mã/ID; `request_id` vẫn nằm trong log.
+- Giao diện: một dòng nhỏ ("Đang chia sẻ vị trí", "Đang lấy vị trí…", "Đang có đơn · Vẫn chia sẻ vị trí" (Issue #414), "Chưa có vị trí · Tạm dừng nhận đơn"); hướng dẫn + nút ("Thử lại", "Mở cài đặt", "Mở cài đặt vị trí", "Mở cài đặt thông báo") chỉ khi có vấn đề. Không hiện mã/ID; `request_id` vẫn nằm trong log.
 - Android: `ShipLocationService` (foreground service loại `location`, thông báo thường trực, không có nút dừng riêng). Manifest/quyền không đổi so với trước (đã có `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS`); chỉ khởi động khi app đang hiển thị (đúng giới hạn Android 12+).
 
 ## Dịch vụ nền Android (gửi vị trí độc lập với Flutter)

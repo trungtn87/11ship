@@ -79,11 +79,14 @@ String withdrawalStatusLabel(WithdrawalStatus status) => switch (status) {
 
 /// Where the shipper sends money when topping up (the system account) and the content to type.
 class BankTransferInfo {
-  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, this.content});
+  const BankTransferInfo({required this.bankName, required this.accountNumber, required this.holder, this.content, this.bankCode});
 
   final String bankName;
   final String accountNumber;
   final String holder;
+
+  /// The server's bank code of the receiving account (for example "MB"), used to choose the VietQR bank; null when the source has none.
+  final String? bankCode;
 
   /// The transfer content to type, ONLY when the server defines one. A real server defines none today (the Admin matches the transfer by
   /// the bank statement), so a real build shows no content row rather than an invented code.
@@ -100,7 +103,7 @@ class ReceivingAccount {
 }
 
 class TopupRequest {
-  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.transferCode});
+  const TopupRequest({required this.code, required this.amount, required this.createdAt, required this.status, this.transfer, this.proofName, this.displayCode, this.version, this.transferCode, this.reportedAt});
 
   /// The identifier the app opens the request by (the server's request id for a real source).
   final String code;
@@ -119,10 +122,19 @@ class TopupRequest {
   /// The record version the server answered (a cancel carries it).
   final int? version;
 
+  /// When the Shipper reported the transfer ("Xác nhận đã chuyển tiền"); null = not reported. Only meaningful while PENDING.
+  final DateTime? reportedAt;
+
   String get shownCode => displayCode ?? code;
 
   /// A topup can be cancelled only while nobody has decided it.
   bool get canCancel => status == TopupStatus.pending;
+
+  /// Waiting for the transfer (PENDING, not reported yet): the step "Chờ chuyển tiền".
+  bool get awaitingTransfer => status == TopupStatus.pending && reportedAt == null;
+
+  /// Reported and still PENDING: the step "Chờ xác nhận" (the settlement or an Administrator decides).
+  bool get reported => status == TopupStatus.pending && reportedAt != null;
 }
 
 class WithdrawalRequest {

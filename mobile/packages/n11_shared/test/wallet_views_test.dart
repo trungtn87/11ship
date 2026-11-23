@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:n11_shared/n11_shared.dart';
@@ -13,6 +15,19 @@ class _StatusWallet extends SampleWalletSource {
 
   @override
   Future<WalletLoad<Wallet>> wallet() async => WalletReady<Wallet>(Wallet(total: 150000, held: 0, driverStatus: status));
+}
+
+/// Counts the creates and holds each one until the test releases it, so a second tap can land while the first is still in flight.
+class _SlowTopupSource extends SampleWalletSource {
+  int creates = 0;
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<TopupRequest> createTopup(int amount, {String? proofName}) async {
+    creates++;
+    await gate.future;
+    return super.createTopup(amount, proofName: proofName);
+  }
 }
 
 class _Failing extends NotWiredWalletSource {
@@ -141,7 +156,6 @@ void main() {
       final List<Widget> screens = <Widget>[
         WalletHomeScreen(source: source),
         TopupAmountScreen(source: source),
-        TopupConfirmScreen(source: source, amount: 100000, info: kSampleTransfer),
         TopupDetailScreen(source: source, code: 'NP202610150001'),
         WithdrawScreen(source: source),
         WithdrawDetailScreen(source: source, code: 'RT202610120001'),
@@ -164,30 +178,32 @@ void main() {
   });
 
   group('topup', () {
-    testWidgets('below the minimum is refused, the minimum goes on to the confirmation', (WidgetTester tester) async {
+    testWidgets('below the minimum is refused; a valid amount goes straight to the request detail (no confirmation screen)', (WidgetTester tester) async {
       await mount(tester, TopupAmountScreen(source: SampleWalletSource()));
       expect(find.byKey(const Key('topup-request-first-note')), findsOneWidget);
       await typeKey(tester, 'topup-amount', '50000');
       await tapKey(tester, 'topup-continue');
       expect(find.text('Số tiền nạp tối thiểu 100.000đ.'), findsOneWidget);
-      expect(find.byKey(const Key('topup-submit')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsNothing);
 
       await typeKey(tester, 'topup-amount', '100000');
       await tapKey(tester, 'topup-continue');
-      expect(find.byKey(const Key('topup-submit')), findsOneWidget);
-      expect(tester.widget<Text>(find.byKey(const Key('confirm-amount'))).data, '100.000đ');
-      expect(find.byKey(const Key('topup-confirm-notice')), findsOneWidget);
+      expect(find.byKey(const Key('topup-submit')), findsNothing);
+      expect(find.byKey(const Key('confirm-amount')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ chuyển tiền');
+      expect(find.text('Chờ xác nhận'), findsNothing, reason: 'the admin-confirmation wording belongs to a later step');
     });
 
-    testWidgets('"Tôi đã chuyển tiền" and "Gửi yêu cầu" only create a pending request: the balance never changes', (WidgetTester tester) async {
+    testWidgets('"Tạo yêu cầu nạp" only creates a pending request: the balance never changes', (WidgetTester tester) async {
       final SampleWalletSource source = SampleWalletSource();
       await mount(tester, WalletHomeScreen(source: source));
       await tapKey(tester, 'wallet-topup-button');
       await typeKey(tester, 'topup-amount', '150000');
       await tapKey(tester, 'topup-continue');
-      await tapKey(tester, 'topup-submit');
-      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ chuyển tiền');
       expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      expect(find.byKey(const Key('topup-reported')), findsOneWidget);
       // The transfer details belong to the created request.
       expect(find.byKey(const Key('topup-transfer-card')), findsOneWidget);
       expect(find.byKey(const Key('topup-qr-placeholder')), findsOneWidget);
@@ -196,6 +212,49 @@ void main() {
       expect(after.total, 150000);
       expect(after.held, 2000);
       expect(after.available, 148000);
+    });
+
+    testWidgets('a second tap on "Tạo yêu cầu nạp" while the request is being created does not create a second request', (WidgetTester tester) async {
+      final _SlowTopupSource source = _SlowTopupSource();
+      await mount(tester, TopupAmountScreen(source: source));
+      await typeKey(tester, 'topup-amount', '150000');
+      await tester.tap(find.byKey(const Key('topup-continue')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('topup-continue')), warnIfMissed: false);
+      await tester.pump();
+      expect(source.creates, 1, reason: 'the second tap is ignored while the first request is in flight');
+      source.gate.complete();
+      await tester.pumpAndSettle();
+      expect(source.creates, 1);
+      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+    });
+
+    testWidgets('cancel from the detail asks first, then the request is cancelled and no transfer step remains', (WidgetTester tester) async {
+      final SampleWalletSource source = SampleWalletSource();
+      final TopupRequest created = (await tester.runAsync(() => source.createTopup(150000)))!;
+      await mount(tester, TopupDetailScreen(source: source, code: created.code));
+      await tapKey(tester, 'topup-cancel');
+      await tapKey(tester, 'confirm-yes');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('topup-cancel')), findsNothing);
+      expect(find.byKey(const Key('topup-reported')), findsNothing);
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, topupStatusLabel(TopupStatus.cancelled));
+    });
+
+    testWidgets('"Xác nhận đã chuyển tiền" marks the request reported: "Chờ xác nhận", the confirm button goes, and the balance never changes', (WidgetTester tester) async {
+      final SampleWalletSource source = SampleWalletSource();
+      final TopupRequest created = (await tester.runAsync(() => source.createTopup(150000)))!;
+      await mount(tester, TopupDetailScreen(source: source, code: created.code));
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ chuyển tiền');
+
+      await tapKey(tester, 'topup-reported');
+
+      expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
+      expect(find.byKey(const Key('topup-reported')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      final Wallet after = await readWallet(tester, source);
+      expect(after.total, 150000);
+      expect(after.held, 2000);
     });
 
     testWidgets('a confirmed topup has no cancel button; a pending one cancels', (WidgetTester tester) async {

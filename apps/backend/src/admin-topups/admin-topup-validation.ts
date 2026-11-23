@@ -129,3 +129,20 @@ export function parseAdminTopupListQuery(query: unknown): AdminTopupListQuery {
   }
   return { state: status as TopupRequestState | undefined, limit, after };
 }
+
+/** The reasons an Administrator may give to close a queue item that is not a Shipper top-up. Fixed codes only; nothing free-text is stored. */
+export const SEPAY_DISMISS_REASONS: readonly string[] = ['NOT_A_TOPUP', 'OTHER_CUSTOMER_PAYMENT', 'DUPLICATE', 'OTHER'];
+
+export interface SepayDismissBody {
+  readonly reasonCode: string;
+}
+
+/** POST sepay-inbox/:id/dismiss: exact {reason_code}, one of the fixed reasons. */
+export function parseSepayDismissBody(body: unknown): SepayDismissBody {
+  const parsed = exact(body, ['reason_code']);
+  const reason = parsed.reason_code;
+  if (typeof reason !== 'string' || !SEPAY_DISMISS_REASONS.includes(reason)) {
+    return invalid();
+  }
+  return { reasonCode: reason };
+}

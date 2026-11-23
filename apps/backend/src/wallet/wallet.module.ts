@@ -10,6 +10,7 @@ import { WalletRepository } from './wallet-repository';
 import { SystemBankAccountRepository } from './system-bank-account-repository';
 import { TopupPostingService } from './topup-posting-service';
 import { TopupRequestRepository } from './topup-request-repository';
+import { TopupAutoLookupRepository } from './topup-auto-lookup-repository';
 import { TopupSettlementRepository } from './topup-settlement-repository';
 import { WalletService } from './wallet-service';
 import { WalletAccountActivityReader } from './wallet-account-activity-reader';
@@ -29,8 +30,8 @@ import { WalletIncomeRepository } from './wallet-income-repository';
  */
 @Module({
   imports: [DriverModule],
-  providers: [WalletAccountActivityReader, WalletRepository, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
-  exports: [WalletAccountActivityReader, WalletReportReader, WalletService, TopupRequestRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort],
+  providers: [WalletAccountActivityReader, WalletRepository, WalletService, TopupRequestRepository, TopupAutoLookupRepository, SystemBankAccountRepository, TopupSettlementRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentRepository, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort, WalletReportReader],
+  exports: [WalletAccountActivityReader, WalletReportReader, WalletService, TopupRequestRepository, TopupAutoLookupRepository, SystemBankAccountRepository, TopupPostingService, CommissionHoldService, WalletAdjustmentService, WalletCommissionAdjustmentAdapter, WithdrawalRepository, WithdrawalMoneyService, WalletReadRepository, WalletIncomeRepository, CommissionPolicyRepository, WalletDriverPort],
 })
 export class WalletModule implements OnModuleInit {
   constructor(private readonly port: DelegatingDriverWalletPort, private readonly wallet: WalletDriverPort) {}

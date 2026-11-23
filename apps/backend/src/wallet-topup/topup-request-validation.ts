@@ -23,6 +23,11 @@ export function parseCreateTopupRequest(body: unknown): { readonly amountVnd: nu
   return { amountVnd: amount };
 }
 
+/** POST /v1/driver/wallet/topup-requests/:id/report: an empty object only (the request is named by the path; no field can be sent). */
+export function parseReportTopupRequest(body: unknown): void {
+  exactObject(body, []);
+}
+
 /** POST /v1/driver/wallet/topup-requests/:id/cancel: exact {expected_version}. */
 export function parseCancelTopupRequest(body: unknown): { readonly expectedVersion: number } {
   const version = exactObject(body, ['expected_version']).expected_version;

@@ -5,7 +5,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AppError } from '../common/app-errors';
 import { rejectBodyAndQuery } from '../customer-profile/customer-profile-validation';
 import { TopupRequestService } from './topup-request-service';
-import { parseCancelTopupRequest, parseCreateTopupRequest, parseRequestIdParam, parseTopupListQuery } from './topup-request-validation';
+import { parseCancelTopupRequest, parseCreateTopupRequest, parseReportTopupRequest, parseRequestIdParam, parseTopupListQuery } from './topup-request-validation';
 
 type Key = string | string[] | undefined;
 
@@ -52,6 +52,13 @@ export class WalletTopupController {
   @HttpCode(200)
   async cancel(@Param('request_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
     return { data: await this.topups.cancel(this.#principal(request), parseRequestIdParam(id), parseCancelTopupRequest(body).expectedVersion, key, requestIdOf(request)) };
+  }
+
+  @Post('topup-requests/:request_id/report')
+  @HttpCode(200)
+  async report(@Param('request_id') id: string, @Body() body: unknown, @Headers('idempotency-key') key: Key, @Req() request: AuthenticatedRequest) {
+    parseReportTopupRequest(body);
+    return { data: await this.topups.report(this.#principal(request), parseRequestIdParam(id), key, requestIdOf(request)) };
   }
 
   #principal(request: AuthenticatedRequest): AuthPrincipal {

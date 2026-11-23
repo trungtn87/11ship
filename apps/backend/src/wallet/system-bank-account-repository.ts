@@ -39,6 +39,12 @@ function toAccount(row: RawAccount): SystemBankAccountRow {
 
 @Injectable()
 export class SystemBankAccountRepository {
+  /** The number of one receiving account (read only). Used by the SePay evidence link of a manual confirmation, which compares it with the statement line. */
+  async accountNumberOf(context: TransactionContext, systemAccountId: string): Promise<string | undefined> {
+    const result = await context.query<{ account_number: string }>('SELECT a.account_number FROM app.system_owned_bank_accounts a WHERE a.system_account_id = $1::uuid', [systemAccountId]);
+    return result.rows[0]?.account_number;
+  }
+
   async list(context: TransactionContext): Promise<SystemBankAccountRow[]> {
     const result = await context.query<RawAccount>(`SELECT ${COLUMNS} FROM app.system_owned_bank_accounts a ORDER BY a.created_at, a.system_account_id`);
     return result.rows.map(toAccount);

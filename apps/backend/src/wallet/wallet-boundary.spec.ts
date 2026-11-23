@@ -31,6 +31,7 @@ describe('M04-A1 wallet core boundary', () => {
   it('moves money only as a TOPUP posting or a COMMISSION capture: one literal ledger INSERT each, the wallet UPDATE only in the two money services, no DELETE or TRUNCATE, a single INSERT of a literal-zero wallet', () => {
     const code = walletCode();
     // M04-B2.2b: the UPDATEs are the conditional request change, the SYSTEM receiving switch and the balance move of the TOPUP posting.
+    // M04 step 2b (Owner 2026-11-20): the request report is one more conditional UPDATE of the request row (reported_at only, state unchanged).
     // M07: the commission hold changes the hold row (resolve once) and the wallet (held on reserve, held and balance on capture, held on release).
     expect([...(code.match(/\bUPDATE\s+app\.\w+/gi) ?? [])].sort()).toEqual([
       'UPDATE app.driver_wallets',
@@ -39,6 +40,7 @@ describe('M04-A1 wallet core boundary', () => {
       'UPDATE app.system_owned_bank_accounts',
       'UPDATE app.wallet_holds',
       'UPDATE app.wallet_holds',
+      'UPDATE app.wallet_topup_requests',
       'UPDATE app.wallet_topup_requests',
       'UPDATE app.wallet_topup_requests',
       ...Array<string>(6).fill('UPDATE app.wallet_withdrawals'),
