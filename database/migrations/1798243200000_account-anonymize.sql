@@ -236,9 +236,9 @@ BEGIN
       OR evidence::text LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%'])
       OR note LIKE ANY (ARRAY['%' || v_phones[1] || '%', '%' || v_phones[2] || '%']);
 
-  -- Round 3 (2026-11-23): reconsideration reasons, moderation notes on the account's reviews, the account's driver events, anomaly notes about
-  -- the account or its driver, the item details the account wrote, the SEPAY transfer text of its top-ups, its live location and the tracking
-  -- links of its deliveries. Rows and their ids, states, amounts and times stay.
+  -- Round 3 (2026-11-23): reconsideration reasons, moderation notes on the account's reviews, the account's driver events and anomaly notes
+  -- about the account or its driver. Rows and their ids, states, amounts and times stay. (Round 4 removed the driver's live location, the
+  -- SEPAY transfer text and the item details: they are out of this PR.)
   UPDATE app.complaint_reconsiderations SET reason = 'Đã ẩn danh'
    WHERE requested_by = p_user_id AND reason <> 'Đã ẩn danh';
   UPDATE app.review_moderations SET reason_note = 'Đã ẩn danh'
@@ -247,21 +247,12 @@ BEGIN
   IF v_driver_id IS NOT NULL THEN
     UPDATE app.driver_events SET reason = CASE WHEN reason IS NULL THEN NULL ELSE 'Đã ẩn danh' END, detail = '{}'::jsonb
      WHERE driver_id = v_driver_id AND (reason IS DISTINCT FROM 'Đã ẩn danh' OR detail <> '{}'::jsonb);
-    DELETE FROM app.shipper_latest_locations WHERE driver_id = v_driver_id;
-    UPDATE app.delivery_tracking_links SET revoked = true, revoked_at = COALESCE(revoked_at, now()), updated_at = now()
-     WHERE NOT revoked AND delivery_id IN (SELECT delivery_id FROM app.delivery_assignments WHERE driver_id = v_driver_id);
   END IF;
   UPDATE app.ops_anomaly_case_events SET note = 'Đã ẩn danh'
    WHERE note IS NOT NULL AND note <> 'Đã ẩn danh'
      AND (actor_user_id = p_user_id OR case_id IN (
            SELECT case_id FROM app.ops_anomaly_cases
             WHERE (subject_kind = 'USER' AND subject_id = p_user_id) OR (subject_kind = 'DRIVER' AND subject_id = v_driver_id)));
-  UPDATE app.order_events SET details = NULL WHERE actor_id = p_user_id AND details IS NOT NULL;
-  IF v_driver_id IS NOT NULL THEN
-    UPDATE app.sepay_transfer_inbox i SET content = 'Đã ẩn danh'
-      FROM app.wallet_topup_requests r
-     WHERE i.topup_request_id = r.request_id AND r.driver_id = v_driver_id AND i.content <> 'Đã ẩn danh';
-  END IF;
 
   -- The account itself: a DISABLED tombstone under the same id. The real number is released; the placeholder cannot be dialled.
   UPDATE app.users SET phone_normalized = v_phone, password_hash = p_password_hash, status = 'DISABLED', lock_reason = 'DELETE_REQUEST',
@@ -736,7 +727,7 @@ BEGIN
   RAISE EXCEPTION 'app.order_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
 END;
 $$;
-CREATE TRIGGER order_events_anonymize BEFORE UPDATE ON app.order_events FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('note', 'details');
+CREATE TRIGGER order_events_anonymize BEFORE UPDATE ON app.order_events FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('note');
 
 CREATE OR REPLACE FUNCTION app.delivery_events_reject_mutation() RETURNS trigger
   LANGUAGE plpgsql AS $$
@@ -836,32 +827,6 @@ CREATE TRIGGER review_moderations_append_only BEFORE DELETE OR UPDATE OR TRUNCAT
   FOR EACH STATEMENT EXECUTE FUNCTION app.append_only_except_anonymize();
 CREATE TRIGGER review_moderations_anonymize BEFORE UPDATE ON app.review_moderations
   FOR EACH ROW EXECUTE FUNCTION app.anon_row_guard('reason_note');
-
--- SEPAY transfer content (sepay_transfer_inbox): the bank text of a transfer linked to the account's top-up request. The identity (amount,
--- reference, account, times) and the state stay; the content alone may take its fixed text.
-CREATE OR REPLACE FUNCTION app.sepay_transfer_inbox_guard() RETURNS trigger
-  LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() AND NEW.content = 'Đã ẩn danh'
-     AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['content']) THEN
-    RETURN NEW;
-  END IF;
-  IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IS_EVIDENCE: rows are never deleted' USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF NEW.inbox_id IS DISTINCT FROM OLD.inbox_id OR NEW.webhook_event_id IS DISTINCT FROM OLD.webhook_event_id
-     OR NEW.sepay_transaction_uuid IS DISTINCT FROM OLD.sepay_transaction_uuid
-     OR NEW.transfer_amount_vnd <> OLD.transfer_amount_vnd
-     OR NEW.account_number <> OLD.account_number OR NEW.transaction_at <> OLD.transaction_at OR NEW.received_at <> OLD.received_at
-     OR NEW.content <> OLD.content OR NEW.reference_code <> OLD.reference_code THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF OLD.state IN ('CREDITED', 'IGNORED', 'LINKED') AND NEW.state <> OLD.state THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_STATE_FINAL' USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END;
-$$;
 
 -- The cleanup step: removes the pictures of every closed complaint. Callable again at any time; it changes nothing else.
 CREATE FUNCTION app.purge_closed_complaint_pictures() RETURNS integer
@@ -1139,25 +1104,6 @@ BEGIN
   IF NEW.request_id <> OLD.request_id OR NEW.complaint_id <> OLD.complaint_id OR NEW.closure_no <> OLD.closure_no OR NEW.requested_by <> OLD.requested_by
      OR NEW.reason <> OLD.reason OR NEW.requested_at <> OLD.requested_at OR OLD.status <> 'PENDING' THEN
     RAISE EXCEPTION 'RECONSIDERATION_IMMUTABLE' USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE OR REPLACE FUNCTION app.sepay_transfer_inbox_guard() RETURNS trigger
-  LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IS_EVIDENCE: rows are never deleted' USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF NEW.inbox_id IS DISTINCT FROM OLD.inbox_id OR NEW.webhook_event_id IS DISTINCT FROM OLD.webhook_event_id
-     OR NEW.sepay_transaction_uuid IS DISTINCT FROM OLD.sepay_transaction_uuid
-     OR NEW.transfer_amount_vnd <> OLD.transfer_amount_vnd
-     OR NEW.account_number <> OLD.account_number OR NEW.transaction_at <> OLD.transaction_at OR NEW.received_at <> OLD.received_at
-     OR NEW.content <> OLD.content OR NEW.reference_code <> OLD.reference_code THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_IDENTITY_IMMUTABLE' USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF OLD.state IN ('CREDITED', 'IGNORED', 'LINKED') AND NEW.state <> OLD.state THEN
-    RAISE EXCEPTION 'SEPAY_TRANSFER_INBOX_STATE_FINAL' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END;
