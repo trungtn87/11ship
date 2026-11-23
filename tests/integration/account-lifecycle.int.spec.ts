@@ -555,7 +555,7 @@ describe('account lifecycle, scopes and system settings', () => {
   // 7 / 8 / 9. Delete, lock and unlock
   // =============================================================================================================================
   describe('delete, lock and unlock of an application account', () => {
-    it('case 7 — an account without related data is deleted for good; its own rows go, audit stays, the phone can register again as a NEW account', async () => {
+    it('case 7 — an account without related data is anonymized (a tombstone with the same id); its personal rows go, audit stays, the phone can register again as a NEW account', async () => {
       await postSettings(sys(), settingsBody(0, false, true));
       // This first registration makes a second, unrelated account. Its phone is tracked so app.close() purges it: an unverified account left behind would
       // outlive this suite and make the migration Down guards ("phone-unverified accounts exist") fail in whatever suite runs next.
@@ -582,8 +582,11 @@ describe('account lifecycle, scopes and system settings', () => {
       const deleted = await command('delete', userId, lockBody(Number(shown.version)), sys(), key);
       expect(deleted.status).toBe(200);
       expect(adminData(deleted)).toMatchObject({ user_id: userId, result: 'DELETED', related_data: [] });
-      expect(await exists(userId)).toBe(0);
-      for (const table of ['sessions', 'user_roles', 'customer_profiles', 'user_consents', 'client_device_bindings']) {
+      // Owner decision 2026-11-22: the deletion ANONYMIZES the account in place. The row stays as a DISABLED / DELETE_REQUEST tombstone with the
+      // same id (money and history keep their link); the personal data goes and the real number is released.
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL AND phone_normalized LIKE $2', [userId, '+999%'])).toBe(1);
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(0);
+      for (const table of ['sessions', 'customer_profiles', 'client_device_bindings']) {
         expect(await count(app.pool, `SELECT 1 FROM app.${table} WHERE user_id = $1::uuid`, [userId])).toBe(0);
       }
       expect((await me(token)).status).toBe(401);
@@ -597,7 +600,8 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(adminData(replay)).toEqual(adminData(deleted));
       expect(await auditCount('admin.user.delete.v1', userId)).toBe(1);
       // A new command for the same id is an unknown account.
-      expect(codeOf(await command('delete', userId, lockBody(Number(shown.version))))).toEqual({ status: 404, code: 'USER_NOT_AVAILABLE' });
+      // The tombstone moved on (version +1): the old version is refused, so the same deletion is never applied twice.
+      expect(codeOf(await command('delete', userId, lockBody(Number(shown.version))))).toEqual({ status: 409, code: 'USER_ACCOUNT_VERSION_CONFLICT' });
 
       // The phone registers again and gets a NEW account (new id, nothing of the old one).
       const again = await registerClient(registerBody(phone));
@@ -623,49 +627,37 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(await exists(system.account.userId)).toBe(1);
     });
 
-    it('case 8 — an account with related data is NEVER deleted: it is locked at its owner\'s request; id, roles, profile and records stay', async () => {
+    it('case 8 — an account with related data is ANONYMIZED too (Owner 2026-11-22): the shop with no other member is anonymized and closed, the driver profile loses its name and plate, roles and money records stay; an administrator cannot unlock it', async () => {
       const owner = await seedUser({ roles: ['CUSTOMER', 'SHOP', 'DRIVER'] });
       const [food, ship] = [tokenOf(await loginClient(owner.phone)), tokenOf(await loginClient(owner.phone, PASSWORD, SHIP))];
       const rolesBefore = (await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows;
-      const shopBefore = (await app.pool.query('SELECT s.shop_id, s.status, s.name FROM app.shop_members m JOIN app.shops s ON s.shop_id = m.shop_id WHERE m.user_id = $1::uuid', [owner.id])).rows;
+      const shopId = (await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).rows[0]?.shop_id as string;
       const driverBefore = (await app.pool.query('SELECT status FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows;
 
       const shown = adminData(await detail(owner.id));
-      expect(shown.lifecycle).toMatchObject({ related_data: ['SHOP', 'DRIVER_PROFILE'], delete_effect: 'LOCK', lock_reason: null });
+      expect(shown.lifecycle).toMatchObject({ related_data: ['SHOP', 'DRIVER_PROFILE'], delete_effect: 'DELETE_PERMANENTLY', lock_reason: null });
       expect(shown.allowed_actions).toEqual(['LOCK', 'DELETE']);
 
       const deleted = await command('delete', owner.id, lockBody(Number(shown.version)));
       expect(deleted.status).toBe(200);
-      expect(adminData(deleted)).toMatchObject({ user_id: owner.id, result: 'LOCKED', account_status: 'DISABLED', lock_reason: 'DELETE_REQUEST', related_data: ['SHOP', 'DRIVER_PROFILE'] });
-      expect(await exists(owner.id)).toBe(1);
+      expect(adminData(deleted)).toMatchObject({ user_id: owner.id, result: 'DELETED', related_data: ['SHOP', 'DRIVER_PROFILE'] });
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [owner.id])).toBe(1);
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+      // Roles stay (the tombstone keeps its links); the shop with no other member is anonymized and closed, and the owner is no longer a member.
       expect((await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows).toEqual(rolesBefore);
-      expect((await app.pool.query('SELECT s.shop_id, s.status, s.name FROM app.shop_members m JOIN app.shops s ON s.shop_id = m.shop_id WHERE m.user_id = $1::uuid', [owner.id])).rows).toEqual(shopBefore);
-      expect((await app.pool.query('SELECT status FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows).toEqual(driverBefore);
-      expect(await count(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid AND revoked_at IS NULL', [owner.id])).toBe(0);
-      expect(await count(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [owner.id])).toBe(2); // history stays
+      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: 'DISABLED' }]);
+      expect(await count(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).toBe(0);
+      expect((await app.pool.query('SELECT status, full_name FROM app.drivers WHERE user_id = $1::uuid', [owner.id])).rows).toEqual([{ status: driverBefore[0]?.status, full_name: 'Đã ẩn danh' }]);
+      expect(await count(app.pool, 'SELECT 1 FROM app.sessions WHERE user_id = $1::uuid', [owner.id])).toBe(0);
       expect((await me(food)).status).toBe(401);
       expect((await me(ship)).status).toBe(401);
-      expect(errorCode(await loginClient(owner.phone))).toBe('ACCOUNT_DISABLED');
+      expect((await loginClient(owner.phone)).status).toBe(401);
+      // An anonymized account is never unlocked: the administration detail offers no UNLOCK and the command is refused, nothing changes.
       const after = adminData(await detail(owner.id));
-      expect(after.lifecycle).toMatchObject({ lock_reason: 'DELETE_REQUEST', delete_blocked_reason: 'ALREADY_LOCKED' });
-      expect(after.allowed_actions).toEqual(['UNLOCK', 'DELETE']);
-      // A second delete of a locked account that has data is "already in that state"; nothing changes.
-      expect(codeOf(await command('delete', owner.id, lockBody(Number(after.version))))).toEqual({ status: 409, code: 'USER_ACCOUNT_ALREADY_IN_STATE' });
-      // The shop of a locked owner takes no new orders; unlocking restores that answer only, the shop row is never touched.
-      const shopId = (shopBefore[0] as { shop_id: string }).shop_id;
-      const availability = async (): Promise<string> => {
-        const result = await app.pool.query<{ owner_locked: boolean }>(
-          `SELECT EXISTS (SELECT 1 FROM app.shop_members om JOIN app.users ou ON ou.user_id = om.user_id WHERE om.shop_id = $1::uuid AND om.member_role = 'OWNER' AND ou.status <> 'ACTIVE') AS owner_locked`,
-          [shopId],
-        );
-        return result.rows[0]?.owner_locked === true ? 'LOCKED' : 'OPEN';
-      };
-      expect(await availability()).toBe('LOCKED');
-      expect((await command('unlock', owner.id, lockBody(Number(after.version)))).status).toBe(200);
-      expect(await availability()).toBe('OPEN');
-      expect(await userRow(owner.id)).toMatchObject({ status: 'ACTIVE', lock_reason: null });
-      expect((await app.pool.query('SELECT s.shop_id, s.status, s.name FROM app.shop_members m JOIN app.shops s ON s.shop_id = m.shop_id WHERE m.user_id = $1::uuid', [owner.id])).rows).toEqual(shopBefore);
+      expect(after.allowed_actions).not.toContain('UNLOCK');
+      expect(codeOf(await command('unlock', owner.id, lockBody(Number(after.version))))).toEqual({ status: 409, code: 'USER_ACCOUNT_ANONYMIZED' });
+      expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+      expect((await app.pool.query('SELECT name, status FROM app.shops WHERE shop_id = $1::uuid', [shopId])).rows).toEqual([{ name: 'Cửa hàng đã ẩn danh', status: 'DISABLED' }]);
     });
 
     it('case 9 — orders or deliveries still being processed block the lock (and a delete that would lock); finished or cancelled ones do not', async () => {
@@ -790,88 +782,50 @@ describe('account lifecycle, scopes and system settings', () => {
   // 11 / 12 / 13. Recovery of a locked account
   // =============================================================================================================================
   describe('recovery of a locked account', () => {
+    // Owner decision 2026-11-22: the deletion anonymizes the account; a deleted account is a tombstone that is never recovered.
     async function lockedByDeleteRequest(): Promise<Seeded & { shopId: string }> {
       const owner = await seedUser({ roles: ['CUSTOMER', 'SHOP'] });
       const shopId = (await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).rows[0]?.shop_id as string;
       const deleted = await command('delete', owner.id, lockBody(1));
-      expect(adminData(deleted)).toMatchObject({ result: 'LOCKED', lock_reason: 'DELETE_REQUEST' });
+      expect(adminData(deleted)).toMatchObject({ result: 'DELETED' });
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [owner.id])).toBe(1);
       return { ...owner, shopId };
     }
     const recoverOtp = (phone: Phone): Promise<ApiResponse> => api(base(), 'POST', '/account-recovery/locked/otp', { body: { phone: phone.local } });
-    const recoverVerify = (id: string, otp: string): Promise<ApiResponse> => api(base(), 'POST', `/account-recovery/locked/otp/${id}/verify`, { body: { otp } });
     const recover = (token: string, password: string = NEW_PASSWORD, key: string = randomUUID()): Promise<ApiResponse> =>
       api(base(), 'POST', '/account-recovery/locked/recover', { headers: { 'idempotency-key': key }, body: { verification_token: token, password } });
 
-    it('case 11 + 13 — registering the phone of such an account points to recovery; recovery REQUIRES the OTP and a new password; same id, roles and records; old sessions stay dead', async () => {
+    it('case 11 + 13 — a deleted (anonymized) account is never recovered: no recovery SMS, a recovery proof unlocks nothing; the phone registers a NEW account and the tombstone keeps its id, roles and audit', async () => {
       const owner = await lockedByDeleteRequest();
-      const before = {
-        roles: (await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows,
-        shop: (await app.pool.query('SELECT shop_id, name, status, version::text FROM app.shops WHERE shop_id = $1::uuid', [owner.shopId])).rows,
-        created: (await app.pool.query('SELECT created_at FROM app.users WHERE user_id = $1::uuid', [owner.id])).rows,
-        profile: (await app.pool.query('SELECT full_name FROM app.customer_profiles WHERE user_id = $1::uuid', [owner.id])).rows,
-        audit: await count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE resource_id = $1', [owner.id]),
-      };
+      const roles = (await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows;
+      const audit = await count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE resource_id = $1', [owner.id]);
 
-      // The register screen's two entry points both say "recover".
-      const otpRequest = await api(base(), 'POST', '/auth/phone-verifications', { body: { phone: owner.phone.local, purpose: 'REGISTER' } });
-      expect([otpRequest.status, errorCode(otpRequest)]).toEqual([409, 'ACCOUNT_RECOVERY_AVAILABLE']);
+      // The number is no longer the tombstone's: no recovery SMS is sent for it.
+      await recoverOtp(owner.phone);
       expect(await nextSms()).toBeNull();
-      await postSettings(sys(), settingsBody(0, false, false)); // BOTH switches off: recovery must not become easier
-      const direct = await registerClient(registerBody(owner.phone));
-      expect([direct.status, errorCode(direct)]).toEqual([409, 'ACCOUNT_RECOVERY_AVAILABLE']);
-      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [owner.phone.normalized])).toBe(1);
-      expect(await resetConfig()).toBe('UNAVAILABLE');
-      expect((await api(base(), 'GET', '/account-recovery/locked/config')).body.data?.mode).toBe('SMS_OTP');
-
-      // No proof, no recovery: the OTP cannot be skipped by any body.
-      const noProof = await recover('A'.repeat(43));
-      expect([noProof.status, errorCode(noProof)]).toEqual([400, 'VERIFICATION_PROOF_INVALID']);
+      // A recovery proof (forged straight into the database) unlocks nothing.
+      const refused = await recover(await forgeRecoveryProof(owner.phone));
+      expect(refused.status).toBe(400);
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
-      // The password-reset proof of the same phone is not a recovery proof.
-      const asked = await recoverOtp(owner.phone);
-      expect(asked.status).toBe(200);
-      const id = String(dataOf(asked).verification_id);
-      const sms = await nextSms();
-      expect(sms?.to).toBe(owner.phone.normalized);
-      expect((await recoverVerify(id, sms?.otp === '000000' ? '111111' : '000000')).status).toBe(400); // wrong code
-      const proof = String(dataOf(await recoverVerify(id, sms?.otp as string)).verification_token);
-      const crossed = await api(base(), 'POST', '/account-recovery/reset', { headers: { 'idempotency-key': randomUUID() }, body: { verification_token: proof, password: NEW_PASSWORD } });
-      expect([crossed.status, errorCode(crossed)]).toEqual([403, 'PASSWORD_RESET_DISABLED']);
-      await postSettings(sys(), settingsBody(2, true, true));
-      const crossedOn = await api(base(), 'POST', '/account-recovery/reset', { headers: { 'idempotency-key': randomUUID() }, body: { verification_token: proof, password: NEW_PASSWORD } });
-      expect([crossedOn.status, errorCode(crossedOn)]).toEqual([400, 'VERIFICATION_PURPOSE_MISMATCH']);
-      expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED' });
-
-      // The real recovery.
-      const key = randomUUID();
-      const recovered = await recover(proof, NEW_PASSWORD, key);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body.data).toEqual({ next: 'LOGIN' });
-      expect(await userRow(owner.id)).toMatchObject({ status: 'ACTIVE', lock_reason: null });
-      expect((await recover(proof, NEW_PASSWORD, key)).status).toBe(200); // the lost-response retry is the same answer
-      expect(errorCode(await recover(proof))).toBe('VERIFICATION_PROOF_USED');
-      expect((await loginClient(owner.phone)).status).toBe(401); // the old password is gone
-      const login = await loginClient(owner.phone, NEW_PASSWORD);
-      expect(login.status).toBe(200);
-      expect(dataOf(login).user_id).toBe(owner.id);
-
-      // Same id, same roles, same records; nothing was reactivated by the unlock itself.
-      expect((await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows).toEqual(before.roles);
-      expect((await app.pool.query('SELECT shop_id, name, status, version::text FROM app.shops WHERE shop_id = $1::uuid', [owner.shopId])).rows).toEqual(before.shop);
-      expect((await app.pool.query('SELECT created_at FROM app.users WHERE user_id = $1::uuid', [owner.id])).rows).toEqual(before.created);
-      expect((await app.pool.query('SELECT full_name FROM app.customer_profiles WHERE user_id = $1::uuid', [owner.id])).rows).toEqual(before.profile);
-      expect(await count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE resource_id = $1', [owner.id])).toBeGreaterThan(before.audit);
-      expect(await auditCount('account.recover_locked.v1', owner.id)).toBe(1);
-      expect(await count(app.pool, "SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'user.account.unlocked.v1'", [owner.id])).toBe(1);
-      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [owner.phone.normalized])).toBe(1);
+      // The real number is free: the same phone registers a NEW account (new id); the tombstone keeps its id, roles and audit.
+      const current = adminData(await getSettings(sys()));
+      await postSettings(sys(), settingsBody(Number(current.version), false, true));
+      const registered = await registerClient(registerBody(owner.phone));
+      expect(registered.status).toBe(201);
+      expect(String(dataOf(registered).user_id)).not.toBe(owner.id);
+      expect((await app.pool.query('SELECT role FROM app.user_roles WHERE user_id = $1::uuid ORDER BY role', [owner.id])).rows).toEqual(roles);
+      expect(await count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE resource_id = $1', [owner.id])).toBeGreaterThanOrEqual(audit);
+      expect(await auditCount('account.recover_locked.v1', owner.id)).toBe(0);
+      expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
     });
 
-    it('case 11b — with the SMS gateway not working there is no recovery: the request answers 503 honestly and nothing is unlocked or skipped', async () => {
+    it('case 11b — with the SMS gateway down a deleted account is still not recovered: the answer is the same as for a number that never existed, and nothing changes', async () => {
       const owner = await lockedByDeleteRequest();
       expect((await ctl('disable')).code).toBe(0);
       try {
         const asked = await recoverOtp(owner.phone);
-        expect(asked.status).toBe(503);
+        const unknown = await recoverOtp(randomPhone());
+        expect([asked.status, errorCode(asked)]).toEqual([unknown.status, errorCode(unknown)]);
         expect(await count(app.pool, "SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1 AND purpose = 'RECOVER_ACCOUNT' AND status = 'VERIFIED'", [owner.phone.normalized])).toBe(0);
         const direct = await recover('B'.repeat(43));
         expect(direct.status).toBe(400);
@@ -914,17 +868,14 @@ describe('account lifecycle, scopes and system settings', () => {
       expect(await userRow(legacy.id)).toMatchObject({ status: 'DISABLED' });
     });
 
-    it('a recovered account whose shop was closed meanwhile does not get the shop back; an unlock by an administrator never reactivates anything either', async () => {
+    it('a deleted account stays a closed tombstone: its shop is not reopened and an administrator\'s unlock is refused', async () => {
       const owner = await lockedByDeleteRequest();
-      await app.pool.query("UPDATE app.shops SET status = 'DISABLED' WHERE shop_id = $1::uuid", [owner.shopId]);
-      const asked = await recoverOtp(owner.phone);
-      const sms = await nextSms();
-      const proof = String(dataOf(await recoverVerify(String(dataOf(asked).verification_id), sms?.otp as string)).verification_token);
-      expect((await recover(proof)).status).toBe(200);
+      expect(await nextSms()).toBeNull();
+      const version = Number(adminData(await detail(owner.id)).version);
+      expect(codeOf(await command('unlock', owner.id, lockBody(version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_ANONYMIZED' });
       expect((await app.pool.query<{ status: string }>('SELECT status FROM app.shops WHERE shop_id = $1::uuid', [owner.shopId])).rows[0]?.status).toBe('DISABLED');
-      const login = await loginClient(owner.phone, NEW_PASSWORD);
-      expect(login.status).toBe(200);
-      expect(dataOf(login).available_roles).not.toContain('SHOP_OWNER');
+      expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+      expect((await loginClient(owner.phone)).status).toBe(401);
     });
 
     async function forgeRecoveryProof(phone: Phone): Promise<string> {

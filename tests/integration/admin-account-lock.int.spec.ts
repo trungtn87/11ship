@@ -348,7 +348,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(await auditRows(locked.id, 'account.delete.finalized.v1')).toBe(1);
 
     // 2. PENDING -> lock -> unlock: the account does NOT come back as an ordinary ACTIVE one; it is "deletion pending" again (one audit entry
-    //    for each step) and the sweeper carries the request out (this customer has nothing to keep: it is deleted for good).
+    //    for each step) and the sweeper carries the request out (this customer has nothing to keep: it is anonymized).
     const toggled = await seedUser({ roles: ['CUSTOMER'] });
     await requestDeletion(toggled.id);
     expect((await change('lock', toggled.id, systemLogin(), body(2))).status).toBe(200);
@@ -358,7 +358,9 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(await auditRows(toggled.id, 'account.lock.on_delete_request.v1')).toBe(1);
     expect(await auditRows(toggled.id, 'account.unlock.on_delete_request.v1')).toBe(1);
     await sweep();
-    expect(await state(toggled.id)).toBeUndefined();
+    // Owner decision 2026-11-22: the carried-out request ANONYMIZES the account (a DISABLED tombstone with the same id, no pending request).
+    expect(await state(toggled.id)).toEqual({ status: 'DISABLED', reason: 'DELETE_REQUEST', pending: false });
+    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [toggled.id])).rowCount).toBe(1);
   });
 
   it('Owner decision 2026-11-08: unlocking a DELETE_REQUEST lock is a valid RESTORATION and is audited once (no duplicate on a retried key); other reasons and a pending request are not', async () => {
