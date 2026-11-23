@@ -95,7 +95,8 @@ describe('P5-6a public account deletion', () => {
   // this suite's own rows are removed here (the table triggers are off for this cleanup only), before the orders are removed.
   async function purgeCommunityRecords(userIds: readonly string[]): Promise<void> {
     const client = await app.pool.connect();
-    const tables = ['complaint_attachments', 'complaint_messages', 'complaints', 'review_reply_history', 'review_replies', 'reviews'];
+    // Round 3: the reconsiderations (of the complaints) and the moderations (of the reviews) reference their parents, so they go first.
+    const tables = ['complaint_attachments', 'complaint_messages', 'complaint_reconsiderations', 'complaints', 'review_moderations', 'review_reply_history', 'review_replies', 'reviews'];
     try {
       await client.query('BEGIN');
       for (const table of tables) await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
@@ -103,7 +104,9 @@ describe('P5-6a public account deletion', () => {
       const reviews = 'SELECT review_id FROM app.reviews WHERE reviewer_user_id = ANY($1::uuid[])';
       await client.query(`DELETE FROM app.complaint_attachments WHERE uploader_user_id = ANY($1::uuid[]) OR complaint_id IN (${complaints})`, [userIds]);
       await client.query(`DELETE FROM app.complaint_messages WHERE complaint_id IN (${complaints})`, [userIds]);
+      await client.query(`DELETE FROM app.complaint_reconsiderations WHERE complaint_id IN (${complaints}) OR requested_by = ANY($1::uuid[])`, [userIds]);
       await client.query(`DELETE FROM app.complaints WHERE submitter_user_id = ANY($1::uuid[])`, [userIds]);
+      await client.query(`DELETE FROM app.review_moderations WHERE review_id IN (${reviews})`, [userIds]);
       await client.query(`DELETE FROM app.review_reply_history WHERE review_id IN (${reviews})`, [userIds]);
       await client.query(`DELETE FROM app.review_replies WHERE review_id IN (${reviews})`, [userIds]);
       await client.query(`DELETE FROM app.reviews WHERE reviewer_user_id = ANY($1::uuid[])`, [userIds]);
@@ -122,6 +125,14 @@ describe('P5-6a public account deletion', () => {
     const client = await app.pool.connect();
     try {
       await client.query('BEGIN');
+      // Round 3: the top-up requests of these drivers and the SEPAY transfers linked to them (the inbox is never deleted by the product; here
+      // only this suite's own fixtures go, with the triggers of these two tables disabled inside this transaction).
+      await client.query('ALTER TABLE app.sepay_transfer_inbox DISABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.wallet_topup_requests DISABLE TRIGGER USER');
+      await client.query('DELETE FROM app.sepay_transfer_inbox WHERE topup_request_id IN (SELECT request_id FROM app.wallet_topup_requests WHERE driver_id = ANY($1::uuid[]))', [driverIds]);
+      await client.query('DELETE FROM app.wallet_topup_requests WHERE driver_id = ANY($1::uuid[])', [driverIds]);
+      await client.query('ALTER TABLE app.sepay_transfer_inbox ENABLE TRIGGER USER');
+      await client.query('ALTER TABLE app.wallet_topup_requests ENABLE TRIGGER USER');
       const tables = ['wallet_withdrawal_events', 'wallet_withdrawals', 'wallet_ledger_entries', 'wallet_bank_transactions'];
       for (const table of tables) await client.query(`ALTER TABLE app.${table} DISABLE TRIGGER USER`);
       await client.query('ALTER TABLE app.wallet_holds DISABLE TRIGGER wallet_holds_no_delete');
@@ -147,6 +158,8 @@ describe('P5-6a public account deletion', () => {
     try {
       await purgeWithdrawalsOf(drivers);
       await purgeCommunityRecords([shop.userId, ...extraUsers, ...extraCustomers]);
+      // Round 3: tracking links of the deliveries of these shops (the deliveries are removed by cleanupOrders; the links reference them).
+      await app.pool.query('DELETE FROM app.delivery_tracking_links WHERE delivery_id IN (SELECT delivery_id FROM app.deliveries WHERE shop_id = ANY($1::uuid[]))', [[shop.shopId, ...extraShops]]);
       await cleanupOrders(app, {
         shopIds: [shop.shopId, ...extraShops],
         customerIds: extraCustomers,
@@ -1198,6 +1211,169 @@ describe('P5-6a public account deletion', () => {
           expect(row.rows[0]).toEqual({ body: 'Đã ẩn danh' });
         },
       );
+    });
+  });
+
+  // Round 3 (Owner 2026-11-23, Codex): one canary per table. A canary is a unique text written for the account; after the deletion it must
+  // be in no column of that row any more, while the row, its id, its state and its amounts stay.
+  describe('canary text of the further tables', () => {
+    const canary = (label: string): string => `CANARY-${label}-${randomUUID()}`;
+    const rowText = async (sql: string, params: unknown[]): Promise<string> =>
+      (await app.pool.query(sql, params)).rows.map((row) => (row as { txt: string }).txt).join('\n');
+
+    it('complaint reconsiderations: the reason the account wrote is replaced; the request, its status and the other requests stay', async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      await finishOrder(orderId);
+      const complaint = await insertComplaint(orderId, c.userId, { body: 'Đồ ăn nguội', closed: true });
+      const closure = (await app.pool.query('SELECT closure_no FROM app.complaints WHERE complaint_id = $1::uuid', [complaint])).rows[0] as { closure_no: number };
+      const mine = canary('RECON');
+      const request = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.complaint_reconsiderations (request_id, complaint_id, closure_no, requested_by, reason, requested_at, status)
+         VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5, now(), 'PENDING')`,
+        [request, complaint, closure.closure_no, c.userId, mine],
+      );
+      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.complaint_reconsiderations t WHERE request_id = $1::uuid', [request])).not.toContain(mine);
+      expect((await app.pool.query('SELECT reason, status FROM app.complaint_reconsiderations WHERE request_id = $1::uuid', [request])).rows[0]).toEqual({ reason: 'Đã ẩn danh', status: 'PENDING' });
+    });
+
+    it("review moderation notes: the note on the account's own review is replaced; the moderation row, its action and reason code stay", async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      await finishOrder(orderId);
+      const review = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.reviews (review_id, kind, reviewer_user_id, shop_id, order_id, stars, comment, reviewer_name, shop_name, related_code, visibility, version, created_at)
+         VALUES ($1::uuid, 'SHOP_BY_CUSTOMER', $2::uuid, $3::uuid, $4::uuid, 2, 'Chưa ngon', 'Khách Thử', 'Quán thử', 'R2', 'VISIBLE', 1, now())`,
+        [review, c.userId, shop.shopId, orderId],
+      );
+      const moderation = randomUUID();
+      const mine = canary('MODERATION');
+      await app.pool.query(
+        `INSERT INTO app.review_moderations (moderation_id, review_id, action, reason_code, reason_note, actor_user_id, created_at)
+         VALUES ($1::uuid, $2::uuid, 'HIDE', 'OTHER', $3, $4::uuid, now())`,
+        [moderation, review, mine, c.userId],
+      );
+      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.review_moderations t WHERE moderation_id = $1::uuid', [moderation])).not.toContain(mine);
+      expect((await app.pool.query('SELECT reason_note, action, reason_code FROM app.review_moderations WHERE moderation_id = $1::uuid', [moderation])).rows[0])
+        .toEqual({ reason_note: 'Đã ẩn danh', action: 'HIDE', reason_code: 'OTHER' });
+    });
+
+    it("driver events: the reason and the detail of the account's driver are replaced; the event, its type and its time stay", async () => {
+      // No balance: a Shipper with money stays PENDING (the rule tested above), this case is about the data of the driver.
+      const s = await newShipper(app, drivers, 0);
+      const event = randomUUID();
+      const mine = canary('DRIVER-EVENT');
+      await app.pool.query(
+        `INSERT INTO app.driver_events (event_id, driver_id, event_type, actor_type, actor_id, reason, detail, created_at)
+         VALUES ($1::uuid, $2::uuid, 'driver.note', 'DRIVER', $3::uuid, $4::text, jsonb_build_object('note', $4::text), now())`,
+        [event, s.driverId, s.userId, mine],
+      );
+      expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.driver_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
+      expect((await app.pool.query('SELECT event_type, reason, detail FROM app.driver_events WHERE event_id = $1::uuid', [event])).rows[0])
+        .toEqual({ event_type: 'driver.note', reason: 'Đã ẩn danh', detail: {} });
+    });
+
+    it('operations anomaly events: the note about the account (its case or its own actions) is replaced; the case status and the event stay', async () => {
+      const c = await customer();
+      const anomaly = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.ops_anomaly_cases (case_id, rule_kind, subject_kind, subject_id, status, occurrences, sample, window_from, window_to, evidence, last_evidence_at, note, version, first_flagged_at, updated_at)
+         VALUES ($1::uuid, 'CUSTOMER_ORDER_CANCELS', 'USER', $2::uuid, 'NEW', 1, 1, now() - interval '1 day', now(), '{"cancelled": 3}'::jsonb, now(), 'Ghi chú thử', 1, now(), now())`,
+        [anomaly, c.userId],
+      );
+      const event = randomUUID();
+      const mine = canary('ANOMALY-EVENT');
+      await app.pool.query(
+        `INSERT INTO app.ops_anomaly_case_events (event_id, case_id, action, from_status, to_status, note, actor_user_id, at)
+         VALUES ($1::uuid, $2::uuid, 'NOTE', 'NEW', 'NEW', $3, $4::uuid, now())`,
+        [event, anomaly, mine, c.userId],
+      );
+      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.ops_anomaly_case_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
+      expect((await app.pool.query('SELECT note, to_status FROM app.ops_anomaly_case_events WHERE event_id = $1::uuid', [event])).rows[0])
+        .toEqual({ note: 'Đã ẩn danh', to_status: 'NEW' });
+    });
+
+    it('order item details the account wrote: the details are cleared; the event row, its type and its time stay', async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      await finishOrder(orderId);
+      const event = randomUUID();
+      const mine = canary('ITEM-DETAIL');
+      await app.pool.query(
+        `INSERT INTO app.order_events (event_id, order_id, type, actor_type, actor_id, note, details, at)
+         VALUES ($1::uuid, $2::uuid, 'ITEM_NOTE', 'CUSTOMER', $3::uuid, NULL, jsonb_build_object('item_note', $4::text), now())`,
+        [event, orderId, c.userId, mine],
+      );
+      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.order_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
+      expect((await app.pool.query('SELECT type, details, note FROM app.order_events WHERE event_id = $1::uuid', [event])).rows[0])
+        .toEqual({ type: 'ITEM_NOTE', details: null, note: null });
+    });
+
+    it("SEPAY transfer text linked to the account's top-up: the content is replaced; the amount, reference, state and time stay", async () => {
+      // No balance: a Shipper with money stays PENDING (the rule tested above), this case is about the data of the driver.
+      const s = await newShipper(app, drivers, 0);
+      const wallet = (await app.pool.query('SELECT wallet_id FROM app.driver_wallets WHERE driver_id = $1::uuid', [s.driverId])).rows[0] as { wallet_id: string };
+      const request = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.wallet_topup_requests (request_id, wallet_id, driver_id, amount_requested_vnd, state, created_by_user_id, version, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, 50000, 'PENDING', $4::uuid, 1, clock_timestamp(), clock_timestamp())`,
+        [request, wallet.wallet_id, s.driverId, shop.userId],
+      );
+      // A request starts PENDING (its trigger says so). The fixture then cancels it, so the open top-up does not keep the account PENDING.
+      await withoutTriggers(['wallet_topup_requests'], (q) =>
+        q.query(`UPDATE app.wallet_topup_requests SET state = 'CANCELLED', resolved_by_user_id = $2::uuid, resolved_at = now(), version = version + 1 WHERE request_id = $1::uuid`, [request, shop.userId]),
+      );
+      const inbox = randomUUID();
+      const mine = canary('SEPAY');
+      await app.pool.query(
+        `INSERT INTO app.sepay_transfer_inbox (inbox_id, webhook_event_id, gateway, account_number, transfer_type, transfer_amount_vnd, transaction_at, code, content, reference_code, state, topup_request_id, received_at, processed_at)
+         VALUES ($1::uuid, $2::bigint, 'MBBank', '1234567890', 'in', 50000, now(), NULL, $3, 'REF-' || $1::text, 'LINKED', $4::uuid, now(), now())`,
+        [inbox, 3_950_000_000 + Math.floor(Math.random() * 1_000_000), mine, request],
+      );
+      const before = (await app.pool.query('SELECT transfer_amount_vnd, reference_code, state, transaction_at FROM app.sepay_transfer_inbox WHERE inbox_id = $1::uuid', [inbox])).rows[0];
+      expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+      expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.sepay_transfer_inbox t WHERE inbox_id = $1::uuid', [inbox])).not.toContain(mine);
+      expect((await app.pool.query('SELECT transfer_amount_vnd, reference_code, state, transaction_at, content FROM app.sepay_transfer_inbox WHERE inbox_id = $1::uuid', [inbox])).rows[0])
+        .toEqual({ ...before, content: 'Đã ẩn danh' });
+    });
+
+    it("shipper location and tracking links: the live location of the account's driver is deleted; its tracking links are revoked; the delivery keeps its state", async () => {
+      const c = await customer();
+      // No balance: a Shipper with money stays PENDING (the rule tested above), this case is about the data of the driver.
+      const s = await newShipper(app, drivers, 0);
+      const deliveryId = await insertDeliveryRow(app.pool, { shopId: shop.shopId, userId: c.userId });
+      const assignment = randomUUID();
+      await withoutTriggers(['deliveries', 'delivery_assignments'], async (q) => {
+        await q.query(`UPDATE app.deliveries SET state = 'cancelled_by_system', ended_at = now() WHERE delivery_id = $1::uuid`, [deliveryId]);
+        await q.query(
+          `INSERT INTO app.delivery_assignments (assignment_id, delivery_id, driver_id, status, accepted_at, commission_vnd, commission_policy, ended_at, end_actor, version, created_at, updated_at)
+           VALUES ($1::uuid, $2::uuid, $3::uuid, 'CANCELLED_BY_SHIPPER', now(), 1000, 'COMMISSION_V1', now(), 'SHIPPER', 1, now(), now())`,
+          [assignment, deliveryId, s.driverId],
+        );
+      });
+      // newShipper already wrote the driver's latest location; this one replaces it, so the row is the driver's live position.
+      await app.pool.query(
+        `INSERT INTO app.shipper_latest_locations (driver_id, lat, lng, accuracy_m, recorded_at) VALUES ($1::uuid, 10.77, 106.7, 5, now())
+         ON CONFLICT (driver_id) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, accuracy_m = EXCLUDED.accuracy_m, recorded_at = EXCLUDED.recorded_at`,
+        [s.driverId],
+      );
+      const link = randomUUID();
+      await app.pool.query(
+        `INSERT INTO app.delivery_tracking_links (tracking_id, delivery_id, token_hash, share_location, revoked, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3, true, false, now(), now())`,
+        [link, deliveryId, createHash('sha256').update(randomUUID()).digest('hex')],
+      );
+      expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+      expect((await app.pool.query('SELECT count(*)::int AS n FROM app.shipper_latest_locations WHERE driver_id = $1::uuid', [s.driverId])).rows[0]).toEqual({ n: 0 });
+      expect((await app.pool.query('SELECT revoked FROM app.delivery_tracking_links WHERE tracking_id = $1::uuid', [link])).rows[0]).toEqual({ revoked: true });
+      expect((await app.pool.query('SELECT state FROM app.deliveries WHERE delivery_id = $1::uuid', [deliveryId])).rows[0]).toEqual({ state: 'cancelled_by_system' });
     });
   });
 
