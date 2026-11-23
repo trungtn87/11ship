@@ -82,6 +82,7 @@ import { AdminTopupController } from '../admin-topups/admin-topup.controller';
 import { AdminFinanceController } from '../admin-finance/admin-finance.controller';
 import { AdminFinanceReadService } from '../admin-finance/admin-finance-read-service';
 import { AdminWithdrawalService } from '../admin-finance/admin-withdrawal-service';
+import { SepayModule } from '../sepay/sepay.module';
 import { AdminTopupService } from '../admin-topups/admin-topup-service';
 import { FinanceAccessController } from '../finance-access/finance-access.controller';
 import { FinanceAccessParticipant } from '../finance-access/finance-access-participant';
@@ -168,6 +169,8 @@ export class AdminAuthModule implements NestModule {
         DriverModule,
         // M04-B2.2a: the SYSTEM receiving accounts (SQL stays in the Wallet package).
         WalletModule,
+        // M04 SePay: the evidence inbox the Administrator works down (queue, dismissal) and the link of a manual confirmation to it.
+        SepayModule,
         // M06-B/C eligibility and batching (its parameter repository backs the Admin routes below).
         ShippingEligibilityModule,
         // M07.07 deliveries for the Admin routes below (views, the three records, the M06 agreements and the commission hold through their owners).

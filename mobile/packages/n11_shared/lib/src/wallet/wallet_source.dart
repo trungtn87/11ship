@@ -58,6 +58,9 @@ abstract class WalletWrites {
 
   Future<void> cancelTopup(String code);
 
+  /// "Xác nhận đã chuyển tiền": marks the transfer as made. The request stays PENDING; it never adds money. Idempotent on the server.
+  Future<TopupRequest> reportTopup(String code);
+
   Future<void> cancelWithdrawal(String code);
 }
 

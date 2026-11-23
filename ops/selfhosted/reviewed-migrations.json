@@ -108,6 +108,10 @@
     "1798070400000_wallet-commission-policy-advisory-lock": {
       "sha256": "7a50b8225ef6a648cc3838b55cb3bcc14cec33461afb65d4b5dc140e2b30d875",
       "review": "PR #427; compatibility review 2026-11-21: Up replaces only the function app.wallet_commission_policies_guard so its LOCK TABLE ... SHARE ROW EXCLUSIVE (which needs UPDATE, not granted to the runtime role) becomes pg_advisory_xact_lock; the version check is unchanged. It adds no column, constraint, grant or data. The old backend keeps writing commission versions normally, so it is compatible. Down restores the LOCK TABLE guard and must be used only on a temporary database, since it works only where the owner/migrator role writes."
+    },
+    "1798156800000_sepay-auto-topup-inbox": {
+      "sha256": "ed612c4326ee9beab871f84bd0904e1d6c0fdbe61eb83d3ac26ffcf41cd3190b",
+      "review": "Issue #403 / PR #404 (M04 SePay automatic top-up; additive; NOT applied anywhere yet). Up: automated settlement actor columns (resolved_by_system, confirmed_by_system = SEPAY_WEBHOOK) with replaced actor CHECKs that every existing ended request and topup satisfies; reported_at on requests (Owner 2026-11-20) with a replaced request guard that allows exactly that change; transfer_code_key STORED column with a unique index (migration refuses if two requests share a code); app.sepay_transfer_inbox (unique webhook id, unique transactions-API uuid, unique bank identity; states RECEIVED, CREDITED, NEEDS_ADMIN, IGNORED, LINKED; no delete); app.sepay_reconciliation_cursor (one seeded row; cursor_advanced_at added 2026-11-22 for stall detection; SELECT and UPDATE for the runtime role). Codex review of PR #404 (2026-11-22) findings 1-4 are addressed by this file: LINKED state and a canonical bank reference in the bank-record key, held-row recovery, and cursor stall. Down refuses when any inbox, automatic resolution, report or advanced cursor exists. CODEX MONEY/SECURITY REVIEW REQUIRED."
     }
   }
 }

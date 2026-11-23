@@ -6,7 +6,7 @@ import { AdminRequest, AdminTransport, Csrf, StatusResponse } from '../admin-shi
 import { AdminAuthConfig } from '../config/admin-auth-config';
 import { parseFinanceId, parseNoFinanceQuery } from '../finance-access/finance-access-validation';
 import { AdminTopupService } from './admin-topup-service';
-import { parseAdminTopupListQuery, parseConfirmBody, parseRejectBody } from './admin-topup-validation';
+import { parseAdminTopupListQuery, parseConfirmBody, parseRejectBody, parseSepayDismissBody } from './admin-topup-validation';
 
 /**
  * /v1/admin/finance/topup-requests and topup-receiving-accounts (M04-B2.2b/B3a, Administration web). The SESSION cookie is the only credential (Origin, quota, CSRF as every
@@ -54,6 +54,22 @@ export class AdminTopupController {
     const outcome = await this.topups.confirm(token, csrf, target, input, key, { requestId: req.requestId ?? randomUUID() });
     res.status(outcome.status);
     return { data: outcome.payload };
+  }
+
+  @Get('sepay-inbox/needs-admin')
+  async sepayQueue(@Query() query: unknown, @Req() request: AdminRequest) {
+    const token = this.#transport.read(request);
+    parseNoFinanceQuery(query);
+    return { data: await this.topups.sepayQueue(token) };
+  }
+
+  @Post('sepay-inbox/:inbox_id/dismiss')
+  @HttpCode(200)
+  async dismissSepay(@Param('inbox_id') inboxId: string, @Body() body: unknown, @Req() req: AdminRequest, @Headers('x-csrf-token') csrf: Csrf) {
+    const token = await this.#transport.write(req);
+    const target = parseFinanceId(inboxId);
+    const input = parseSepayDismissBody(body);
+    return { data: await this.topups.dismissSepayEvidence(token, csrf, target, input, { requestId: req.requestId ?? randomUUID() }) };
   }
 
   @Post('topup-requests/:request_id/reject')

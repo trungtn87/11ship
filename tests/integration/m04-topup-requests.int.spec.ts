@@ -147,7 +147,8 @@ describe('M04-B2.1 — Shipper top-up requests', () => {
     expect(response.status).toBe(201);
     const data = dataOf(response);
     expect(data).toMatchObject({ amount_requested_vnd: 150_000, state: 'PENDING', version: 1, resolved_at: null });
-    expect(Object.keys(data).sort()).toEqual(['amount_requested_vnd', 'created_at', 'request_id', 'resolved_at', 'state', 'transfer_code', 'version']);
+    // reported_at: the Shipper's "I have transferred" mark (M04 step 2b); null until the Shipper reports.
+    expect(Object.keys(data).sort()).toEqual(['amount_requested_vnd', 'created_at', 'reported_at', 'request_id', 'resolved_at', 'state', 'transfer_code', 'version']);
     const id = String(data.request_id);
     // The transfer content tied to THIS request: derived from its id, stable on every read, no phone or name in it.
     expect(data.transfer_code).toBe(`NAP${id.replace(/-/g, '').slice(0, 10).toUpperCase()}`);

@@ -14,15 +14,16 @@ describe('Shipper top-up request boundary (M04-B2.1)', () => {
       "@Post('topup-requests')",
       "@Get('topup-requests/:request_id')",
       "@Post('topup-requests/:request_id/cancel')",
+      "@Post('topup-requests/:request_id/report')",
     ]);
-    expect(controller.match(/@Param\('[^']*'\)/g)).toEqual(["@Param('request_id')", "@Param('request_id')"]);
+    expect(controller.match(/@Param\('[^']*'\)/g)).toEqual(["@Param('request_id')", "@Param('request_id')", "@Param('request_id')"]);
     expect(controller).not.toMatch(/driverId|driver_id|walletId|wallet_id|user_id|userId/);
   });
 
   it('issues no SQL, opens no transaction itself and writes only through the idempotency executor, once per command', () => {
     const service = codeOf('wallet-topup/topup-request-service.ts');
     expect(service).not.toMatch(/\.query\(|DATABASE_POOL|from 'pg'|\bBEGIN\b|COMMIT|ROLLBACK/);
-    expect(service.split('this.executor.execute(').length - 1).toBe(2);
+    expect(service.split('this.executor.execute(').length - 1).toBe(3);
     // Lock order: the user and CURRENT session rows, then the driver row, before any request or wallet statement.
     expect(service.indexOf("this.authority.lock(context, principal, 'update')")).toBeLessThan(service.indexOf('this.drivers.lockByUserId('));
     const create = service.slice(service.indexOf('async create('));
