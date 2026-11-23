@@ -1,0 +1,67 @@
+import { Injectable } from '@nestjs/common';
+import { TransactionContext } from '../transaction/transaction-context';
+
+export interface ErasureVerification {
+  readonly phoneNormalized: string;
+  readonly purpose: string;
+}
+
+export interface WalletMoney {
+  readonly balanceVnd: bigint;
+  readonly heldVnd: bigint;
+}
+
+/**
+ * The rows of the owner's erasure (Owner order 2026-11-23): the OTP challenge that proves the phone, the wallet money the pre-check reads, and the
+ * one-time erasure request that the database checks before anything is anonymized (app.account_deletion_requests).
+ */
+@Injectable()
+export class AccountErasureRepository {
+  /** The OTP challenge exactly as stored (phone and purpose), or undefined. Read only. */
+  async verification(context: TransactionContext, verificationId: string): Promise<ErasureVerification | undefined> {
+    const result = await context.query<{ phone_normalized: string; purpose: string }>(
+      'SELECT phone_normalized, purpose FROM app.phone_verifications WHERE verification_id = $1::uuid',
+      [verificationId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : { phoneNormalized: row.phone_normalized, purpose: row.purpose };
+  }
+
+  /** The balance and the held amount of the driver's wallet (zero when the wallet does not exist). Read only. */
+  async walletMoney(context: TransactionContext, driverId: string): Promise<WalletMoney> {
+    const result = await context.query<{ balance_vnd: string; held_vnd: string }>(
+      'SELECT balance_vnd::text AS balance_vnd, held_vnd::text AS held_vnd FROM app.driver_wallets WHERE driver_id = $1::uuid',
+      [driverId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? { balanceVnd: 0n, heldVnd: 0n } : { balanceVnd: BigInt(row.balance_vnd), heldVnd: BigInt(row.held_vnd) };
+  }
+
+  async insertRequest(
+    context: TransactionContext,
+    input: { readonly requestId: string; readonly userId: string; readonly verificationId: string; readonly ttlSeconds: number },
+  ): Promise<void> {
+    await context.query(
+      `INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, now(), now() + ($4::int * interval '1 second'))`,
+      [input.requestId, input.userId, input.verificationId, input.ttlSeconds],
+    );
+  }
+
+  /** Accounts that have a valid, unused, unexpired request (the erasure job's candidates). */
+  async accountsWithValidRequest(context: TransactionContext, limit: number): Promise<string[]> {
+    const result = await context.query<{ user_id: string }>(
+      `SELECT DISTINCT user_id FROM app.account_deletion_requests WHERE consumed_at IS NULL AND expires_at > now() ORDER BY user_id LIMIT $1::int`,
+      [limit],
+    );
+    return result.rows.map((row) => row.user_id);
+  }
+
+  async hasValidRequest(context: TransactionContext, userId: string): Promise<boolean> {
+    const result = await context.query<{ found: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM app.account_deletion_requests WHERE user_id = $1::uuid AND consumed_at IS NULL AND expires_at > now()) AS found`,
+      [userId],
+    );
+    return result.rows[0]?.found === true;
+  }
+}

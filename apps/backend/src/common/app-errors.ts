@@ -297,6 +297,10 @@ export const APP_ERROR_DEFINITIONS = {
   USER_ACCOUNT_ANONYMIZED: { status: 409, message: 'The account was deleted and its personal data removed: it cannot be unlocked' },
   // The account still has orders or deliveries being processed: it cannot be locked (and so not deleted into a lock) until they finish.
   USER_ACCOUNT_HAS_ACTIVE_WORK: { status: 409, message: 'The account still has orders, deliveries or money being processed' },
+  // Owner order 2026-11-23: the owner's erasure is refused before any code is sent (the pre-check lists what must be done first).
+  ACCOUNT_ERASURE_BLOCKED: { status: 409, message: 'The account cannot be deleted yet: see the pre-check for what must be done first' },
+  // A remaining balance below the minimum withdrawal is forfeited on deletion: the owner must agree first.
+  ACCOUNT_ERASURE_CONSENT_REQUIRED: { status: 409, message: 'The remaining balance below the minimum withdrawal is forfeited on deletion: confirm first' },
   // A check of the account's orders / deliveries / wallet / records could not be answered: nothing was changed, and "unknown" is never read as "none".
   USER_ACCOUNT_ACTIVITY_UNVERIFIED: { status: 503, message: 'The orders, deliveries and records of the account could not be verified; nothing was changed' },
   // Public account deletion (P5-6a, OD-26). PENDING = the owner confirmed the deletion and the running work is being finished: nothing NEW may be

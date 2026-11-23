@@ -186,7 +186,7 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
   const client = await app.pool.connect();
   const tables = [
     'order_events', 'order_items', 'orders', 'customer_carts', 'wallet_ledger_entries', 'wallet_holds', 'delivery_incidents', 'delivery_events', 'delivery_assignments', 'deliveries',
-    'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events', 'notification_reminders', 'notification_offer_rounds',
+    'wallet_adjustments', 'driver_wallets', 'shipping_fee_agreement_events', 'shipping_fee_agreements', 'shipping_fee_policy_versions', 'notifications', 'notification_pushes', 'notification_consumed_events', 'notification_reminders', 'notification_offer_rounds',
   ];
   try {
     await client.query('BEGIN');
@@ -223,6 +223,8 @@ export async function cleanupOrders(app: AuthApp, input: { shopIds: readonly str
     await client.query(`DELETE FROM app.orders WHERE shop_id = ANY($1::uuid[]) OR customer_user_id = ANY($2::uuid[])`, [shops, customers]);
     await client.query('DELETE FROM app.customer_carts WHERE shop_id = ANY($1::uuid[]) OR user_id = ANY($2::uuid[])', [shops, customers]);
     await client.query('DELETE FROM app.shipper_latest_locations WHERE driver_id = ANY($1::uuid[])', [drivers]);
+    // Owner order 2026-11-23: the forfeit of an erasure is a wallet adjustment of the wallet (it references it): it goes first.
+    await client.query(`DELETE FROM app.wallet_adjustments WHERE wallet_id IN (${wallets})`, [drivers]);
     await client.query('DELETE FROM app.driver_wallets WHERE driver_id = ANY($1::uuid[])', [drivers]);
     // The notified accounts are the given ones and the Shippers' own accounts (offers, reminders).
     const notified = `SELECT user_id FROM app.drivers WHERE driver_id = ANY($2::uuid[])`;

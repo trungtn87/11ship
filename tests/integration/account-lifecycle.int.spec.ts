@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { SessionAuthorizationParticipant } from '../../apps/backend/src/auth/session-authorization-participant';
@@ -67,6 +68,14 @@ describe('account lifecycle, scopes and system settings', () => {
 
   const sys = (): Login => ({ cookie: system.login.cookie, csrf: system.login.csrf });
   const base = (): string => app.running.baseUrl;
+  // The owner's erasure, as the app starts it (Owner order 2026-11-23): a one-time request, then the sweeper. The administration command only locks.
+  const requestErasure = async (userId: string): Promise<{ failed: number }> => {
+    await app.pool.query(
+      "INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '1 second', now() + interval '5 minutes')",
+      [randomUUID(), userId, randomUUID()],
+    );
+    return app.running.app.get(AccountDeletionSweeper).sweep();
+  };
 
   // ---- admin API -----------------------------------------------------------------------------------------------------------
   const getSettings = (who: { cookie: string }): Promise<AdminResponse> => app.call('GET', SETTINGS, { basePath: ADMIN_BASE, cookies: sessionCookies(who) });
@@ -581,9 +590,13 @@ describe('account lifecycle, scopes and system settings', () => {
       const key = randomUUID();
       const deleted = await command('delete', userId, lockBody(Number(shown.version)), sys(), key);
       expect(deleted.status).toBe(200);
-      expect(adminData(deleted)).toMatchObject({ user_id: userId, result: 'DELETED', related_data: [] });
-      // Owner decision 2026-11-22: the deletion ANONYMIZES the account in place. The row stays as a DISABLED / DELETE_REQUEST tombstone with the
-      // same id (money and history keep their link); the personal data goes and the real number is released.
+      expect(adminData(deleted)).toMatchObject({ user_id: userId, result: 'LOCKED', related_data: [] });
+      // The administration command only locks (DELETE_REQUEST): the personal data stays until the owner's erasure runs.
+      expect(await userRow(userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+      expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [userId])).toBe(0);
+      expect((await requestErasure(userId)).failed).toBe(0);
+      // The erasure ANONYMIZES the account in place: a DISABLED / DELETE_REQUEST tombstone with the same id (money and history keep their link);
+      // the personal data goes and the real number is released.
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL AND phone_normalized LIKE $2', [userId, '+999%'])).toBe(1);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE phone_normalized = $1', [phone.normalized])).toBe(0);
       for (const table of ['sessions', 'customer_profiles', 'client_device_bindings']) {
@@ -593,7 +606,7 @@ describe('account lifecycle, scopes and system settings', () => {
       expect((await loginClient(phone)).status).toBe(401);
       expect(await auditCount('admin.user.delete.v1', userId)).toBe(1);
       expect(await count(app.pool, "SELECT 1 FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'user.account.deleted.v1'", [userId])).toBe(1);
-      expect((await app.pool.query<{ metadata: Record<string, unknown> }>("SELECT metadata FROM app.audit_logs WHERE action = 'admin.user.delete.v1' AND resource_id = $1", [userId])).rows[0]?.metadata).toMatchObject({ result: 'DELETED', target_user_id: userId });
+      expect((await app.pool.query<{ metadata: Record<string, unknown> }>("SELECT metadata FROM app.audit_logs WHERE action = 'admin.user.delete.v1' AND resource_id = $1", [userId])).rows[0]?.metadata).toMatchObject({ result: 'LOCKED', target_user_id: userId });
       // The replay of the same command is the original answer (the account is gone, the audit is not repeated).
       const replay = await command('delete', userId, lockBody(Number(shown.version)), sys(), key);
       expect(replay.status).toBe(200);
@@ -640,7 +653,9 @@ describe('account lifecycle, scopes and system settings', () => {
 
       const deleted = await command('delete', owner.id, lockBody(Number(shown.version)));
       expect(deleted.status).toBe(200);
-      expect(adminData(deleted)).toMatchObject({ user_id: owner.id, result: 'DELETED', related_data: ['SHOP', 'DRIVER_PROFILE'] });
+      expect(adminData(deleted)).toMatchObject({ user_id: owner.id, result: 'LOCKED' });
+      expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
+      expect((await requestErasure(owner.id)).failed).toBe(0);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [owner.id])).toBe(1);
       expect(await userRow(owner.id)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
       // Roles stay (the tombstone keeps its links); the shop with no other member is anonymized and closed, and the owner is no longer a member.
@@ -787,7 +802,8 @@ describe('account lifecycle, scopes and system settings', () => {
       const owner = await seedUser({ roles: ['CUSTOMER', 'SHOP'] });
       const shopId = (await app.pool.query<{ shop_id: string }>('SELECT shop_id FROM app.shop_members WHERE user_id = $1::uuid', [owner.id])).rows[0]?.shop_id as string;
       const deleted = await command('delete', owner.id, lockBody(1));
-      expect(adminData(deleted)).toMatchObject({ result: 'DELETED' });
+      expect(adminData(deleted)).toMatchObject({ result: 'LOCKED' });
+      expect((await requestErasure(owner.id)).failed).toBe(0);
       expect(await count(app.pool, 'SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [owner.id])).toBe(1);
       return { ...owner, shopId };
     }

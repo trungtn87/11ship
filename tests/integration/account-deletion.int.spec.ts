@@ -7,7 +7,6 @@ import { AddressInfo } from 'node:net';
 import argon2 = require('argon2');
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { PoolClient } from 'pg';
-import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/account-deletion-limiter';
 import { DEFAULT_ACCOUNT_DELETION_CONFIG } from '../../apps/backend/src/config/account-deletion-config';
@@ -147,19 +146,31 @@ describe('P5-6a public account deletion', () => {
   }
 
   afterAll(async () => {
+    // The first cleanup error is kept: closing the application must not replace it.
+    let cleanupError: unknown;
     try {
       await purgeWithdrawalsOf(drivers);
+      await app.pool.query('DELETE FROM app.account_deletion_requests WHERE user_id = ANY($1::uuid[]) OR user_id IN (SELECT user_id FROM app.users WHERE anonymized_at IS NOT NULL)', [[...extraCustomers, ...extraUsers]]);
       await purgeCommunityRecords([shop.userId, ...extraUsers, ...extraCustomers]);
+      // Every customer that ordered at this suite's shops (some were not tracked above): their orders go with the shops.
+      const orderers = (await app.pool.query<{ customer_user_id: string }>('SELECT DISTINCT customer_user_id FROM app.orders WHERE shop_id = ANY($1::uuid[])', [[shop.shopId, ...extraShops]])).rows.map((row) => row.customer_user_id);
       await cleanupOrders(app, {
         shopIds: [shop.shopId, ...extraShops],
-        customerIds: extraCustomers,
+        customerIds: [...new Set([...extraCustomers, ...orderers])],
         drivers,
         userIds: [shop.userId, ...extraUsers, ...extraCustomers],
         policyAdded: addedPolicy,
       });
-    } finally {
+    } catch (error) {
+      cleanupError = error;
+    }
+    try {
       await app.close();
       await new Promise<void>((resolve) => router.close(() => resolve()));
+    } finally {
+      if (cleanupError !== undefined) {
+        throw cleanupError;
+      }
     }
   });
 
@@ -175,6 +186,31 @@ describe('P5-6a public account deletion', () => {
     app.call('POST', '/client-auth/login', { headers: { 'idempotency-key': randomUUID() }, body: { phone: phone.local, password, device: { device_id: 'web-food-0010', platform: 'WEB', app: 'FOOD' } } });
   const me = (token: string): Promise<ApiResponse> => app.call('GET', '/client-auth/me', { bearer: token });
   const resultOf = (response: ApiResponse): unknown => response.body.data?.result;
+  /**
+   * The owner's erasure from the signed-in app (Owner order 2026-11-23): sign in, a one-time code to the phone, the code confirmed, then the
+   * erasure job. Answers DELETED once the account is anonymized, otherwise what the step answered.
+   */
+  const ageChallenges = (normalizedPhone: string): Promise<unknown> =>
+    withoutTriggers(['phone_verifications'], (q) =>
+      q.query("UPDATE app.phone_verifications SET created_at = created_at - interval '1 hour', expires_at = expires_at - interval '1 hour' WHERE phone_normalized = $1", [normalizedPhone]),
+    );
+  const erase = async (phone: { local: string; normalized?: string }, acceptForfeit = true): Promise<unknown> => {
+    const normalized = phone.normalized ?? `+84${phone.local.slice(1)}`;
+    await ageChallenges(normalized);
+    const signedIn = await login({ local: phone.local });
+    const token = String(signedIn.body.data?.access_token);
+    const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: acceptForfeit } });
+    if (code.status !== 200) return codeOf(code) ?? code.status;
+    const otp = app.provider.lastOtpFor(normalized);
+    const verificationId = String(code.body.data?.verification_id);
+    const done = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: acceptForfeit } });
+    if (done.status !== 200) return codeOf(done) ?? done.status;
+    await sweeper().sweep();
+    const request = (await app.pool.query<{ user_id: string }>('SELECT user_id FROM app.account_deletion_requests WHERE verification_id = $1::uuid', [verificationId])).rows[0];
+    if (request === undefined) return 'NO_REQUEST';
+    const gone = (await app.pool.query<{ gone: boolean }>('SELECT anonymized_at IS NOT NULL AS gone FROM app.users WHERE user_id = $1::uuid', [request.user_id])).rows[0];
+    return gone?.gone === true ? 'DELETED' : 'NOT_ERASED';
+  };
   const refused = (response: ApiResponse): { status: number; code: string | undefined } => ({ status: response.status, code: codeOf(response) });
   const customer = async (): Promise<Customer> => {
     const created = await newCustomer(app);
@@ -315,7 +351,7 @@ describe('P5-6a public account deletion', () => {
     }
     expect(await attemptsTotal()).toBe(0);
     // ... and eight login failures did not take the account's deletion away from its owner.
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
   });
 
   it('the two buckets are independent: the address bucket refuses on its own, and so does the phone bucket from many addresses', async () => {
@@ -374,35 +410,27 @@ describe('P5-6a public account deletion', () => {
 
   // ---- the immediate outcomes ----------------------------------------------------------------------------------------------------
 
-  it('nothing in progress: the account is anonymized at once (a DISABLED tombstone with the same id), and the same Idempotency-Key answers again without a second effect', async () => {
+  it('the password path only LOCKS the account (Owner order 2026-11-23): sessions revoked, nothing anonymized; the same key answers again without a second effect', async () => {
     const c = await customer();
-    expect((await me(c.token)).status).toBe(200);
+    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+    await finishOrder(orderId);
     const key = randomUUID();
-    const first = await confirm(c.phone, PASSWORD, key);
-    expect([first.status, resultOf(first), first.headers.get('cache-control')]).toEqual([200, 'DELETED', 'no-store']);
+    const done = await confirm(c.phone, PASSWORD, key);
+    expect([done.status, resultOf(done)]).toEqual([200, 'LOCKED']);
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
-    expect(await anonymized(c.userId)).toBe(true);
+    expect(await anonymized(c.userId)).toBe(false);
+    expect(await liveSessions(c.userId)).toBe(0);
     expect((await me(c.token)).status).toBe(401);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
-    // The response was "lost": the retry with the same key gets the stored answer although the account no longer exists.
-    const retry = await confirm(c.phone, PASSWORD, key);
-    expect([retry.status, resultOf(retry)]).toEqual([200, 'DELETED']);
+    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('LOCKED');
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    // Another key finds no account: the same generic error as an unknown phone, never "already deleted".
-    expect(refused(await confirm(c.phone))).toEqual({ status: 401, code: 'INVALID_CREDENTIALS' });
-    // The same key with ANOTHER password is not a replay of anything.
-    expect((await confirm(c.phone, 'Other-Password-77', key)).status).not.toBe(200);
-    expect(await login(c.phone)).toMatchObject({ status: 401 });
   });
 
   it('money and orders to keep, nothing in progress: the account is anonymized, the order keeps its money and state, only its personal snapshot goes', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
-    const key = randomUUID();
-    const done = await confirm(c.phone, PASSWORD, key);
-    expect([done.status, resultOf(done)]).toEqual([200, 'DELETED']);
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
     expect(await anonymized(c.userId)).toBe(true);
     expect(await liveSessions(c.userId)).toBe(0);
@@ -415,55 +443,12 @@ describe('P5-6a public account deletion', () => {
     expect(await countRows(app.pool, `SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid`, [c.userId])).toBeGreaterThan(0);
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
     // A retry (same key, or a new one) is answered; nothing is written twice.
-    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('DELETED');
+    expect(refused(await confirm(c.phone, PASSWORD, randomUUID()))).toEqual({ status: 401, code: 'INVALID_CREDENTIALS' });
     expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
   });
 
   // ---- pending ------------------------------------------------------------------------------------------------------------------
 
-  it('work in progress: PENDING at once; the session stays, NEW work is refused at every entry, the running work can still be finished', async () => {
-    const c = await customer();
-    // A real order, placed through the API, still waiting for the shop.
-    const placed = await placeOrder(c);
-    expect(placed.status).toBe(201);
-    const orderId = String(dataOf(placed).order_id);
-    const key = randomUUID();
-    const done = await confirm(c.phone, PASSWORD, key);
-    expect([done.status, resultOf(done)]).toEqual([200, 'PENDING']);
-    expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', lock_reason: null, pending: true });
-    expect(await audits('account.delete.requested.v1', c.userId)).toBe(1);
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
-    // The session is NOT revoked: the owner finishes the running work.
-    expect((await me(c.token)).status).toBe(200);
-    expect(await liveSessions(c.userId)).toBeGreaterThan(0);
-
-    // NEW work: refused (the same word everywhere).
-    expect(refused(await placeOrder(c))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    expect(refused(await app.call('POST', `/customers/me/orders/${orderId}/reorder`, { bearer: c.token, headers: { 'idempotency-key': randomUUID() }, body: {} }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    expect(
-      refused(
-        await app.call('POST', '/customers/me/deliveries', {
-          bearer: c.token,
-          headers: { 'idempotency-key': randomUUID() },
-          body: { recipient_name: 'An', recipient_phone: '0912345678', dropoff_address_text: '12 Phố Huế', goods_description: 'Hộp quà', pickup_address_text: '5 Phố Cổ', agreed_fee: { amount_vnd: 20_000 } },
-        }),
-      ),
-    ).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    // A retry of the same confirmation is answered PENDING again, with no second audit entry.
-    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('PENDING');
-    expect(resultOf(await confirm(c.phone))).toBe('PENDING');
-    expect(await audits('account.delete.requested.v1', c.userId)).toBe(1);
-
-    // The RUNNING work is finished normally: the shop confirms the order of the pending customer, the customer can still read it.
-    const shopView = await app.call('GET', `/shop/me/orders/${orderId}`, { bearer: shop.token });
-    expect(shopView.status).toBe(200);
-    const confirmed = await app.call('POST', `/shop/me/orders/${orderId}/confirm`, { bearer: shop.token, headers: { 'idempotency-key': randomUUID() }, body: { expected_version: dataOf(shopView).version } });
-    expect(confirmed.status).toBe(200);
-    expect((await app.call('GET', `/customers/me/orders/${orderId}`, { bearer: c.token })).status).toBe(200);
-    // Still pending: the order is being prepared. Nothing finalizes it behind our back.
-    expect(await sweeper().sweep()).toMatchObject({ failed: 0 });
-    expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-  });
 
   it('the account of a pending SHOP OWNER takes no new orders, starts no delivery of its own; its existing orders are finished normally', async () => {
     const owner = await createShopOwner(app);
@@ -522,39 +507,6 @@ describe('P5-6a public account deletion', () => {
     expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: shipper.token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
   });
 
-  it('OD-31 (b)(c) (Owner decision 2026-11-22): a Shipper with a balance is PENDING (still ACTIVE, signs in as usual), withdraws the whole balance once; the account is anonymized only after that money is paid out', async () => {
-    const shipper = await newShipper(app, drivers, 50_000);
-    extraUsers.push(shipper.userId);
-    const phone = await phoneOf(shipper.userId);
-    // Money is owed to the shipper: the confirmation does NOT anonymize; the request waits as PENDING (OD-26) and the account stays ACTIVE.
-    expect(resultOf(await confirm(phone))).toBe('PENDING');
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-    expect(await anonymized(shipper.userId)).toBe(false);
-
-    const signedIn = await shipLogin(phone);
-    expect(signedIn.status).toBe(200);
-    const token = String(dataOf(signedIn).access_token);
-    // New work is refused while pending; the whole balance can be withdrawn, once.
-    expect(refused(await app.call('POST', '/driver/wallet/topup-requests', { bearer: token, headers: { 'idempotency-key': randomUUID() }, body: { amount_vnd: 100_000 } }))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    expect(refused(await withdraw(token, 20_000))).toEqual({ status: 409, code: 'WITHDRAWAL_INSUFFICIENT_AVAILABLE' });
-    expect((await withdraw(token, 50_000)).status).toBe(201);
-    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
-    expect(refused(await withdraw(token, 50_000)).status).toBeGreaterThanOrEqual(400);
-    // Not paid out yet: the sweep keeps the request waiting and the personal data stays.
-    await sweeper().sweep();
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-    expect(await anonymized(shipper.userId)).toBe(false);
-    // Paid out: nothing is owed any more, so the sweeper anonymizes the account.
-    await emptyWallet(shipper.driverId);
-    expect(await walletOf(shipper.driverId)).toEqual({ balance: '0', held: '0' });
-    expect((await sweeper().sweep()).failed).toBe(0);
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
-    expect(await anonymized(shipper.userId)).toBe(true);
-    // The wallet, its ledger and the withdrawal history stay (money); the profile is anonymized; the old number no longer signs in.
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.wallet_withdrawals WHERE driver_id = $1::uuid AND state = $2', [shipper.driverId, 'CANCELLED'])).toBe(1);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND full_name = $2', [shipper.driverId, 'Đã ẩn danh'])).toBe(1);
-    expect((await shipLogin(phone)).status).toBe(401);
-  });
 
   it('OD-31 (d): a Shipper locked for VIOLATION or SECURITY gets NO exception: the withdrawal is still CLOSING-only', async () => {
     for (const reason of ['VIOLATION', 'SECURITY']) {
@@ -571,34 +523,6 @@ describe('P5-6a public account deletion', () => {
     }
   });
 
-  it('OD-31 (f): an open withdrawal and an unpaid balance keep the account PENDING; a cancelled request does not end it, only the payout does', async () => {
-    const shipper = await newShipper(app, drivers, 50_000);
-    extraUsers.push(shipper.userId);
-    const phone = await phoneOf(shipper.userId);
-    expect(resultOf(await confirm(phone))).toBe('PENDING');
-    const created = await withdraw(shipper.token, 50_000);
-    expect(created.status).toBe(201);
-    await sweeper().sweep();
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '50000' });
-    // The request is cancelled: nothing is in progress, but the balance is still owed, so the account keeps waiting (not anonymized).
-    const cancelled = await app.call('POST', `/driver/wallet/withdrawals/${String(dataOf(created).withdrawal_id)}/cancel`, {
-      bearer: shipper.token,
-      headers: { 'idempotency-key': randomUUID() },
-      body: { expected_version: Number(dataOf(created).version) },
-    });
-    expect(cancelled.status).toBe(200);
-    await sweeper().sweep();
-    expect(await userRow(shipper.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-    expect(await walletOf(shipper.driverId)).toEqual({ balance: '50000', held: '0' });
-    expect(await anonymized(shipper.userId)).toBe(false);
-    expect(await countRows(app.pool, 'SELECT 1 FROM app.drivers WHERE driver_id = $1::uuid AND full_name <> $2', [shipper.driverId, 'Đã ẩn danh'])).toBe(1);
-    // The balance is withdrawn and paid out: only then is the account anonymized.
-    expect((await withdraw(shipper.token, 50_000)).status).toBe(201);
-    await emptyWallet(shipper.driverId);
-    expect((await sweeper().sweep()).failed).toBe(0);
-    expect(await anonymized(shipper.userId)).toBe(true);
-  });
 
   // ---- Codex review: Argon2 work of every refusal, the phone alias bucket, the 503 atomicity, the administrative lock -----------
 
@@ -654,61 +578,12 @@ describe('P5-6a public account deletion', () => {
     expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', pending: false });
   });
 
-  it('503 when the account activity cannot be verified: nothing changes, no audit, no stored key, and the same key succeeds once the check answers again', async () => {
-    const c = await customer();
-    const before = await userRow(c.userId);
-    const registry = app.running.app.get(AccountActivityRegistry);
-    registry.register({
-      name: 'CODEX_UNVERIFIABLE',
-      relatedData: () => Promise.reject(new Error('the check cannot answer')),
-    });
-    const key = randomUUID();
-    try {
-      expect(refused(await confirm(c.phone, PASSWORD, key))).toEqual({ status: 503, code: 'USER_ACCOUNT_ACTIVITY_UNVERIFIED' });
-    } finally {
-      registry.unregister('CODEX_UNVERIFIABLE');
-    }
-    expect(await userRow(c.userId)).toEqual(before);
-    expect(await liveSessions(c.userId)).toBeGreaterThan(0);
-    expect(await audits('account.delete.requested.v1', c.userId)).toBe(0);
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
-    // The failed attempt left nothing behind for this key: the retry executes (a brand-new customer with nothing to keep is deleted).
-    expect(resultOf(await confirm(c.phone, PASSWORD, key))).toBe('DELETED');
-  });
 
   /** An administrative lock on an account whose deletion is pending (what the Administration lock leaves behind), without the Administration application. */
   const lockedByAdmin = (userId: string, reason: 'VIOLATION' | 'SECURITY'): Promise<unknown> =>
     app.pool.query(`UPDATE app.users SET status = 'DISABLED', lock_reason = $2, locked_at = now(), version = version + 1 WHERE user_id = $1::uuid`, [userId, reason]);
 
-  it('a request pending under a VIOLATION lock waits while work is in progress, then is settled by KEEPING that lock: no purge, no DELETE_REQUEST, sessions revoked, one audit entry', async () => {
-    const c = await customer();
-    const order = await insertOrder(c.userId, shop.shopId, 'PENDING_CONFIRMATION');
-    await markPending(c.userId);
-    await lockedByAdmin(c.userId, 'VIOLATION');
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: true });
 
-    await sweeper().sweep();
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: true });
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
-
-    await finishOrder(order);
-    await sweeper().sweep();
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'VIOLATION', pending: false });
-    expect(await liveSessions(c.userId)).toBe(0);
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    expect((await app.pool.query<{ result: string; lock_reason: string }>(`SELECT metadata->>'result' AS result, metadata->>'lock_reason' AS lock_reason FROM app.audit_logs WHERE action = 'account.delete.finalized.v1' AND resource_id = $1`, [c.userId])).rows[0]).toEqual({ result: 'LOCK_KEPT', lock_reason: 'VIOLATION' });
-    // Run again: nothing more happens.
-    await sweeper().sweep();
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-  });
-
-  it('a request pending under a SECURITY lock with NOTHING to keep is still not purged: the lock is evidence', async () => {
-    const c = await customer();
-    await markPending(c.userId);
-    await lockedByAdmin(c.userId, 'SECURITY');
-    await sweeper().sweep();
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'SECURITY', pending: false });
-  });
 
   it('users_delete_request_ck: a request can coexist with an ACTIVE row or a VIOLATION / SECURITY lock, never with the DELETE_REQUEST lock (that lock IS the end of the request)', async () => {
     const c = await customer();
@@ -754,53 +629,7 @@ describe('P5-6a public account deletion', () => {
 
   // ---- the sweeper ----------------------------------------------------------------------------------------------------------------
 
-  it('the sweeper leaves a pending request alone while work is in progress and finishes it exactly once when the work is over', async () => {
-    const c = await customer();
-    const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
-    expect(resultOf(await confirm(c.phone))).toBe('PENDING');
-    const version = (await userRow(c.userId))?.version;
 
-    expect(await sweeper().sweep()).toMatchObject({ failed: 0 });
-    expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', pending: true, version });
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(0);
-    expect((await me(c.token)).status).toBe(200);
-
-    await finishOrder(orderId);
-    expect(await sweeper().sweep()).toMatchObject({ failed: 0 });
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
-    expect(await liveSessions(c.userId)).toBe(0);
-    expect((await me(c.token)).status).toBe(401);
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
-    const finalizedAudit = await app.pool.query<{ actor_type: string; metadata: { trigger: string; result: string } }>(
-      `SELECT actor_type, metadata FROM app.audit_logs WHERE action = 'account.delete.finalized.v1' AND resource_id = $1`,
-      [c.userId],
-    );
-    expect(finalizedAudit.rows[0]).toMatchObject({ actor_type: 'SYSTEM', metadata: { trigger: 'SWEEPER', result: 'DELETED' } });
-
-    // A second sweep finds nothing to do for this account.
-    await sweeper().sweep();
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-  });
-
-  it('several sweeps at once (several instances) finalize a pending account exactly once', async () => {
-    const accounts: Customer[] = [];
-    for (let n = 0; n < 3; n += 1) {
-      const c = await customer();
-      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
-      expect(resultOf(await confirm(c.phone))).toBe('PENDING');
-      await finishOrder(orderId);
-      accounts.push(c);
-    }
-    const results = await Promise.all([sweeper().sweep(), sweeper().sweep(), sweeper().sweep()]);
-    expect(results.reduce((sum, r) => sum + r.failed, 0)).toBe(0);
-    expect(results.reduce((sum, r) => sum + r.finalized, 0)).toBeGreaterThanOrEqual(3);
-    for (const c of accounts) {
-      expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
-      expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-      expect(await countRows(app.pool, `SELECT 1 FROM app.outbox_events WHERE event_type = 'user.account.deleted.v1' AND resource_id = $1`, [c.userId])).toBe(1);
-    }
-  });
 
   // Owner decision 2026-11-22 (Apple 5.1.1(v)). The case a reviewer can meet: an account with NO order that still holds a saved address, a cart, a
   // push token and a notification. The old rule only locked it (every such row counted as "data to keep"); now it is anonymized and the number is free.
@@ -831,7 +660,7 @@ describe('P5-6a public account deletion', () => {
     const addresses = 'SELECT 1 FROM app.customer_addresses a JOIN app.customers k ON k.id = a.customer_id WHERE k.user_id = $1::uuid';
     expect(await countRows(app.pool, addresses, [c.userId])).toBe(1);
 
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await anonymized(c.userId)).toBe(true);
     expect(await countRows(app.pool, addresses, [c.userId])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.customer_carts WHERE user_id = $1::uuid', [c.userId])).toBe(0);
@@ -859,7 +688,7 @@ describe('P5-6a public account deletion', () => {
   // The tombstone cannot be re-enabled: the database refuses an anonymized row that becomes ACTIVE (users_anonymized_ck), whoever writes it.
   it('an anonymized account cannot be unlocked or reactivated: the database refuses it', async () => {
     const c = await customer();
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     await expect(app.pool.query(`UPDATE app.users SET status = 'ACTIVE', lock_reason = NULL, locked_at = NULL WHERE user_id = $1::uuid`, [c.userId])).rejects.toMatchObject({ code: '23514' });
     expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
   });
@@ -887,7 +716,7 @@ describe('P5-6a public account deletion', () => {
     const orderBefore = (await app.pool.query(orderQuery, [orderId])).rows[0];
     const deliveryBefore = (await app.pool.query(deliveryQuery, [deliveryId])).rows[0];
 
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await anonymized(c.userId)).toBe(true);
     const orderAfter = (await app.pool.query(orderQuery, [orderId])).rows[0];
     expect(orderAfter).toEqual({ ...orderBefore, note: 'Đã ẩn danh', delivery_note: 'Đã ẩn danh' });
@@ -912,7 +741,7 @@ describe('P5-6a public account deletion', () => {
     const before = (await app.pool.query(chatQuery, [mine])).rows[0];
     const shopBefore = (await app.pool.query(chatQuery, [theirs])).rows[0];
 
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect((await app.pool.query(chatQuery, [mine])).rows[0]).toEqual({ ...before, body: 'Tin nhắn đã ẩn danh', sender_name: 'Đã ẩn danh' });
     expect((await app.pool.query(chatQuery, [theirs])).rows[0]).toEqual(shopBefore);
   });
@@ -931,45 +760,13 @@ describe('P5-6a public account deletion', () => {
               ($3::uuid, $5::uuid, 'image/png', 4, ${png}, now())`,
       [fresh, old, foreign, c.userId, other.userId],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await countRows(app.pool, 'SELECT 1 FROM app.complaint_attachments WHERE uploader_user_id = $1::uuid', [c.userId])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [foreign])).toBe(1);
     // Cleanup of this case only: the other customer's picture is removed here, so the suite can purge that customer at the end.
     await withoutTriggers(['complaint_attachments'], (q) => q.query('DELETE FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [foreign]));
   });
 
-  it('the bank account number and holder of every withdrawal of the account are replaced; each withdrawal keeps its amount, state and money trail', async () => {
-    const shipper = await newShipper(app, drivers, 50_000);
-    extraUsers.push(shipper.userId);
-    const phone = await phoneOf(shipper.userId);
-    expect(resultOf(await confirm(phone))).toBe('PENDING');
-    const first = await withdraw(shipper.token, 50_000);
-    expect(first.status).toBe(201);
-    const cancelled = await app.call('POST', `/driver/wallet/withdrawals/${String(dataOf(first).withdrawal_id)}/cancel`, {
-      bearer: shipper.token,
-      headers: { 'idempotency-key': randomUUID() },
-      body: { expected_version: Number(dataOf(first).version) },
-    });
-    expect(cancelled.status).toBe(200);
-    expect((await withdraw(shipper.token, 50_000)).status).toBe(201);
-    const withdrawalsQuery =
-      'SELECT withdrawal_id, amount_vnd::text AS amount, state, account_number, account_holder FROM app.wallet_withdrawals WHERE driver_id = $1::uuid ORDER BY created_at';
-    const realNumbers = (await app.pool.query<{ account_number: string }>('SELECT account_number FROM app.wallet_withdrawals WHERE driver_id = $1::uuid', [shipper.driverId])).rows;
-    expect(realNumbers).toHaveLength(2);
-    expect(realNumbers.every((row) => /^[0-9]{6,20}$/.test(row.account_number) && row.account_number !== '000000')).toBe(true);
-    await emptyWallet(shipper.driverId);
-    const before = (await app.pool.query<{ withdrawal_id: string; amount: string; state: string; account_number: string; account_holder: string }>(withdrawalsQuery, [shipper.driverId])).rows;
-    expect(before.map((row) => row.state)).toEqual(['CANCELLED', 'CANCELLED']);
-    expect((await sweeper().sweep()).failed).toBe(0);
-    expect(await anonymized(shipper.userId)).toBe(true);
-    const after = (await app.pool.query<{ withdrawal_id: string; amount: string; state: string; account_number: string; account_holder: string }>(withdrawalsQuery, [shipper.driverId])).rows;
-    const money = (rows: { withdrawal_id: string; amount: string; state: string }[]): unknown[] => rows.map((row) => [row.withdrawal_id, row.amount, row.state]);
-    expect(money(after)).toEqual(money(before));
-    expect(after.map((row) => [row.account_number, row.account_holder])).toEqual([
-      ['000000', 'Đã ẩn danh'],
-      ['000000', 'Đã ẩn danh'],
-    ]);
-  });
 
   it('the phone of the account is gone from the OTP records: queued SMS jobs are removed, the verification rows keep their history under a placeholder number', async () => {
     const c = await customer();
@@ -984,7 +781,7 @@ describe('P5-6a public account deletion', () => {
        VALUES (gen_random_uuid(), $1::uuid, 'REGISTER', $2, 'QUEUED', decode(repeat('01', 12), 'hex'), decode(repeat('02', 16), 'hex'), decode('0304', 'hex'), 'test-key', now(), now() + interval '5 minutes')`,
       [verificationId, c.phone.normalized],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await countRows(app.pool, 'SELECT 1 FROM app.sms_jobs WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
     expect(await countRows(app.pool, 'SELECT 1 FROM app.verification_proofs WHERE phone_normalized = $1', [c.phone.normalized])).toBe(0);
@@ -1043,9 +840,9 @@ describe('P5-6a public account deletion', () => {
     const row = async (id: string): Promise<{ body: string; shop_name: string; driver_name: string | null; status: string; closure_no: number; version: string }> =>
       (await app.pool.query('SELECT body, shop_name, driver_name, status, closure_no, version::text FROM app.complaints WHERE complaint_id = $1::uuid', [id])).rows[0] as never;
     const ownBefore = await row(own);
-    expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+    expect(await erase(await phoneOf(s.userId))).toBe('DELETED');
     expect(await row(foreign)).toEqual({ body: 'Shipper giao sai địa chỉ', shop_name: 'Quán thử', driver_name: 'Đã ẩn danh', status: 'PENDING', closure_no: 0, version: '2' });
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect(await row(own)).toEqual({ ...ownBefore, body: 'Đã ẩn danh', version: '2' });
   });
 
@@ -1065,7 +862,7 @@ describe('P5-6a public account deletion', () => {
     const query = 'SELECT message_id, body, created_at, seq FROM app.complaint_messages WHERE message_id = $1::uuid';
     const before = (await app.pool.query(query, [mine])).rows[0];
     const otherBefore = (await app.pool.query(query, [theirs])).rows[0];
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect((await app.pool.query(query, [mine])).rows[0]).toEqual({ ...before, body: 'Đã ẩn danh' });
     expect((await app.pool.query(query, [theirs])).rows[0]).toEqual(otherBefore);
   });
@@ -1090,7 +887,7 @@ describe('P5-6a public account deletion', () => {
     );
     const reviewQuery = 'SELECT reviewer_name, comment, stars, version::text FROM app.reviews WHERE review_id = $1::uuid';
     const reviewBefore = (await app.pool.query(reviewQuery, [review])).rows[0];
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect((await app.pool.query(reviewQuery, [review])).rows[0]).toEqual({ ...reviewBefore, reviewer_name: 'Đã ẩn danh', comment: 'Đã ẩn danh', version: '2' });
     expect((await app.pool.query("SELECT body, version::text AS version FROM app.review_replies WHERE review_id = $1::uuid", [review])).rows).toEqual([{ body: 'Đã ẩn danh', version: '2' }]);
     expect((await app.pool.query('SELECT body FROM app.review_reply_history WHERE review_id = $1::uuid', [review])).rows).toEqual([{ body: 'Đã ẩn danh' }]);
@@ -1195,6 +992,7 @@ describe('P5-6a public account deletion', () => {
         async (client) => {
           // An argon2-shaped value that verifies no password (the constraint users_password_hash_ck needs the prefix).
           const unusable = '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+          await app.pool.query("INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '1 second', now() + interval '5 minutes')", [randomUUID(), c.userId, randomUUID()]);
           const done = await client.query('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [c.userId, unusable]);
           expect(done.rows[0]).toEqual({ done: true });
           const row = await client.query('SELECT body FROM app.complaints WHERE complaint_id = $1::uuid', [complaint]);
@@ -1224,7 +1022,7 @@ describe('P5-6a public account deletion', () => {
          VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5, now(), 'PENDING')`,
         [request, complaint, closure.closure_no, c.userId, mine],
       );
-      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await erase(c.phone)).toBe('DELETED');
       expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.complaint_reconsiderations t WHERE request_id = $1::uuid', [request])).not.toContain(mine);
       expect((await app.pool.query('SELECT reason, status FROM app.complaint_reconsiderations WHERE request_id = $1::uuid', [request])).rows[0]).toEqual({ reason: 'Đã ẩn danh', status: 'PENDING' });
     });
@@ -1246,7 +1044,7 @@ describe('P5-6a public account deletion', () => {
          VALUES ($1::uuid, $2::uuid, 'HIDE', 'OTHER', $3, $4::uuid, now())`,
         [moderation, review, mine, c.userId],
       );
-      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await erase(c.phone)).toBe('DELETED');
       expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.review_moderations t WHERE moderation_id = $1::uuid', [moderation])).not.toContain(mine);
       expect((await app.pool.query('SELECT reason_note, action, reason_code FROM app.review_moderations WHERE moderation_id = $1::uuid', [moderation])).rows[0])
         .toEqual({ reason_note: 'Đã ẩn danh', action: 'HIDE', reason_code: 'OTHER' });
@@ -1262,7 +1060,7 @@ describe('P5-6a public account deletion', () => {
          VALUES ($1::uuid, $2::uuid, 'driver.note', 'DRIVER', $3::uuid, $4::text, jsonb_build_object('note', $4::text), now())`,
         [event, s.driverId, s.userId, mine],
       );
-      expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+      expect(await erase(await phoneOf(s.userId))).toBe('DELETED');
       expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.driver_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
       expect((await app.pool.query('SELECT event_type, reason, detail FROM app.driver_events WHERE event_id = $1::uuid', [event])).rows[0])
         .toEqual({ event_type: 'driver.note', reason: 'Đã ẩn danh', detail: {} });
@@ -1283,7 +1081,7 @@ describe('P5-6a public account deletion', () => {
          VALUES ($1::uuid, $2::uuid, 'NOTE', 'NEW', 'NEW', $3, $4::uuid, now())`,
         [event, anomaly, mine, c.userId],
       );
-      expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+      expect(await erase(c.phone)).toBe('DELETED');
       expect(await rowText('SELECT to_jsonb(t)::text AS txt FROM app.ops_anomaly_case_events t WHERE event_id = $1::uuid', [event])).not.toContain(mine);
       expect((await app.pool.query('SELECT note, to_status FROM app.ops_anomaly_case_events WHERE event_id = $1::uuid', [event])).rows[0])
         .toEqual({ note: 'Đã ẩn danh', to_status: 'NEW' });
@@ -1313,7 +1111,7 @@ describe('P5-6a public account deletion', () => {
          ($4::uuid, $2::uuid, 2, 'note.added', 'SYSTEM', NULL, 'Giao hàng đã kết thúc', now())`,
       [randomUUID(), deliveryId, c.userId, randomUUID()],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     const orderNotes = (await app.pool.query<{ note: string }>('SELECT note FROM app.order_events WHERE order_id = $1::uuid', [orderId])).rows.map((r) => r.note);
     expect(orderNotes.sort()).toEqual(['Đã ẩn danh', 'Đơn đã kết thúc']);
     expect((await app.pool.query('SELECT note FROM app.delivery_events WHERE delivery_id = $1::uuid ORDER BY seq', [deliveryId])).rows).toEqual([{ note: 'Đã ẩn danh' }, { note: 'Giao hàng đã kết thúc' }]);
@@ -1343,7 +1141,7 @@ describe('P5-6a public account deletion', () => {
     );
     const query = 'SELECT status, custody, closed_at, reason_note, close_note, version::text FROM app.delivery_incidents WHERE incident_id = $1::uuid';
     const before = (await app.pool.query(query, [incident])).rows[0];
-    expect(resultOf(await confirm(await phoneOf(s.userId)))).toBe('DELETED');
+    expect(await erase(await phoneOf(s.userId))).toBe('DELETED');
     expect((await app.pool.query(query, [incident])).rows[0]).toEqual({ ...before, reason_note: 'Đã ẩn danh', close_note: 'Đã ẩn danh', version: '2' });
   });
 
@@ -1355,7 +1153,7 @@ describe('P5-6a public account deletion', () => {
        VALUES ($1::uuid, 'test.pii.profile.v1', 1, 'user', $2, 1, now(), $3::jsonb, 'PENDING', 0, now())`,
       [event, c.userId, JSON.stringify({ user_id: c.userId, phone: c.phone.normalized, name: 'Nguyễn Văn Khách', nested: { address_text: '12 Phố Huế', amount: 5000 }, list: [{ phone: c.phone.normalized }], keep: 'ok' })],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     const payload = (await app.pool.query<{ payload: Record<string, unknown>; event_type: string }>('SELECT payload, event_type FROM app.outbox_events WHERE event_id = $1::uuid', [event])).rows[0];
     expect(payload?.event_type).toBe('test.pii.profile.v1');
     expect(payload?.payload).toEqual({
@@ -1376,7 +1174,7 @@ describe('P5-6a public account deletion', () => {
        VALUES ($1::uuid, now(), $2::uuid, 'SYSTEM', $3, 'test.pii.profile.v1', 'user', $3, 1, 'SUCCESS', $4::jsonb)`,
       [entry, randomUUID(), c.userId, JSON.stringify({ phone: c.phone.normalized, name: 'Nguyễn Văn Khách', reason: 'hết hạn' })],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     expect((await app.pool.query('SELECT actor_id, action, resource_id, metadata FROM app.audit_logs WHERE audit_id = $1::uuid', [entry])).rows[0]).toEqual({
       actor_id: c.userId,
       action: 'test.pii.profile.v1',
@@ -1405,7 +1203,7 @@ describe('P5-6a public account deletion', () => {
        VALUES ($1::uuid, 'CUSTOMER_ORDER_CANCELS', 'USER', $2::uuid, 'NEW', 1, 1, now() - interval '1 day', now(), $3::jsonb, now(), $4, 1, now(), now())`,
       [anomaly, c.userId, JSON.stringify({ phone: c.phone.normalized, cancelled: 3 }), `Khách ${c.phone.local} huỷ nhiều đơn`],
     );
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     const anomalyRow = (await app.pool.query('SELECT status, occurrences, evidence, note FROM app.ops_anomaly_cases WHERE case_id = $1::uuid', [anomaly])).rows[0];
     expect(anomalyRow).toEqual({ status: 'NEW', occurrences: 1, evidence: { phone: 'Đã ẩn danh', cancelled: 3 }, note: 'Khách Đã ẩn danh huỷ nhiều đơn' });
     const eventRow = (await app.pool.query<{ message: string; detail: Record<string, unknown> }>('SELECT message, detail FROM app.ops_events WHERE event_id = $1::uuid', [event])).rows[0];
@@ -1435,7 +1233,7 @@ describe('P5-6a public account deletion', () => {
     const openPicture = await picture(open);
     const closedPicture = await picture(closed);
     const loose = await picture(null);
-    expect(resultOf(await confirm(c.phone))).toBe('DELETED');
+    expect(await erase(c.phone)).toBe('DELETED');
     const stillThere = async (id: string): Promise<number> => (await app.pool.query('SELECT 1 FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [id])).rowCount ?? 0;
     expect(await stillThere(openPicture)).toBe(1);
     expect(await stillThere(closedPicture)).toBe(0);
@@ -1456,7 +1254,7 @@ describe('P5-6a public account deletion', () => {
     const owner = await createShopOwner(app);
     extraUsers.push(owner.userId);
     extraShops.push(owner.shopId);
-    expect(resultOf(await confirm(await phoneOf(owner.userId)))).toBe('DELETED');
+    expect(await erase(await phoneOf(owner.userId))).toBe('DELETED');
     expect(await anonymized(owner.userId)).toBe(true);
     expect(await app.pool.query<{ name: string; status: string; accepting_orders: boolean; address_text: string; contact_phone_normalized: string }>(
       'SELECT name, status, accepting_orders, address_text, contact_phone_normalized FROM app.shops WHERE shop_id = $1::uuid',
@@ -1471,17 +1269,6 @@ describe('P5-6a public account deletion', () => {
     expect(await countRows(app.pool, 'SELECT 1 FROM app.shop_members WHERE user_id = $1::uuid', [owner.userId])).toBe(0);
   });
 
-  it('a pending account that has nothing left in progress is anonymized by the sweeper, exactly once', async () => {
-    const c = await customer();
-    // The only "work" is a flag that was set while something ran: nothing remains once it ended, so the sweeper anonymizes the account.
-    await markPending(c.userId);
-    await sweeper().sweep();
-    expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST', pending: false });
-    expect(await anonymized(c.userId)).toBe(true);
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-    await sweeper().sweep();
-    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
-  });
 
   // ---- races ----------------------------------------------------------------------------------------------------------------------
 
@@ -1516,32 +1303,6 @@ describe('P5-6a public account deletion', () => {
     throw new Error('the requests did not queue behind the lock');
   }
 
-  it('race: an order that commits just BEFORE the confirmation is work in progress (PENDING, never deleted or locked); the next order is refused', async () => {
-    const c = await customer();
-    const hold = await holdUserRow(c.userId);
-    try {
-      // The order of this customer is being committed (it holds the user row), the confirmation arrives meanwhile and queues behind it.
-      const confirming = confirm(c.phone);
-      await waitForWaiters(1);
-      await hold.inside('ALTER TABLE app.orders DISABLE TRIGGER USER');
-      await hold.inside(
-        `INSERT INTO app.orders (order_id, code, client_ref, customer_user_id, shop_id, status, shop_name, shop_phone, shop_address_text, recipient_name, recipient_phone, address_text,
-           items_original_total_vnd, items_total_vnd, created_at, updated_at)
-         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, 'PENDING_CONFIRMATION', 'Quán thử', '0900000000', 'Số 1', 'Người nhận', '0912345678', 'Số 2', 50000, 50000, now(), now())`,
-        [randomUUID(), `#R${randomUUID().slice(0, 6)}`, randomUUID(), c.userId, shop.shopId],
-      );
-      await hold.inside('ALTER TABLE app.orders ENABLE TRIGGER USER');
-      await hold.release();
-      const confirmation = await confirming;
-      expect(resultOf(confirmation)).toBe('PENDING');
-      expect(await userRow(c.userId)).toMatchObject({ status: 'ACTIVE', pending: true });
-      expect(await countRows(app.pool, `SELECT 1 FROM app.orders WHERE customer_user_id = $1::uuid AND status = 'PENDING_CONFIRMATION'`, [c.userId])).toBe(1);
-      // ... and from now on nothing new is accepted.
-      expect(refused(await placeOrder(c))).toEqual({ status: 409, code: 'ACCOUNT_DELETE_PENDING' });
-    } finally {
-      await hold.release();
-    }
-  });
 
   it('race: an order attempted just AFTER the confirmation (queued behind it) is refused, and no order exists for the deleted account', async () => {
     const c = await customer();
@@ -1554,7 +1315,7 @@ describe('P5-6a public account deletion', () => {
       await hold.release();
       const [confirmation, order] = await Promise.all([confirming, placing]);
       // Nothing was in progress when the confirmation ran, so the account was anonymized; the late order finds no valid session.
-      expect(resultOf(confirmation)).toBe('DELETED');
+      expect(resultOf(confirmation)).toBe('LOCKED');
       expect(order.status).toBeGreaterThanOrEqual(400);
       expect(await userRow(c.userId)).toMatchObject({ status: 'DISABLED', lock_reason: 'DELETE_REQUEST' });
       expect(await countRows(app.pool, 'SELECT 1 FROM app.orders WHERE customer_user_id = $1::uuid', [c.userId])).toBe(0);
@@ -1569,29 +1330,11 @@ describe('P5-6a public account deletion', () => {
     const key = randomUUID();
     const [a, b] = await Promise.all([confirm(c.phone, PASSWORD, key), confirm(c.phone, PASSWORD, key)]);
     expect([a.status, b.status]).toEqual([200, 200]);
-    expect([resultOf(a), resultOf(b)]).toEqual(['PENDING', 'PENDING']);
-    expect(await audits('account.delete.requested.v1', c.userId)).toBe(1);
-    expect((await userRow(c.userId))?.pending).toBe(true);
+    expect([resultOf(a), resultOf(b)]).toEqual(['LOCKED', 'LOCKED']);
+    expect(await audits('account.delete.finalized.v1', c.userId)).toBe(1);
+    expect((await userRow(c.userId))?.pending).toBe(false);
   });
 
-  it('race (stress): a confirmation and an order at the same moment never leave an order of an account that was deleted or locked', async () => {
-    for (let round = 0; round < 6; round += 1) {
-      const c = await customer();
-      const [order, confirmation] = await Promise.all([placeOrder(c), confirm(c.phone)]);
-      const row = await userRow(c.userId);
-      const orders = await countRows(app.pool, `SELECT 1 FROM app.orders WHERE customer_user_id = $1::uuid AND status IN ('PENDING_CONFIRMATION', 'PREPARING')`, [c.userId]);
-      if (order.status === 201) {
-        // The order exists, so the account must still be there, ACTIVE and waiting for it.
-        expect(orders).toBe(1);
-        expect(row).toMatchObject({ status: 'ACTIVE', pending: true });
-        expect(resultOf(confirmation)).toBe('PENDING');
-      } else {
-        // The order lost: no order exists at all, whatever became of the account.
-        expect(orders).toBe(0);
-        expect(['DELETED', 'LOCKED', 'PENDING']).toContain(resultOf(confirmation));
-      }
-    }
-  });
 
   // ---- the page ---------------------------------------------------------------------------------------------------------------------
 
@@ -1625,4 +1368,136 @@ describe('P5-6a public account deletion', () => {
     expect((await app.call('GET', '/account-deletion/confirm')).status).toBe(404);
     expect((await app.call('POST', '/account-deletion/cancel', { body: {} })).status).toBe(404);
   });
+
+  // ---- The owner's erasure from the signed-in app (Owner order 2026-11-23) ------------------------------------------------------------------------
+
+  describe('erasure from the app: pre-check, one-time code, one-time request, erasure job', () => {
+    let savedIpPerHour: number | undefined;
+    beforeAll(async () => {
+      // One loopback address sends every code of this suite: the hourly address budget is lifted for this block only (restored afterwards).
+      savedIpPerHour = (await app.pool.query<{ ip_per_hour: number }>('SELECT ip_per_hour FROM app.otp_policy WHERE policy_id = 1')).rows[0]?.ip_per_hour;
+      await withoutTriggers(['otp_policy'], (q) => q.query('UPDATE app.otp_policy SET ip_per_hour = 500 WHERE policy_id = 1'));
+    });
+    afterAll(async () => {
+      await withoutTriggers(['otp_policy'], (q) => q.query('UPDATE app.otp_policy SET ip_per_hour = $1 WHERE policy_id = 1', [savedIpPerHour ?? 10]));
+    });
+    const codeCount = async (normalizedPhone: string): Promise<number> =>
+      countRows(app.pool, "SELECT 1 FROM app.phone_verifications WHERE phone_normalized = $1 AND purpose = 'ACCOUNT_DELETE'", [normalizedPhone]);
+    const requestCount = async (userId: string): Promise<number> =>
+      countRows(app.pool, 'SELECT 1 FROM app.account_deletion_requests WHERE user_id = $1::uuid', [userId]);
+    const statusOf = async (userId: string): Promise<string | undefined> =>
+      (await app.pool.query<{ status: string }>('SELECT status FROM app.users WHERE user_id = $1::uuid', [userId])).rows[0]?.status;
+    const normalizedOf = (phone: { local: string }): string => `+84${phone.local.slice(1)}`;
+    const codesOf = (response: ApiResponse): string[] => ((response.body.data as { blockers?: Array<{ code: string }> } | undefined)?.blockers ?? []).map((b) => b.code);
+    // Every code request of this block goes through here: the registration code of the fixture is not a recent send for the erasure.
+    const tokenOf = async (phone: { local: string; normalized?: string }): Promise<string> => {
+      await ageChallenges(phone.normalized ?? `+84${phone.local.slice(1)}`);
+      return String((await login({ local: phone.local })).body.data?.access_token);
+    };
+
+    it('the erasure function refuses an account with no valid request (none, expired), whoever calls it', async () => {
+      const c = await customer();
+      await expect(app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text)', [c.userId, 'x'])).rejects.toThrow(/ACCOUNT_ERASURE_NOT_REQUESTED/);
+      // An expired request does not open it.
+      await app.pool.query(
+        "INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '2 minutes', now() - interval '1 minute')",
+        [randomUUID(), c.userId, randomUUID()],
+      );
+      await expect(app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text)', [c.userId, 'x'])).rejects.toThrow(/ACCOUNT_ERASURE_NOT_REQUESTED/);
+      expect(await anonymized(c.userId)).toBe(false);
+    });
+
+    it('the pre-check blocks work in progress and a balance at or above the minimum withdrawal: no code is sent', async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      const token = await tokenOf(c.phone);
+      const blocked = await app.call('GET', '/account/deletion/precheck', { bearer: token });
+      expect(blocked.body.data?.status).toBe('BLOCKED');
+      expect(codesOf(blocked)).toContain('ACTIVE_WORK');
+      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
+      expect(await codeCount(c.phone.normalized)).toBe(0);
+      await finishOrder(orderId);
+
+      const shipper = await newShipper(app, drivers, 50_000);
+      const shipperPhone = await phoneOf(shipper.userId);
+      const sToken = await tokenOf(shipperPhone);
+      const money = await app.call('GET', '/account/deletion/precheck', { bearer: sToken });
+      expect(codesOf(money)).toContain('WALLET_AT_OR_ABOVE_MINIMUM');
+      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: sToken, body: { accept_forfeit: true } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_BLOCKED' });
+      expect(await codeCount(normalizedOf(shipperPhone))).toBe(0);
+      expect(await anonymized(shipper.userId)).toBe(false);
+    });
+
+    it('a balance below the minimum is forfeited only with the owner agreement; the amount goes to the ledger and the account is erased', async () => {
+      const shipper = await newShipper(app, drivers, 5_000);
+      const phone = await phoneOf(shipper.userId);
+      const token = await tokenOf(phone);
+      expect(refused(await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: false } }))).toEqual({ status: 409, code: 'ACCOUNT_ERASURE_CONSENT_REQUIRED' });
+      expect(await codeCount(normalizedOf(phone))).toBe(0);
+      expect(await erase(phone, true)).toBe('DELETED');
+      expect(await anonymized(shipper.userId)).toBe(true);
+      const ledger = (await app.pool.query<{ kind: string; delta: string; after: string }>(
+        'SELECT e.entry_kind AS kind, e.delta_vnd::text AS delta, e.balance_after_vnd::text AS after FROM app.wallet_ledger_entries e JOIN app.driver_wallets w ON w.wallet_id = e.wallet_id WHERE w.driver_id = $1::uuid ORDER BY e.sequence_no DESC LIMIT 1',
+        [shipper.driverId],
+      )).rows[0];
+      expect(ledger).toEqual({ kind: 'ADJUSTMENT_DEBIT', delta: '-5000', after: '0' });
+      expect(await countRows(app.pool, "SELECT 1 FROM app.wallet_adjustments a JOIN app.driver_wallets w ON w.wallet_id = a.wallet_id WHERE w.driver_id = $1::uuid AND a.source_type = 'ACCOUNT_DELETE'", [shipper.driverId])).toBe(1);
+    });
+
+    it('a wrong code and an expired code create no request and leave the account active', async () => {
+      const c = await customer();
+      const token = await tokenOf(c.phone);
+      const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } });
+      expect(code.status).toBe(200);
+      const verificationId = String(code.body.data?.verification_id);
+      const wrong = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: '000000', accept_forfeit: true } });
+      expect(wrong.status).not.toBe(200);
+      expect(await requestCount(c.userId)).toBe(0);
+      expect(await statusOf(c.userId)).toBe('ACTIVE');
+      await withoutTriggers(['phone_verifications'], (q) => q.query("UPDATE app.phone_verifications SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute' WHERE verification_id = $1::uuid", [verificationId]));
+      const expired = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp: app.provider.lastOtpFor(c.phone.normalized), accept_forfeit: true } });
+      expect(expired.status).not.toBe(200);
+      expect(await requestCount(c.userId)).toBe(0);
+      expect(await statusOf(c.userId)).toBe('ACTIVE');
+    });
+
+    it('a used code and its request cannot be used again: a second confirmation with the same code is refused', async () => {
+      const c = await customer();
+      const token = await tokenOf(c.phone);
+      const code = await app.call('POST', '/account/deletion/code', { bearer: token, body: { accept_forfeit: true } });
+      const verificationId = String(code.body.data?.verification_id);
+      const otp = app.provider.lastOtpFor(c.phone.normalized);
+      const first = await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: true } });
+      expect(resultOf(first)).toBe('ERASURE_SCHEDULED');
+      expect(await requestCount(c.userId)).toBe(1);
+      expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: token, body: { verification_id: verificationId, otp, accept_forfeit: true } })).status).not.toBe(200);
+      expect(await sweeper().sweep()).toMatchObject({ failed: 0 });
+      expect(await anonymized(c.userId)).toBe(true);
+      expect(await requestCount(c.userId)).toBe(1);
+      await expect(app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text)', [c.userId, 'x'])).resolves.toBeDefined();
+      expect(await anonymized(c.userId)).toBe(true);
+    });
+
+    it('the code of account A cannot erase account B: a challenge of another phone is refused with the wrong-code answer', async () => {
+      const a = await customer();
+      const b = await customer();
+      const tokenA = await tokenOf(a.phone);
+      const tokenB = await tokenOf(b.phone);
+      const code = await app.call('POST', '/account/deletion/code', { bearer: tokenA, body: { accept_forfeit: true } });
+      const verificationId = String(code.body.data?.verification_id);
+      const otpOfB = app.provider.lastOtpFor(b.phone.normalized);
+      expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: tokenB, body: { verification_id: verificationId, otp: otpOfB, accept_forfeit: true } })).code).toBe('OTP_INVALID');
+      expect(await requestCount(b.userId)).toBe(0);
+      expect(await statusOf(b.userId)).toBe('ACTIVE');
+    });
+
+    it('the erasure job takes only an account with a valid request: a lock without a request is never anonymized', async () => {
+      const locked = await customer();
+      expect(resultOf(await confirm(locked.phone))).toBe('LOCKED');
+      expect((await sweeper().sweep()).failed).toBe(0);
+      expect(await anonymized(locked.userId)).toBe(false);
+      expect(await statusOf(locked.userId)).toBe('DISABLED');
+    });
+  });
+
 });

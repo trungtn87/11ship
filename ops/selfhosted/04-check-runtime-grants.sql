@@ -135,6 +135,7 @@ WITH expected(table_name, privileges) AS (
     ('complaint_reconsiderations', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('complaint_adjustments', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('wallet_adjustments', ARRAY['SELECT', 'INSERT']::text[]),
+    ('account_deletion_requests', ARRAY['SELECT', 'INSERT']::text[]),
     ('ops_config', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_admin_scopes', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
     ('ops_incidents', ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']::text[]),

@@ -37,11 +37,17 @@ export class AccountDeletionFinalizer {
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
   ) {}
 
+  /** The names of the work still in progress (orders, deliveries, money, records); empty = none. Read only: the erasure pre-check uses it before any change. */
+  async activeWork(context: TransactionContext, userId: string): Promise<readonly string[]> {
+    return this.activity.activeWork(context, userId);
+  }
+
   async finalize(context: TransactionContext, account: OrdinaryAccount): Promise<DeletionOutcome> {
     // Locks first, then the read: the data seen is the data that is still there when the account is anonymized.
     await this.activity.lockWorkSources(context, account.userId);
     const related = await this.activity.relatedData(context, account.userId);
-    if (account.status === 'DISABLED') {
+    // A lock for the owner's erasure (DELETE_REQUEST) is the state the erasure starts from: the job decides from here (its request is checked by the database).
+    if (account.status === 'DISABLED' && account.lockReason !== 'DELETE_REQUEST') {
       return { kind: 'ALREADY_DISABLED', relatedData: related };
     }
     const activeWork = await this.activity.activeWork(context, account.userId);

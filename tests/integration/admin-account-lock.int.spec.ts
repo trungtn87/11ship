@@ -327,7 +327,7 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(adminData(await detail(target.id, systemLogin())).allowed_actions).toEqual(['LOCK', 'DELETE']);
   });
 
-  it('P5-6a (OD-26, no cancel): an administrative lock and its unlock keep the owner\'s deletion request; the sweeper then keeps the stronger lock or finishes the request', async () => {
+  it('P5-6a (OD-26, no cancel): an administrative lock and its unlock keep the owner\'s deletion request; the sweeper never erases them (only a valid one-time request erases)', async () => {
     const auditRows = (userId: string, action: string): Promise<number> => count(app.pool, 'SELECT 1 FROM app.audit_logs WHERE action = $1 AND resource_id = $2', [action, userId]);
     const state = async (userId: string): Promise<{ status: string; reason: string | null; pending: boolean } | undefined> =>
       (await app.pool.query<{ status: string; reason: string | null; pending: boolean }>('SELECT status, lock_reason AS reason, (delete_requested_at IS NOT NULL) AS pending FROM app.users WHERE user_id = $1::uuid', [userId])).rows[0];
@@ -342,10 +342,11 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(await state(locked.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: true });
     expect(await auditRows(locked.id, 'account.lock.on_delete_request.v1')).toBe(1);
     expect(await auditRows(locked.id, 'admin.user.lock.v1')).toBe(1);
+    // The sweeper erases only a DELETE_REQUEST lock with a valid one-time request: a VIOLATION lock is never erased, whatever the legacy flag says.
     await sweep();
-    expect(await state(locked.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: false });
+    expect(await state(locked.id)).toEqual({ status: 'DISABLED', reason: 'VIOLATION', pending: true });
     expect(await liveSessions(locked.id)).toBe(0);
-    expect(await auditRows(locked.id, 'account.delete.finalized.v1')).toBe(1);
+    expect(await auditRows(locked.id, 'account.delete.finalized.v1')).toBe(0);
 
     // 2. PENDING -> lock -> unlock: the account does NOT come back as an ordinary ACTIVE one; it is "deletion pending" again (one audit entry
     //    for each step) and the sweeper carries the request out (this customer has nothing to keep: it is anonymized).
@@ -358,9 +359,8 @@ describe('admin account lock / unlock (API + one real browser smoke)', () => {
     expect(await auditRows(toggled.id, 'account.lock.on_delete_request.v1')).toBe(1);
     expect(await auditRows(toggled.id, 'account.unlock.on_delete_request.v1')).toBe(1);
     await sweep();
-    // Owner decision 2026-11-22: the carried-out request ANONYMIZES the account (a DISABLED tombstone with the same id, no pending request).
-    expect(await state(toggled.id)).toEqual({ status: 'DISABLED', reason: 'DELETE_REQUEST', pending: false });
-    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [toggled.id])).rowCount).toBe(1);
+    expect(await state(toggled.id)).toEqual({ status: 'ACTIVE', reason: null, pending: true });
+    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [toggled.id])).rowCount).toBe(0);
   });
 
   it('Owner decision 2026-11-08: unlocking a DELETE_REQUEST lock is a valid RESTORATION and is audited once (no duplicate on a retried key); other reasons and a pending request are not', async () => {

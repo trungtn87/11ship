@@ -48,6 +48,25 @@ CREATE FUNCTION app.anonymized_phone_number() RETURNS text
 $$;
 REVOKE ALL ON FUNCTION app.anonymized_phone_number() FROM PUBLIC;
 
+-- Owner order 2026-11-23 (Apple 5.1.1(v)): the erasure request. It is written only after the owner confirmed a one-time OTP sent to the phone
+-- (the backend checks the OTP first). One row per request; anonymize_app_user accepts only a request that is still unused and not expired,
+-- and uses it up in the same transaction. A request is bound to one account (user_id).
+CREATE TABLE app.account_deletion_requests (
+  request_id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES app.users (user_id),
+  verification_id uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  CONSTRAINT account_deletion_requests_window_ck CHECK (expires_at > created_at),
+  CONSTRAINT account_deletion_requests_consumed_ck CHECK (consumed_at IS NULL OR consumed_at >= created_at)
+);
+-- At most one live (unused) request per account.
+CREATE UNIQUE INDEX account_deletion_requests_live_uq ON app.account_deletion_requests (user_id) WHERE consumed_at IS NULL;
+
+-- The wallet adjustment source of the erasure: the forfeited balance (below the minimum withdrawal) is posted to the ledger like a complaint adjustment.
+ALTER TABLE app.wallet_adjustments DROP CONSTRAINT wallet_adjustments_source_ck;
+ALTER TABLE app.wallet_adjustments ADD CONSTRAINT wallet_adjustments_source_ck CHECK (source_type IN ('COMPLAINT', 'ACCOUNT_DELETE'));
 
 CREATE FUNCTION app.anonymize_app_user(p_user_id uuid, p_password_hash text) RETURNS boolean
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $$
@@ -63,6 +82,12 @@ BEGIN
   PERFORM 1 FROM app.users WHERE user_id = p_user_id AND account_scope = 'APP_USER' AND anonymized_at IS NULL FOR UPDATE;
   IF NOT FOUND THEN
     RETURN false;
+  END IF;
+  -- The gate: only an account with a valid, unused, unexpired erasure request may be anonymized, whoever calls (the request is consumed below).
+  PERFORM 1 FROM app.account_deletion_requests
+   WHERE user_id = p_user_id AND consumed_at IS NULL AND expires_at > now() FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ACCOUNT_ERASURE_NOT_REQUESTED: no valid, unused erasure request for this account' USING ERRCODE = 'restrict_violation';
   END IF;
   PERFORM set_config('app.account_anonymize', 'on', true);
   -- Read by the complaint-picture delete guard: only the pictures this account uploaded may go, in this transaction.
@@ -258,6 +283,9 @@ BEGIN
   UPDATE app.users SET phone_normalized = v_phone, password_hash = p_password_hash, status = 'DISABLED', lock_reason = 'DELETE_REQUEST',
          locked_at = now(), delete_requested_at = NULL, anonymized_at = now(), version = version + 1, updated_at = now()
    WHERE user_id = p_user_id;
+  -- The request is used up in this same transaction: a second call (or a replay) finds nothing and is refused.
+  UPDATE app.account_deletion_requests SET consumed_at = now()
+   WHERE user_id = p_user_id AND consumed_at IS NULL;
   RETURN true;
 END $$;
 
@@ -854,6 +882,12 @@ BEGIN
   END IF;
 END
 $$;
+
+-- The erasure requests and the adjustment source go back first (the refusal above guarantees no anonymized account and so no erasure request in use).
+DROP TABLE app.account_deletion_requests;
+DELETE FROM app.wallet_adjustments WHERE source_type = 'ACCOUNT_DELETE';
+ALTER TABLE app.wallet_adjustments DROP CONSTRAINT wallet_adjustments_source_ck;
+ALTER TABLE app.wallet_adjustments ADD CONSTRAINT wallet_adjustments_source_ck CHECK (source_type IN ('COMPLAINT'));
 
 -- The two guards go back to the definitions the earlier migrations left in place (no exception).
 CREATE OR REPLACE FUNCTION app.orders_guard()

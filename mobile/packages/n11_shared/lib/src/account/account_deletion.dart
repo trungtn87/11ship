@@ -6,83 +6,154 @@ import 'api_client.dart';
 import 'models.dart';
 import 'session_controller.dart';
 
-// The owner's own account deletion, started inside the app (OD-26; Apple 5.1.1 and Google Play require it in-app). It calls the SAME public
-// route the web page /delete-account uses: POST /v1/account-deletion/confirm {phone, password} with an Idempotency-Key. No session token,
-// no OTP, no administrator step, no cancel. The phone is the one the signed-in identity already holds (normalized by the server).
-//
-// Server answers: DELETED / LOCKED = the account is locked and the server revoked its sessions, so this device forgets its token at once
-// (no revoke call: the server already did it); PENDING = work in progress is finished first, the session stays and new work is refused.
-// A wrong password, the rate limit and a lost answer are failures; a wrong password never locks anything.
+// The owner's own account deletion, started inside the app (Apple 5.1.1(v) and Google Play require it in-app). Owner order 2026-11-23, the
+// signed-in app only:
+//   1. GET  /v1/account/deletion/precheck   -> READY (balance, forfeit, minimum) or BLOCKED (what must be done first). Nothing is sent.
+//   2. POST /v1/account/deletion/code       {accept_forfeit} -> a one-time code by SMS to the account's phone. Refused while BLOCKED, or while a
+//                                            balance below the minimum withdrawal is not agreed (it is then forfeited).
+//   3. POST /v1/account/deletion/confirm    {verification_id, otp, accept_forfeit} -> ERASURE_SCHEDULED: the account is locked, every session
+//                                            is revoked and the erasure follows within about a minute. The device forgets its token at once.
+// No password is asked again. The web page /delete-account keeps its own password route and only locks the account.
 
-enum AccountDeletionOutcome { deleted, locked, pending }
+/// One reason the pre-check gives for refusing the deletion. [items] is set for ACTIVE_WORK (the names of the work still in progress).
+class ErasureBlocker {
+  const ErasureBlocker(this.code, this.items);
+  final String code;
+  final List<String> items;
+}
+
+/// The pre-check answer: READY (with the amounts) or BLOCKED (with the reasons).
+class ErasurePrecheck {
+  const ErasurePrecheck({
+    required this.ready,
+    required this.balanceVnd,
+    required this.forfeitVnd,
+    required this.withdrawMinVnd,
+    required this.blockers,
+  });
+
+  final bool ready;
+  final int balanceVnd;
+  final int forfeitVnd;
+  final int withdrawMinVnd;
+  final List<ErasureBlocker> blockers;
+
+  bool get hasForfeit => forfeitVnd > 0;
+
+  factory ErasurePrecheck.fromData(Map<String, Object?> data) {
+    final List<ErasureBlocker> blockers = <ErasureBlocker>[];
+    final Object? raw = data['blockers'];
+    if (raw is List<Object?>) {
+      for (final Object? item in raw) {
+        if (item is Map<String, Object?> && item['code'] is String) {
+          final Object? items = item['items'];
+          blockers.add(ErasureBlocker(item['code']! as String, items is List<Object?> ? items.whereType<String>().toList() : const <String>[]));
+        }
+      }
+    }
+    final bool ready = data['status'] == 'READY';
+    return ErasurePrecheck(
+      ready: ready,
+      balanceVnd: _int(data['balance_vnd']),
+      forfeitVnd: _int(data['forfeit_vnd']),
+      withdrawMinVnd: _int(data['withdraw_min_vnd']),
+      blockers: blockers,
+    );
+  }
+
+  static int _int(Object? value) => value is String ? (int.tryParse(value) ?? 0) : 0;
+}
+
+enum AccountErasureOutcome { scheduled }
 
 class AccountDeletionController extends ChangeNotifier {
-  AccountDeletionController({required this.transport, required this.session});
+  AccountDeletionController({required this.session});
 
-  static const String endpoint = '/v1/account-deletion/confirm';
+  static const String precheckPath = '/v1/account/deletion/precheck';
+  static const String codePath = '/v1/account/deletion/code';
+  static const String confirmPath = '/v1/account/deletion/confirm';
 
-  final ApiTransport transport;
   final SessionController session;
 
   bool _busy = false;
   bool _disposed = false;
   AuthFailure? _failure;
-  AccountDeletionOutcome? _outcome;
-  String? _pendingKey;
-  String? _pendingBody;
+  AccountErasureOutcome? _outcome;
+  ErasurePrecheck? _precheck;
+  String? _verificationId;
 
   bool get busy => _busy;
   AuthFailure? get failure => _failure;
-  AccountDeletionOutcome? get outcome => _outcome;
+  AccountErasureOutcome? get outcome => _outcome;
+  ErasurePrecheck? get precheck => _precheck;
 
-  /// True while an unconfirmed write (no answer arrived) can be sent again with the same key.
-  bool get hasPendingWrite => _pendingKey != null;
+  /// True once a one-time code was sent and not yet used.
+  bool get codeSent => _verificationId != null;
 
-  /// Sends the request for the signed-in phone and [password]. Returns true once the server answered DELETED, LOCKED or PENDING.
-  /// The same phone + password reuse the pending Idempotency-Key ("Thử lại" after a lost answer); anything else is a new request.
-  Future<bool> submit(String password) async {
-    final String? phone = session.identity?.phoneNormalized;
-    if (_busy || _outcome != null || phone == null || password.isEmpty) {
+  /// Reads the pre-check. No code is sent and nothing changes.
+  Future<void> loadPrecheck() async {
+    if (_busy || _outcome != null) {
+      return;
+    }
+    await _run(() async {
+      final ApiResponse response = await session.protectedCall('GET', precheckPath);
+      final Object? data = response.data;
+      _precheck = ErasurePrecheck.fromData(data is Map<String, Object?> ? data : <String, Object?>{});
+    });
+  }
+
+  /// Asks for the one-time code. [acceptForfeit] must be true when the pre-check shows a balance that will be forfeited.
+  Future<bool> sendCode({required bool acceptForfeit}) async {
+    if (_busy || _outcome != null) {
       return false;
     }
-    final String body = jsonEncode(<String, Object?>{'phone': phone, 'password': password});
-    final String key = _pendingBody == body && _pendingKey != null ? _pendingKey! : newIdempotencyKey();
+    return _run(() async {
+      final ApiResponse response = await session.protectedCall('POST', codePath, body: jsonEncode(<String, Object?>{'accept_forfeit': acceptForfeit}));
+      final Object? data = response.data;
+      final Object? id = data is Map<String, Object?> ? data['verification_id'] : null;
+      if (id is! String) {
+        throw AuthFailure(AuthFailureKind.serverUnavailable, endpoint: codePath);
+      }
+      _verificationId = id;
+    });
+  }
+
+  /// Confirms the code. On success the account is locked and this device signs out at once.
+  Future<bool> confirm({required String otp, required bool acceptForfeit}) async {
+    final String? verificationId = _verificationId;
+    if (_busy || _outcome != null || verificationId == null) {
+      return false;
+    }
+    final bool done = await _run(() async {
+      final ApiResponse response = await session.protectedCall(
+        'POST',
+        confirmPath,
+        body: jsonEncode(<String, Object?>{'verification_id': verificationId, 'otp': otp, 'accept_forfeit': acceptForfeit}),
+      );
+      final Object? data = response.data;
+      final Object? result = data is Map<String, Object?> ? data['result'] : null;
+      if (result != 'ERASURE_SCHEDULED') {
+        throw AuthFailure(AuthFailureKind.serverUnavailable, endpoint: confirmPath);
+      }
+      _outcome = AccountErasureOutcome.scheduled;
+    });
+    if (done) {
+      _verificationId = null;
+      await session.endAfterAccountDeletion(walletOnly: false);
+    }
+    return done;
+  }
+
+  Future<bool> _run(Future<void> Function() step) async {
     _busy = true;
     _failure = null;
-    _pendingBody = body;
-    _pendingKey = key;
     _notify();
     try {
-      // Only the JSON and the Idempotency-Key are sent: no authorization, no cookie, no device header (the same as the public web page).
-      final ApiResponse response = await transport.send('POST', endpoint, headers: <String, String>{'idempotency-key': key}, body: utf8.encode(body));
-      final Object? data = response.status == 200 ? response.data : null;
-      final Object? result = data is Map<String, Object?> ? data['result'] : null;
-      final AccountDeletionOutcome outcome;
-      if (result == 'DELETED') {
-        outcome = AccountDeletionOutcome.deleted;
-      } else if (result == 'LOCKED') {
-        outcome = AccountDeletionOutcome.locked;
-      } else if (result == 'PENDING') {
-        outcome = AccountDeletionOutcome.pending;
-      } else {
-        throw failureOf(response, endpoint: endpoint);
-      }
-      _pendingBody = null;
-      _pendingKey = null;
+      await step();
       _busy = false;
-      _outcome = outcome;
       _notify();
-      if (outcome != AccountDeletionOutcome.pending) {
-        // A driver whose account is only LOCKED (records kept) can still sign in to 11Ship for the wallet; an erased account cannot.
-        final bool walletOnly = outcome == AccountDeletionOutcome.locked && (session.identity?.availableRoles.contains('DRIVER') ?? false);
-        await session.endAfterAccountDeletion(walletOnly: walletOnly);
-      }
       return true;
     } on AuthFailure catch (failure) {
-      if (!failure.outcomeUnknown) {
-        _pendingBody = null;
-        _pendingKey = null;
-      }
       _failure = failure;
       _busy = false;
       _notify();

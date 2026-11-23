@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { Argon2idPasswordHasher } from '../../apps/backend/src/auth/password-hasher';
 import { AdminApp, adminData, adminErrorCode, AdminResponse, sessionCookies, startAdminApp } from './support/admin-fixtures';
@@ -16,6 +17,14 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 describe('account lock / delete against the real records of every module', () => {
   let app: AdminApp;
+  // The owner's erasure, as the app starts it (Owner order 2026-11-23): a one-time request, then the sweeper. The administration command only locks.
+  const requestErasure = async (userId: string): Promise<{ failed: number }> => {
+    await app.pool.query(
+      "INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '1 second', now() + interval '5 minutes')",
+      [randomUUID(), userId, randomUUID()],
+    );
+    return app.running.app.get(AccountDeletionSweeper).sweep();
+  };
   let system: SystemSession;
   const hasher = new Argon2idPasswordHasher();
   const seededIds: string[] = [];
@@ -183,23 +192,24 @@ describe('account lock / delete against the real records of every module', () =>
       [orderId],
     );
     await app.pool.query('ALTER TABLE app.orders ENABLE TRIGGER USER');
-    // Retry: a new intent after the order ended is allowed. Owner decision 2026-11-22: the delete of an account WITH history ANONYMIZES it
+    // Retry: a new intent after the order ended is allowed. The administration delete only locks; the owner's erasure then ANONYMIZES the account
     // (a DISABLED tombstone with the same id); the order and its money keep their rows.
     const deleted = await command('delete', customer.id, version);
     expect(deleted.status).toBe(200);
-    expect(adminData(deleted)).toMatchObject({ result: 'DELETED', related_data: ['ORDERS'] });
+    expect(adminData(deleted)).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(customer.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(customer.id)).failed).toBe(0);
     expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [customer.id])).rowCount).toBe(1);
     expect(await orderExists(orderId)).toBe(true);
   });
 
-  it('historical order only: no active work; the delete anonymizes the account and keeps the order and the roles (the tombstone is never unlocked)', async () => {
+  it('historical order only: no active work; the delete locks the account and keeps the order and the roles', async () => {
     const customer = await seedUser(['CUSTOMER']);
     const owner = await seedUser(['SHOP']);
     const orderId = await insertOrder(customer.id, await shopOf(owner.id), 'COMPLETED');
     const shown = await detail(customer.id);
     expect(shown.lifecycle).toMatchObject({ related_data: ['ORDERS'], active_work: [], lock_blocked_reason: null });
-    expect(adminData(await command('delete', customer.id, Number(shown.version)))).toMatchObject({ result: 'DELETED' });
+    expect(adminData(await command('delete', customer.id, Number(shown.version)))).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(customer.id)).toMatchObject({ status: 'DISABLED' });
     expect(await orderExists(orderId)).toBe(true);
     expect((await app.pool.query('SELECT 1 FROM app.user_roles WHERE user_id = $1::uuid', [customer.id])).rows).toHaveLength(1);
@@ -209,8 +219,9 @@ describe('account lock / delete against the real records of every module', () =>
     const lonely = await seedUser(['CUSTOMER']);
     const shown = await detail(lonely.id);
     expect(shown.lifecycle).toMatchObject({ related_data: [], active_work: [], delete_effect: 'DELETE_PERMANENTLY' });
-    expect(adminData(await command('delete', lonely.id, Number(shown.version)))).toMatchObject({ result: 'DELETED' });
+    expect(adminData(await command('delete', lonely.id, Number(shown.version)))).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(lonely.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(lonely.id)).failed).toBe(0);
     expect((await app.pool.query("SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL AND phone_normalized LIKE '+999%'", [lonely.id])).rowCount).toBe(1);
   });
 
@@ -271,9 +282,11 @@ describe('account lock / delete against the real records of every module', () =>
     expect(outcome(await command('lock', pending.id, Number(blocked.version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
     const free = await detail(balanceOnly.id);
     expect(free.lifecycle).toMatchObject({ related_data: expect.arrayContaining(['WALLET']), active_work: [] });
-    // Owner decision OD-31: money still owed to the shipper keeps the account waiting; an administrator's delete is refused until it is paid out.
-    expect(outcome(await command('delete', balanceOnly.id, Number(free.version)))).toEqual({ status: 409, code: 'USER_ACCOUNT_HAS_ACTIVE_WORK' });
-    expect(await userRow(balanceOnly.id)).toMatchObject({ status: 'ACTIVE' });
+    // Owner decision OD-31: the lock goes through; money still owed to the shipper keeps the erasure waiting until it is paid out.
+    expect(outcome(await command('delete', balanceOnly.id, Number(free.version))).status).toBe(200);
+    expect(await userRow(balanceOnly.id)).toMatchObject({ status: 'DISABLED' });
+    expect((await requestErasure(balanceOnly.id)).failed).toBe(0);
+    expect((await app.pool.query('SELECT 1 FROM app.users WHERE user_id = $1::uuid AND anonymized_at IS NOT NULL', [balanceOnly.id])).rowCount).toBe(0);
     expect((await app.pool.query('SELECT balance_vnd::text FROM app.driver_wallets WHERE driver_id = $1::uuid', [await driverOf(balanceOnly.id)])).rows[0]).toEqual({ balance_vnd: '100000' });
   });
 
@@ -297,7 +310,7 @@ describe('account lock / delete against the real records of every module', () =>
     );
     const cart = await detail(cartOnly.id);
     expect(cart.lifecycle).toMatchObject({ related_data: ['LINKED_RECORDS'], delete_effect: 'DELETE_PERMANENTLY' });
-    expect(adminData(await command('delete', cartOnly.id, Number(cart.version)))).toMatchObject({ result: 'DELETED' });
+    expect(adminData(await command('delete', cartOnly.id, Number(cart.version)))).toMatchObject({ result: 'LOCKED' });
     expect(await userRow(cartOnly.id)).toMatchObject({ status: 'DISABLED' });
   });
 
@@ -313,7 +326,7 @@ describe('account lock / delete against the real records of every module', () =>
     } finally {
       registry.unregister('TEST_BROKEN');
     }
-    expect(adminData(await command('delete', customer.id, version))).toMatchObject({ result: 'DELETED' });
+    expect(adminData(await command('delete', customer.id, version))).toMatchObject({ result: 'LOCKED' });
   });
 
   it('race: an order placed for the shop (shop row held FOR SHARE, as the order command does) while the owner is being locked: the lock waits and then sees the order', async () => {
