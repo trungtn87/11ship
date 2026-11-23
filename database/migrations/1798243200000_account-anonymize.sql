@@ -26,7 +26,9 @@
 --    Trade-off: the audit_logs table keeps its single statement trigger (the migration drift test pins it), so under the anonymization its
 --    UPDATE is allowed statement-wide (not column-wide); it is the only table without a column-level check.
 --  * Controlled exceptions, each active ONLY while app.anonymize_app_user runs (transaction setting app.account_anonymize = 'on', and for the
---    complaint pictures also app.account_anonymize_user = the account) and ONLY for a write that changes the listed personal columns to their
+--    complaint pictures also app.account_anonymize_user = the account). The setting alone is not enough: app.account_anonymize_on() also
+--    requires current_user to be the owner of app.anonymize_app_user (app.anonymize_definer_active), so a runtime session (ship11_app) that
+--    sets the setting itself is still refused. The same owner check guards the complaint-picture cleanup flag. ONLY for a write that changes the listed personal columns to their
 --    fixed value and nothing else: orders_guard, deliveries_guard, order_items_guard, order_chat_messages_reject_update,
 --    complaint_attachments_delete_guard, wallet_withdrawals_guard and address_note_snapshot_guard. Every other write still meets every rule of
 --    these guards (identity, state, money, notes, version, terminal rows) exactly as before. No trigger is disabled by this migration.
@@ -45,6 +47,7 @@ CREATE FUNCTION app.anonymized_phone_number() RETURNS text
   SELECT '+999' || lpad(nextval('app.account_anonymized_phone_seq')::text, 11, '0')
 $$;
 REVOKE ALL ON FUNCTION app.anonymized_phone_number() FROM PUBLIC;
+
 
 CREATE FUNCTION app.anonymize_app_user(p_user_id uuid, p_password_hash text) RETURNS boolean
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = app, pg_temp AS $$
@@ -189,8 +192,12 @@ BEGIN
    WHERE shop_id = ANY (v_anon_shops) AND shop_name <> 'Cửa hàng đã ẩn danh';
   UPDATE app.complaint_messages SET body = 'Đã ẩn danh'
    WHERE author_user_id = p_user_id AND body IS NOT NULL AND body <> 'Đã ẩn danh';
-  UPDATE app.reviews SET reviewer_name = 'Đã ẩn danh', version = version + 1
-   WHERE reviewer_user_id = p_user_id AND reviewer_name <> 'Đã ẩn danh';
+  -- The review text of the account is replaced too (Owner decision 2026-11-23); the stars and the shop's side stay. A NULL text stays NULL.
+  UPDATE app.reviews SET reviewer_name = 'Đã ẩn danh',
+         comment = CASE WHEN comment IS NULL THEN NULL ELSE 'Đã ẩn danh' END,
+         version = version + 1
+   WHERE reviewer_user_id = p_user_id
+     AND (reviewer_name <> 'Đã ẩn danh' OR (comment IS NOT NULL AND comment <> 'Đã ẩn danh'));
   UPDATE app.review_replies SET body = 'Đã ẩn danh', version = version + 1, updated_at = now()
    WHERE body <> 'Đã ẩn danh' AND review_id IN (SELECT review_id FROM app.reviews WHERE reviewer_user_id = p_user_id);
   UPDATE app.review_reply_history SET body = 'Đã ẩn danh'
@@ -238,6 +245,28 @@ END $$;
 
 REVOKE ALL ON FUNCTION app.anonymize_app_user(uuid, text) FROM PUBLIC;
 
+-- Who may open the controlled exceptions. A transaction setting is not a proof: any session can run set_config, including the runtime
+-- role ship11_app. So a flag counts only while the CURRENT role is the owner of app.anonymize_app_user (the migration role). Inside that
+-- SECURITY DEFINER function, and inside the functions it calls, current_user is the owner; a runtime session is not. The guards run as the
+-- invoking role, so these helpers keep the default PUBLIC EXECUTE (do not revoke it, or every guarded write would fail).
+CREATE FUNCTION app.anonymize_definer_active() RETURNS boolean
+  LANGUAGE sql STABLE SET search_path = pg_catalog, app AS $$
+  SELECT current_user = pg_get_userbyid(p.proowner)
+    FROM pg_proc p
+   WHERE p.oid = 'app.anonymize_app_user(uuid,text)'::regprocedure
+$$;
+
+CREATE FUNCTION app.account_anonymize_on() RETURNS boolean
+  LANGUAGE sql STABLE SET search_path = pg_catalog, app AS $$
+  SELECT COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND app.anonymize_definer_active()
+$$;
+
+-- The cleanup flag is opened only by app.purge_closed_complaint_pictures, which has the same owner.
+CREATE FUNCTION app.complaint_picture_cleanup_on() RETURNS boolean
+  LANGUAGE sql STABLE SET search_path = pg_catalog, app AS $$
+  SELECT COALESCE(current_setting('app.complaint_picture_cleanup', true), '') = 'on' AND app.anonymize_definer_active()
+$$;
+
 
 -- The two guards: one exception each (see the header). Their definitions are the ones the earlier migrations left in place.
 CREATE OR REPLACE FUNCTION app.orders_guard()
@@ -250,7 +279,7 @@ DECLARE
 BEGIN
   -- Owner decision 2026-11-22 (account anonymization, app.anonymize_app_user): a change to personal columns ONLY is allowed on a finished row
   -- while the anonymization runs. Every other column (identity, state, money, notes), the version rule and every rule below still apply.
-  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.version = OLD.version + 1
+  IF app.account_anonymize_on() AND NEW.version = OLD.version + 1
      AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'note', 'delivery_note', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'address_text', 'address_lat', 'address_lng', 'shop_name', 'shop_phone', 'shop_address_text', 'note', 'delivery_note', 'version', 'updated_at']) THEN
     RETURN NEW;
   END IF;
@@ -318,7 +347,7 @@ DECLARE
 BEGIN
   -- Owner decision 2026-11-22 (account anonymization, app.anonymize_app_user): a change to personal columns ONLY is allowed on a finished row
   -- while the anonymization runs. Every other column (identity, state, money, notes), the version rule and every rule below still apply.
-  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.version = OLD.version + 1
+  IF app.account_anonymize_on() AND NEW.version = OLD.version + 1
      AND (to_jsonb(NEW) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'note', 'dropoff_note', 'version', 'updated_at']) = (to_jsonb(OLD) - ARRAY['recipient_name', 'recipient_phone', 'dropoff_address_text', 'dropoff_area_text', 'dropoff_lat', 'dropoff_lng', 'pickup_address_text', 'pickup_lat', 'pickup_lng', 'shop_name', 'shop_phone', 'note', 'dropoff_note', 'version', 'updated_at']) THEN
     RETURN NEW;
   END IF;
@@ -373,7 +402,7 @@ BEGIN
     RAISE EXCEPTION 'app.order_items is never deleted (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
   END IF;
   -- Owner decision 2026-11-22 (account anonymization): the line note becomes the fixed text; nothing else on the line changes.
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.note = 'Đã ẩn danh'
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() AND NEW.note = 'Đã ẩn danh'
      AND (to_jsonb(NEW) - ARRAY['note']) = (to_jsonb(OLD) - ARRAY['note']) THEN
     RETURN NEW;
   END IF;
@@ -408,7 +437,7 @@ CREATE OR REPLACE FUNCTION app.order_chat_messages_reject_update() RETURNS trigg
   LANGUAGE plpgsql AS $function$
 BEGIN
   -- Owner decision 2026-11-22 (account anonymization): only the text and the sender name of a message become the fixed values.
-  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND NEW.body = 'Tin nhắn đã ẩn danh' AND NEW.sender_name = 'Đã ẩn danh'
+  IF app.account_anonymize_on() AND NEW.body = 'Tin nhắn đã ẩn danh' AND NEW.sender_name = 'Đã ẩn danh'
      AND (to_jsonb(NEW) - ARRAY['body', 'sender_name']) = (to_jsonb(OLD) - ARRAY['body', 'sender_name']) THEN
     RETURN NEW;
   END IF;
@@ -420,7 +449,7 @@ CREATE OR REPLACE FUNCTION app.complaint_attachments_delete_guard() RETURNS trig
   LANGUAGE plpgsql AS $function$
 BEGIN
   -- Owner decision 2026-11-22 (account anonymization): the pictures this account uploaded, linked or not, are deleted in that transaction.
-  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on'
+  IF app.account_anonymize_on()
      AND OLD.uploader_user_id::text = COALESCE(current_setting('app.account_anonymize_user', true), '') THEN
     RETURN OLD;
   END IF;
@@ -437,7 +466,7 @@ BEGIN
   PERFORM 1 FROM app.driver_wallets WHERE wallet_id = NEW.wallet_id FOR UPDATE;
   -- Owner decision 2026-11-22 (account anonymization): a CLOSED withdrawal keeps its amount, state and money trail; only the destination number
   -- and holder become the fixed values (version +1). Nothing else changes.
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND OLD.state IN ('PAID', 'CANCELLED')
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() AND OLD.state IN ('PAID', 'CANCELLED')
      AND NEW.state = OLD.state AND NEW.account_number = '000000' AND NEW.account_holder = 'Đã ẩn danh' AND NEW.version = OLD.version + 1
      AND (to_jsonb(NEW) - ARRAY['account_number', 'account_holder', 'version']) = (to_jsonb(OLD) - ARRAY['account_number', 'account_holder', 'version']) THEN
     RETURN NEW;
@@ -480,11 +509,11 @@ CREATE OR REPLACE FUNCTION app.address_note_snapshot_guard() RETURNS trigger
 BEGIN
   IF TG_TABLE_NAME = 'orders' AND to_jsonb(NEW)->'delivery_note' IS DISTINCT FROM to_jsonb(OLD)->'delivery_note'
      AND COALESCE(current_setting('app.customer_order_edit', true), '') <> 'on'
-     AND NOT (COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND to_jsonb(NEW)->>'delivery_note' = 'Đã ẩn danh') THEN
+     AND NOT (app.account_anonymize_on() AND to_jsonb(NEW)->>'delivery_note' = 'Đã ẩn danh') THEN
     RAISE EXCEPTION 'ORDER_DELIVERY_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   IF TG_TABLE_NAME = 'deliveries' AND to_jsonb(NEW)->'dropoff_note' IS DISTINCT FROM to_jsonb(OLD)->'dropoff_note'
-     AND NOT (COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND to_jsonb(NEW)->>'dropoff_note' = 'Đã ẩn danh') THEN
+     AND NOT (app.account_anonymize_on() AND to_jsonb(NEW)->>'dropoff_note' = 'Đã ẩn danh') THEN
     RAISE EXCEPTION 'DELIVERY_DROPOFF_NOTE_IMMUTABLE' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
@@ -512,7 +541,7 @@ $$;
 -- True only while app.anonymize_app_user runs AND the write changes the listed fields and nothing else.
 CREATE FUNCTION app.anon_only(old_row jsonb, new_row jsonb, fields text[]) RETURNS boolean
   LANGUAGE sql STABLE AS $$
-  SELECT COALESCE(current_setting('app.account_anonymize', true), '') = 'on' AND (new_row - fields) = (old_row - fields)
+  SELECT app.account_anonymize_on() AND (new_row - fields) = (old_row - fields)
 $$;
 
 -- Replaces the personal keys (any depth) and the phone numbers inside text values; every other key, value, array and id is kept.
@@ -618,14 +647,15 @@ BEGIN
 END;
 $function$;
 
--- Reviews: the reviewer's name may take its fixed value (the review text and the stars stay).
+-- Reviews: the reviewer's name and the review text may take their fixed value (the stars, the shop's side and the other fields stay).
 CREATE OR REPLACE FUNCTION app.reviews_guard()
  RETURNS trigger
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  IF TG_OP = 'UPDATE' AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['reviewer_name', 'version'])
-     AND NEW.version = OLD.version + 1 AND (NEW.reviewer_name = OLD.reviewer_name OR app.anon_value_ok(NEW.reviewer_name)) THEN
+  IF TG_OP = 'UPDATE' AND app.anon_only(to_jsonb(OLD), to_jsonb(NEW), ARRAY['reviewer_name', 'comment', 'version'])
+     AND NEW.version = OLD.version + 1 AND (NEW.reviewer_name = OLD.reviewer_name OR app.anon_value_ok(NEW.reviewer_name))
+     AND (NEW.comment IS NOT DISTINCT FROM OLD.comment OR NEW.comment = 'Đã ẩn danh') THEN
     RETURN NEW;
   END IF;
   IF TG_OP <> 'UPDATE' THEN
@@ -650,7 +680,7 @@ $function$;
 CREATE FUNCTION app.append_only_except_anonymize() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() THEN
     RETURN NULL;
   END IF;
   RAISE EXCEPTION '% is append-only (% rejected)', TG_TABLE_NAME, TG_OP USING ERRCODE = 'restrict_violation';
@@ -668,7 +698,7 @@ CREATE TRIGGER review_reply_history_anonymize BEFORE UPDATE ON app.review_reply_
 CREATE OR REPLACE FUNCTION app.order_events_reject_mutation() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() THEN
     RETURN NULL;
   END IF;
   RAISE EXCEPTION 'app.order_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
@@ -679,7 +709,7 @@ CREATE TRIGGER order_events_anonymize BEFORE UPDATE ON app.order_events FOR EACH
 CREATE OR REPLACE FUNCTION app.delivery_events_reject_mutation() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() THEN
     RETURN NULL;
   END IF;
   RAISE EXCEPTION 'app.delivery_events is append-only (% rejected)', TG_OP USING ERRCODE = 'restrict_violation';
@@ -692,7 +722,7 @@ CREATE TRIGGER delivery_events_anonymize BEFORE UPDATE ON app.delivery_events FO
 CREATE OR REPLACE FUNCTION app.audit_logs_reject_mutation() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND COALESCE(current_setting('app.account_anonymize', true), '') = 'on' THEN
+  IF TG_OP = 'UPDATE' AND app.account_anonymize_on() THEN
     RETURN NULL;
   END IF;
   RAISE EXCEPTION 'app.audit_logs is append-only (% rejected)', TG_OP
@@ -731,12 +761,12 @@ DECLARE
 BEGIN
   closed := OLD.complaint_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM app.complaints c WHERE c.complaint_id = OLD.complaint_id AND c.status IN ('RESOLVED', 'CLOSED_NO_ACTION'));
-  IF COALESCE(current_setting('app.account_anonymize', true), '') = 'on'
+  IF app.account_anonymize_on()
      AND OLD.uploader_user_id::text = COALESCE(current_setting('app.account_anonymize_user', true), '')
      AND (OLD.complaint_id IS NULL OR closed) THEN
     RETURN OLD;
   END IF;
-  IF COALESCE(current_setting('app.complaint_picture_cleanup', true), '') = 'on' AND closed THEN
+  IF app.complaint_picture_cleanup_on() AND closed THEN
     RETURN OLD;
   END IF;
   IF OLD.complaint_id IS NOT NULL OR OLD.created_at > clock_timestamp() - interval '24 hours' THEN
@@ -1105,6 +1135,9 @@ DROP FUNCTION app.anon_value_ok(text);
 DROP FUNCTION app.anon_pii_keys();
 
 DROP FUNCTION app.anonymize_app_user(uuid, text);
+DROP FUNCTION app.complaint_picture_cleanup_on();
+DROP FUNCTION app.account_anonymize_on();
+DROP FUNCTION app.anonymize_definer_active();
 DROP FUNCTION app.anonymized_phone_number();
 DROP SEQUENCE app.account_anonymized_phone_seq;
 ALTER TABLE app.users DROP CONSTRAINT users_anonymized_ck;

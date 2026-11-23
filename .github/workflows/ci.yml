@@ -256,6 +256,10 @@ jobs:
           -- but is not the allowed user. Used only through TEST_WRONG_USER_DATABASE_URL.
           CREATE ROLE ship11_wrong_user LOGIN PASSWORD 'ci_wrong_user_ephemeral_only'
             NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          -- Runtime-privilege probe for tests/integration (account-deletion): a NOLOGIN role with no privilege of its own. ship11_test is
+          -- a member, so the test can SET ROLE to it and then run with the runtime grants only (inside rolled-back transactions).
+          CREATE ROLE ship11_runtime_probe NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          GRANT ship11_runtime_probe TO ship11_test;
           SQL
           # M00-D1 fixture for the remote migration path test (a disposable database on this throwaway container; never
           # Supabase). Mirrors ops/runbooks/render-supabase-staging.md section 3: two NON-superuser roles, the admin

@@ -6,6 +6,7 @@ import { AddressInfo } from 'node:net';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import argon2 = require('argon2');
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { PoolClient } from 'pg';
 import { AccountActivityRegistry } from '../../apps/backend/src/account-lifecycle/account-activity-registry';
 import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/account-deletion-limiter';
@@ -1066,7 +1067,7 @@ describe('P5-6a public account deletion', () => {
     expect((await app.pool.query(query, [theirs])).rows[0]).toEqual(otherBefore);
   });
 
-  it('reviews and shop replies: the reviewer name is replaced; the reply and its history are replaced; the review text and the stars stay', async () => {
+  it('reviews and shop replies: the reviewer name and the review text are replaced (a NULL text stays NULL); the reply and its history are replaced; the stars and the shop side stay', async () => {
     const c = await customer();
     const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
     await finishOrder(orderId);
@@ -1087,9 +1088,117 @@ describe('P5-6a public account deletion', () => {
     const reviewQuery = 'SELECT reviewer_name, comment, stars, version::text FROM app.reviews WHERE review_id = $1::uuid';
     const reviewBefore = (await app.pool.query(reviewQuery, [review])).rows[0];
     expect(resultOf(await confirm(c.phone))).toBe('DELETED');
-    expect((await app.pool.query(reviewQuery, [review])).rows[0]).toEqual({ ...reviewBefore, reviewer_name: 'Đã ẩn danh', version: '2' });
+    expect((await app.pool.query(reviewQuery, [review])).rows[0]).toEqual({ ...reviewBefore, reviewer_name: 'Đã ẩn danh', comment: 'Đã ẩn danh', version: '2' });
     expect((await app.pool.query("SELECT body, version::text AS version FROM app.review_replies WHERE review_id = $1::uuid", [review])).rows).toEqual([{ body: 'Đã ẩn danh', version: '2' }]);
     expect((await app.pool.query('SELECT body FROM app.review_reply_history WHERE review_id = $1::uuid', [review])).rows).toEqual([{ body: 'Đã ẩn danh' }]);
+  });
+
+  // The exception of the guards is opened by app.anonymize_app_user only. A session of the RUNTIME role may hold UPDATE/DELETE on these tables
+  // and may run set_config itself: that must not open the exception (app.account_anonymize_on requires the owner of the SECURITY DEFINER
+  // function). The probe role (ship11_runtime_probe, created by ci.yml and the local test database) has the runtime grants of the tables
+  // below and nothing else. Every case is rolled back. Before the owner check each refused case below SUCCEEDED (red on the old code).
+  describe('the anonymization exception is closed to a runtime session', () => {
+    const PROBE = 'ship11_runtime_probe';
+
+    /** Runs `work` as the probe role (after `grants`, inside a transaction that is always rolled back). */
+    async function asRuntimeProbe(grants: string[], work: (client: PoolClient) => Promise<void>): Promise<void> {
+      const client = await app.pool.connect();
+      try {
+        await client.query('BEGIN');
+        const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [PROBE]);
+        if (role.rows.length === 0) {
+          throw new Error(`${PROBE} is missing: create it NOLOGIN and GRANT it to ship11_test (ci.yml does this; the local test database must too)`);
+        }
+        for (const grant of grants) await client.query(grant);
+        await client.query(`SET LOCAL ROLE ${PROBE}`);
+        const who = await client.query('SELECT current_user::text AS who');
+        expect(who.rows[0]).toEqual({ who: PROBE });
+        await work(client);
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
+    }
+
+    /** Runs one statement inside a savepoint and returns its error message (undefined when it succeeded), then undoes it. */
+    async function attempt(client: PoolClient, sql: string, params: unknown[] = []): Promise<string | undefined> {
+      await client.query('SAVEPOINT attempt');
+      let failure: string | undefined;
+      try {
+        await client.query(sql, params);
+      } catch (error) {
+        failure = (error as Error).message;
+      }
+      await client.query('ROLLBACK TO SAVEPOINT attempt');
+      return failure;
+    }
+
+    it('the runtime role sets the flag itself and UPDATEs a complaint to the anonymized text: refused, the text stays', async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      await finishOrder(orderId);
+      const complaint = await insertComplaint(orderId, c.userId, { body: 'Nội dung khiếu nại' });
+      await asRuntimeProbe(['GRANT USAGE ON SCHEMA app TO ship11_runtime_probe', 'GRANT SELECT, UPDATE ON app.complaints TO ship11_runtime_probe'], async (client) => {
+        await client.query("SELECT set_config('app.account_anonymize', 'on', true)");
+        await client.query("SELECT set_config('app.account_anonymize_user', $1, true)", [c.userId]);
+        const failure = await attempt(client, "UPDATE app.complaints SET body = 'Đã ẩn danh', version = version + 1, updated_at = now() WHERE complaint_id = $1::uuid", [complaint]);
+        expect(failure).toBeDefined();
+        // The guard refuses it, not the grant (the probe holds UPDATE on this table).
+        expect(failure).not.toMatch(/permission denied/);
+        const row = await client.query('SELECT body FROM app.complaints WHERE complaint_id = $1::uuid', [complaint]);
+        expect(row.rows[0]).toEqual({ body: 'Nội dung khiếu nại' });
+      });
+    });
+
+    it('the runtime role sets the flag itself and DELETEs a fresh picture of its account: refused, the picture stays', async () => {
+      const c = await customer();
+      const picture = randomUUID();
+      await asRuntimeProbe(
+        [
+          'GRANT USAGE ON SCHEMA app TO ship11_runtime_probe',
+          'GRANT SELECT, DELETE ON app.complaint_attachments TO ship11_runtime_probe',
+        ],
+        async (client) => {
+          // The picture is written inside the same rolled-back transaction, as the owner (the probe holds no INSERT).
+          await client.query(`RESET ROLE`);
+          await client.query(
+            `INSERT INTO app.complaint_attachments (attachment_id, uploader_user_id, complaint_id, message_id, content_type, byte_size, data, created_at)
+             VALUES ($1::uuid, $2::uuid, NULL, NULL, 'image/png', 3, '\\x010203'::bytea, now())`,
+            [picture, c.userId],
+          );
+          await client.query(`SET LOCAL ROLE ${PROBE}`);
+          await client.query("SELECT set_config('app.account_anonymize', 'on', true)");
+          await client.query("SELECT set_config('app.account_anonymize_user', $1, true)", [c.userId]);
+          const failure = await attempt(client, 'DELETE FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [picture]);
+          expect(failure).toBeDefined();
+          expect(failure).not.toMatch(/permission denied/);
+          const left = await client.query('SELECT count(*)::int AS n FROM app.complaint_attachments WHERE attachment_id = $1::uuid', [picture]);
+          expect(left.rows[0]).toEqual({ n: 1 });
+        },
+      );
+    });
+
+    it('the runtime role calls app.anonymize_app_user (its EXECUTE grant): the account is anonymized, because the function runs as the owner', async () => {
+      const c = await customer();
+      const orderId = await insertOrder(c.userId, shop.shopId, 'PREPARING');
+      await finishOrder(orderId);
+      const complaint = await insertComplaint(orderId, c.userId, { body: 'Nội dung khiếu nại' });
+      await asRuntimeProbe(
+        [
+          'GRANT USAGE ON SCHEMA app TO ship11_runtime_probe',
+          'GRANT EXECUTE ON FUNCTION app.anonymize_app_user(uuid, text) TO ship11_runtime_probe',
+          'GRANT SELECT ON app.complaints TO ship11_runtime_probe',
+        ],
+        async (client) => {
+          // An argon2-shaped value that verifies no password (the constraint users_password_hash_ck needs the prefix).
+          const unusable = '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+          const done = await client.query('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [c.userId, unusable]);
+          expect(done.rows[0]).toEqual({ done: true });
+          const row = await client.query('SELECT body FROM app.complaints WHERE complaint_id = $1::uuid', [complaint]);
+          expect(row.rows[0]).toEqual({ body: 'Đã ẩn danh' });
+        },
+      );
+    });
   });
 
   it('order and delivery events: the note the account wrote is replaced; the system and shop notes and every event row stay', async () => {
