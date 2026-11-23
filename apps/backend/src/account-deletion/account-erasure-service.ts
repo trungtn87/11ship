@@ -12,7 +12,6 @@ import { WalletAdjustmentService } from '../wallet/wallet-adjustment-service';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { AccountErasureRepository } from './account-erasure-repository';
-import { WalletAccountActivityReader } from '../wallet/wallet-account-activity-reader';
 import { ACCOUNT_DELETE_REQUESTED_ACTION, RESOURCE_USER } from './account-deletion-service';
 import { AuthPrincipal } from '../auth/auth-principal';
 
@@ -56,7 +55,6 @@ export class AccountErasureService {
     private readonly parameters: ShipperWalletParametersReader,
     private readonly drivers: DriverEligibilityReader,
     private readonly repository: AccountErasureRepository,
-    private readonly walletActivity: WalletAccountActivityReader,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
   ) {}
@@ -145,7 +143,7 @@ export class AccountErasureService {
       blockers.push({ code: 'ACTIVE_WORK', items: [...active] });
     }
     const driverId = await this.drivers.driverIdOf(context, userId);
-    const money = driverId === undefined ? { balanceVnd: 0n, heldVnd: 0n } : await this.walletActivity.money(context, driverId);
+    const money = driverId === undefined ? { balanceVnd: 0n, heldVnd: 0n } : await this.repository.walletMoney(context, driverId);
     const limits = await this.parameters.limits(context);
     const minimum = BigInt(limits.withdrawMinVnd);
     if (money.heldVnd > 0n) {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { WalletAccountActivityReader } from '../wallet/wallet-account-activity-reader';
 import { TransactionContext } from '../transaction/transaction-context';
 
 export interface ErasureVerification {
@@ -12,6 +13,8 @@ export interface ErasureVerification {
  */
 @Injectable()
 export class AccountErasureRepository {
+  constructor(private readonly wallets: WalletAccountActivityReader) {}
+
   /** The OTP challenge exactly as stored (phone and purpose), or undefined. Read only. */
   async verification(context: TransactionContext, verificationId: string): Promise<ErasureVerification | undefined> {
     const result = await context.query<{ phone_normalized: string; purpose: string }>(
@@ -20,6 +23,11 @@ export class AccountErasureRepository {
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { phoneNormalized: row.phone_normalized, purpose: row.purpose };
+  }
+
+  /** The balance and the held amount, read by the wallet package (it owns its tables). Read only. */
+  async walletMoney(context: TransactionContext, driverId: string): Promise<{ readonly balanceVnd: bigint; readonly heldVnd: bigint }> {
+    return this.wallets.money(context, driverId);
   }
 
   async insertRequest(
