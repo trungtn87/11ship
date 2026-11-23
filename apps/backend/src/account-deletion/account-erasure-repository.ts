@@ -6,11 +6,6 @@ export interface ErasureVerification {
   readonly purpose: string;
 }
 
-export interface WalletMoney {
-  readonly balanceVnd: bigint;
-  readonly heldVnd: bigint;
-}
-
 /**
  * The rows of the owner's erasure (Owner order 2026-11-23): the OTP challenge that proves the phone, the wallet money the pre-check reads, and the
  * one-time erasure request that the database checks before anything is anonymized (app.account_deletion_requests).
@@ -25,16 +20,6 @@ export class AccountErasureRepository {
     );
     const row = result.rows[0];
     return row === undefined ? undefined : { phoneNormalized: row.phone_normalized, purpose: row.purpose };
-  }
-
-  /** The balance and the held amount of the driver's wallet (zero when the wallet does not exist). Read only. */
-  async walletMoney(context: TransactionContext, driverId: string): Promise<WalletMoney> {
-    const result = await context.query<{ balance_vnd: string; held_vnd: string }>(
-      'SELECT balance_vnd::text AS balance_vnd, held_vnd::text AS held_vnd FROM app.driver_wallets WHERE driver_id = $1::uuid',
-      [driverId],
-    );
-    const row = result.rows[0];
-    return row === undefined ? { balanceVnd: 0n, heldVnd: 0n } : { balanceVnd: BigInt(row.balance_vnd), heldVnd: BigInt(row.held_vnd) };
   }
 
   async insertRequest(

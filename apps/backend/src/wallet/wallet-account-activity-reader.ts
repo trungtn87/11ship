@@ -35,6 +35,16 @@ export class WalletAccountActivityReader {
     return result.rows[0]?.open === true;
   }
 
+  /** The balance and the held amount of the driver's wallet (zero when there is no wallet). Read only. */
+  async money(context: TransactionContext, driverId: string): Promise<{ readonly balanceVnd: bigint; readonly heldVnd: bigint }> {
+    const result = await context.query<{ balance_vnd: string; held_vnd: string }>(
+      'SELECT balance_vnd::text AS balance_vnd, held_vnd::text AS held_vnd FROM app.driver_wallets WHERE driver_id = $1::uuid',
+      [driverId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? { balanceVnd: 0n, heldVnd: 0n } : { balanceVnd: BigInt(row.balance_vnd), heldVnd: BigInt(row.held_vnd) };
+  }
+
   /** ACTIVE holds + withdrawals not paid or cancelled + top-up requests awaiting a decision. */
   async moneyInProgress(context: TransactionContext, driverId: string | undefined): Promise<number> {
     if (driverId === undefined) {
