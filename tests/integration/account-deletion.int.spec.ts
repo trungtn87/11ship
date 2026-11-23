@@ -8,6 +8,7 @@ import argon2 = require('argon2');
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { PoolClient } from 'pg';
 import { AccountDeletionService } from '../../apps/backend/src/account-deletion/account-deletion-service';
+import { OTP_QUOTA_PURPOSES } from '../../apps/backend/src/auth/auth-constants';
 import type { OtpDelivery } from '../../apps/backend/src/auth/otp-provider';
 import { AccountDeletionSweeper } from '../../apps/backend/src/account-deletion/account-deletion-sweeper';
 import { AccountDeletionLimiter } from '../../apps/backend/src/account-deletion/account-deletion-limiter';
@@ -1585,6 +1586,30 @@ describe('P5-6a public account deletion', () => {
       expect(refused(await app.call('POST', '/account/deletion/confirm', { bearer: tokenB, body: { verification_id: verificationId, otp: otpOfB, accept_forfeit: true, forfeit_vnd: '0' } })).code).toBe('OTP_INVALID');
       expect(await requestCount(b.userId)).toBe(0);
       expect(await statusOf(b.userId)).toBe('ACTIVE');
+    });
+
+    it('ACCOUNT_DELETE shares the phone quota purposes with the other account OTP flows', () => {
+      expect(OTP_QUOTA_PURPOSES).toContain('ACCOUNT_DELETE');
+    });
+
+    it('an erasure request is used exactly once: the first call consumes it, a replay finds none and changes nothing', async () => {
+      const c = await customer();
+      const requestId = randomUUID();
+      await app.pool.query(
+        "INSERT INTO app.account_deletion_requests (request_id, user_id, verification_id, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() - interval '1 second', now() + interval '5 minutes')",
+        [requestId, c.userId, randomUUID()],
+      );
+      const unusable = '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      const first = await app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [c.userId, unusable]);
+      expect(first.rows[0]).toEqual({ done: true });
+      const consumed = (await app.pool.query<{ consumed_at: Date | null }>('SELECT consumed_at FROM app.account_deletion_requests WHERE request_id = $1::uuid', [requestId])).rows[0]?.consumed_at;
+      expect(consumed).toBeInstanceOf(Date);
+      const version = (await userRow(c.userId))?.version;
+      // The replay changes nothing: the request is spent, so it cannot erase again (and no new request can be written for an anonymized account).
+      const second = await app.pool.query('SELECT app.anonymize_app_user($1::uuid, $2::text) AS done', [c.userId, unusable]);
+      expect(second.rows[0]).toEqual({ done: false });
+      expect((await userRow(c.userId))?.version).toBe(version);
+      expect((await app.pool.query<{ consumed_at: Date | null }>('SELECT consumed_at FROM app.account_deletion_requests WHERE request_id = $1::uuid', [requestId])).rows[0]?.consumed_at).toEqual(consumed);
     });
 
     it('the erasure job takes only an account with a valid request: a lock without a request is never anonymized', async () => {

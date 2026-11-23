@@ -99,6 +99,7 @@ class AccountDeletionController extends ChangeNotifier {
       _verificationId = null;
       _precheck = null;
       final ApiResponse response = await session.protectedCall('GET', precheckPath);
+      _requireSuccess(response, precheckPath);
       final Object? data = response.data;
       _precheck = ErasurePrecheck.fromData(data is Map<String, Object?> ? data : <String, Object?>{});
     });
@@ -111,6 +112,7 @@ class AccountDeletionController extends ChangeNotifier {
     }
     return _run(() async {
       final ApiResponse response = await session.protectedCall('POST', codePath, body: jsonEncode(<String, Object?>{'accept_forfeit': acceptForfeit, 'forfeit_vnd': forfeitVnd.toString()}));
+      _requireSuccess(response, codePath);
       final Object? data = response.data;
       final Object? id = data is Map<String, Object?> ? data['verification_id'] : null;
       if (id is! String) {
@@ -132,6 +134,7 @@ class AccountDeletionController extends ChangeNotifier {
         confirmPath,
         body: jsonEncode(<String, Object?>{'verification_id': verificationId, 'otp': otp, 'accept_forfeit': acceptForfeit, 'forfeit_vnd': forfeitVnd.toString()}),
       );
+      _requireSuccess(response, confirmPath);
       final Object? data = response.data;
       final Object? result = data is Map<String, Object?> ? data['result'] : null;
       if (result != 'ERASURE_SCHEDULED') {
@@ -144,6 +147,13 @@ class AccountDeletionController extends ChangeNotifier {
       await session.endAfterAccountDeletion(walletOnly: false);
     }
     return done;
+  }
+
+  /// A refusal (409 ACCOUNT_ERASURE_CONSENT_REQUIRED, 400 OTP_INVALID, ...) keeps its bounded code, so the screen can react to it.
+  void _requireSuccess(ApiResponse response, String endpoint) {
+    if (response.status < 200 || response.status >= 300) {
+      throw failureOf(response, endpoint: endpoint);
+    }
   }
 
   Future<bool> _run(Future<void> Function() step) async {
