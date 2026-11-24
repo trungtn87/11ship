@@ -103,34 +103,19 @@ void main() {
       await mountAt(tester, CustomerCallScreen(source: SampleCustomerDeliverySource()), textScale: textScale, scaffold: false);
     }
 
-    testWidgets('long examples are behind ⓘ, required lines stay visible', (WidgetTester tester) async {
+    testWidgets('compact call screen omits repeated info icons and separate note field', (WidgetTester tester) async {
       await mountCall(tester);
-      expect(find.text('Mô tả hàng hóa (*)'), findsOneWidget);
-      expect(find.text('Ví dụ: Quần áo, tài liệu, đồ gia dụng...'), findsNothing);
-      expect(find.text('Shipper thu hộ từ người nhận và đưa lại người gửi'), findsNothing);
-      expect(find.text('Ghi chú cho tài xế (tùy chọn)'), findsOneWidget);
+      expect(find.byKey(const Key('info-hint-button')), findsNothing);
+      expect(find.byKey(const Key('m07-c-note')), findsNothing);
+      expect(find.byKey(const Key('m07-c-goods')), findsOneWidget);
+      expect(find.text('Đồ ăn'), findsOneWidget);
+      expect(find.text('Hàng nhỏ gọn'), findsOneWidget);
+      expect(find.text('Dễ vỡ'), findsOneWidget);
+      expect(find.text('Giao gấp'), findsOneWidget);
       expect(find.text('Thu hộ tiền hàng (COD)'), findsOneWidget);
-      expect(infoFor('Mô tả hàng hóa (*)'), findsOneWidget);
-      expect(infoFor('Ghi chú cho tài xế (tùy chọn)'), findsOneWidget);
-      expect(infoFor('Thu hộ tiền hàng (COD)'), findsOneWidget);
-      expect(infoFor('Đề xuất mức phí giao'), findsOneWidget);
-    });
-
-    testWidgets('tapping COD ⓘ shows the explanation and does not switch COD on', (WidgetTester tester) async {
-      await mountCall(tester);
-      await tapInfo(tester, 'Thu hộ tiền hàng (COD)');
-      await tester.pumpAndSettle();
-      expect(find.text('Shipper thu hộ từ người nhận và đưa lại người gửi'), findsOneWidget);
-      await tester.tap(find.text('Đã hiểu'));
-      await tester.pumpAndSettle();
       expect(find.byKey(const Key('m07-c-cod-amount')), findsNothing);
-    });
-
-    testWidgets('the goods example opens from ⓘ', (WidgetTester tester) async {
-      await mountCall(tester);
-      await tapInfo(tester, 'Mô tả hàng hóa (*)');
-      await tester.pumpAndSettle();
-      expect(find.text('Ví dụ: Quần áo, tài liệu, đồ gia dụng...'), findsOneWidget);
+      expect(find.textContaining('Không bắt buộc định vị GPS'), findsNothing);
+      expect(find.text('Tự nhập cước phí bạn muốn trả cho tài xế'), findsOneWidget);
     });
 
     for (final double scale in <double>[1.0, 1.3]) {

@@ -34,3 +34,11 @@ String foldVietnamese(String input) {
   }
   return out.toString().replaceAll(RegExp(r'[\u0300-\u036f]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
 }
+
+/// Capitalizes the first non-whitespace character for display without mutating underlying data.
+String capitalizeFirst(String input) {
+  final String trimmed = input.trimLeft();
+  if (trimmed.isEmpty) return input;
+  final String first = String.fromCharCode(trimmed.runes.first);
+  return '${first.toUpperCase()}${trimmed.substring(first.length)}';
+}

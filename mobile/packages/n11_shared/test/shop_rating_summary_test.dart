@@ -43,9 +43,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an empty score shows zero reviews without an invented star rating', (tester) async {
+  testWidgets('an empty score shows ★ Quán mới badge on the status row without zero-review text', (tester) async {
     await _open(tester, _Ratings()..count = 0);
-    expect(find.text('Chưa có đánh giá (0 lượt)'), findsOneWidget);
+    expect(find.text('Chưa có đánh giá (0 lượt)'), findsNothing);
+    expect(find.byKey(const Key('shop-new-badge')), findsOneWidget);
+    expect(find.text('★ Quán mới'), findsOneWidget);
     expect(find.textContaining('/5'), findsNothing);
   });
 

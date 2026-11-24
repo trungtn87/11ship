@@ -183,6 +183,7 @@ class _MenuListScreenState extends State<MenuListScreen> with _LeaveWhenSignedOu
               dim: i.hidden,
               sub: _groupText(snapshot, i),
               chip: i.hidden ? const N11Chip('Đang ẩn') : const N11Chip('Đang hiện', kind: ChipKind.ok),
+              showChevron: true,
               onTap: menu.locked ? null : () => _openForm(i.id),
             ),
         ]),

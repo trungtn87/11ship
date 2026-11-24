@@ -149,7 +149,8 @@ void main() {
           CustomerCallScreen(
               source: SampleCustomerDeliverySource(),
               addressMapBuilder: sharedMap()));
-      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsNWidgets(2));
+      expect(find.byKey(const Key('m07-c-pickup-pinned')), findsNothing);
+      expect(find.byKey(const Key('m07-c-dropoff-pinned')), findsNothing);
       await tester.tap(find.byKey(const Key('m07-c-pickup-addr')));
       await _nav(tester);
       expect(find.byKey(const Key('pick-add-new')), findsOneWidget);
@@ -164,8 +165,8 @@ void main() {
       await tester.tap(find.byKey(const Key('location-save')));
       await _nav(tester);
       expect(find.text('Số 1 Phố Huế, Tầng 2'), findsOneWidget);
-      expect(find.text('Đã ghim (22.661, 106.251)'), findsOneWidget);
-      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsOneWidget,
+      expect(find.byKey(const Key('m07-c-pickup-pinned')), findsOneWidget);
+      expect(find.byKey(const Key('m07-c-dropoff-pinned')), findsNothing,
           reason: 'the drop-off point is still unpinned');
     });
 
@@ -180,7 +181,9 @@ void main() {
               source: SampleCustomerDeliverySource(),
               addressMapBuilder: sharedMap(),
               location: location));
-      await tester.ensureVisible(find.byKey(const Key('m07-c-dropoff-addr')));
+      await tester.ensureVisible(find.byKey(const Key('m07-c-dropoff-row')));
+      await tester.tap(find.byKey(const Key('m07-c-dropoff-row')));
+      await _nav(tester);
       await tester.tap(find.byKey(const Key('m07-c-dropoff-addr')));
       await _nav(tester);
       await tester.tap(find.byKey(const Key('pick-add-new')));
@@ -194,8 +197,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('location-save')));
       await _nav(tester);
+      await tester.tap(find.text('Xong'));
+      await _nav(tester);
       expect(find.text('Số 10 Phố Trúc'), findsOneWidget);
-      expect(find.text('Đã ghim (22.668, 106.260)'), findsOneWidget);
+      expect(find.byKey(const Key('m07-c-dropoff-pinned')), findsOneWidget);
     });
   });
 

@@ -99,7 +99,7 @@ void main() {
     expect(find.text('Ốc hương hấp'), findsOneWidget);
     expect(find.text('120.000 đ'), findsOneWidget);
     expect(find.text('Đã bán 120'), findsOneWidget);
-    expect(find.text('Đã bán 0'), findsOneWidget);
+    expect(find.text('Đã bán 0'), findsNothing);
     expect(find.text('Xem trước'), findsNothing);
     for (final String word in <String>['Mua', 'Đặt ngay', '+', 'Giỏ hàng']) {
       expect(find.text(word), findsNothing);
@@ -202,4 +202,39 @@ void main() {
       expect(tester.getTopLeft(find.byKey(const Key('shop-view-logo'))).dx, lessThan(tester.getTopLeft(find.byKey(const Key('shop-view-name'))).dx));
     });
   }
+
+  testWidgets('UI polish: capitalizes display text, uses drink icon for drink groups, shows preview strip, and formats CartBar', (WidgetTester tester) async {
+    final Harness h = await harness(tester, menu: seeded());
+    h.server.reason = 'ONLINE';
+    await show(tester, PreviewScreen(flows: h.flows));
+    expect(find.byKey(const Key('preview-mode-strip')), findsOneWidget);
+    expect(find.text('Đang xem trước giao diện hiển thị với khách'), findsOneWidget);
+
+    final ShopMenuView drinkView = ShopMenuView(
+      name: 'quán trà sữa',
+      address: 'ngõ 5 kim đồng',
+      availabilityReason: 'ONLINE',
+      serverNow: DateTime.utc(2026, 10, 14, 11, 30),
+      hours: week(),
+      categories: const <PublicCategory>[
+        PublicCategory(
+          name: 'Trà – Cà phê – Trà sữa',
+          items: <PublicItem>[PublicItem(id: 'd1', name: 'trà đào cam sả', priceVnd: 20000, imageUrl: null, soldCount: 0)],
+        ),
+        PublicCategory(
+          name: 'Nước giải khát',
+          items: <PublicItem>[PublicItem(id: 'd2', name: 'nước chanh', priceVnd: 15000, imageUrl: null)],
+        ),
+      ],
+    );
+    await show(tester, ShopPublicScreen(api: FakePublicShopApi(drinkView), shopId: 's1'));
+    expect(find.byKey(const Key('preview-mode-strip')), findsNothing);
+    expect(find.text('Quán trà sữa'), findsWidgets);
+    expect(find.text('Ngõ 5 kim đồng'), findsOneWidget);
+    expect(find.text('Trà đào cam sả'), findsOneWidget);
+    expect(find.text('Nước chanh'), findsOneWidget);
+    expect(find.byIcon(Icons.local_cafe_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.local_drink_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+  });
 }
