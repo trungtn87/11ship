@@ -71,7 +71,7 @@ String _failureMessage(AuthFailure failure) {
     case AuthFailureKind.rateLimited:
       return rateLimitMessage(failure);
     case AuthFailureKind.verificationUnsupported:
-      return 'Máy chủ yêu cầu xác minh số điện thoại, bước này chưa hỗ trợ trên Android.';
+      return 'Bước xác minh số điện thoại chưa sẵn sàng. Vui lòng thử lại sau.';
     case AuthFailureKind.badResponse:
       return 'Phản hồi của máy chủ không đúng như mong đợi.';
     case AuthFailureKind.stateConflict:

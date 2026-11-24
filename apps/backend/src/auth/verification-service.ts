@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
 import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors';
+import { safeErrorCode } from '../common/safe-error';
+import { JsonLogger } from '../logging/json-logger';
+import { APP_LOGGER } from '../logging/logging.module';
 import { AuthConfig } from '../config/auth-config';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { TransactionContext } from '../transaction/transaction-context';
@@ -71,6 +74,8 @@ export class VerificationService {
     @Optional() @Inject(ACCOUNT_ORIGIN_POLICY) private readonly policy: AccountOriginPolicy = standardAccountOriginPolicy(),
     // The SYSTEM settings; optional only so that a unit harness without a database can build the service.
     @Optional() private readonly systemSettings?: SystemSettingsReader,
+    // Operational log only (no phone, no code): why a request was refused before a challenge was written or delivered.
+    @Optional() @Inject(APP_LOGGER) private readonly logger?: JsonLogger,
   ) {}
 
   async requestOtp(phoneNormalized: string, purpose: string, clientIp: string): Promise<OtpRequestResult> {
@@ -81,8 +86,12 @@ export class VerificationService {
       throw new AppError('PHONE_VERIFICATION_NOT_REQUIRED');
     }
     // A provider with a queue (the SMS gateway) says BEFORE anything is written whether it can take a message at all.
-    const readiness = await this.provider.assertReady?.(phoneNormalized, REGISTER_PURPOSE);
+    const readiness = await this.provider.assertReady?.(phoneNormalized, REGISTER_PURPOSE).catch((error: unknown) => {
+      this.#logRefusal('READINESS', error);
+      throw error;
+    });
     if (readiness !== undefined && !readiness.deliverable) {
+      this.#logRefusal('RECIPIENT');
       throw new TechnicalError('unavailable', 'OTP delivery is not available for this number');
     }
     const verificationId = randomUUID();
@@ -123,6 +132,7 @@ export class VerificationService {
         ttlSeconds: this.config.otpTtlSeconds,
       });
     } catch (error) {
+      this.#logRefusal('DELIVERY', error);
       await this.#markDeliveryFailed(verificationId);
       if (error instanceof OtpRefusalError && error.code === 'OTP_RATE_LIMITED') {
         // The whole-gateway daily cap was reached between the check and the queue (it is enforced under the queue lock): nothing was sent.
@@ -154,6 +164,12 @@ export class VerificationService {
       expires_in_seconds: this.config.otpTtlSeconds,
       resend_after_seconds: resendSeconds,
     };
+  }
+
+  /** Operational log of a refused or failed OTP request: a fixed stage and a bounded error code; never the phone, the code or the provider text. */
+  #logRefusal(stage: 'READINESS' | 'RECIPIENT' | 'DELIVERY', error?: unknown): void {
+    const code = error === undefined ? undefined : error instanceof TechnicalError ? error.kind : safeErrorCode(error);
+    this.logger?.log('warn', 'otp_request_refused', { stage, code });
   }
 
   /**

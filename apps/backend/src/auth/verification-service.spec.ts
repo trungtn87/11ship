@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { StandaloneAuditRecorder } from '../audit/standalone-audit-recorder';
+import { JsonLogger } from '../logging/json-logger';
 import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors';
 import { AuthConfig, OtpHmacKey } from '../config/auth-config';
 import { fakeTransactions } from './auth-fakes.fixture';
@@ -46,6 +47,10 @@ function requestRig(
     registrationOtpOff?: boolean;
     /** Seconds left of a running shared cooldown. */
     cooldown?: number;
+    /** What the gateway's readiness check throws (for example: no online gateway). */
+    readinessError?: unknown;
+    /** Receives the operational log lines. */
+    logs?: Array<{ level: string; event: string; meta: Record<string, unknown> }>;
     phoneHour?: number;
     phoneDay?: number;
     ipHour?: number;
@@ -110,6 +115,12 @@ function requestRig(
     },
   } as unknown as SystemSettingsReader;
   const provider: OtpProvider = {
+    assertReady: async () => {
+      if (options.readinessError !== undefined) {
+        throw options.readinessError;
+      }
+      return { deliverable: true };
+    },
     sendRegisterOtp: async (phone, otp) => {
       sent.push({ phone, otp, inTransaction: state.inTransaction });
       events.push('send');
@@ -122,7 +133,8 @@ function requestRig(
     },
   };
   const recorder = { recordBestEffort: async () => undefined } as unknown as StandaloneAuditRecorder;
-  return { service: new VerificationService(manager, verifications, users, recorder, policies, CONFIG, provider, undefined, systemSettings), events, inserted, sent };
+  const logger = { log: (level: string, event: string, meta: Record<string, unknown> = {}) => void options.logs?.push({ level, event, meta }) };
+  return { service: new VerificationService(manager, verifications, users, recorder, policies, CONFIG, provider, undefined, systemSettings, logger as unknown as JsonLogger), events, inserted, sent };
 }
 
 async function failureOf(run: () => Promise<unknown>): Promise<unknown> {
@@ -233,6 +245,16 @@ describe('VerificationService.requestOtp (task sections 7 and 11)', () => {
     expect(off.events).toEqual(['setting.registration']);
     expect(off.inserted).toHaveLength(0);
     expect(off.sent).toHaveLength(0);
+  });
+
+  it('a refused readiness check is logged with its stage and code only, and no code is sent', async () => {
+    const logs: Array<{ level: string; event: string; meta: Record<string, unknown> }> = [];
+    const r = requestRig({ readinessError: new TechnicalError('unavailable', 'No SMS gateway is online'), logs });
+    const error = await failureOf(() => r.service.requestOtp(PHONE, 'REGISTER', IP));
+    expect(error).toBeInstanceOf(TechnicalError);
+    expect(r.sent).toHaveLength(0);
+    expect(logs).toEqual([{ level: 'warn', event: 'otp_request_refused', meta: { stage: 'READINESS', code: 'unavailable' } }]);
+    expect(JSON.stringify(logs)).not.toContain(PHONE);
   });
 
   it('a provider failure marks DELIVERY_FAILED and surfaces a sanitized 503 with no provider detail', async () => {
