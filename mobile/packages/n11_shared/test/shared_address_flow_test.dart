@@ -188,7 +188,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pick-open-map')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('location-address-text')), findsOneWidget);
-    await tester.tap(find.byType(BackButton));
+    await tester.tap(find.byTooltip('Quay lại'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick-add-new')));
     await tester.pumpAndSettle();

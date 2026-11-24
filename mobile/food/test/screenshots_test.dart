@@ -135,6 +135,8 @@ void main() {
     await shot(tester, '10-shop-address-picker');
     await tester.tap(find.byKey(const Key('location-save')));
     await tester.pumpAndSettle();
+    tester.state<ScrollableState>(find.byType(Scrollable).first).position.jumpTo(0);
+    await tester.pumpAndSettle();
     await shot(tester, '09-shop-form');
     expect(server.puts, isEmpty);
   });

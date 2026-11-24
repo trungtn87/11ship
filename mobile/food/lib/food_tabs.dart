@@ -428,25 +428,23 @@ Widget _account(
             // signing in it opens the existing shop-management screen (it reads the server first). No guest route, API or new rule.
             footerEntries: <Widget>[
               if (session.status != SessionStatus.signedIn)
-                Center(
-                  child: TextButton(
-                    key: const Key('guest-shop-link'),
-                    onPressed: () async {
-                      final NavigatorState navigator = Navigator.of(context);
-                      await navigator.push(n11Route(LoginScreen(
-                          session: session,
-                          brand: foodBrand,
-                          reset: flows?.reset,
-                          shop: flows?.shop)));
-                      if (session.status == SessionStatus.signedIn &&
-                          flows?.shop != null) {
-                        await navigator.push(n11Route(
-                            ShopStartScreen(controller: flows!.shop!)));
-                      }
-                    },
-                    child: const Text('Quản lý cửa hàng',
-                        style: N11Text.caption),
-                  ),
+                N11ListItem(
+                  key: const Key('guest-shop-link'),
+                  icon: Icons.storefront_outlined,
+                  title: 'Quản lý cửa hàng',
+                  onTap: () async {
+                    final NavigatorState navigator = Navigator.of(context);
+                    await navigator.push(n11Route(LoginScreen(
+                        session: session,
+                        brand: foodBrand,
+                        reset: flows?.reset,
+                        shop: flows?.shop)));
+                    if (session.status == SessionStatus.signedIn &&
+                        flows?.shop != null) {
+                      await navigator.push(n11Route(
+                          ShopStartScreen(controller: flows!.shop!)));
+                    }
+                  },
                 ),
             ],
           ));

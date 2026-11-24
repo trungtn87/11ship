@@ -175,93 +175,97 @@ class _SavedAddressListScreenState extends State<SavedAddressListScreen> {
   @override
   Widget build(BuildContext context) {
     final bool queried = _search.text.trim().isNotEmpty;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Địa chỉ giao hàng'),
-        actions: <Widget>[
-          IconButton(
-              key: const Key('pick-open-map'),
-              tooltip: 'Mở bản đồ',
-              icon: const Icon(Icons.map_outlined),
-              onPressed: () => _openMapFrom(widget.initial)),
-        ],
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            TextField(
-              key: const Key('pick-search'),
-              controller: _search,
-              onChanged: (String v) {
-                setState(() {});
-                _onQuery(v);
-              },
-              decoration: const InputDecoration(
-                  labelText: 'Tìm vị trí',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            if (queried) ...<Widget>[
-              if (_results.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                      'Không có kết quả. Chọn "Thêm địa chỉ mới" để nhập địa chỉ trên bản đồ.',
-                      key: Key('pick-no-result')),
-                ),
-              for (final PlaceSearchResult r in _results)
-                ListTile(
-                  key: Key('pick-result-${r.id}'),
-                  leading: const Icon(Icons.place_outlined),
-                  title: Text(r.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(r.address,
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                  onTap: () => _openMapFrom(AddressLocation(r.address,
-                      latitude: r.latitude, longitude: r.longitude)),
-                ),
-            ] else ...<Widget>[
-              const Text('Đang dùng', style: N11Text.label),
-              const SizedBox(height: 6),
-              N11Card(
-                child: Row(children: <Widget>[
-                  const Icon(Icons.location_on_outlined),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                            widget.initial.text.trim().isEmpty
-                                ? 'Chưa chọn địa chỉ'
-                                : widget.initial.text,
-                            key: const Key('pick-current'),
-                            style: N11Text.lead),
-                        if (widget.initial.note.trim().isNotEmpty)
-                          Text(widget.initial.note,
-                              key: const Key('pick-current-note'),
-                              style: N11Text.caption),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                      key: const Key('pick-edit-current'),
-                      onPressed: () => _openMapFrom(widget.initial),
-                      child: const Text('Sửa')),
-                ]),
-              ),
-              const SizedBox(height: 16),
-              if (book != null) _savedSection(context, book!),
-            ],
-            const SizedBox(height: 16),
-            N11Button(
-                key: const Key('pick-add-new'),
-                label: 'Thêm địa chỉ mới',
-                kind: ButtonKind.secondary,
-                onPressed: () => _openMapFrom(const AddressLocation(''))),
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : null,
+        appBar: AppBar(
+          title: const Text('Địa chỉ giao hàng'),
+          actions: <Widget>[
+            IconButton(
+                key: const Key('pick-open-map'),
+                tooltip: 'Mở bản đồ',
+                icon: const Icon(Icons.map_outlined),
+                onPressed: () => _openMapFrom(widget.initial)),
           ],
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              TextField(
+                key: const Key('pick-search'),
+                controller: _search,
+                onChanged: (String v) {
+                  setState(() {});
+                  _onQuery(v);
+                },
+                decoration: const InputDecoration(
+                    labelText: 'Tìm vị trí',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              if (queried) ...<Widget>[
+                if (_results.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                        'Không có kết quả. Chọn "Thêm địa chỉ mới" để nhập địa chỉ trên bản đồ.',
+                        key: Key('pick-no-result')),
+                  ),
+                for (final PlaceSearchResult r in _results)
+                  ListTile(
+                    key: Key('pick-result-${r.id}'),
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(r.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(r.address,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () => _openMapFrom(AddressLocation(r.address,
+                        latitude: r.latitude, longitude: r.longitude)),
+                  ),
+              ] else ...<Widget>[
+                const Text('Đang dùng', style: N11Text.label),
+                const SizedBox(height: 6),
+                N11Card(
+                  child: Row(children: <Widget>[
+                    const Icon(Icons.location_on_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                              widget.initial.text.trim().isEmpty
+                                  ? 'Chưa chọn địa chỉ'
+                                  : widget.initial.text,
+                              key: const Key('pick-current'),
+                              style: N11Text.lead),
+                          if (widget.initial.note.trim().isNotEmpty)
+                            Text(widget.initial.note,
+                                key: const Key('pick-current-note'),
+                                style: N11Text.caption),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                        key: const Key('pick-edit-current'),
+                        onPressed: () => _openMapFrom(widget.initial),
+                        child: const Text('Sửa')),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                if (book != null) _savedSection(context, book!),
+              ],
+              const SizedBox(height: 16),
+              N11Button(
+                  key: const Key('pick-add-new'),
+                  label: 'Thêm địa chỉ mới',
+                  kind: ButtonKind.secondary,
+                  onPressed: () => _openMapFrom(const AddressLocation(''))),
+            ],
+          ),
         ),
       ),
     );

@@ -37,6 +37,7 @@ class M02Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
     return PopScope(
       canPop: onWillLeave == null,
       onPopInvokedWithResult: (bool didPop, Object? result) async {
@@ -48,59 +49,61 @@ class M02Scaffold extends StatelessWidget {
           navigator.pop();
         }
       },
-      child: Form(child: Scaffold(
-        backgroundColor: N11Colors.bg,
-        body: SafeArea(
-          child: Column(
-            children: <Widget>[
-              Stack(
-                children: <Widget>[
-                  N11AppBar(
-                    title: title,
-                    onBack: () async {
-                      final NavigatorState navigator = Navigator.of(context);
-                      if (onWillLeave == null || await onWillLeave!()) {
-                        navigator.pop();
-                      }
-                    },
-                  ),
-                  if (action != null) Positioned(right: 4, top: 0, bottom: 0, child: Center(child: action)),
-                ],
-              ),
-              if (topStrip != null) topStrip!,
-              Expanded(
-                child: Stack(
+      child: Form(child: N11PageBackdrop(
+        child: Scaffold(
+          backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+          body: SafeArea(
+            child: Column(
+              children: <Widget>[
+                Stack(
                   children: <Widget>[
-                    SingleChildScrollView(
-                      controller: scrollController,
-                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, floatingFooter != null ? N11Space.gap6 + 64 : N11Space.gap6),
-                      child: vstack(content),
+                    N11AppBar(
+                      title: title,
+                      onBack: () async {
+                        final NavigatorState navigator = Navigator.of(context);
+                        if (onWillLeave == null || await onWillLeave!()) {
+                          navigator.pop();
+                        }
+                      },
                     ),
-                    if (floatingFooter != null)
-                      Positioned(
-                        left: N11Space.pad,
-                        right: N11Space.pad,
-                        bottom: N11Space.gap3,
-                        child: floatingFooter!,
-                      ),
+                    if (action != null) Positioned(right: 4, top: 0, bottom: 0, child: Center(child: action)),
                   ],
                 ),
-              ),
-              if (footer.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap3),
-                  decoration: const BoxDecoration(color: N11Colors.white, border: Border(top: BorderSide(color: N11Colors.line))),
-                  child: Row(
+                if (topStrip != null) topStrip!,
+                Expanded(
+                  child: Stack(
                     children: <Widget>[
-                      for (int i = 0; i < footer.length; i++) ...<Widget>[
-                        if (i > 0) const SizedBox(width: N11Space.gap3),
-                        Expanded(flex: footer.length == 2 && i == 1 ? 2 : 1, child: footer[i]),
-                      ],
+                      SingleChildScrollView(
+                        controller: scrollController,
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, floatingFooter != null ? N11Space.gap6 + 64 : N11Space.gap6),
+                        child: vstack(content),
+                      ),
+                      if (floatingFooter != null)
+                        Positioned(
+                          left: N11Space.pad,
+                          right: N11Space.pad,
+                          bottom: N11Space.gap3,
+                          child: floatingFooter!,
+                        ),
                     ],
                   ),
                 ),
-            ],
+                if (footer.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap3),
+                    decoration: const BoxDecoration(color: N11Colors.white, border: Border(top: BorderSide(color: N11Colors.line))),
+                    child: Row(
+                      children: <Widget>[
+                        for (int i = 0; i < footer.length; i++) ...<Widget>[
+                          if (i > 0) const SizedBox(width: N11Space.gap3),
+                          Expanded(flex: footer.length == 2 && i == 1 ? 2 : 1, child: footer[i]),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       )),

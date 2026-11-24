@@ -1,12 +1,13 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../tokens.dart';
 import 'legal_links.dart';
 import 'legal_policy_draft.dart';
 
-/// One consent checkbox for both 11Food and 11Ship. The underlined words
+/// One consent checkbox for both 11Food and 11Ship. The highlighted policy spans
 /// open a read-only dialog; tapping them must not toggle consent.
-class RegistrationConsentCheckbox extends StatelessWidget {
+class RegistrationConsentCheckbox extends StatefulWidget {
   const RegistrationConsentCheckbox({
     super.key,
     required this.value,
@@ -19,29 +20,65 @@ class RegistrationConsentCheckbox extends StatelessWidget {
   final VoidCallback onViewPolicy;
 
   @override
+  State<RegistrationConsentCheckbox> createState() =>
+      _RegistrationConsentCheckboxState();
+}
+
+class _RegistrationConsentCheckboxState
+    extends State<RegistrationConsentCheckbox> {
+  late final TapGestureRecognizer _termsTap = TapGestureRecognizer()
+    ..onTap = () => widget.onViewPolicy();
+  late final TapGestureRecognizer _privacyTap = TapGestureRecognizer()
+    ..onTap = () => widget.onViewPolicy();
+
+  @override
+  void dispose() {
+    _termsTap.dispose();
+    _privacyTap.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return CheckboxListTile(
-      key: const Key('register-consent'),
-      contentPadding: EdgeInsets.zero,
-      controlAffinity: ListTileControlAffinity.leading,
-      activeColor: N11Colors.yellow,
-      checkColor: N11Colors.black,
-      side: const BorderSide(color: N11Colors.lineStrong, width: 2),
-      value: value,
-      onChanged: onChanged,
-      title: const Text(
-        'Tôi đã đọc và đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư',
-        style: N11Text.body,
-      ),
-      secondary: InkWell(
-        key: const Key('register-policy-link'),
-        onTap: onViewPolicy,
-        borderRadius: BorderRadius.circular(8),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 7, vertical: 12),
-          child: Text('Xem', style: N11Text.link),
+    final TextStyle linkStyle = N11Text.link.copyWith(height: 1.45);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Checkbox(
+          key: const Key('register-consent'),
+          activeColor: N11Colors.yellow,
+          checkColor: N11Colors.black,
+          side: const BorderSide(color: N11Colors.fieldBorder, width: 1.5),
+          materialTapTargetSize: MaterialTapTargetSize.padded,
+          visualDensity: VisualDensity.standard,
+          value: widget.value,
+          onChanged: widget.onChanged,
         ),
-      ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text.rich(
+              TextSpan(
+                style: N11Text.caption.copyWith(height: 1.45),
+                children: <InlineSpan>[
+                  const TextSpan(text: 'Tôi đã đọc và đồng ý với '),
+                  TextSpan(
+                    text: 'Điều khoản sử dụng',
+                    style: linkStyle,
+                    recognizer: _termsTap,
+                  ),
+                  const TextSpan(text: ' và '),
+                  TextSpan(
+                    text: 'Chính sách quyền riêng tư',
+                    style: linkStyle,
+                    recognizer: _privacyTap,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

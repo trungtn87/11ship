@@ -6,6 +6,7 @@ import 'package:n11_m14_map/n11_m14_map.dart';
 import '../account/session_controller.dart';
 import '../flows/location.dart';
 import '../tokens.dart';
+import '../widgets/components.dart';
 import '../widgets/form_feedback.dart';
 import 'address_models.dart';
 import 'coverage.dart';
@@ -57,36 +58,111 @@ class AddressLocationField extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: <Widget>[
-      Text(label, style: N11Text.label),
-      const SizedBox(height: 8),
+      N11FieldLabel(label),
+      const SizedBox(height: N11Space.labelGap),
       Material(
         color: N11Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(kRadiusControl),
           side: BorderSide(
-            color: error == null ? N11Colors.line : N11Colors.error,
+            color: error == null ? N11Colors.fieldBorder : N11Colors.error,
+            width: error == null ? kFieldBorderWidth : kFieldFocusBorderWidth,
           ),
         ),
-        child: ListTile(
-          leading: const Icon(Icons.location_on_outlined),
-          title: Text(text.trim().isEmpty ? 'Chọn địa chỉ' : text),
-          trailing: onTap == null
-              ? null
-              : actionLabel == null
-                  ? const Icon(Icons.chevron_right)
-                  : TextButton(onPressed: onTap, child: Text(actionLabel!)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(kRadiusControl),
           onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kControlHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints bounds) {
+                  final Widget addressRow = Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 20,
+                        color: N11Colors.ink2,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          text.trim().isEmpty ? 'Chọn địa chỉ' : text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.trim().isEmpty
+                              ? N11Text.inputHint
+                              : N11Text.input,
+                        ),
+                      ),
+                      if (onTap != null && actionLabel == null) ...<Widget>[
+                        const SizedBox(width: N11Space.gap2),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 22,
+                          color: N11Colors.ink2,
+                        ),
+                      ],
+                    ],
+                  );
+                  if (onTap == null || actionLabel == null) {
+                    return addressRow;
+                  }
+                  final TextButton actionButton = TextButton(
+                    onPressed: onTap,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(kTapMin, kControlHeight),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(actionLabel!),
+                  );
+                  final bool stackAction =
+                      bounds.maxWidth < 240 ||
+                      (MediaQuery.textScalerOf(context).scale(15) > 20 &&
+                          bounds.maxWidth < 260);
+                  if (stackAction) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        addressRow,
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: actionButton,
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: <Widget>[
+                      Expanded(child: addressRow),
+                      const SizedBox(width: N11Space.gap2),
+                      actionButton,
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ),
       ),
       if (pinSummary != null)
         Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(pinSummary!, key: const Key('address-pin-summary')),
+          padding: const EdgeInsets.only(top: N11Space.labelGap),
+          child: Text(
+            pinSummary!,
+            key: const Key('address-pin-summary'),
+            style: N11Text.caption,
+          ),
         ),
       if (error != null)
         Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(error!, style: const TextStyle(color: N11Colors.error)),
+          padding: const EdgeInsets.only(top: N11Space.labelGap),
+          child: Text(
+            error!,
+            style: N11Text.caption.copyWith(color: N11Colors.errorInk),
+          ),
         ),
     ],
   );
@@ -381,152 +457,375 @@ class _AddressLocationPickerState extends State<AddressLocationPicker> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.title)),
-    body: SafeArea(
-      // Not a lazy ListView: the map must stay mounted while the keyboard resizes the viewport (a disposed platform view re-parses the whole map package, #299).
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+  Widget build(BuildContext context) {
+    final OutlineInputBorder normalBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(kRadiusControl),
+      borderSide: const BorderSide(
+        color: N11Colors.fieldBorder,
+        width: kFieldBorderWidth,
+      ),
+    );
+    final OutlineInputBorder focusedBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(kRadiusControl),
+      borderSide: const BorderSide(
+        color: N11Colors.yellow,
+        width: kFieldFocusBorderWidth,
+      ),
+    );
+    final OutlineInputBorder errorBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(kRadiusControl),
+      borderSide: const BorderSide(
+        color: N11Colors.error,
+        width: kFieldFocusBorderWidth,
+      ),
+    );
+    final String statusText = _locating
+        ? 'Đang lấy vị trí qua GPS và mạng…'
+        : _lat == null
+        ? 'Chạm bản đồ để ghim đúng vị trí.'
+        : _currentPosition
+        ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Chạm bản đồ để chỉnh.'
+        : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.';
+    return Scaffold(
+      backgroundColor: N11Colors.formBg,
+      body: SafeArea(
+        bottom: false,
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          TextField(
-            key: const Key('location-address-text'),
-            controller: _text,
-            focusNode: _addressFocus,
-            onChanged: (String value) { setState(() {}); _textChanged(value); },
-            maxLength: widget.maxLength,
-            minLines: 1,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: 'Tìm vị trí',
-              errorText: _addressError,
-              errorMaxLines: 2,
-              hintText: 'Nhập số nhà, đường, tổ, phường/xã…',
-              filled: true,
-              fillColor: N11Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(kRadiusControl),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(kRadiusControl),
-                borderSide: const BorderSide(color: N11Colors.line),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(kRadiusControl),
-                borderSide: const BorderSide(color: N11Colors.yellow, width: 2),
-              ),
+          children: <Widget>[
+            N11AppBar(
+              title: widget.title,
+              transparent: false,
+              backgroundColor: N11Colors.formBg,
+              borderColor: N11Colors.formDivider,
+              onBack: () => Navigator.of(context).maybePop(),
             ),
-          ),
-          if (_searching && !_offlineSearch) const LinearProgressIndicator(key: Key('place-search-loading')),
-          if (_searchFailed)
-            ListTile(
-              key: const Key('place-search-error'),
-              title: const Text('Không tìm được lúc này. Bạn vẫn có thể nhập địa chỉ hoặc chọn ghim thủ công.'),
-              trailing: TextButton(onPressed: () => _textChanged(_text.text), child: const Text('Thử lại')),
-            ),
-          if (_searched && !_searching && !_searchFailed && _text.text.trim().runes.length >= 2 && _results.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Không có kết quả phù hợp. Có thể tiếp tục nhập địa chỉ chữ.')),
-          if (_results.isNotEmpty) _suggestions(context),
-          const SizedBox(height: 12),
-          if (!widget.requirePoint)
-            Text(
-              _lat == null ? 'Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.' : 'Sẽ lưu địa chỉ cùng vị trí đã ghim.',
-              key: const Key('address-save-mode'),
-              style: N11Text.bodyStrong,
-            ),
-          Text(
-            _lat == null
-                ? 'Chạm bản đồ để ghim đúng vị trí.'
-                : _currentPosition
-                ? 'Đã lấy vị trí hiện tại${_accuracyMeters == null ? '' : ' · sai số khoảng ${_accuracyMeters!.ceil()} m'}. Kiểm tra và chỉnh ghim nếu cần.'
-                : 'Điểm giao đã chọn. Chạm bản đồ để chuyển ghim.',
-          ),
-          if (_pinHint != null) Text(_pinHint!, key: const Key('place-approximate-hint'), style: N11Text.caption),
-          if (_lat != null && _lng != null)
-            Align(alignment: Alignment.centerLeft, child: TextButton(key: const Key('location-clear-pin'), onPressed: _clearPin, child: const Text('Bỏ ghim'))),
-          if (_locating)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('Đang lấy vị trí qua GPS và mạng…'),
-            ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                _error!,
-                key: const Key('location-picker-error'),
-                style: const TextStyle(color: N11Colors.error),
-              ),
-            ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 320,
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(child: _map(context)),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: FloatingActionButton.small(
-                    key: const Key('location-current'),
-                    heroTag: null,
-                    tooltip: 'Vị trí hiện tại',
-                    onPressed: _locating ? null : _locate,
-                    child: _locating
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.my_location),
-                  ),
+            Expanded(
+              // Not a lazy ListView: the map must stay mounted while the keyboard resizes the viewport (a disposed platform view re-parses the whole map package, #299).
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  N11Space.pad,
+                  N11Space.gap4,
+                  N11Space.pad,
+                  N11Space.gap6,
                 ),
-              ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const N11FieldLabel('Tìm vị trí'),
+                    const SizedBox(height: N11Space.labelGap),
+                    TextField(
+                      key: const Key('location-address-text'),
+                      controller: _text,
+                      focusNode: _addressFocus,
+                      onChanged: (String value) {
+                        setState(() {});
+                        _textChanged(value);
+                      },
+                      maxLength: widget.maxLength,
+                      maxLines: 1,
+                      textAlignVertical: TextAlignVertical.center,
+                      style: N11Text.input,
+                      cursorColor: N11Colors.black,
+                      decoration: InputDecoration(
+                        counterText: '',
+                        isDense: true,
+                        constraints: const BoxConstraints(
+                          minHeight: kControlHeight,
+                        ),
+                        errorText: _addressError,
+                        errorMaxLines: 2,
+                        hintText: 'Nhập số nhà, đường, tổ, phường/xã…',
+                        hintStyle: N11Text.inputHint,
+                        filled: true,
+                        fillColor: N11Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        border: normalBorder,
+                        enabledBorder: normalBorder,
+                        focusedBorder: focusedBorder,
+                        errorBorder: errorBorder,
+                        focusedErrorBorder: errorBorder,
+                        suffixIconConstraints: const BoxConstraints(
+                          minWidth: kTapMin,
+                          minHeight: kControlHeight,
+                        ),
+                        suffixIcon: _text.text.isEmpty
+                            ? null
+                            : IconButton(
+                                key: const Key('location-address-clear'),
+                                tooltip: 'Xóa địa chỉ',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: kTapMin,
+                                  height: kControlHeight,
+                                ),
+                                onPressed: () {
+                                  _text.clear();
+                                  setState(() {});
+                                  _textChanged('');
+                                },
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  size: 20,
+                                  color: N11Colors.ink2,
+                                ),
+                              ),
+                      ),
+                    ),
+                    if (_searching && !_offlineSearch)
+                      const LinearProgressIndicator(
+                        key: Key('place-search-loading'),
+                      ),
+                    if (_searchFailed)
+                      ListTile(
+                        key: const Key('place-search-error'),
+                        title: const Text(
+                          'Không tìm được lúc này. Bạn vẫn có thể nhập địa chỉ hoặc chọn ghim thủ công.',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () => _textChanged(_text.text),
+                          child: const Text('Thử lại'),
+                        ),
+                      ),
+                    if (_lat == null &&
+                        _searched &&
+                        !_searching &&
+                        !_searchFailed &&
+                        _text.text.trim().runes.length >= 2 &&
+                        _results.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: N11Space.labelGap),
+                        child: Text(
+                          'Không có kết quả phù hợp. Có thể tiếp tục nhập địa chỉ chữ.',
+                          style: N11Text.caption,
+                        ),
+                      ),
+                    if (_results.isNotEmpty) _suggestions(context),
+                    const SizedBox(height: N11Space.formFieldGap),
+                    if (!widget.requirePoint)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          _lat == null
+                              ? 'Sẽ lưu địa chỉ chữ, chưa ghim vị trí. Ghim bản đồ là tùy chọn.'
+                              : 'Sẽ lưu địa chỉ cùng vị trí đã ghim.',
+                          key: const Key('address-save-mode'),
+                          style: N11Text.bodyStrong,
+                        ),
+                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            statusText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: N11Text.caption,
+                          ),
+                        ),
+                        if (_lat != null && _lng != null) ...<Widget>[
+                          const SizedBox(width: N11Space.gap2),
+                          OutlinedButton.icon(
+                            key: const Key('location-clear-pin'),
+                            onPressed: _clearPin,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: N11Colors.white,
+                              foregroundColor: N11Colors.error,
+                              side: const BorderSide(
+                                color: N11Colors.errorBorder,
+                              ),
+                              minimumSize: const Size(0, 34),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(kRadiusPill),
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.padded,
+                            ),
+                            icon: const Icon(
+                              Icons.location_off_outlined,
+                              size: 15,
+                            ),
+                            label: const Text(
+                              'Bỏ ghim',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (_pinHint != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _pinHint!,
+                          key: const Key('place-approximate-hint'),
+                          style: N11Text.caption,
+                        ),
+                      ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: N11Space.gap2),
+                        child: Text(
+                          _error!,
+                          key: const Key('location-picker-error'),
+                          style: const TextStyle(color: N11Colors.error),
+                        ),
+                      ),
+                    const SizedBox(height: N11Space.gap2),
+                    Container(
+                      height: 320,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(kRadiusCard),
+                        border: Border.all(color: N11Colors.formDivider),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(kRadiusCard - 1),
+                        child: Stack(
+                          children: <Widget>[
+                            Positioned.fill(child: _map(context)),
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Tooltip(
+                                message: 'Vị trí hiện tại',
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: N11Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: N11Colors.fieldBorder,
+                                    ),
+                                    boxShadow: const <BoxShadow>[
+                                      BoxShadow(
+                                        color: Color(0x1A000000),
+                                        blurRadius: 8,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    shape: const CircleBorder(),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: InkWell(
+                                      key: const Key('location-current'),
+                                      onTap: _locating ? null : _locate,
+                                      child: SizedBox(
+                                        width: kTapMin,
+                                        height: kTapMin,
+                                        child: Center(
+                                          child: _locating
+                                              ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.my_location_rounded,
+                                                  size: 20,
+                                                  color: N11Colors.black,
+                                                ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: N11Space.formFieldGap),
+                    const N11FieldLabel('Mô tả bổ sung', optional: true),
+                    const SizedBox(height: N11Space.labelGap),
+                    // "Mô tả bổ sung": optional, separate from the address text and the pin (house number, floor, lane, directions).
+                    TextField(
+                      key: const Key('location-extra-note'),
+                      controller: _note,
+                      maxLength: kAddressNoteMaxLength,
+                      minLines: 1,
+                      maxLines: 2,
+                      textAlignVertical: TextAlignVertical.center,
+                      style: N11Text.input,
+                      cursorColor: N11Colors.black,
+                      decoration: InputDecoration(
+                        counterText: '',
+                        isDense: true,
+                        constraints: const BoxConstraints(
+                          minHeight: kControlHeight,
+                        ),
+                        hintText: 'Số nhà, tầng, ngõ, ghi chú tìm đường…',
+                        hintStyle: N11Text.inputHint,
+                        filled: true,
+                        fillColor: N11Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        border: normalBorder,
+                        enabledBorder: normalBorder,
+                        focusedBorder: focusedBorder,
+                      ),
+                    ),
+                    // #194: a pinned point is fixed; moving around never changes it, and nothing here shares the person's position.
+                    const Padding(
+                      padding: EdgeInsets.only(top: N11Space.labelGap),
+                      child: Text(
+                        'Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này. Nút vị trí hiện tại chỉ đặt ghim theo GPS của máy khi bạn bấm, không chia sẻ vị trí.',
+                        key: Key('location-picker-fixed-note'),
+                        style: N11Text.caption,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          // "Mô tả bổ sung": optional, separate from the address text and the pin (house number, floor, lane, directions).
-          TextField(
-            key: const Key('location-extra-note'),
-            controller: _note,
-            maxLength: kAddressNoteMaxLength,
-            minLines: 1,
-            maxLines: 2,
-            decoration: InputDecoration(
-              labelText: 'Mô tả bổ sung (không bắt buộc)',
-              hintText: 'Số nhà, tầng, ngõ, ghi chú tìm đường…',
-              filled: true,
-              fillColor: N11Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl)),
-            ),
-          ),
-          // #194: a pinned point is fixed; moving around never changes it, and nothing here shares the person's position.
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text(
-              'Điểm giao đã chọn là vị trí cố định; di chuyển của bạn không tự đổi điểm này. Nút vị trí hiện tại chỉ đặt ghim theo GPS của máy khi bạn bấm, không chia sẻ vị trí.',
-              key: Key('location-picker-fixed-note'),
-              style: N11Text.caption,
-            ),
-          ),
-        ],
+          ],
         ),
       ),
-    ),
-    bottomNavigationBar: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: FilledButton(
-          key: const Key('location-save'),
-          onPressed: _locating ? null : _save,
-          child: const Text('Lưu địa chỉ'),
+      bottomNavigationBar: Container(
+        key: const Key('location-bottom-bar'),
+        decoration: const BoxDecoration(
+          color: N11Colors.white,
+          border: Border(
+            top: BorderSide(color: N11Colors.formDivider, width: 1),
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Color(0x141C1917),
+              blurRadius: 12,
+              offset: Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: N11Space.pad,
+              vertical: 12,
+            ),
+            child: N11Button(
+              key: const Key('location-save'),
+              label: 'Lưu địa chỉ',
+              onPressed: _locating ? null : _save,
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

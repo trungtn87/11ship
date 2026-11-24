@@ -451,41 +451,52 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           case DiscoveryLoad.ready:
             body.addAll(_ready());
         }
+        final bool inheritedGradient = N11PageBackground.maybeOf(context) != null;
+        final Widget content = SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: () =>
+                c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
+            child: ListView(
+              key: const Key('home-list'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                N11Space.pad,
+                N11Space.gap2,
+                N11Space.pad,
+                N11Space.gap8,
+              ),
+              children: <Widget>[
+                for (final Widget w in body)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                    child: w,
+                  ),
+              ],
+            ),
+          ),
+        );
+        if (inheritedGradient) {
+          return content;
+        }
         return Container(
           key: const Key('home-gradient'),
           decoration: const BoxDecoration(gradient: N11V5.homeGradient),
-          child: SafeArea(
-            bottom: false,
-            child: RefreshIndicator(
-              onRefresh: () =>
-                  c.choicesState == DiscoveryLoad.ready ? c.refresh() : c.start(),
-              child: ListView(
-                key: const Key('home-list'),
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(
-                  N11Space.pad,
-                  N11Space.gap2,
-                  N11Space.pad,
-                  N11Space.gap8,
-                ),
-                children: <Widget>[
-                  for (final Widget w in body)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: N11Space.gap3),
-                      child: w,
-                    ),
-                ],
-              ),
-            ),
-          ),
+          child: content,
         );
       },
     );
   }
 
-  /// Figma F01 header, one row 48 high: the area (with the GPS retry inline when needed) on the left and the bell on the right.
+  /// Figma F01 header, one row 48 high: a single location status/action cluster on the left and the bell on the right.
   /// The brand logo was dropped from the Home by the Owner (#282). GPS controls the area label; it is not an area selector.
   Widget _header() {
+    final bool resolved =
+        _position.fix != null &&
+        !c.resolvingArea &&
+        !c.areaResolutionFailed &&
+        !c.outsideCoverage &&
+        c.area != null;
     final String areaLabel = c.area == null
         ? (c.resolvingArea || _position.loading
               ? 'Đang xác định khu vực…'
@@ -502,36 +513,44 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.my_location, size: 20, color: N11Colors.yellowStrong),
-                const SizedBox(width: 7),
-                Flexible(
-                  key: const Key('home-area'),
-                  child: Text(
-                    areaLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 19 / 14,
-                      fontWeight: FontWeight.w700,
-                      color: N11Colors.black,
+            child: resolved
+                ? Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.my_location,
+                        size: 20,
+                        color: N11Colors.yellowStrong,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        key: const Key('home-area'),
+                        child: Text(
+                          areaLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 19 / 14,
+                            fontWeight: FontWeight.w700,
+                            color: N11Colors.black,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    key: const Key('home-area'),
+                    child: _PositionButton(
+                      position: _position,
+                      resolving: c.resolvingArea,
+                      failed: c.areaResolutionFailed,
+                      outsideCoverage: c.outsideCoverage,
+                      retry: () => c.locate(source: _position, force: true),
+                      inlineWithArea: true,
+                      areaName: c.area == null ? null : areaLabel,
                     ),
                   ),
-                ),
-                // Flexible: a long area name and the inline action share the row; the label truncates instead of overflowing at 320px.
-                Flexible(
-                  child: _PositionButton(
-                    position: _position,
-                    resolving: c.resolvingArea,
-                    failed: c.areaResolutionFailed,
-                    outsideCoverage: c.outsideCoverage,
-                    retry: () => c.locate(source: _position, force: true),
-                  ),
-                ),
-              ],
-            ),
           ),
           const SizedBox(width: N11Space.gap2),
           SizedBox(
@@ -567,7 +586,7 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       const N11StateBlock(
         kind: StateKind.warn,
         title: 'Không tải được dữ liệu',
-        text: 'Chưa nhận được dữ liệu từ máy chủ nên chưa hiển thị được danh sách quán. Chưa có gì bị thay đổi.',
+        text: 'Chưa nhận được dữ liệu từ máy chủ nên chưa hiển thị được danh sách quán. Kiểm tra kết nối mạng rồi thử lại nhé.',
       ),
       const SizedBox(height: N11Space.gap4),
       N11Button(
@@ -1320,73 +1339,77 @@ class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: Key(widget.featured ? 'featured-all-screen' : 'nearby-all-screen'),
-      backgroundColor: N11Colors.white,
-      appBar: AppBar(
-        title: Text(widget.featured ? 'Quán nổi bật' : 'Quán gần bạn'),
-        backgroundColor: N11Colors.white,
-        foregroundColor: N11Colors.black,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: Listenable.merge(<Listenable>[c, widget.position, c.distances]),
-          builder: (BuildContext context, Widget? child) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) unawaited(c.distances.want(c.shops, widget.position.fix));
-            });
-            // Issue #411: featured order (no distance) for "Quán nổi bật" and without GPS; road distance order with GPS.
-            final bool byFeatured = widget.featured || widget.position.fix == null;
-            final List<ShopCardData> shops = byFeatured
-                ? featuredOrder(c.shops)
-                : nearbyByRoadDistance(
-                    c.shops,
-                    (ShopCardData s) => c.distances.of(s, widget.position.fix),
-                  );
-            if (shops.isEmpty && c.listState == DiscoveryLoad.ready) {
-              return const EmptyState(
-                key: Key('nearby-all-empty'),
-                icon: Icons.place_outlined,
-                title: 'Chưa có quán nào',
-                text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn.',
-              );
-            }
-            final int rows = (shops.length + 1) ~/ 2;
-            return ListView.builder(
-              key: const Key('nearby-all-list'),
-              controller: _scroll,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, N11Space.gap8),
-              itemCount: rows + 1,
-              itemBuilder: (BuildContext context, int index) {
-                if (index == rows) return _footer();
-                final int i = index * 2;
-                HomeShopTile tile(ShopCardData s) => HomeShopTile(
-                      key: Key('shop-${s.shopId}'),
-                      shop: s,
-                      stale: c.stale,
-                      customerLocation: widget.position.fix,
-                      distance: c.distances.of(s, widget.position.fix),
-                      locating: widget.position.loading,
-                      onTap: () => widget.onOpenShop(s),
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      fallbackColor: N11Colors.white,
+      child: Scaffold(
+        key: Key(widget.featured ? 'featured-all-screen' : 'nearby-all-screen'),
+        backgroundColor: hasGradient ? Colors.transparent : N11Colors.white,
+        appBar: AppBar(
+          title: Text(widget.featured ? 'Quán nổi bật' : 'Quán gần bạn'),
+          backgroundColor: hasGradient ? Colors.transparent : N11Colors.white,
+          foregroundColor: N11Colors.black,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ListenableBuilder(
+            listenable: Listenable.merge(<Listenable>[c, widget.position, c.distances]),
+            builder: (BuildContext context, Widget? child) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(c.distances.want(c.shops, widget.position.fix));
+              });
+              // Issue #411: featured order (no distance) for "Quán nổi bật" and without GPS; road distance order with GPS.
+              final bool byFeatured = widget.featured || widget.position.fix == null;
+              final List<ShopCardData> shops = byFeatured
+                  ? featuredOrder(c.shops)
+                  : nearbyByRoadDistance(
+                      c.shops,
+                      (ShopCardData s) => c.distances.of(s, widget.position.fix),
                     );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: N11Space.gap3),
-                  child: IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Expanded(child: tile(shops[i])),
-                        const SizedBox(width: N11Space.gap3),
-                        Expanded(child: i + 1 < shops.length ? tile(shops[i + 1]) : const SizedBox.shrink()),
-                      ],
-                    ),
-                  ),
+              if (shops.isEmpty && c.listState == DiscoveryLoad.ready) {
+                return const EmptyState(
+                  key: Key('nearby-all-empty'),
+                  icon: Icons.place_outlined,
+                  title: 'Chưa có quán nào',
+                  text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn.',
                 );
-              },
-            );
-          },
+              }
+              final int rows = (shops.length + 1) ~/ 2;
+              return ListView.builder(
+                key: const Key('nearby-all-list'),
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap2, N11Space.pad, N11Space.gap8),
+                itemCount: rows + 1,
+                itemBuilder: (BuildContext context, int index) {
+                  if (index == rows) return _footer();
+                  final int i = index * 2;
+                  HomeShopTile tile(ShopCardData s) => HomeShopTile(
+                        key: Key('shop-${s.shopId}'),
+                        shop: s,
+                        stale: c.stale,
+                        customerLocation: widget.position.fix,
+                        distance: c.distances.of(s, widget.position.fix),
+                        locating: widget.position.loading,
+                        onTap: () => widget.onOpenShop(s),
+                      );
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: N11Space.gap3),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Expanded(child: tile(shops[i])),
+                          const SizedBox(width: N11Space.gap3),
+                          Expanded(child: i + 1 < shops.length ? tile(shops[i + 1]) : const SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1637,85 +1660,94 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: N11Colors.bg,
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: Listenable.merge(<Listenable>[
-            _search,
-            _position,
-            _distances,
-            if (widget.discovery != null) widget.discovery!,
-          ]),
-          builder: (BuildContext context, Widget? child) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                unawaited(_distances.want(_search.groupedShops, _position.fix));
-              }
-            });
-            return Column(
-              children: <Widget>[
-                Container(
-                  padding: const EdgeInsets.fromLTRB(
-                    N11Space.pad,
-                    N11Space.gap2,
-                    4,
-                    N11Space.gap2,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: N11Colors.white,
-                    border: Border(bottom: BorderSide(color: N11Colors.line)),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: N11SearchField(
-                          fieldKey: const Key('search-field'),
-                          clearKey: const Key('search-clear'),
-                          controller: _text,
-                          autofocus: true,
-                          onChanged: _search.setTerm,
-                        ),
-                      ),
-                      TextButton(
-                        key: const Key('search-cancel'),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(kTapMin, kTapMin),
-                        ),
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        child: const Text(
-                          'Hủy',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: N11Colors.black,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _PositionButton(
-                  position: _position,
-                  retry: widget.retryPosition,
-                  resolving: widget.discovery?.resolvingArea ?? false,
-                  failed: widget.discovery?.areaResolutionFailed ?? false,
-                  outsideCoverage: widget.discovery?.outsideCoverage ?? false,
-                ),
-                Expanded(
-                  child: ListView(
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+        body: SafeArea(
+          child: ListenableBuilder(
+            listenable: Listenable.merge(<Listenable>[
+              _search,
+              _position,
+              _distances,
+              if (widget.discovery != null) widget.discovery!,
+            ]),
+            builder: (BuildContext context, Widget? child) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  unawaited(_distances.want(_search.groupedShops, _position.fix));
+                }
+              });
+              return Column(
+                children: <Widget>[
+                  Container(
                     padding: const EdgeInsets.fromLTRB(
                       N11Space.pad,
-                      N11Space.gap3,
-                      N11Space.pad,
-                      N11Space.gap8,
+                      N11Space.gap2,
+                      4,
+                      N11Space.gap2,
                     ),
-                    children: _results(),
+                    decoration: BoxDecoration(
+                      color: hasGradient ? Colors.transparent : N11Colors.white,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: hasGradient
+                              ? const Color(0x14191919)
+                              : N11Colors.line,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: N11SearchField(
+                            fieldKey: const Key('search-field'),
+                            clearKey: const Key('search-clear'),
+                            controller: _text,
+                            autofocus: true,
+                            onChanged: _search.setTerm,
+                          ),
+                        ),
+                        TextButton(
+                          key: const Key('search-cancel'),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(kTapMin, kTapMin),
+                          ),
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          child: const Text(
+                            'Hủy',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: N11Colors.black,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                  _PositionButton(
+                    position: _position,
+                    retry: widget.retryPosition,
+                    resolving: widget.discovery?.resolvingArea ?? false,
+                    failed: widget.discovery?.areaResolutionFailed ?? false,
+                    outsideCoverage: widget.discovery?.outsideCoverage ?? false,
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        N11Space.pad,
+                        N11Space.gap3,
+                        N11Space.pad,
+                        N11Space.gap8,
+                      ),
+                      children: _results(),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1979,29 +2011,44 @@ class _PositionButton extends StatelessWidget {
     this.resolving = false,
     this.failed = false,
     this.outsideCoverage = false,
+    this.inlineWithArea = false,
+    this.areaName,
   });
   final DiscoveryPosition position;
   final VoidCallback? retry;
   final bool resolving;
   final bool failed;
   final bool outsideCoverage;
+  final bool inlineWithArea;
+  final String? areaName;
   @override
   Widget build(BuildContext context) {
     if (position.fix != null && !resolving && !failed && !outsideCoverage) {
       return const SizedBox.shrink();
     }
     final bool busy = position.loading || resolving;
-    // Short line so it never crowds the bell at 360px: the reason is in the area label above.
-    final String label = busy
-        ? 'Đang tìm vị trí…'
-        : position.failure == LocationFailure.denied
-        ? 'Cấp quyền vị trí'
-        : position.failure == LocationFailure.disabled
-        ? 'Bật vị trí'
-        : 'Thử lại';
+    final String label = inlineWithArea
+        ? (areaName != null
+              ? areaName!
+              : busy
+              ? 'Đang tìm vị trí…'
+              : position.failure == LocationFailure.denied
+              ? 'Cấp quyền vị trí'
+              : position.failure == LocationFailure.disabled
+              ? 'Bật vị trí'
+              : outsideCoverage
+              ? 'Ngoài khu vực phục vụ · Thử lại'
+              : 'Chưa xác định vị trí · Thử lại')
+        : (busy
+              ? 'Đang tìm vị trí…'
+              : position.failure == LocationFailure.denied
+              ? 'Cấp quyền vị trí'
+              : position.failure == LocationFailure.disabled
+              ? 'Bật vị trí'
+              : 'Thử lại');
     // Figma F01 inline action: white pill, border #E7B628, radius 15, at least 78x30, Bold 12 #A65300.
     return Padding(
-      padding: const EdgeInsets.only(left: N11Space.gap2),
+      padding: inlineWithArea ? EdgeInsets.zero : const EdgeInsets.only(left: N11Space.gap2),
       child: Material(
         color: N11Colors.white,
         shape: const RoundedRectangleBorder(
@@ -2018,16 +2065,40 @@ class _PositionButton extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 78),
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: N11Colors.homeLocateInk,
-              ),
-            ),
+            child: inlineWithArea
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.my_location,
+                        size: 15,
+                        color: N11Colors.homeLocateInk,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: N11Colors.homeLocateInk,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: N11Colors.homeLocateInk,
+                    ),
+                  ),
           ),
         ),
       ),

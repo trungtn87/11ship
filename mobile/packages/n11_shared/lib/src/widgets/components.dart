@@ -199,20 +199,25 @@ class _N11ButtonState extends State<N11Button> {
     final bool unavailable = widget.onPressed == null && !widget.loading;
     Color background = switch (widget.kind) {
       ButtonKind.primary => _pressed && enabled ? N11Colors.yellowHover : N11Colors.yellow,
-      ButtonKind.secondary => _pressed && enabled ? N11Colors.bg : N11Colors.white,
+      ButtonKind.secondary => _pressed && enabled ? N11Colors.formBg : N11Colors.white,
       ButtonKind.dark => N11Colors.black,
-      ButtonKind.ghost => _pressed && enabled ? N11Colors.bg : Colors.transparent,
+      ButtonKind.ghost => _pressed && enabled ? N11Colors.formBg : Colors.transparent,
       ButtonKind.outline => _pressed && enabled ? N11Colors.yellowFaint : N11Colors.white,
     };
     Color ink = widget.kind == ButtonKind.dark ? N11Colors.white : N11Colors.black;
-    Color border = widget.kind == ButtonKind.secondary ? N11Colors.line : widget.kind == ButtonKind.outline ? N11Colors.yellow : Colors.transparent;
-    final double borderWidth = widget.kind == ButtonKind.outline ? 2 : 1;
+    Color border = widget.kind == ButtonKind.secondary ? N11Colors.fieldBorder : widget.kind == ButtonKind.outline ? N11Colors.yellow : Colors.transparent;
+    final double borderWidth = widget.kind == ButtonKind.outline ? 2 : kFieldBorderWidth;
     if (widget.loading) {
       background = widget.kind == ButtonKind.dark ? N11Colors.black : N11Colors.yellowSoft;
     }
     if (unavailable) {
-      background = N11Colors.disabledBg;
-      ink = N11Colors.disabledInk;
+      if (widget.kind == ButtonKind.primary) {
+        background = N11Colors.primaryDisabledBg;
+        ink = N11Colors.primaryDisabledInk;
+      } else {
+        background = N11Colors.disabledBg;
+        ink = N11Colors.disabledInk;
+      }
       border = Colors.transparent;
     }
     final BorderRadius radius = BorderRadius.circular(kRadiusControl);
@@ -250,7 +255,7 @@ class _N11ButtonState extends State<N11Button> {
                     child: Text(
                       widget.label,
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ink),
+                      style: N11Text.button.copyWith(color: ink),
                     ),
                   ),
                 ],
@@ -263,32 +268,50 @@ class _N11ButtonState extends State<N11Button> {
   }
 }
 
-/// A text link (yellow-strong, underlined) of the design: "Quên mật khẩu?", "Chưa có tài khoản? Đăng ký".
+/// A text link (yellow-strong, no full-sentence underline) of the design:
+/// "Quên mật khẩu?", "Chưa có tài khoản? Đăng ký".
 class N11Link extends StatelessWidget {
-  const N11Link(this.label, {super.key, this.onPressed});
+  const N11Link(
+    this.label, {
+    super.key,
+    this.onPressed,
+    this.prefix,
+    this.compact = false,
+  });
 
   final String label;
   final VoidCallback? onPressed;
+  final String? prefix;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: kTapMin),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(
-              widthFactor: 1,
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: onPressed == null ? N11Text.link.copyWith(color: N11Colors.disabledInk, decorationColor: N11Colors.disabledInk) : N11Text.link,
-              ),
+    final TextStyle activeStyle = onPressed == null
+        ? N11Text.link.copyWith(color: N11Colors.disabledInk)
+        : N11Text.link;
+    final Widget text = prefix == null
+        ? Text(
+            label,
+            textAlign: TextAlign.center,
+            style: activeStyle,
+          )
+        : Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(text: prefix, style: N11Text.caption),
+                TextSpan(text: label, style: activeStyle),
+              ],
             ),
-          ),
+            textAlign: TextAlign.center,
+          );
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: kTapMin, minHeight: kTapMin),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 8),
+          child: Center(widthFactor: 1, child: text),
         ),
       ),
     );
@@ -367,6 +390,54 @@ class N11Heading extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Text(sub!, textAlign: centered ? TextAlign.center : TextAlign.start, style: N11Text.lead),
           ),
+      ],
+    );
+  }
+}
+
+/// Standard field label placed 6dp above an input box, with subtle optional suffix.
+class N11FieldLabel extends StatelessWidget {
+  const N11FieldLabel(this.label, {super.key, this.optional = false});
+
+  final String label;
+  final bool optional;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: label, style: N11Text.label),
+          if (optional)
+            const TextSpan(
+              text: ' · không bắt buộc',
+              style: N11Text.caption,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Clean form section title with an optional thin top divider.
+class N11SectionHeader extends StatelessWidget {
+  const N11SectionHeader(this.title, {super.key, this.showDivider = false});
+
+  final String title;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (showDivider) ...<Widget>[
+          const SizedBox(height: N11Space.gap2),
+          const Divider(height: 1, thickness: 1, color: N11Colors.formDivider),
+          const SizedBox(height: N11Space.gap4),
+        ] else
+          const SizedBox(height: N11Space.gap2),
+        Text(title, style: N11Text.section),
       ],
     );
   }
@@ -961,23 +1032,12 @@ class _N11FieldState extends State<N11Field> {
     final bool focused = _focus.hasFocus;
     final bool error = field.hasError || widget.tone == FieldTone.error;
     final bool ok = widget.tone == FieldTone.ok;
-    final Color borderColor = error ? N11Colors.error : (ok ? N11Colors.success : (focused ? N11Colors.yellow : N11Colors.line));
-    final double borderWidth = error || focused ? 2 : 1;
+    final Color borderColor = error ? N11Colors.error : (ok ? N11Colors.success : (focused ? N11Colors.yellow : N11Colors.fieldBorder));
+    final double borderWidth = error || focused ? kFieldFocusBorderWidth : kFieldBorderWidth;
     final Color? ring = error ? N11Colors.errorSoft : (focused ? N11Colors.yellowSoft : null);
     final Color hintInk = error ? N11Colors.errorInk : (ok ? N11Colors.successInk : N11Colors.ink2);
     final OutlineInputBorder none = OutlineInputBorder(borderRadius: BorderRadius.circular(kRadiusControl), borderSide: BorderSide.none);
-    final Widget labelText = Text.rich(
-      TextSpan(
-        children: <InlineSpan>[
-          TextSpan(text: widget.label, style: N11Text.label),
-          if (widget.optionalLabel)
-            const TextSpan(
-              text: ' · không bắt buộc',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: N11Colors.ink2),
-            ),
-        ],
-      ),
-    );
+    final Widget labelText = N11FieldLabel(widget.label, optional: widget.optionalLabel);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -990,68 +1050,82 @@ class _N11FieldState extends State<N11Field> {
               InfoHint(title: widget.label, message: widget.info!),
             ],
           ),
-        const SizedBox(height: 6),
-        Container(
-          constraints: const BoxConstraints(minHeight: kControlHeight),
+        const SizedBox(height: N11Space.labelGap),
+        DecoratedBox(
           decoration: BoxDecoration(
-            color: widget.enabled ? N11Colors.white : N11Colors.bg,
+            color: widget.enabled ? N11Colors.white : N11Colors.disabledBg,
             borderRadius: BorderRadius.circular(kRadiusControl),
-            border: Border.all(color: borderColor, width: borderWidth),
             boxShadow: ring == null ? null : <BoxShadow>[BoxShadow(color: ring, spreadRadius: 3)],
           ),
-          child: TextField(
-            key: widget.fieldKey,
-            controller: widget.controller,
-            focusNode: _focus,
-            enabled: widget.enabled,
-            keyboardType: widget.keyboard,
-            textInputAction: widget.textInputAction,
-            obscureText: widget.password && _hidden,
-            maxLength: widget.maxLength,
-            autocorrect: false,
-            enableSuggestions: !widget.password,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: N11Colors.black),
-            cursorColor: N11Colors.black,
-            onChanged: (String value) {
-              field.didChange(value);
-              widget.onChanged?.call();
-            },
-            decoration: InputDecoration(
-              counterText: '',
-              isDense: true,
-              hintText: widget.placeholder,
-              hintStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: N11Colors.placeholder),
-              border: none,
-              enabledBorder: none,
-              focusedBorder: none,
-              disabledBorder: none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              suffixIcon: widget.password
-                  ? TextButton(
-                      key: Key('${(widget.fieldKey as ValueKey<String>).value}-toggle'),
-                      onPressed: widget.enabled ? () => setState(() => _hidden = !_hidden) : null,
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(kTapMin, kTapMin),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        _hidden ? 'Hiện' : 'Ẩn',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: N11Colors.ink2),
-                      ),
-                    )
-                  : widget.suffix,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(kRadiusControl),
+              border: Border.all(color: borderColor, width: borderWidth),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: kControlHeight),
+              child: Center(
+                child: TextField(
+                  key: widget.fieldKey,
+                  controller: widget.controller,
+                  focusNode: _focus,
+                  enabled: widget.enabled,
+                  keyboardType: widget.keyboard,
+                  textInputAction: widget.textInputAction,
+                  obscureText: widget.password && _hidden,
+                  maxLength: widget.maxLength,
+                  maxLines: 1,
+                  textAlignVertical: TextAlignVertical.center,
+                  autocorrect: false,
+                  enableSuggestions: !widget.password,
+                  style: N11Text.input,
+                  cursorColor: N11Colors.black,
+                  onChanged: (String value) {
+                    field.didChange(value);
+                    widget.onChanged?.call();
+                  },
+                  decoration: InputDecoration(
+                    counterText: '',
+                    isDense: true,
+                    filled: false,
+                    hintText: widget.placeholder,
+                    hintStyle: N11Text.inputHint,
+                    border: none,
+                    enabledBorder: none,
+                    focusedBorder: none,
+                    disabledBorder: none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    suffixIconConstraints: const BoxConstraints(minWidth: kTapMin, minHeight: kControlHeight),
+                    suffixIcon: widget.password
+                        ? TextButton(
+                            key: Key('${(widget.fieldKey as ValueKey<String>).value}-toggle'),
+                            onPressed: widget.enabled ? () => setState(() => _hidden = !_hidden) : null,
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(kTapMin, kControlHeight),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              _hidden ? 'Hiện' : 'Ẩn',
+                              style: N11Text.caption.copyWith(fontWeight: FontWeight.w600, color: N11Colors.ink2),
+                            ),
+                          )
+                        : widget.suffix,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
         if (hint != null)
           Padding(
-            padding: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.only(top: N11Space.labelGap),
             child: Semantics(
               liveRegion: true,
               child: Text(
                 hint,
-                style: TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500, color: hintInk),
+                style: N11Text.caption.copyWith(color: hintInk),
               ),
             ),
           ),
@@ -1063,21 +1137,38 @@ class _N11FieldState extends State<N11Field> {
 // ---- App bar and bottom navigation ---------------------------------------------------------------------------------
 
 class N11AppBar extends StatelessWidget {
-  const N11AppBar({super.key, this.title, this.logo, this.onBack});
+  const N11AppBar({
+    super.key,
+    this.title,
+    this.logo,
+    this.onBack,
+    this.transparent,
+    this.backgroundColor,
+    this.borderColor,
+  });
 
   final String? title;
 
   /// Brand logo on the left (home screens); replaces the back button and the title.
   final Widget? logo;
   final VoidCallback? onBack;
+  final bool? transparent;
+  final Color? backgroundColor;
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
+    final bool isTransparent =
+        transparent ?? (N11PageBackground.maybeOf(context) != null);
     return Container(
       constraints: const BoxConstraints(minHeight: 52),
-      decoration: const BoxDecoration(
-        color: N11Colors.white,
-        border: Border(bottom: BorderSide(color: N11Colors.line)),
+      decoration: BoxDecoration(
+        color: isTransparent ? Colors.transparent : (backgroundColor ?? N11Colors.white),
+        border: Border(
+          bottom: BorderSide(
+            color: isTransparent ? const Color(0x14191919) : (borderColor ?? N11Colors.line),
+          ),
+        ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: logo != null
@@ -1095,7 +1186,7 @@ class N11AppBar extends StatelessWidget {
                       onPressed: onBack,
                       tooltip: 'Quay lại',
                       padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.chevron_left, size: 32, color: N11Colors.black),
+                      icon: const Icon(Icons.chevron_left, size: 28, color: N11Colors.black),
                     ),
                   ),
                 if (onBack == null) const SizedBox(width: 4),
