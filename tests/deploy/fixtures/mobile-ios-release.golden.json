@@ -61,7 +61,7 @@
   ],
   "scriptPins": {
     "mobile/tool/app-version.sh": "b6c780e161cba0bbed4e41bc0f0e77ecd97498c363352975d23e180b567226bd",
-    "mobile/tool/prepare-android.sh": "97242ece8bb15661e4e5ec36b77a603cdedfbfaef6eec2bf8a9d91615774ae50",
+    "mobile/tool/prepare-android.sh": "69f48f9c9e675c1477fb37fa03c8d243b5a0ff1cf9381dbf77c00352a1ec4cf1",
     "mobile/tool/sign-aab.sh": "99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc",
     "mobile/tool/check-aab-release.py": "1fb28c82a2efa23d457bc4593a00187cd8bcb27100fc5ad2a2e9d91a572b7ad2",
     "mobile/tool/play_versioncode_gate.py": "e1d731538fb037a46537d9881f0870d727d3db66419f44fc2be8c2d5fea35b5b",
