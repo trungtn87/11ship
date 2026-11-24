@@ -5,7 +5,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuthPrincipal } from '../auth/auth-principal';
 import { AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
-import { DEFAULT_OPS_CONFIG } from '../config/ops-config';
+import { DEFAULT_OPS_CONFIG, OpsConfig } from '../config/ops-config';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ANDROID_COMPONENTS, CHECK_BACKUP, CHECK_EXTERNAL_PROBE, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, ClientLogKind, IngestKeyScope, OpsSource, ReleaseComponent } from './ops-constants';
 import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactReady, decideCompat } from './ops-compat';
@@ -49,6 +49,7 @@ const DEPLOY_START_REPLAY_MS = 30 * 60_000;
 @Injectable()
 export class OpsIngestService {
   readonly #artifactDir: string | undefined;
+  readonly #storeUrls: NonNullable<OpsConfig['storeUrls']>;
   readonly #environment: string;
   readonly #version: string;
   readonly #compat: CompatMatrix;
@@ -65,6 +66,7 @@ export class OpsIngestService {
     this.#compat = compat ?? APP_COMPAT;
     const ops = appConfig.ops ?? DEFAULT_OPS_CONFIG;
     this.#artifactDir = ops.artifactDir;
+    this.#storeUrls = ops.storeUrls ?? {};
     this.#environment = appConfig.appEnv;
     this.#version = ops.backendVersion;
   }
@@ -258,7 +260,7 @@ export class OpsIngestService {
    */
   async updateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null): Promise<JsonObject> {
     const latest = await this.transactions.withTransaction((context) => this.releases.latestPublished(context, component));
-    const d = decideCompat(component, this.#compat, versionCode, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest) });
+    const d = decideCompat(component, this.#compat, versionCode, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest), storeUrl: this.#storeUrls[component] });
     return {
       status: d.status,
       compatible: d.compatible,
@@ -270,6 +272,8 @@ export class OpsIngestService {
       priority: latest?.priority ?? null,
       reason: d.required ? d.reason : null,
       release: d.offer === null ? null : this.#publicRelease(d.offer),
+      // The Google Play page, only for a file-less (store) build; a build with a file is downloaded as before.
+      store_url: d.offer !== null && d.offer.artifactName === null ? (this.#storeUrls[component] ?? null) : null,
     };
   }
 
@@ -284,7 +288,7 @@ export class OpsIngestService {
         published_version_code: latest?.versionCode ?? null,
         published_version_name: latest?.versionName ?? null,
         artifact_ready: ready,
-        satisfied: latest !== undefined && latest.versionCode !== null && latest.versionCode >= this.#compat.components[component].minClientVersionCode && ready,
+        satisfied: latest !== undefined && latest.versionCode !== null && latest.versionCode >= this.#compat.components[component].minClientVersionCode && (latest.artifactName === null ? this.#storeUrls[component] !== undefined : ready),
       };
     }
     return { contract_revision: this.#compat.contractRevision, backend_version: this.#version, components };
@@ -301,7 +305,7 @@ export class OpsIngestService {
       sha256: r.artifactSha256,
       min_supported_version_code: r.minSupportedVersionCode,
       compatibility_note: r.compatibilityNote,
-      download_path: `/v1/app-updates/download/${r.releaseId}`,
+      download_path: r.artifactName === null ? null : `/v1/app-updates/download/${r.releaseId}`,
     };
   }
 

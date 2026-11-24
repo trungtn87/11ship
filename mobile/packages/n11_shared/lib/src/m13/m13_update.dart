@@ -13,10 +13,13 @@ import '../account/api_client.dart';
 /// A newer build than the installed one.
 @immutable
 class AppUpdateNotice {
-  const AppUpdateNotice({required this.versionName, required this.versionCode});
+  const AppUpdateNotice({required this.versionName, required this.versionCode, this.storeUrl});
 
   final String versionName;
   final int versionCode;
+
+  /// The Google Play page of this app when the newer build is a store build (the server sends it only then); null otherwise. The popup offers it on Android only.
+  final String? storeUrl;
 
   /// null = no newer build. Throws [FormatException] on an answer that is not what the server documents.
   static AppUpdateNotice? fromCheck(Object? data) {
@@ -35,7 +38,28 @@ class AppUpdateNotice {
     if (name is! String || name.isEmpty || name.length > 32 || code is! int || code <= 0) {
       throw const FormatException('release');
     }
-    return AppUpdateNotice(versionName: name, versionCode: code);
+    final Object? store = data['store_url'];
+    final bool storeOk = store is String && store.length <= 200 && store.startsWith('https://play.google.com/store/apps/details?id=');
+    return AppUpdateNotice(versionName: name, versionCode: code, storeUrl: storeOk ? store : null);
+  }
+}
+
+/// Opens the store page through the Android launch channel (`open`, https and an allowed host only). Answers false, never throws, when nothing opens it.
+class StoreLauncher {
+  const StoreLauncher({MethodChannel? channel}) : _channel = channel;
+
+  final MethodChannel? _channel;
+
+  MethodChannel get _c => _channel ?? const MethodChannel('vn.eleven.n11/launch');
+
+  Future<bool> open(String url) async {
+    try {
+      return await _c.invokeMethod<bool>('open', <String, Object?>{'url': url}) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 }
 

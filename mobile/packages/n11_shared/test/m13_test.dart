@@ -33,7 +33,8 @@ class _FakePlatform implements UpdatePlatform {
 }
 
 /// What the server answers for a build older than the newest published one. The download fields are still sent by today's server; the app ignores them.
-Map<String, Object?> _check({bool required = false, int versionCode = 9, String versionName = '1.9'}) => <String, Object?>{
+Map<String, Object?> _check({bool required = false, int versionCode = 9, String versionName = '1.9', String? storeUrl}) => <String, Object?>{
+      'store_url': storeUrl,
       'status': required ? 'UPDATE_REQUIRED' : 'UPDATE_OPTIONAL',
       'update_available': true,
       'required': required,
@@ -217,6 +218,16 @@ void main() {
       clock = clock.add(const Duration(minutes: 31));
       await c.check();
       expect(c.showNotice, isTrue);
+    });
+  });
+
+  group('store page (Google Play build)', () {
+    const String play = 'https://play.google.com/store/apps/details?id=vn.eleven.ship';
+
+    test('the check keeps the Google Play page and drops anything else', () {
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: play))!.storeUrl, play);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: 'https://evil.example/store/apps/details?id=vn.eleven.ship'))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check())!.storeUrl, isNull);
     });
   });
 

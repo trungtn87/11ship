@@ -38,3 +38,7 @@ Cold start gọi `/check` (không cần đăng nhập); resume dùng giới hạ
 - Backend không gắn header phiên bản vào mọi API nên **không tự từ chối từng request của APK cũ**; bảo vệ là bước 1 (API tương thích) + preflight.
 - Chủ quán (11Food): `busyProbe` đọc **số đơn quán đang xử lý từ máy chủ** (`counts` của danh sách đơn: đang chuẩn bị, hẹn giờ, đang giao, cần xử lý). Có đơn → chỉ banner, không khóa ngang; xong hết → hiện màn cập nhật. Đơn **chờ nhận** không giữ cập nhật lại, nhưng khi biết có bản bắt buộc quán **không xác nhận được đơn mới** (vẫn từ chối được; đơn đã nhận xử lý bình thường). Không đọc được trạng thái, hoặc phiên chưa xác định → coi là **bận**, không bao giờ suy ra rảnh; chỉ khách chưa đăng nhập hoặc tài khoản không có quán mới được coi là rảnh. Chưa thử trên máy thật.
 - Chưa có số tài khoản/máy dùng bản cũ theo thời gian ngoài `ops_version_reports` M13 hiện có.
+
+## 5. Bản Google Play (không có tệp APK)
+
+Khi app lên Google Play không còn APK trong `OPS_ARTIFACT_DIR`. Đặt `OPS_STORE_URL_FOOD` / `OPS_STORE_URL_SHIP` (đúng `https://play.google.com/store/apps/details?id=vn.eleven.food|ship`, sai thì backend không khởi động) và đăng ký trong Web Admin một release FOOD/SHIP **không kèm tệp** (version_code là versionCode bản Play). Bản đó được mời khi app đã đặt link; `/check` trả thêm `store_url` (chỉ cho bản không tệp) và popup Android hiện nút **Cập nhật** mở trang Play. Không đặt link thì bản không tệp không bao giờ được mời. iOS chưa có đường này (release chỉ có Android, popup chỉ hiện nút trên Android).

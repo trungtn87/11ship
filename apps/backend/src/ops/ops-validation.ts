@@ -292,8 +292,9 @@ export function parseReleaseBody(body: unknown): ReleaseBody {
   if (android && versionCode === null) reject();
   const artifactName = optText(b.artifact_name, 96);
   if (artifactName !== null && !ARTIFACT_NAME_PATTERN.test(artifactName)) reject();
-  // An Android release is only useful with its file; the others may be notes-only (a backend deploy has no downloadable artifact).
-  if (android && artifactName === null) reject();
+  // An Android release is only useful with its file; the others may be notes-only (a backend deploy has no downloadable artifact). A Google Play build of
+  // 11Food/11Ship has no file here: phones are sent to the store page configured in OPS_STORE_URL_*, so those two may be registered without one.
+  if (android && artifactName === null && component !== 'FOOD' && component !== 'SHIP') reject();
   const minBackend = optText(b.min_backend_version, 32);
   if (minBackend !== null && !VERSION_NAME.test(minBackend)) reject();
   const requiredReason = optText(b.required_reason, 200);

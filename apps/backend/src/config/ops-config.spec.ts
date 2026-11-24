@@ -13,6 +13,15 @@ describe('M13 configuration', () => {
     }
   });
 
+  it('accepts only the Google Play page of the right app as a store link', () => {
+    const ok = parseOpsConfig({ env: { OPS_STORE_URL_FOOD: 'https://play.google.com/store/apps/details?id=vn.eleven.food', OPS_STORE_URL_SHIP: 'https://play.google.com/store/apps/details?id=vn.eleven.ship' }, appEnv: 'production' });
+    expect(ok.ok && ok.config.storeUrls).toEqual({ FOOD: 'https://play.google.com/store/apps/details?id=vn.eleven.food', SHIP: 'https://play.google.com/store/apps/details?id=vn.eleven.ship' });
+    const bad = parseOpsConfig({ env: { OPS_STORE_URL_FOOD: 'https://play.google.com/store/apps/details?id=vn.eleven.ship', OPS_STORE_URL_SHIP: 'https://evil.example/store/apps/details?id=vn.eleven.ship' }, appEnv: 'production' });
+    expect(bad).toEqual({ ok: false, invalid: ['OPS_STORE_URL_FOOD', 'OPS_STORE_URL_SHIP'] });
+    const none = parseOpsConfig({ env: {}, appEnv: 'production' });
+    expect(none.ok && none.config.storeUrls).toEqual({});
+  });
+
   it('never runs the collector in tests', () => {
     const r = parseOpsConfig({ env: { OPS_COLLECTOR: 'on' }, appEnv: 'test' });
     expect(r.ok && r.config.collectorEnabled).toBe(false);
