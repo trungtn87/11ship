@@ -51,7 +51,7 @@ String _failureMessage(AuthFailure failure) {
     case AuthFailureKind.serverUnavailable:
       return failure.outcomeUnknown
           ? 'Máy chủ chưa xác nhận được kết quả. Nhấn "Thử lại" để gửi lại đúng yêu cầu đó.'
-          : 'Máy chủ chưa sẵn sàng cho bản Android. Vui lòng thử lại sau.';
+          : 'Máy chủ chưa sẵn sàng. Vui lòng thử lại sau.';
     case AuthFailureKind.versionConflict:
       return 'Hồ sơ đã được cập nhật ở nơi khác. Đã tải bản mới; kiểm tra rồi lưu lại nếu cần.';
     case AuthFailureKind.phoneRegistered:

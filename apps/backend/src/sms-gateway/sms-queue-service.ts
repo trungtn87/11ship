@@ -6,11 +6,12 @@ import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors'
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { SmsGatewayConfig } from '../config/sms-gateway-config';
 import { CryptoError } from '../crypto/crypto-error';
-import { safeErrorCode } from '../common/safe-error';
+import { safeCauseOf } from '../common/safe-cause';
 import { JsonLogger } from '../logging/json-logger';
 import { APP_LOGGER } from '../logging/logging.module';
 import { Keyring } from '../crypto/keyring';
 import { TransactionContext } from '../transaction/transaction-context';
+import { TransactionError } from '../transaction/transaction-error';
 import { TransactionManager } from '../transaction/transaction-manager';
 import {
   renderOtpSms,
@@ -67,6 +68,14 @@ export class SmsKeyringHolder {
 
 const DAY_SECONDS = 86_400;
 
+/** The refusals of the readiness gate, by the fixed text of the error, as fixed log causes. */
+const GATE_CAUSES: ReadonlyMap<string, string> = new Map([
+  ['SMS sending is disabled', 'SENDING_DISABLED'],
+  ['No SMS gateway is online', 'NO_GATEWAY_ONLINE'],
+  ['Recipient is not allowed', 'RECIPIENT_NOT_ALLOWED'],
+  ['OTP challenge is no longer waiting for delivery', 'NOT_WAITING_FOR_DELIVERY'],
+]);
+
 /**
  * The OTP queue (issue #102). The backend is the only place that creates an OTP and the only place that composes the SMS: the
  * gateway can neither choose the text nor the recipient. A job is handed out at most ONCE (no automatic retry): whatever
@@ -121,16 +130,32 @@ export class SmsQueueService {
     }
   }
 
-  /** Bounded operational log of a refusal: a fixed stage and a bounded code; never the phone, the code or any provider text. */
-  #logRefusal(stage: 'READINESS' | 'RECIPIENT', error?: unknown): void {
-    const code = error === undefined ? undefined : error instanceof TechnicalError ? error.kind : safeErrorCode(error);
-    this.logger?.log('warn', 'otp_request_refused', { stage, code });
+  /**
+   * Bounded operational log of a refusal: a fixed stage and a fixed cause from the closed table below (or a transaction reason);
+   * never the phone, the code, a message or any provider text.
+   */
+  #logRefusal(stage: 'READINESS' | 'RECIPIENT' | 'ENQUEUE', error?: unknown): void {
+    const cause =
+      error === undefined
+        ? undefined
+        : error instanceof TransactionError
+          ? error.reason
+          : error instanceof TechnicalError
+            ? (GATE_CAUSES.get(error.message) ?? 'OTHER_TECHNICAL')
+            : 'OTHER';
+    this.logger?.log('warn', 'otp_request_refused', {
+      stage,
+      ...(cause === undefined ? {} : { cause }),
+      ...(error === undefined ? {} : safeCauseOf(error)),
+    });
   }
 
   /** Queues the fixed OTP message for an already committed PENDING_DELIVERY challenge. */
   async enqueue(phoneNormalized: string, otp: string, delivery: SmsDelivery): Promise<void> {
     if (!this.#recipientAllowed(phoneNormalized)) {
-      throw new TechnicalError('unavailable', 'Recipient is not allowed');
+      const refusal = new TechnicalError('unavailable', 'Recipient is not allowed');
+      this.#logRefusal('ENQUEUE', refusal);
+      throw refusal;
     }
     const jobId = randomUUID();
     const plaintext = Buffer.from(
@@ -141,21 +166,29 @@ export class SmsQueueService {
     const sealed = version.sealSmsPayload(jobId, plaintext);
     plaintext.fill(0);
 
-    const inserted = await this.transactions.withTransaction(async (context) => {
-      await this.repository.lockEnqueue(context);
-      // Re-checked under the lock: the global cap and the kill switch cannot be raced past by concurrent requests.
-      await this.#gate(context);
-      return this.repository.insertJob(context, {
-        jobId,
-        verificationId: delivery.verificationId,
-        purpose: delivery.purpose,
-        phoneNormalized,
-        sealed: { ...sealed, keyId: version.id },
+    let inserted: boolean;
+    try {
+      inserted = await this.transactions.withTransaction(async (context) => {
+        await this.repository.lockEnqueue(context);
+        // Re-checked under the lock: the global cap and the kill switch cannot be raced past by concurrent requests.
+        await this.#gate(context);
+        return this.repository.insertJob(context, {
+          jobId,
+          verificationId: delivery.verificationId,
+          purpose: delivery.purpose,
+          phoneNormalized,
+          sealed: { ...sealed, keyId: version.id },
+        });
       });
-    });
+    } catch (error) {
+      this.#logRefusal('ENQUEUE', error);
+      throw error;
+    }
     if (!inserted) {
       // The challenge was superseded or already queued: nothing was written, so nothing may be reported as accepted.
-      throw new TechnicalError('unavailable', 'OTP challenge is no longer waiting for delivery');
+      const refusal = new TechnicalError('unavailable', 'OTP challenge is no longer waiting for delivery');
+      this.#logRefusal('ENQUEUE', refusal);
+      throw refusal;
     }
   }
 
