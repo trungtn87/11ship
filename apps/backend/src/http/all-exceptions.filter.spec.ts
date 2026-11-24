@@ -192,6 +192,19 @@ describe('AllExceptionsFilter', () => {
     expect(entry.code).toBe('INTERNAL_ERROR');
   });
 
+  it('logs the fixed reason and SQLSTATE of a transaction failure, and never the message of any other error', () => {
+    const tx = JSON.parse(run(new TransactionError('DEADLINE_EXCEEDED', '57014')).logs[0] ?? '{}') as Record<string, unknown>;
+    expect(tx.status).toBe(503);
+    expect(tx.cause).toBe('DEADLINE_EXCEEDED');
+    expect(tx.sql_state).toBe('57014');
+
+    for (const other of [new Error(SECRET), new CryptoError('rng_failure'), new TechnicalError('unavailable', SECRET)]) {
+      const entry = run(other).logs[0] ?? '';
+      expect(entry).not.toContain('"cause"');
+      expect(entry).not.toContain(SECRET);
+    }
+  });
+
   describe('typed error registry', () => {
     const codes = Object.keys(APP_ERROR_DEFINITIONS) as AppErrorCode[];
 

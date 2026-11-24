@@ -16,6 +16,9 @@ export const LOG_META_WHITELIST = [
   'app',
   'module',
   'route',
+  'cause',
+  'sql_state',
+  'stage',
 ] as const;
 
 const MAX_VALUE_LENGTH = 128;
@@ -40,6 +43,8 @@ export interface SafeErrorEvent {
   readonly app?: string;
   readonly module?: string;
   readonly route?: string;
+  readonly cause?: string;
+  readonly sql_state?: string;
 }
 
 export interface ErrorLogQuery {
@@ -92,6 +97,8 @@ function parseSafeEvent(value: unknown): SafeErrorEvent | undefined {
     ...(copy('error_class') === undefined ? {} : { error_class: copy('error_class') }),
     ...(copy('app') === undefined ? {} : { app: copy('app') }),
     ...(copy('module') === undefined ? {} : { module: copy('module') }),
+    ...(copy('cause') === undefined ? {} : { cause: copy('cause') }),
+    ...(copy('sql_state') === undefined ? {} : { sql_state: copy('sql_state') }),
     ...(typeof raw.route === 'string' && ROUTE.test(raw.route) ? { route: raw.route } : {}),
   };
 }

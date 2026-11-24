@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ArgumentsHost, Catch, ExceptionFilter } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { safeCauseOf } from '../common/safe-cause';
 import { safeErrorClass } from '../common/safe-error';
 import { JsonLogger } from '../logging/json-logger';
 import { buildErrorBody, classifyException } from './error-envelope';
@@ -35,13 +36,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const template = (request as RequestWithContext & { route?: { path?: unknown } }).route?.path;
     const safeRoute = typeof template === 'string' && /^\/[A-Za-z0-9/:._-]{0,127}$/.test(template) ? template : undefined;
 
-    // Only whitelisted metadata is logged. The exception message and stack are never logged.
+    // Only whitelisted metadata is logged. The exception message and stack are never logged; `cause` is a fixed identifier
+    // (a transaction reason or the fixed text of our own technical errors, as a slug), see safeCauseOf.
     this.logger.log(classified.status >= 500 ? 'error' : 'warn', 'request_failed', {
       request_id: requestId,
       method: safeMethod(request.method),
       status: classified.status,
       code: classified.code,
       error_class: safeErrorClass(exception),
+      ...safeCauseOf(exception),
       app,
       module: moduleName,
       ...(safeRoute === undefined ? {} : { route: safeRoute }),
