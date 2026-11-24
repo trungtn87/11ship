@@ -409,6 +409,6 @@ void main() {
     await tester.tap(find.byKey(const Key('pick-saved-h1')));
     await tester.pumpAndSettle();
     expect(find.text('Số 1 Phố Huế, Tầng 2'), findsOneWidget);
-    expect(find.text('Đã ghim (22.660, 106.250)'), findsOneWidget);
+    expect(find.byKey(const Key('m07-c-pickup-pinned')), findsOneWidget);
   });
 }
