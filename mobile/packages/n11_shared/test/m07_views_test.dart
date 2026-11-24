@@ -549,20 +549,23 @@ void main() {
     testWidgets('CustomerCallScreen: creates delivery without GPS and calculates recipient total', (WidgetTester tester) async {
       final SampleCustomerDeliverySource source = SampleCustomerDeliverySource();
       await mount(tester, CustomerCallScreen(source: source));
-      // #413: both points use the shared block; the pin is optional and says so.
-      expect(find.textContaining('Chưa ghim (tùy chọn)'), findsNWidgets(2));
+      expect(key('m07-c-pickup-pinned'), findsNothing);
+      expect(key('m07-c-dropoff-pinned'), findsNothing);
+      await tap(tester, key('m07-c-sender-edit'));
       await tester.enterText(key('m07-c-sender-phone'), '0901234567');
+      await tap(tester, find.text('Xong'));
       await tapSharedAddress(tester, 'm07-c-pickup-addr', 'Số 1 Phố Huế');
+      await tap(tester, key('m07-c-dropoff-row'));
       await tester.enterText(key('m07-c-recip-name'), 'Người nhận A');
       await tester.enterText(key('m07-c-recip-phone'), '0987654321');
       await tapSharedAddress(tester, 'm07-c-dropoff-addr', 'Số 10 Phố Trúc');
+      await tap(tester, find.text('Xong'));
       await tester.enterText(key('m07-c-goods'), 'Hộp quà');
       // Toggle COD
       await tap(tester, find.text('Thu hộ tiền hàng (COD)'));
       await tester.enterText(key('m07-c-cod-amount'), '200000');
       // Set recipient pays fee
-      await tester.ensureVisible(find.text('Người nhận trả phí giao'));
-      await tap(tester, find.text('Người nhận trả phí giao'));
+      await tap(tester, find.text('Người nhận trả'));
       // Custom fee
       await tester.enterText(key('m07-c-fee-amount'), '25000');
       await settle(tester);
@@ -576,6 +579,56 @@ void main() {
       final List<DeliveryView> active = await source.list(history: false);
       expect(active.first.goods.codVnd, 200000);
       expect(active.first.fee.agreement?.proposedVnd, 25000);
+      await unmount(tester);
+    });
+
+    testWidgets('CustomerCallScreen: maps goods chips to goodsDescription and note', (WidgetTester tester) async {
+      final _RecordingCustomerSource source = _RecordingCustomerSource();
+      await mount(tester, CustomerCallScreen(source: source));
+      await tap(tester, key('m07-c-sender-edit'));
+      await tester.enterText(key('m07-c-sender-phone'), '0901234567');
+      await tap(tester, find.text('Xong'));
+      await tapSharedAddress(tester, 'm07-c-pickup-addr', 'Số 1 Phố Huế');
+      await tap(tester, key('m07-c-dropoff-row'));
+      await tester.enterText(key('m07-c-recip-name'), 'Người nhận B');
+      await tester.enterText(key('m07-c-recip-phone'), '0987654321');
+      await tapSharedAddress(tester, 'm07-c-dropoff-addr', 'Số 10 Phố Trúc');
+      await tap(tester, find.text('Xong'));
+      await tester.enterText(key('m07-c-fee-amount'), '20000');
+
+      // Chips only -> both goodsDescription and note use joined chips.
+      await tap(tester, key('m07-c-chip-Đồ ăn'));
+      await tap(tester, key('m07-c-chip-Giao gấp'));
+      await tap(tester, key('m07-c-submit'));
+      expect(find.text('Hàng hóa: Đồ ăn, Giao gấp'), findsOneWidget);
+      await tap(tester, find.text('Gọi shipper ngay'));
+      await settle(tester);
+      expect(source.lastInput?.goodsDescription, 'Đồ ăn, Giao gấp');
+      expect(source.lastInput?.note, 'Đồ ăn, Giao gấp');
+      await unmount(tester);
+
+      // Typed text + chips -> goodsDescription uses typed text, note uses joined chips.
+      final _RecordingCustomerSource source2 = _RecordingCustomerSource();
+      await mount(tester, CustomerCallScreen(source: source2));
+      await tap(tester, key('m07-c-sender-edit'));
+      await tester.enterText(key('m07-c-sender-phone'), '0901234567');
+      await tap(tester, find.text('Xong'));
+      await tapSharedAddress(tester, 'm07-c-pickup-addr', 'Số 1 Phố Huế');
+      await tap(tester, key('m07-c-dropoff-row'));
+      await tester.enterText(key('m07-c-recip-name'), 'Người nhận B');
+      await tester.enterText(key('m07-c-recip-phone'), '0987654321');
+      await tapSharedAddress(tester, 'm07-c-dropoff-addr', 'Số 10 Phố Trúc');
+      await tap(tester, find.text('Xong'));
+      await tester.enterText(key('m07-c-fee-amount'), '20000');
+      await tester.enterText(key('m07-c-goods'), 'Cơm gà');
+      await tap(tester, key('m07-c-chip-Đồ ăn'));
+      await tap(tester, key('m07-c-chip-Dễ vỡ'));
+      await tap(tester, key('m07-c-submit'));
+      expect(find.text('Hàng hóa: Cơm gà'), findsOneWidget);
+      await tap(tester, find.text('Gọi shipper ngay'));
+      await settle(tester);
+      expect(source2.lastInput?.goodsDescription, 'Cơm gà');
+      expect(source2.lastInput?.note, 'Đồ ăn, Dễ vỡ');
       await unmount(tester);
     });
 
@@ -807,6 +860,16 @@ class _NegotiationShop extends SampleShopSource {
   Future<DeliveryView> answerCounter(String id, {required bool accept, required int expectedVersion, required String key}) async {
     answers.add(accept);
     return get(id);
+  }
+}
+
+class _RecordingCustomerSource extends SampleCustomerDeliverySource {
+  NewCustomerDeliveryInput? lastInput;
+
+  @override
+  Future<DeliveryView> create(NewCustomerDeliveryInput input, {required String key}) async {
+    lastInput = input;
+    return super.create(input, key: key);
   }
 }
 
