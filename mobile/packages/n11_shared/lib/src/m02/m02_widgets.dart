@@ -24,11 +24,13 @@ export 'dish_image_crop.dart'
 /// Screen frame: app bar with back, scrolling body, and an optional footer of one or two buttons that sits above the keyboard.
 /// [onWillLeave] is asked before leaving (back button or system back): false keeps the screen (an unsaved draft asks first).
 class M02Scaffold extends StatelessWidget {
-  const M02Scaffold({super.key, required this.title, required this.content, this.footer = const <Widget>[], this.onWillLeave, this.action, this.scrollController});
+  const M02Scaffold({super.key, required this.title, required this.content, this.footer = const <Widget>[], this.floatingFooter, this.topStrip, this.onWillLeave, this.action, this.scrollController});
 
   final String title;
   final List<Widget> content;
   final List<Widget> footer;
+  final Widget? floatingFooter;
+  final Widget? topStrip;
   final Future<bool> Function()? onWillLeave;
   final Widget? action;
   final ScrollController? scrollController;
@@ -65,12 +67,24 @@ class M02Scaffold extends StatelessWidget {
                   if (action != null) Positioned(right: 4, top: 0, bottom: 0, child: Center(child: action)),
                 ],
               ),
+              if (topStrip != null) topStrip!,
               Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap6),
-                  child: vstack(content),
+                child: Stack(
+                  children: <Widget>[
+                    SingleChildScrollView(
+                      controller: scrollController,
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, floatingFooter != null ? N11Space.gap6 + 64 : N11Space.gap6),
+                      child: vstack(content),
+                    ),
+                    if (floatingFooter != null)
+                      Positioned(
+                        left: N11Space.pad,
+                        right: N11Space.pad,
+                        bottom: N11Space.gap3,
+                        child: floatingFooter!,
+                      ),
+                  ],
                 ),
               ),
               if (footer.isNotEmpty)
@@ -294,15 +308,16 @@ class UnknownOutcomeBanner extends StatelessWidget {
 
 /// Dish picture (or a placeholder of the same size, so rows do not jump).
 class DishThumb extends StatelessWidget {
-  const DishThumb({super.key, required this.url, this.size = 56, this.bytes});
+  const DishThumb({super.key, required this.url, this.size = 56, this.bytes, this.placeholderIcon = Icons.restaurant});
 
   final String? url;
   final double size;
   final Uint8List? bytes;
+  final IconData placeholderIcon;
 
   @override
   Widget build(BuildContext context) {
-    final Widget placeholder = Icon(Icons.restaurant, size: size * 0.42, color: N11Colors.placeholder);
+    final Widget placeholder = Icon(placeholderIcon, size: size * 0.42, color: N11Colors.placeholder);
     Widget child = placeholder;
     if (bytes != null) {
       child = Image.memory(bytes!, fit: BoxFit.cover, width: size, height: size, errorBuilder: (BuildContext c, Object e, StackTrace? s) => placeholder);
@@ -331,6 +346,8 @@ class DishRow extends StatelessWidget {
     this.chip,
     this.dim = false,
     this.highlight = false,
+    this.showChevron = false,
+    this.placeholderIcon = Icons.restaurant,
     this.onTap,
   });
 
@@ -343,6 +360,8 @@ class DishRow extends StatelessWidget {
 
   /// The dish a search result pointed at: marked so the person sees where they landed.
   final bool highlight;
+  final bool showChevron;
+  final IconData placeholderIcon;
   final VoidCallback? onTap;
 
   @override
@@ -363,7 +382,7 @@ class DishRow extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                DishThumb(url: imageUrl, size: 72),
+                DishThumb(url: imageUrl, size: 72, placeholderIcon: placeholderIcon),
                 const SizedBox(width: N11Space.gap3),
                 Expanded(
                   child: Column(
@@ -378,11 +397,11 @@ class DishRow extends StatelessWidget {
                       ),
                       const SizedBox(height: N11Space.gap1),
                       Text(price, style: N11Text.bodyStrong),
-                      if (sub != null) Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: N11Text.caption),
+                      if (sub != null) Text(sub!, maxLines: 2, softWrap: true, style: N11Text.caption),
                     ],
                   ),
                 ),
-                if (onTap != null) ...<Widget>[const SizedBox(width: N11Space.gap1), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
+                if (showChevron && onTap != null) ...<Widget>[const SizedBox(width: N11Space.gap1), const Icon(Icons.chevron_right, size: 22, color: N11Colors.ink2)],
               ],
             ),
           ),

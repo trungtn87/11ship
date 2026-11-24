@@ -71,10 +71,11 @@ void main() {
   });
 
   group('ShopPublicScreen contact bar', () {
-    testWidgets('shows the shop phone and Gọi điện / Zalo / Messenger only for data that exists; Gọi điện opens the dialer with the shop number', (WidgetTester tester) async {
+    testWidgets('shows Gọi điện / Zalo / Messenger icon buttons without phone text line; Gọi điện opens the dialer with the shop number', (WidgetTester tester) async {
       final FakeContactLauncher launcher = FakeContactLauncher();
       await pumpShop(tester, viewWith(const ShopContact(phone: '+84912345678', zaloUrl: 'https://zalo.me/0912345678', messengerUrl: 'https://m.me/quan.oc.11')), launcher);
-      expect(find.text('Điện thoại quán: 0912 345 678'), findsOneWidget);
+      expect(find.byKey(const Key('shop-contact-phone')), findsNothing);
+      expect(find.textContaining('Điện thoại quán'), findsNothing);
       expect(find.byKey(const Key('shop-contact-call')), findsOneWidget);
       expect(find.byKey(const Key('shop-contact-zalo')), findsOneWidget);
       expect(find.byKey(const Key('shop-contact-messenger')), findsOneWidget);
