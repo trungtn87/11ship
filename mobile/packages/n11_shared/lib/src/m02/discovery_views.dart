@@ -31,7 +31,7 @@ Future<void> _openShop(
   M11Source? ratings,
   Future<void> Function()? onReturn,
 }) async {
-  await Navigator.of(context).push(
+  await Navigator.of(context, rootNavigator: true).push(
     n11Route(
       ShopPublicScreen(
         api: publicApi,

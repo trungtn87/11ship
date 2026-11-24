@@ -228,12 +228,13 @@ class _ExpandableDishDescriptionState extends State<ExpandableDishDescription> {
 
 /// The bar at the bottom of a shop page: how many dishes, the dishes' amount, and the way to the cart.
 class CartBar extends StatelessWidget {
-  const CartBar({super.key, required this.runtime, required this.shopId, this.addresses, this.session});
+  const CartBar({super.key, required this.runtime, required this.shopId, this.addresses, this.session, this.isPreviewMode = false});
 
   final OrderRuntime runtime;
   final String shopId;
   final AddressBookController? addresses;
   final SessionController? session;
+  final bool isPreviewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -244,11 +245,16 @@ class CartBar extends StatelessWidget {
         if (cart.isEmpty || cart.shopId != shopId) {
           return const SizedBox.shrink();
         }
-        return N11Button(
-          key: const Key('cart-bar'),
-          label: 'Xem giỏ · ${cart.count} món · ${m10Money(cart.itemsVnd)}',
-          icon: Icons.shopping_basket_outlined,
-          onPressed: () => Navigator.of(context).push(n11Route(CartScreen(runtime: runtime, addresses: addresses ?? runtime.addresses, session: session ?? runtime.session))),
+        return Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          color: Colors.transparent,
+          child: N11Button(
+            key: const Key('cart-bar'),
+            label: '${cart.count} món • ${m10Money(cart.itemsVnd)} — Xem giỏ hàng',
+            icon: Icons.shopping_basket_outlined,
+            onPressed: () => Navigator.of(context).push(n11Route(CartScreen(runtime: runtime, addresses: addresses ?? runtime.addresses, session: session ?? runtime.session, isPreviewMode: isPreviewMode))),
+          ),
         );
       },
     );
@@ -258,11 +264,12 @@ class CartBar extends StatelessWidget {
 // ---- the cart --------------------------------------------------------------------------------------------------------
 
 class CartScreen extends StatefulWidget {
-  const CartScreen({super.key, required this.runtime, this.addresses, this.session});
+  const CartScreen({super.key, required this.runtime, this.addresses, this.session, this.isPreviewMode = false});
 
   final OrderRuntime runtime;
   final AddressBookController? addresses;
   final SessionController? session;
+  final bool isPreviewMode;
 
   @override
   State<CartScreen> createState() => _CartScreenState();
@@ -426,7 +433,7 @@ class _CartScreenState extends State<CartScreen> {
               N11Button(
                 key: const Key('cart-continue'),
                 label: cart.feeEstimateVnd == null ? 'Tiếp tục' : 'Tiếp tục · ${m10Money(cart.itemsVnd + cart.feeEstimateVnd!)}',
-                onPressed: cart.hasUnavailable || cart.availabilityStale
+                onPressed: widget.isPreviewMode || cart.hasUnavailable || cart.availabilityStale
                     ? null
                     : () => Navigator.of(context).push(
                           n11Route(

@@ -35,3 +35,21 @@ IconData categoryIconFor(String categoryId) => kCategoryIcons[categoryId] ?? kCa
 /// The ids of the given groups that have no icon of their own (for tests and for the report of what still needs an icon).
 List<String> unmappedCategoryIds(Iterable<String> categoryIds) =>
     <String>[for (final String id in categoryIds) if (!kCategoryIcons.containsKey(id)) id];
+
+/// Default placeholder icon for dishes without a photo, matching drink categories.
+IconData dishPlaceholderIconForCategory(String categoryName) {
+  final String lower = categoryName.toLowerCase();
+  if (lower.contains('cà phê') || lower.contains('ca phe') || lower.contains('trà') || lower.contains('tra')) {
+    return Icons.local_cafe_rounded;
+  }
+  if (lower.contains('đồ uống') ||
+      lower.contains('do uong') ||
+      lower.contains('nước') ||
+      lower.contains('nuoc') ||
+      lower.contains('giải khát') ||
+      lower.contains('sinh tố') ||
+      lower.contains('bia')) {
+    return Icons.local_drink_rounded;
+  }
+  return Icons.restaurant;
+}
