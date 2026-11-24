@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { OtpPolicyRepository } from '../auth/otp-policy-repository';
 import { VerificationRepository } from '../auth/verification-repository';
 import { AppError, OtpRefusalError, TechnicalError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { SmsGatewayConfig } from '../config/sms-gateway-config';
 import { CryptoError } from '../crypto/crypto-error';
+import { safeErrorCode } from '../common/safe-error';
+import { JsonLogger } from '../logging/json-logger';
+import { APP_LOGGER } from '../logging/logging.module';
 import { Keyring } from '../crypto/keyring';
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
@@ -83,6 +86,8 @@ export class SmsQueueService {
     private readonly updates: OpsGatewayUpdate,
     @Inject(APP_CONFIG) appConfig: AppConfig,
     private readonly keyring: SmsKeyringHolder,
+    // Operational log only (no phone, no code): why a registration OTP was refused before it was written.
+    @Optional() @Inject(APP_LOGGER) private readonly logger?: JsonLogger,
   ) {
     if (appConfig.smsGateway === undefined) {
       throw new TechnicalError('internal', 'SMS gateway is not configured');
@@ -101,10 +106,25 @@ export class SmsQueueService {
    * or 429 (the cap).
    */
   async assertReady(phoneNormalized: string): Promise<Readiness> {
-    return this.transactions.withTransaction(async (context) => {
-      await this.#gate(context);
-      return { deliverable: this.#recipientAllowed(phoneNormalized) };
-    });
+    try {
+      const readiness = await this.transactions.withTransaction(async (context) => {
+        await this.#gate(context);
+        return { deliverable: this.#recipientAllowed(phoneNormalized) };
+      });
+      if (!readiness.deliverable) {
+        this.#logRefusal('RECIPIENT');
+      }
+      return readiness;
+    } catch (error) {
+      this.#logRefusal('READINESS', error);
+      throw error;
+    }
+  }
+
+  /** Bounded operational log of a refusal: a fixed stage and a bounded code; never the phone, the code or any provider text. */
+  #logRefusal(stage: 'READINESS' | 'RECIPIENT', error?: unknown): void {
+    const code = error === undefined ? undefined : error instanceof TechnicalError ? error.kind : safeErrorCode(error);
+    this.logger?.log('warn', 'otp_request_refused', { stage, code });
   }
 
   /** Queues the fixed OTP message for an already committed PENDING_DELIVERY challenge. */
