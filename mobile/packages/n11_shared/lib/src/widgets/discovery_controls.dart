@@ -34,9 +34,10 @@ class N11SearchField extends StatelessWidget {
       autofocus: autofocus,
       enabled: enabled,
       maxLength: maxLength,
+      textAlignVertical: TextAlignVertical.center,
       textInputAction: TextInputAction.search,
       onChanged: onChanged,
-      style: N11Text.body,
+      style: N11Text.input,
       decoration: InputDecoration(
         hintText: hint,
         counterText: '',

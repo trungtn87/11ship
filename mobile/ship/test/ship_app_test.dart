@@ -282,7 +282,7 @@ void main() {
     await tapVisible('register-edit-phone');
     expect(tester.widget<TextField>(find.byKey(const Key('register-phone'))).controller!.text, '0901234567');
     expect(tester.widget<TextField>(find.byKey(const Key('register-name'))).controller!.text, 'Nguyễn An');
-    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).value, isTrue);
+    expect(tester.widget<Checkbox>(find.byKey(const Key('register-consent'))).value, isTrue);
     await tester.enterText(find.byKey(const Key('register-phone')), '0909999999');
     await tester.pump();
     await tapVisible('register-submit');

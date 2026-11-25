@@ -279,7 +279,7 @@ void main() {
         'Địa chỉ mới',
       );
       await tester.tap(find.text('Move'));
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('Quay lại'));
       await tester.pumpAndSettle();
       expect(returned, isTrue);
       expect(result, isNull);

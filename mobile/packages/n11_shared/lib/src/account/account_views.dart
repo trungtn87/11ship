@@ -259,7 +259,7 @@ class AccountTab extends StatelessWidget {
       if (signedIn && brand.id == AppId.food)
         N11ListItem(key: const Key('change-password-entry'), icon: Icons.lock_outline, title: 'Đổi mật khẩu', onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session)))),
       if (signedIn && brand.id == AppId.food && shop != null && session.identity?.availableRoles.contains('SHOP_OWNER') != true)
-        N11ListItem(key: const Key('shop-entry'), icon: Icons.storefront_outlined, title: 'Đăng ký mở quán', sub: 'Gửi hồ sơ để được xét duyệt.', onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop!)))),
+        N11ListItem(key: const Key('shop-entry'), icon: Icons.storefront_outlined, title: 'Đăng ký mở quán', sub: 'Gửi hồ sơ để được xét duyệt', onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop!)))),
       ...entries,
       _updateRow(context),
       if (showDiagnostics && brand.id != AppId.food) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
@@ -406,33 +406,60 @@ Future<void> confirmLogout(BuildContext context, SessionController session) asyn
 // ---- Forms -----------------------------------------------------------------------------------------------------------
 
 class N11FormScaffold extends StatelessWidget {
-  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg, this.onBack, this.formKey});
+  const N11FormScaffold({
+    super.key,
+    required this.title,
+    required this.children,
+    required this.session,
+    this.background = N11Colors.formBg,
+    this.usePageGradient = false,
+    this.onBack,
+    this.formKey,
+  });
 
   final String title;
   final List<Widget> children;
   final SessionController? session;
   final Color background;
+  final bool usePageGradient;
   final VoidCallback? onBack;
   final GlobalKey<FormState>? formKey;
 
   @override
   Widget build(BuildContext context) {
-    return Form(key: formKey, child: Scaffold(
-      backgroundColor: background,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            N11AppBar(title: title, onBack: onBack ?? () => Navigator.of(context).maybePop()),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
-                child: vstack(children),
+    final bool useGradient =
+        usePageGradient && N11PageBackground.maybeOf(context) != null;
+    final Widget scaffold = Form(
+      key: formKey,
+      child: Scaffold(
+        backgroundColor: useGradient ? Colors.transparent : background,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              N11AppBar(
+                title: title,
+                transparent: useGradient,
+                backgroundColor: useGradient ? null : background,
+                borderColor: N11Colors.formDivider,
+                onBack: onBack ?? () => Navigator.of(context).maybePop(),
               ),
-            ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    N11Space.pad,
+                    N11Space.gap4,
+                    N11Space.pad,
+                    N11Space.gap8,
+                  ),
+                  child: vstack(children, gap: N11Space.formFieldGap),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
+    return useGradient ? N11PageBackdrop(child: scaffold) : scaffold;
   }
 }
 
@@ -521,23 +548,38 @@ class _LoginScreenState extends State<LoginScreen> {
           children: <Widget>[
             N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản shipper.'),
             _failureBanner(session),
-            N11Field(validator: phoneError, fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
-            N11Field(
-              requiredInput: true,
-              fieldKey: const Key('login-password'),
-              label: 'Mật khẩu',
-              controller: _password,
-              password: true,
-              maxLength: 128,
-              enabled: !busy,
-              tone: wrong ? FieldTone.error : FieldTone.normal,
-              onChanged: () => setState(() {}),
+            N11Field(validator: phoneError, fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, tone: wrong ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                N11Field(
+                  requiredInput: true,
+                  fieldKey: const Key('login-password'),
+                  label: 'Mật khẩu',
+                  controller: _password,
+                  password: true,
+                  maxLength: 128,
+                  enabled: !busy,
+                  tone: wrong ? FieldTone.error : FieldTone.normal,
+                  onChanged: () => setState(() {}),
+                ),
+                if (widget.reset != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: N11Link(
+                      'Quên mật khẩu?',
+                      key: const Key('to-reset'),
+                      compact: true,
+                      onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))),
+                    ),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: ReasonNote(kUnavailableReason),
+                  ),
+              ],
             ),
-            if (widget.reset != null)
-              N11Link('Quên mật khẩu?', key: const Key('to-reset'), onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))))
-            else
-              ReasonNote(kUnavailableReason),
-            const SizedBox(height: N11Space.gap2),
             N11Button(
               key: const Key('login-submit'), validate: true,
               label: busy ? 'Đang đăng nhập…' : 'Đăng nhập',
@@ -545,11 +587,18 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: busy || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
             if (!session.ready) const ReasonNote(kUnavailableReason),
-            N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
-              // The login form's refusal must not show on the register form.
-              session.dismissNotices();
-              Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand, shop: widget.shop)));
-            }),
+            Center(
+              child: N11Link(
+                'Đăng ký',
+                prefix: 'Chưa có tài khoản? ',
+                key: const Key('to-register'),
+                onPressed: busy ? null : () {
+                  // The login form's refusal must not show on the register form.
+                  session.dismissNotices();
+                  Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand, shop: widget.shop)));
+                },
+              ),
+            ),
           ],
         );
       },
@@ -747,7 +796,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         N11Button(
           key: const Key('otp-request'),
           label: !_otp.canResend && !_otp.busy ? 'Gửi lại sau ${formatWait(_otp.resendSeconds)}' : _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
-          kind: ButtonKind.secondary,
+          kind: _otp.step == OtpStep.idle && _otp.phone == null ? ButtonKind.primary : ButtonKind.secondary,
           loading: _otp.step == OtpStep.requesting,
           onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
         ),
@@ -844,7 +893,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
             ),
           if (_step == 0) ...<Widget>[
-            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', placeholder: 'Nguyễn Văn An', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('password'), tone: _error('password') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('confirm'), fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
             _registrationConsent(disabled: locked),
@@ -960,7 +1009,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onChanged: _phoneEdited,
             ),
             if (!_ship && mode == RegistrationMode.required) ..._otpSection(busy),
-            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', placeholder: 'Nguyễn Văn An', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               key: _feedback.key('password'),
               tone: _error('password') == null ? FieldTone.normal : FieldTone.error,
@@ -1409,13 +1458,28 @@ class VoucherScreen extends StatelessWidget {
   const VoucherScreen({super.key, required this.session});
   final SessionController session;
   @override
-  Widget build(BuildContext context) => DefaultTabController(length: 3, child: Scaffold(
-    backgroundColor: N11Colors.bg,
-    appBar: AppBar(title: const Text('Voucher của tôi'), bottom: const TabBar(tabs: <Widget>[Tab(text: 'Khả dụng'), Tab(text: 'Đã dùng'), Tab(text: 'Hết hạn')])),
-    body: const TabBarView(children: <Widget>[
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher', text: 'Tính năng voucher chưa được hỗ trợ. Chưa thể nhập hoặc áp mã.'),
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher đã dùng', text: 'Tính năng voucher chưa được hỗ trợ.'),
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher hết hạn', text: 'Tính năng voucher chưa được hỗ trợ.'),
-    ]),
-  ));
+  Widget build(BuildContext context) {
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return DefaultTabController(
+      length: 3,
+      child: N11PageBackdrop(
+        child: Scaffold(
+          backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+          appBar: AppBar(
+            title: const Text('Voucher của tôi'),
+            bottom: const TabBar(tabs: <Widget>[
+              Tab(text: 'Khả dụng'),
+              Tab(text: 'Đã dùng'),
+              Tab(text: 'Hết hạn'),
+            ]),
+          ),
+          body: const TabBarView(children: <Widget>[
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher', text: 'Tính năng voucher chưa được hỗ trợ. Chưa thể nhập hoặc áp mã.'),
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher đã dùng', text: 'Tính năng voucher chưa được hỗ trợ.'),
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher hết hạn', text: 'Tính năng voucher chưa được hỗ trợ.'),
+          ]),
+        ),
+      ),
+    );
+  }
 }

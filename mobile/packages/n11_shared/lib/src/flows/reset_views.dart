@@ -185,7 +185,7 @@ class _ResetScreenState extends State<ResetScreen> {
               N11Button(
                 key: const Key('reset-otp-request'),
                 label: controller.otpStep == ResetOtpStep.requesting ? 'Đang gửi…' : (!controller.canResend && controller.resendSeconds > 0 ? 'Gửi lại sau ${formatWait(controller.resendSeconds)}' : (controller.otpStep == ResetOtpStep.idle ? 'Gửi mã xác minh' : 'Gửi lại mã')),
-                kind: ButtonKind.secondary,
+                kind: controller.otpStep == ResetOtpStep.idle ? ButtonKind.primary : ButtonKind.secondary,
                 loading: controller.otpStep == ResetOtpStep.requesting,
                 onPressed: busy || !controller.canResend ? null : () { setState(() => _phoneAttempted = true); if (_feedback.validate(<String, String?>{'phone': otpPhoneError(_phone.text)})) controller.requestOtp(_phone.text); },
               ),

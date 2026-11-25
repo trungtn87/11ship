@@ -67,8 +67,8 @@ class _ShopLogoFieldState extends State<ShopLogoField> {
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text('Logo quán · không bắt buộc', style: N11Text.label),
-          const SizedBox(height: N11Space.gap2),
+          const N11FieldLabel('Logo quán', optional: true),
+          const SizedBox(height: N11Space.labelGap),
           Row(
             children: <Widget>[
               ClipRRect(

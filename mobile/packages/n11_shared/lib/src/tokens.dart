@@ -34,19 +34,24 @@ abstract final class N11Colors {
   static const Color homeInk = Color(0xFF242424);
   static const Color homeLocateBorder = Color(0xFFE7B628);
   static const Color homeLocateInk = Color(0xFFA65300);
-  static const Color black = Color(0xFF191919);
+  static const Color black = Color(0xFF1C1917);
   static const Color white = Color(0xFFFFFFFF);
   static const Color bg = Color(0xFFF7F8FA);
+  static const Color formBg = Color(0xFFF5F5F2);
+  static const Color formDivider = Color(0xFFE6E3DC);
+  static const Color fieldBorder = Color(0xFFC7C2B8);
 
-  // Neutrals
-  static const Color ink2 = Color(0xFF667085);
-  static const Color ink3 = Color(0xFF667085);
-  static const Color placeholder = Color(0xFF98A2B3);
-  static const Color line = Color(0xFFEAECF0);
-  static const Color lineStrong = Color(0xFFD0D5DD);
+  // Neutrals (warm stone palette, WCAG AA contrast)
+  static const Color ink2 = Color(0xFF57534E);
+  static const Color ink3 = Color(0xFF57534E);
+  static const Color placeholder = Color(0xFF78716C);
+  static const Color line = Color(0xFFE6E3DC);
+  static const Color lineStrong = Color(0xFFC7C2B8);
   static const Color field = Color(0xFFFFFFFF);
-  static const Color disabledBg = Color(0xFFF2F4F7);
-  static const Color disabledInk = Color(0xFF667085);
+  static const Color disabledBg = Color(0xFFECEAE4);
+  static const Color disabledInk = Color(0xFF78716C);
+  static const Color primaryDisabledBg = Color(0xFFF3E7BD);
+  static const Color primaryDisabledInk = Color(0xFF8C7A4B);
   static const Color chipSoon = Color(0xFFF2F4F7);
   static const Color chipWarnInk = Color(0xFFB54708);
 
@@ -76,10 +81,15 @@ abstract final class N11Space {
   static const double gap6 = 24;
   static const double gap8 = 32;
   static const double pad = 16;
+  static const double labelGap = 6;
+  static const double formFieldGap = 12;
+  static const double sectionGap = 20;
 }
 
 const double kControlHeight = 48;
 const double kTapMin = 48;
+const double kFieldBorderWidth = 1.2;
+const double kFieldFocusBorderWidth = 1.8;
 // Existing application-wide geometry stays stable. V5 home geometry is scoped
 // below so applying the new discovery/home treatment cannot silently reshape
 // every form, dialog and operational screen in both apps.
@@ -115,12 +125,19 @@ abstract final class N11V5 {
     colors: <Color>[Color(0xFFFFEEA6), Color(0xFFFFF7D8), Color(0xFFFAFAF6), Color(0xFFF7F8FA)],
   );
 
-  /// Figma F01: 180deg background, stops 0 / 32 / 70 / 100 %. A real gradient behind the status bar, never a flat colour.
+  /// 180deg page background for 11Food: soft pale yellow fading quickly to
+  /// ultra-pale yellow (#FFFDF7) across the bottom 1/3 (66%–100%).
   static const LinearGradient homeGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    stops: <double>[0, 0.32, 0.70, 1],
-    colors: <Color>[Color(0xFFFFEEA6), Color(0xFFFFF7D8), Color(0xFFFAFAF6), Color(0xFFF7F8FA)],
+    stops: <double>[0, 0.20, 0.44, 0.66, 1],
+    colors: <Color>[
+      Color(0xFFFFF4C4),
+      Color(0xFFFFF9DF),
+      Color(0xFFFFFCF0),
+      Color(0xFFFFFDF7),
+      Color(0xFFFFFDF7),
+    ],
   );
   static const double homeCategoryGap = 10;
   static const List<BoxShadow> cardShadow = <BoxShadow>[
@@ -132,41 +149,73 @@ abstract final class N11Text {
   static const TextStyle body = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 16,
-    height: 1.5,
+    fontSize: 15,
+    height: 1.45,
     fontWeight: FontWeight.w500,
     color: N11Colors.black,
   );
   static const TextStyle bodyStrong = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 16,
-    height: 1.5,
+    fontSize: 15,
+    height: 1.45,
     fontWeight: FontWeight.w700,
     color: N11Colors.black,
   );
   static const TextStyle caption = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 14,
-    height: 20 / 14,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w400,
     color: N11Colors.ink2,
   );
   static const TextStyle captionInk2 = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 14,
-    height: 20 / 14,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w400,
     color: N11Colors.ink2,
   );
   static const TextStyle label = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 14,
-    height: 20 / 14,
+    fontSize: 13.5,
+    height: 18 / 13.5,
     fontWeight: FontWeight.w600,
+    color: N11Colors.black,
+  );
+  static const TextStyle section = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 15,
+    height: 20 / 15,
+    fontWeight: FontWeight.w700,
+    color: N11Colors.black,
+  );
+  static const TextStyle input = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 15,
+    height: 20 / 15,
+    fontWeight: FontWeight.w500,
+    color: N11Colors.black,
+  );
+  static const TextStyle inputHint = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 15,
+    height: 20 / 15,
+    fontWeight: FontWeight.w400,
+    color: N11Colors.placeholder,
+  );
+  static const TextStyle button = TextStyle(
+    fontFamily: kFontFamily,
+    package: 'n11_shared',
+    fontSize: 15,
+    height: 20 / 15,
+    fontWeight: FontWeight.w700,
     color: N11Colors.black,
   );
   static const TextStyle display = TextStyle(
@@ -181,17 +230,17 @@ abstract final class N11Text {
   static const TextStyle title = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 24,
-    height: 32 / 24,
-    fontWeight: FontWeight.w800,
-    letterSpacing: -0.24,
+    fontSize: 22,
+    height: 28 / 22,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.2,
     color: N11Colors.black,
   );
   static const TextStyle barTitle = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 20,
-    height: 1.4,
+    fontSize: 18,
+    height: 24 / 18,
     fontWeight: FontWeight.w700,
     color: N11Colors.black,
   );
@@ -206,23 +255,72 @@ abstract final class N11Text {
   static const TextStyle lead = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 14,
-    height: 1.5,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    height: 19 / 13,
+    fontWeight: FontWeight.w400,
     color: N11Colors.ink2,
   );
   static const TextStyle link = TextStyle(
     fontFamily: kFontFamily,
     package: 'n11_shared',
-    fontSize: 14,
-    fontWeight: FontWeight.w700,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w600,
     color: N11Colors.yellowStrong,
-    decoration: TextDecoration.underline,
-    decorationColor: N11Colors.yellowStrong,
+    decoration: TextDecoration.none,
   );
 }
 
-ThemeData buildN11Theme() {
+/// Optional page-level background gradient inherited through [ThemeData.extensions].
+/// 11Food applies [N11V5.homeGradient] across tabs and pushed screens while 11Ship leaves it null.
+class N11PageBackground extends ThemeExtension<N11PageBackground> {
+  const N11PageBackground({this.gradient});
+
+  final Gradient? gradient;
+
+  static Gradient? maybeOf(BuildContext context) =>
+      Theme.of(context).extension<N11PageBackground>()?.gradient;
+
+  @override
+  N11PageBackground copyWith({Gradient? gradient}) =>
+      N11PageBackground(gradient: gradient ?? this.gradient);
+
+  @override
+  N11PageBackground lerp(ThemeExtension<N11PageBackground>? other, double t) {
+    if (other is! N11PageBackground) return this;
+    return N11PageBackground(
+      gradient: Gradient.lerp(gradient, other.gradient, t),
+    );
+  }
+}
+
+/// Paints [N11PageBackground] behind [child] when configured in the active theme,
+/// otherwise falling back to [fallbackColor].
+class N11PageBackdrop extends StatelessWidget {
+  const N11PageBackdrop({
+    super.key,
+    required this.child,
+    this.fallbackColor = N11Colors.bg,
+  });
+
+  final Widget child;
+  final Color fallbackColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final Gradient? gradient = N11PageBackground.maybeOf(context);
+    if (gradient == null) {
+      return ColoredBox(color: fallbackColor, child: child);
+    }
+    return DecoratedBox(
+      key: const Key('n11-page-gradient'),
+      decoration: BoxDecoration(gradient: gradient),
+      child: child,
+    );
+  }
+}
+
+ThemeData buildN11Theme({Gradient? pageGradient}) {
   final ColorScheme base = ColorScheme.fromSeed(
     seedColor: N11Colors.yellow,
     brightness: Brightness.light,
@@ -250,6 +348,9 @@ ThemeData buildN11Theme() {
     colorScheme: scheme,
     fontFamily: kFontFamily,
     package: 'n11_shared',
+    extensions: <ThemeExtension<dynamic>>[
+      if (pageGradient != null) N11PageBackground(gradient: pageGradient),
+    ],
     materialTapTargetSize: MaterialTapTargetSize.padded,
     visualDensity: VisualDensity.standard,
     textTheme: const TextTheme(
@@ -262,24 +363,38 @@ ThemeData buildN11Theme() {
       bodySmall: N11Text.caption,
       labelLarge: N11Text.label,
     ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: N11Colors.white,
+    actionIconTheme: ActionIconThemeData(
+      backButtonIconBuilder: (BuildContext context) =>
+          const Icon(Icons.chevron_left, size: 28, color: N11Colors.black),
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: pageGradient != null ? Colors.transparent : N11Colors.white,
       foregroundColor: N11Colors.black,
       surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
       elevation: 0,
       titleTextStyle: N11Text.barTitle,
+      shape: Border(
+        bottom: BorderSide(
+          color: pageGradient != null ? const Color(0x14191919) : N11Colors.line,
+        ),
+      ),
     ),
     filledButtonTheme: FilledButtonThemeData(style: _buttonStyle()),
     elevatedButtonTheme: ElevatedButtonThemeData(style: _buttonStyle()),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
+        backgroundColor: N11Colors.white,
         foregroundColor: N11Colors.black,
         minimumSize: const Size(kTapMin, kControlHeight),
-        side: const BorderSide(color: N11Colors.lineStrong),
+        side: const BorderSide(
+          color: N11Colors.fieldBorder,
+          width: kFieldBorderWidth,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(kRadiusControl),
         ),
-        textStyle: N11Text.label,
+        textStyle: N11Text.button,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
@@ -295,29 +410,45 @@ ThemeData buildN11Theme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: N11Colors.white,
-      contentPadding: const EdgeInsets.all(N11Space.gap4),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: const BorderSide(color: N11Colors.line),
+        borderSide: const BorderSide(
+          color: N11Colors.fieldBorder,
+          width: kFieldBorderWidth,
+        ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: const BorderSide(color: N11Colors.line),
+        borderSide: const BorderSide(
+          color: N11Colors.fieldBorder,
+          width: kFieldBorderWidth,
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: const BorderSide(color: N11Colors.yellow, width: 2),
+        borderSide: const BorderSide(
+          color: N11Colors.yellow,
+          width: kFieldFocusBorderWidth,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: const BorderSide(color: N11Colors.error),
+        borderSide: const BorderSide(
+          color: N11Colors.error,
+          width: kFieldFocusBorderWidth,
+        ),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: const BorderSide(color: N11Colors.error, width: 2),
+        borderSide: const BorderSide(
+          color: N11Colors.error,
+          width: kFieldFocusBorderWidth,
+        ),
       ),
-      labelStyle: N11Text.lead,
-      hintStyle: N11Text.lead,
+      labelStyle: N11Text.label,
+      hintStyle: N11Text.inputHint,
     ),
     cardTheme: CardThemeData(
       color: N11Colors.white,
@@ -359,8 +490,8 @@ ButtonStyle _buttonStyle() =>
     FilledButton.styleFrom(
       backgroundColor: N11Colors.yellow,
       foregroundColor: N11Colors.black,
-      disabledBackgroundColor: N11Colors.disabledBg,
-      disabledForegroundColor: N11Colors.disabledInk,
+      disabledBackgroundColor: N11Colors.primaryDisabledBg,
+      disabledForegroundColor: N11Colors.primaryDisabledInk,
       minimumSize: const Size(kTapMin, kControlHeight),
       elevation: 0,
       padding: const EdgeInsets.symmetric(
@@ -370,7 +501,13 @@ ButtonStyle _buttonStyle() =>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
       ),
-      textStyle: N11Text.label,
+      textStyle: const TextStyle(
+        fontFamily: kFontFamily,
+        package: 'n11_shared',
+        fontSize: 15,
+        height: 20 / 15,
+        fontWeight: FontWeight.w700,
+      ),
     ).copyWith(
       overlayColor: WidgetStateProperty.resolveWith<Color?>((
         Set<WidgetState> states,

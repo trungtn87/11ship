@@ -446,7 +446,9 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
   Widget build(BuildContext context) {
     final String pickupText = _joinAddress(_pickupAddress.text, _pickupNote);
     final String dropoffText = _joinAddress(_dropoffAddress.text, _dropoffNote);
-    return Scaffold(
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    final Widget scaffold = Scaffold(
+      backgroundColor: hasGradient ? Colors.transparent : null,
       appBar: widget.embedded ? null : AppBar(title: const Text('Gọi shipper giao hàng')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(N11Space.gap3),
@@ -845,6 +847,7 @@ class _CustomerCallScreenState extends State<CustomerCallScreen> with M07Actions
         ),
       ),
     );
+    return widget.embedded ? scaffold : N11PageBackdrop(child: scaffold);
   }
 }
 
@@ -1113,8 +1116,11 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Chi tiết chuyến giao')),
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : null,
+        appBar: AppBar(title: const Text('Chi tiết chuyến giao')),
       body: M07Loader<DeliveryView>(
         keyPrefix: 'customer-delivery-detail',
         key: ValueKey<int>(_rev),
@@ -1425,6 +1431,7 @@ class _CustomerDeliveryDetailScreenState extends State<CustomerDeliveryDetailScr
             ),
           );
         },
+      ),
       ),
     );
   }

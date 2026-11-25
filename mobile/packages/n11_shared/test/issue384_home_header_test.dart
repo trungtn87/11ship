@@ -47,8 +47,17 @@ void main() {
     final LinearGradient gradient = decoration.gradient! as LinearGradient;
     expect(gradient.begin, Alignment.topCenter);
     expect(gradient.end, Alignment.bottomCenter);
-    expect(gradient.stops, <double>[0, 0.32, 0.70, 1]);
-    expect(gradient.colors, const <Color>[Color(0xFFFFEEA6), Color(0xFFFFF7D8), Color(0xFFFAFAF6), Color(0xFFF7F8FA)]);
+    expect(gradient.stops, <double>[0, 0.20, 0.44, 0.66, 1]);
+    expect(
+      gradient.colors,
+      const <Color>[
+        Color(0xFFFFF4C4),
+        Color(0xFFFFF9DF),
+        Color(0xFFFFFCF0),
+        Color(0xFFFFFDF7),
+        Color(0xFFFFFDF7),
+      ],
+    );
   });
 
   for (final double width in <double>[390, 360, 320]) {
