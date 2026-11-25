@@ -200,6 +200,12 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
       label: 'Quán',
       icon: Icons.storefront_outlined,
       title: 'Quán',
+      // Logged out: tapping Quán goes straight to the login screen.
+      onSelectIntercept: (BuildContext context) {
+        if (session.status == SessionStatus.signedIn || !session.ready) return false;
+        Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: foodBrand, reset: flows?.reset, shop: flows?.shop)));
+        return true;
+      },
       body: (BuildContext context, ShellActions actions) => _shop(session, flows,
           // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
           openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows!, orderId)))),

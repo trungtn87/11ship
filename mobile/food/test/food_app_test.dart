@@ -134,7 +134,9 @@ void main() {
     }
     await tester.tap(find.byKey(const Key('tab-shop')));
     await tester.pumpAndSettle();
-    expect(find.text('Đăng nhập để mở hoặc quản lý quán.'), findsOneWidget);
+    // Logged out: tapping Quán opens the login screen straight away.
+    expect(find.byKey(const Key('login-phone')), findsOneWidget);
+    expect(find.text('Đăng nhập để mở hoặc quản lý quán.'), findsNothing);
     // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
