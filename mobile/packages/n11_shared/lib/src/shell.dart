@@ -67,6 +67,7 @@ class TabSpec {
     this.fullBleed = false,
     this.showAppBar = true,
     this.ownsConnectionBanner = false,
+    this.onSelectIntercept,
   });
 
   final String id;
@@ -83,6 +84,9 @@ class TabSpec {
 
   /// The tab draws the connection state itself (merged with its own alerts) and reads the monitor from [HealthScope]: the shell then shows no second banner.
   final bool ownsConnectionBanner;
+
+  /// Called when the tab is tapped in the bottom bar; returning true means it handled the tap (e.g. opened the login screen) and the tab is not opened.
+  final bool Function(BuildContext context)? onSelectIntercept;
   final TabBody body;
 }
 
@@ -346,6 +350,9 @@ class _N11ShellState extends State<N11Shell> with WidgetsBindingObserver {
   }
 
   void _select(int index) {
+    if (index >= 0 && index < widget.tabs.length && (widget.tabs[index].onSelectIntercept?.call(context) ?? false)) {
+      return;
+    }
     _refreshIdentityForTab(index);
     if (index == _index && !_diagnostics) {
       if (widget.keepBottomNavOnChildRoutes) {
