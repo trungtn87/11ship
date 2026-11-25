@@ -30,7 +30,7 @@ abstract final class N11Colors {
     colors: <Color>[yellowSoft, white],
   );
   // Figma 11Food F01 (node 2:75, GPS pending), used by the Home only.
-  static const Color homeCategorySelected = Color(0xFFFFF1BC);
+  static const Color homeCategorySelected = Color(0xFFFFF2DC);
   static const Color homeInk = Color(0xFF242424);
   static const Color homeLocateBorder = Color(0xFFE7B628);
   static const Color homeLocateInk = Color(0xFFA65300);

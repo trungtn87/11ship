@@ -574,7 +574,13 @@ void main() {
         final DiscoveryController c = DiscoveryController(api: seeded());
         addTearDown(c.dispose);
         await home(tester, c);
-        expect(find.text('Cao Bằng · tham khảo'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('home-area')),
+            matching: find.text('Cao Bằng · tham khảo'),
+          ),
+          findsOneWidget,
+        );
         final List<String> order = <String>[
           'Zeta Ốc Hương',
           'Alpha Hải Sản',
@@ -592,7 +598,7 @@ void main() {
           tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Zeta Ốc Hương'))).dy,
           tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Alpha Hải Sản'))).dy,
         );
-        expect(find.text('Đang mở cửa'), findsWidgets);
+        expect(find.text('Mở cửa'), findsWidgets);
         expect(find.text('Đã đóng cửa'), findsWidgets);
         await tester.scrollUntilVisible(
           find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Quán Đóng Cửa')),
