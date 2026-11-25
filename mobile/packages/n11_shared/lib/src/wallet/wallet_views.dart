@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -768,6 +770,78 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   String? _error;
   bool _reporting = false;
   String? _reportError;
+  Timer? _pollTimer;
+  TopupStatus? _lastStatus;
+  bool? _lastReported;
+  bool _polling = false;
+
+  void _ensurePolling() {
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 6), (_) => _poll());
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant TopupDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.code != widget.code || oldWidget.source != widget.source) {
+      _lastStatus = null;
+      _lastReported = null;
+      _stopPolling();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
+
+  Future<WalletLoad<TopupRequest>> _load() async {
+    final WalletLoad<TopupRequest> result = await widget.source.topup(widget.code);
+    if (!mounted) {
+      return result;
+    }
+    if (result is WalletReady<TopupRequest>) {
+      _lastStatus = result.value.status;
+      _lastReported = result.value.reported;
+      if (result.value.status == TopupStatus.pending) {
+        _ensurePolling();
+      } else {
+        _stopPolling();
+      }
+    }
+    return result;
+  }
+
+  Future<void> _poll() async {
+    if (!mounted || _reporting || _busy || _polling || _lastStatus != TopupStatus.pending) {
+      return;
+    }
+    _polling = true;
+    try {
+      final WalletLoad<TopupRequest> result = await widget.source.topup(widget.code);
+      if (!mounted || _reporting || _busy || result is! WalletReady<TopupRequest>) {
+        return;
+      }
+      final TopupRequest next = result.value;
+      if (next.status != TopupStatus.pending) {
+        _stopPolling();
+      }
+      if (next.status != _lastStatus || next.reported != _lastReported) {
+        _lastStatus = next.status;
+        _lastReported = next.reported;
+        setState(() => _rev++);
+      }
+    } catch (_) {
+      // Ignore transient network errors during silent polling.
+    } finally {
+      _polling = false;
+    }
+  }
 
   /// "Xác nhận đã chuyển tiền": one request in flight at a time (a second tap is ignored). A lost answer keeps its key, so a retry is the same report.
   Future<void> _report() async {
@@ -838,7 +912,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
             _Tone.warn,
             'Chuyển đúng số tiền và nội dung bên dưới. Sau khi chuyển, bấm "Xác nhận đã chuyển tiền". Tiền sẽ được cộng khi hệ thống nhận được khoản chuyển khớp mã nạp, hoặc khi quản trị xác nhận.',
           ),
-        TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
+        TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
         TopupStatus.rejected => (Icons.cancel_outlined, _Tone.bad, 'Admin đã từ chối yêu cầu này. Ví không thay đổi.'),
         TopupStatus.cancelled => (Icons.block, _Tone.neutral, 'Yêu cầu đã được hủy. Ví không thay đổi.'),
       };
@@ -849,7 +923,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
     return _page(source, 'Chi tiết yêu cầu nạp', <Widget>[
       WalletLoader<TopupRequest>(
         key: ValueKey<String>('topup-${widget.code}-$_rev'),
-        load: () => source.topup(widget.code),
+        load: _load,
         builder: (TopupRequest r) {
           final (IconData icon, _Tone tone, String text) = _look(r);
           return vstack(<Widget>[

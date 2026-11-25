@@ -172,11 +172,75 @@ void main() {
     testWidgets('CONFIRMED: says the amount is credited, shows the new balance, and offers no transfer details or QR', (WidgetTester tester) async {
       await mount(tester, TopupDetailScreen(source: _TopupSource(status: TopupStatus.confirmed), code: 'req-1'));
 
-      expect(find.text('Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'), findsOneWidget);
+      expect(find.text('Đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'), findsOneWidget);
       expect(find.byKey(const Key('topup-new-balance')), findsOneWidget);
       expect(find.text('250.000đ'), findsOneWidget);
       expect(find.byKey(const Key('topup-vietqr')), findsNothing);
       expect(find.byKey(const Key('topup-transfer-card')), findsNothing);
     });
+
+    testWidgets('PENDING polls silently every 6 seconds and updates to confirmed without user action', (WidgetTester tester) async {
+      final _PollingTopupSource source = _PollingTopupSource();
+      await mount(tester, TopupDetailScreen(source: source, code: 'req-1'));
+
+      expect(find.text('Chờ chuyển tiền'), findsWidgets);
+      expect(source.topupCalls, 1);
+
+      // Still pending after 6s: polls silently without showing loading state.
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(source.topupCalls, 2);
+      expect(find.byKey(const Key('wallet-loading')), findsNothing);
+      expect(find.text('Chờ chuyển tiền'), findsWidgets);
+
+      // Network error on a poll tick is silently ignored.
+      source.throwOnNextPoll = true;
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(source.topupCalls, 3);
+      expect(find.byKey(const Key('wallet-failed')), findsNothing);
+      expect(find.text('Chờ chuyển tiền'), findsWidgets);
+
+      // Next poll sees CONFIRMED: UI transitions automatically without user action.
+      source.currentStatus = TopupStatus.confirmed;
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'), findsOneWidget);
+      expect(find.byKey(const Key('topup-new-balance')), findsOneWidget);
+      expect(find.text('250.000đ'), findsOneWidget);
+      expect(find.byKey(const Key('topup-transfer-card')), findsNothing);
+      expect(find.byKey(const Key('topup-cancel')), findsNothing);
+
+      final int callsAfterConfirm = source.topupCalls;
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(source.topupCalls, callsAfterConfirm, reason: 'polling stops once no longer PENDING');
+    });
   });
+}
+
+class _PollingTopupSource extends _TopupSource {
+  TopupStatus currentStatus = TopupStatus.pending;
+  bool throwOnNextPoll = false;
+  int topupCalls = 0;
+
+  @override
+  Future<WalletLoad<TopupRequest>> topup(String code) async {
+    topupCalls++;
+    if (throwOnNextPoll) {
+      throwOnNextPoll = false;
+      throw Exception('network glitch');
+    }
+    return WalletReady<TopupRequest>(
+      TopupRequest(
+        code: code,
+        amount: 150000,
+        createdAt: DateTime(2026, 11, 20, 9, 0),
+        status: currentStatus,
+        transferCode: _code,
+        displayCode: 'NAPA1B2C',
+      ),
+    );
+  }
 }
