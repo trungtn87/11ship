@@ -74,6 +74,11 @@ describe('SePay transfer decision (pure matching rule)', () => {
     expect(decideTransfer(event({ content: 'hello NAPA1B2C3D4E5' }))).toEqual({ kind: 'NEEDS_ADMIN', reason: 'CODE_NOT_AT_START' });
   });
 
+  it('accepts the bank prefix "<BANK> <account> " that MB puts before the customer text', () => {
+    expect(decideTransfer(event({ content: 'MB 868111247 NAPA1B2C3D4E5- Ma GD ACSP/ UY017650' })).kind).toBe('CANDIDATE');
+    expect(decideTransfer(event({ content: 'MB 868111247 hello NAPA1B2C3D4E5' }))).toEqual({ kind: 'NEEDS_ADMIN', reason: 'CODE_NOT_AT_START' });
+  });
+
   it('holds money with no code (null or empty) for an Administrator', () => {
     expect(decideTransfer(event({ code: null }))).toEqual({ kind: 'NEEDS_ADMIN', reason: 'NO_CODE' });
     expect(decideTransfer(event({ code: '' }))).toEqual({ kind: 'NEEDS_ADMIN', reason: 'NO_CODE' });
