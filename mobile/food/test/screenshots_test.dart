@@ -119,7 +119,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await shot(tester, '07-account');
-    await tester.tap(find.byKey(const Key('shop-entry')));
+    await tester.tap(find.byKey(const Key('account-shop-manage-card')));
     await tester.pumpAndSettle();
     await shot(tester, '08-shop-empty');
     await tester.tap(find.byKey(const Key('shop-register')));
