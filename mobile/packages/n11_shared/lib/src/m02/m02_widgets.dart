@@ -509,6 +509,7 @@ class ShopLogoImage extends StatelessWidget {
     this.backgroundColor,
     this.iconColor,
     this.iconSize = 36,
+    this.hideFallbackIcon = false,
   });
 
   final String? url;
@@ -519,16 +520,19 @@ class ShopLogoImage extends StatelessWidget {
   final Color? backgroundColor;
   final Color? iconColor;
   final double iconSize;
+  final bool hideFallbackIcon;
 
   @override
   Widget build(BuildContext context) {
-    final Widget fallback = Center(
-      child: Icon(
-        Icons.storefront_outlined,
-        size: iconSize,
-        color: iconColor ?? N11Colors.black,
-      ),
-    );
+    final Widget fallback = hideFallbackIcon
+        ? const SizedBox.shrink()
+        : Center(
+            child: Icon(
+              Icons.storefront_outlined,
+              size: iconSize,
+              color: iconColor ?? N11Colors.black,
+            ),
+          );
     final Widget clipped = ClipRRect(
       borderRadius: clipRadius ?? BorderRadius.circular(borderRadius),
       child: ColoredBox(

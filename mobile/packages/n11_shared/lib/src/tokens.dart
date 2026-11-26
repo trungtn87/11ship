@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // Design System V5 — production UI (2026-10-28).
 // Retain existing public token names for both apps and all in-flight PRs.
@@ -142,6 +143,12 @@ abstract final class N11V5 {
   static const double homeCategoryGap = 10;
   static const List<BoxShadow> cardShadow = <BoxShadow>[
     BoxShadow(color: Color(0x13000000), blurRadius: 12, offset: Offset(0, 3)),
+  ];
+  static const List<BoxShadow> warmCardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x14A65300), blurRadius: 12, offset: Offset(0, 3)),
+  ];
+  static const List<BoxShadow> warmSoftShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x10A65300), blurRadius: 8, offset: Offset(0, 2)),
   ];
 }
 
@@ -373,6 +380,14 @@ ThemeData buildN11Theme({Gradient? pageGradient}) {
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
       elevation: 0,
+      systemOverlayStyle: pageGradient != null
+          ? const SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: Brightness.dark,
+              statusBarBrightness: Brightness.light,
+              systemStatusBarContrastEnforced: false,
+            )
+          : null,
       titleTextStyle: N11Text.barTitle,
       shape: Border(
         bottom: BorderSide(

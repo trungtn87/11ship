@@ -443,14 +443,14 @@ void main() {
   });
 }
 
-// The Food shell keeps all five destinations visible in every account mode.
+// The Food shell keeps 4 destinations visible in every account mode.
 void callShipTabTests() {
-  testWidgets('customer mode: five tabs in order, Gọi ship opens the call form in one tap',
+  testWidgets('customer mode: four tabs in order, Gọi ship opens the call form in one tap',
       (WidgetTester tester) async {
     final _Fixture f = await _fixture('CUSTOMER');
     addTearDown(f.dispose);
     await _pump(tester, f);
-    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.label), <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Quán', 'Tài khoản']);
+    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.label), <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Tài khoản']);
     await tester.tap(find.byKey(const Key('tab-call')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('m07-c-pickup-addr')), findsOneWidget);
@@ -461,11 +461,11 @@ void callShipTabTests() {
     expect(find.byKey(const Key('m07-c-pickup-addr')), findsNothing);
   });
 
-  testWidgets('shop-owner mode keeps all five tabs', (WidgetTester tester) async {
+  testWidgets('shop-owner mode keeps all four tabs', (WidgetTester tester) async {
     final _Fixture f = await _fixture('SHOP_OWNER');
     addTearDown(f.dispose);
     await _pump(tester, f);
-    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.id), <String>['home', 'orders', 'call', 'shop', 'account']);
+    expect(buildFoodTabs(f.session, flows: f.flows).map((TabSpec t) => t.id), <String>['home', 'orders', 'call', 'account']);
     expect(find.byKey(const Key('tab-call')), findsOneWidget);
   });
 }
