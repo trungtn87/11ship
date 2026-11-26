@@ -253,6 +253,7 @@ Widget _home(SessionController session, ShellActions actions, AppFlows? flows) {
       builder: (BuildContext context) => DiscoveryHome(
           controller: m02.discovery,
           publicApi: m02.publicApi,
+          addresses: flows?.addresses,
           ratings: flows?.feedback,
           bell: _bell(context, flows, actions),
           onNotifyWhenShops: _notifyWhenShopsAction(context, session, flows)));

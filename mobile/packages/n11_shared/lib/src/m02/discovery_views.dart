@@ -1,24 +1,28 @@
 import 'dart:async';
 
-import '../widgets/discovery_controls.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../account/account_views.dart';
+import '../account/session_controller.dart';
+import '../addresses/address_controller.dart';
+import '../addresses/address_models.dart';
+import '../addresses/address_views.dart';
 import '../flows/location.dart';
 import '../m10/m10_cart.dart';
 import '../m10/m10_customer_views.dart' show DishStepper;
-
-import 'package:flutter/material.dart';
-
-import '../account/account_views.dart';
+import '../m11/m11_source.dart';
 import '../tokens.dart';
 import '../widgets/components.dart';
-import 'discovery_controller.dart';
+import '../widgets/discovery_controls.dart';
 import 'category_icons.dart';
+import 'discovery_controller.dart';
 import 'discovery_models.dart';
 import 'm02_format.dart';
-import 'route_distance.dart';
-import '../m11/m11_source.dart';
 import 'm02_widgets.dart';
 import 'menu_models.dart';
 import 'preview_views.dart';
+import 'route_distance.dart';
 
 // M02-KP01/KP02/KP03: Owner layout 22/10/2026 (M02-home-shop-detail-UI-OWNER-20261022.md).
 // Area, group chips, heading beside search/filters, then the shop list. Ratings and pickup coordinates come from the server; the distance is the ROAD distance from the foreground position (issue #190). Tapping a shop opens its menu (K01); tapping a dish opens its shop and lands on the dish.
@@ -266,35 +270,43 @@ class _FakeField extends StatelessWidget {
       label: 'Tìm quán hoặc món',
       excludeSemantics: true,
       onTap: onTap,
-      child: InkWell(
-        key: const Key('home-search'),
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(N11V5.inputRadius),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
-          padding: const EdgeInsets.symmetric(
-            horizontal: N11Space.gap3,
-            vertical: N11Space.gap3,
-          ),
-          decoration: BoxDecoration(
-            color: N11Colors.white,
-            border: Border.all(color: N11Colors.line),
-            borderRadius: BorderRadius.circular(N11V5.inputRadius),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) => Row(
-              children: <Widget>[
-                const Icon(Icons.search, size: 20, color: N11Colors.ink2),
-                const SizedBox(width: N11Space.gap2),
-                Expanded(
-                  child: Text(
-                    constraints.maxWidth < 155
-                        ? 'Tìm kiếm'
-                        : 'Tìm quán hoặc món',
-                    style: N11Text.body.copyWith(color: N11Colors.ink2),
+      child: Material(
+        color: N11Colors.white,
+        borderRadius: BorderRadius.circular(kRadiusPill),
+        child: InkWell(
+          key: const Key('home-search'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(kRadiusPill),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 46),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(color: N11Colors.line),
+              borderRadius: BorderRadius.circular(kRadiusPill),
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) => Row(
+                children: <Widget>[
+                  const Icon(Icons.search, size: 20, color: N11Colors.ink2),
+                  const SizedBox(width: N11Space.gap2),
+                  Expanded(
+                    child: Text(
+                      constraints.maxWidth < 145
+                          ? 'Tìm kiếm'
+                          : 'Tìm quán hoặc món',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: N11Text.body.copyWith(
+                        fontSize: 14.5,
+                        color: N11Colors.ink2,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -309,6 +321,7 @@ class DiscoveryHome extends StatefulWidget {
     super.key,
     required this.controller,
     required this.publicApi,
+    this.addresses,
     this.bell,
     this.ratings,
     this.position,
@@ -318,6 +331,9 @@ class DiscoveryHome extends StatefulWidget {
   final DiscoveryPosition? position;
   final DiscoveryController controller;
   final PublicShopApi publicApi;
+
+  /// M05: optional signed-in delivery address book for the "Giao đến:" header.
+  final AddressBookController? addresses;
 
   /// Navigation only (no API): the "Nhận tin khi có quán" button of the empty area. Null = no button.
   final VoidCallback? onNotifyWhenShops;
@@ -346,6 +362,13 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       if (!mounted) return;
       if (c.choicesState != DiscoveryLoad.ready) await c.start();
       if (mounted) await c.locate(source: _position);
+      final AddressBookController? addresses = widget.addresses;
+      if (mounted &&
+          addresses != null &&
+          addresses.session?.status == SessionStatus.signedIn &&
+          addresses.loadState == AddressLoad.idle) {
+        unawaited(addresses.load());
+      }
     });
   }
 
@@ -421,10 +444,27 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     );
   }
 
+  bool get _gpsResolved =>
+      _position.fix != null &&
+      !c.resolvingArea &&
+      !c.areaResolutionFailed &&
+      !c.outsideCoverage &&
+      c.area != null;
+
+  Widget _padded(Widget child, {double bottom = N11Space.gap3}) => Padding(
+    padding: EdgeInsets.fromLTRB(N11Space.pad, 0, N11Space.pad, bottom),
+    child: child,
+  );
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[c, _position, c.distances]),
+      listenable: Listenable.merge(<Listenable>[
+        c,
+        _position,
+        c.distances,
+        if (widget.addresses != null) widget.addresses!,
+      ]),
       builder: (BuildContext context, Widget? child) {
         // Road distances: asked after the frame, only for cards not known yet (a pure lookup otherwise), so a rebuild never becomes a request.
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -432,22 +472,18 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
           // Issue #411: the featured rule needs the rating of more than the first page (see kRankingPoolCap).
           if (mounted && kHomeFeaturedShopsEnabled) unawaited(c.fillRankingPool());
         });
-        // Issue #384 / Figma F01: the header row (area + bell) is the first item; the gradient paints behind the status bar.
-        // Figma F01: the header sits 14px above the search panel (12 list gap + 2).
         final List<Widget> body = <Widget>[
-          Padding(padding: const EdgeInsets.only(bottom: 2), child: _header()),
+          _padded(_headerWithLocate(), bottom: 10),
         ];
         switch (c.choicesState) {
           case DiscoveryLoad.idle:
           case DiscoveryLoad.loading:
-            body.addAll(const <Widget>[
-              M02Skeleton(rows: 1, height: 48),
-              M02Skeleton(rows: 4, height: 84),
-            ]);
+            body.add(_padded(const M02Skeleton(rows: 1, height: 48)));
+            body.add(_padded(const M02Skeleton(rows: 4, height: 84)));
           case DiscoveryLoad.notConnected:
-            body.add(const M02NotConnected(what: 'Danh sách quán'));
+            body.add(_padded(const M02NotConnected(what: 'Danh sách quán')));
           case DiscoveryLoad.failed:
-            body.add(_failed(() => c.start()));
+            body.add(_padded(_failed(() => c.start())));
           case DiscoveryLoad.ready:
             body.addAll(_ready());
         }
@@ -461,42 +497,64 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
               key: const Key('home-list'),
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(
-                N11Space.pad,
-                N11Space.gap2,
-                N11Space.pad,
+                0,
+                4,
+                0,
                 N11Space.gap8,
               ),
-              children: <Widget>[
-                for (final Widget w in body)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: N11Space.gap3),
-                    child: w,
-                  ),
-              ],
+              children: body,
             ),
           ),
         );
-        if (inheritedGradient) {
-          return content;
-        }
-        return Container(
-          key: const Key('home-gradient'),
-          decoration: const BoxDecoration(gradient: N11V5.homeGradient),
-          child: content,
+        final Widget shellBody = inheritedGradient
+            ? content
+            : Container(
+                key: const Key('home-gradient'),
+                decoration: const BoxDecoration(gradient: N11V5.homeGradient),
+                child: content,
+              );
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+            statusBarBrightness: Brightness.light,
+          ),
+          child: shellBody,
         );
       },
     );
   }
 
-  /// Figma F01 header, one row 48 high: a single location status/action cluster on the left and the bell on the right.
-  /// The brand logo was dropped from the Home by the Owner (#282). GPS controls the area label; it is not an area selector.
+  Widget _headerWithLocate() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      _header(),
+      if (!_gpsResolved)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _PositionButton(
+              position: _position,
+              resolving: c.resolvingArea,
+              failed: c.areaResolutionFailed,
+              outsideCoverage: c.outsideCoverage,
+              retry: () => c.locate(source: _position, force: true),
+              inlineWithArea: true,
+            ),
+          ),
+        ),
+    ],
+  );
+
+  /// Compact top header: single-line address selector on the left and notification bell on the right.
   Widget _header() {
-    final bool resolved =
-        _position.fix != null &&
-        !c.resolvingArea &&
-        !c.areaResolutionFailed &&
-        !c.outsideCoverage &&
-        c.area != null;
+    final DeliveryAddress? saved = widget.addresses?.defaultAddress;
+    final String? savedText = saved == null
+        ? null
+        : (saved.addressText.trim().isNotEmpty
+              ? saved.addressText.trim()
+              : (saved.displayName?.trim() ?? ''));
     final String areaLabel = c.area == null
         ? (c.resolvingArea || _position.loading
               ? 'Đang xác định khu vực…'
@@ -508,74 +566,104 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
         : _position.failure != null
         ? '${c.area!.name} · vị trí gần nhất'
         : c.area!.name;
-    return SizedBox(
-      height: 48,
+    final String displayAddress = (savedText != null && savedText.isNotEmpty)
+        ? savedText
+        : areaLabel;
+    final AddressBookController? addresses = widget.addresses;
+    final bool canOpenAddressBook =
+        addresses != null &&
+        (addresses.session == null ||
+            addresses.session!.status == SessionStatus.signedIn);
+    void onAddressTap() {
+      if (canOpenAddressBook) {
+        Navigator.of(
+          context,
+        ).push(n11Route(AddressBookScreen(controller: addresses)));
+      } else if (c.area == null ||
+          _position.failure != null ||
+          c.areaResolutionFailed ||
+          c.outsideCoverage) {
+        unawaited(c.locate(source: _position, force: true));
+      } else if (addresses != null) {
+        m02Toast(context, 'Đăng nhập để quản lý địa chỉ giao hàng.');
+      }
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 40),
       child: Row(
         children: <Widget>[
           Expanded(
-            child: resolved
-                ? Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.my_location,
-                        size: 20,
-                        color: N11Colors.yellowStrong,
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        key: const Key('home-area'),
-                        child: Text(
-                          areaLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            height: 19 / 14,
-                            fontWeight: FontWeight.w700,
-                            color: N11Colors.black,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Semantics(
+                button: true,
+                label: displayAddress,
+                excludeSemantics: true,
+                onTap: onAddressTap,
+                child: InkWell(
+                  key: const Key('home-area'),
+                  borderRadius: BorderRadius.circular(kRadiusPill),
+                  onTap: onAddressTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 18,
+                          color: N11Colors.black,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            displayAddress,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.25,
+                              fontWeight: FontWeight.w700,
+                              color: N11Colors.black,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  )
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    key: const Key('home-area'),
-                    child: _PositionButton(
-                      position: _position,
-                      resolving: c.resolvingArea,
-                      failed: c.areaResolutionFailed,
-                      outsideCoverage: c.outsideCoverage,
-                      retry: () => c.locate(source: _position, force: true),
-                      inlineWithArea: true,
-                      areaName: c.area == null ? null : areaLabel,
+                        const SizedBox(width: 2),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: N11Colors.black,
+                        ),
+                      ],
                     ),
                   ),
-          ),
-          const SizedBox(width: N11Space.gap2),
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: Material(
-              color: N11Colors.white,
-              shape: const CircleBorder(side: BorderSide(color: N11Colors.line)),
-              child:
-                  widget.bell ??
-                  IconButton(
-                    key: const Key('home-bell'),
-                    tooltip: 'Thông báo',
-                    constraints: const BoxConstraints(
-                      minWidth: kTapMin,
-                      minHeight: kTapMin,
-                    ),
-                    onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
-                    icon: const Icon(
-                      Icons.notifications_outlined,
-                      color: N11Colors.black,
-                    ),
-                  ),
+                ),
+              ),
             ),
           ),
+          const SizedBox(width: N11Space.gap2),
+          if (widget.bell != null)
+            widget.bell!
+          else
+            IconButton(
+              key: const Key('home-bell'),
+              tooltip: 'Thông báo',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 36,
+                minHeight: kTapMin,
+              ),
+              onPressed: () => m02Toast(context, 'Thông báo sẽ có ở bản sau.'),
+              icon: const Icon(
+                Icons.notifications_outlined,
+                size: 22,
+                color: N11Colors.black,
+              ),
+            ),
         ],
       ),
     );
@@ -599,66 +687,64 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
 
   List<Widget> _ready() {
     final List<Widget> out = <Widget>[];
-    // V5 visual shell: preserve the real search, filters, category controllers,
-    // GPS and API data. No preview shops, mocked fees or hardcoded categories.
-    // Figma F01: search panel 358x76 (12 top/bottom, 11 sides), field 52 high, filter 42x52; 14px below the header.
+    // Pill search field + standalone brand-yellow square filter button (no heavy yellow outer wrapper).
     out.add(
-      Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: Container(
-          key: const Key('home-v5-search-panel'),
-          padding: const EdgeInsets.fromLTRB(11, 12, 11, 12),
-          decoration: BoxDecoration(
-            color: N11Colors.yellow,
-            borderRadius: BorderRadius.circular(N11V5.searchPanelRadius),
-          ),
-          child: SizedBox(
-            height: 52,
-            child: Row(
-              children: <Widget>[
-                Expanded(child: _FakeField(onTap: _openSearch)),
-                const SizedBox(width: N11Space.gap2),
-                Material(
-                  color: N11Colors.white,
-                  borderRadius: BorderRadius.circular(N11V5.inputRadius),
-                  child: IconButton(
-                    key: const Key('home-filter'),
-                    tooltip: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 42,
-                      height: 52,
+      _padded(
+        Row(
+          children: <Widget>[
+            Expanded(child: _FakeField(onTap: _openSearch)),
+            const SizedBox(width: 10),
+            Semantics(
+              button: true,
+              label: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+              excludeSemantics: true,
+              onTap: _openFilters,
+              child: Material(
+                color: N11Colors.yellow,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  key: const Key('home-filter'),
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _openFilters,
+                  child: Tooltip(
+                    message: c.filtersActive ? 'Bộ lọc đang bật' : 'Bộ lọc',
+                    child: SizedBox(
+                      width: 46,
+                      height: 46,
+                      child: Icon(
+                        Icons.tune,
+                        size: 22,
+                        color: c.filtersActive
+                            ? N11Colors.accentOrange
+                            : N11Colors.black,
+                      ),
                     ),
-                    color: c.filtersActive
-                        ? N11Colors.accentOrange
-                        : N11Colors.black,
-                    onPressed: _openFilters,
-                    icon: const Icon(Icons.tune, size: 24),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
+        bottom: 10,
       ),
     );
-    // Category row sits on the light background below the yellow header (F01), scrolls sideways.
+    // Horizontal category strip with edge peek and clean 2-line wrapping.
     if (c.categories.isNotEmpty) {
-      // Figma F01: white card 358x92 (radius 18), padding 9 / 8; the title below starts 20px under it (12 list gap + 8).
       out.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Container(
+        _padded(
+          Container(
             key: const Key('home-v5-category-card'),
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
               color: N11Colors.white,
               borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: N11Colors.line.withValues(alpha: 0.7)),
             ),
             child: SingleChildScrollView(
               key: const Key('home-v5-category-row'),
               scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: <Widget>[
                   _chip(
@@ -669,71 +755,79 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                         ? null
                         : c.toggleCategory(c.categoryId!),
                     icon: kCategoryAllIcon,
+                    last: c.categories.isEmpty,
                   ),
-                  for (final CategoryChoice cat in c.categories)
+                  for (int i = 0; i < c.categories.length; i++)
                     _chip(
-                      'home-cat-${cat.id}',
-                      cat.name,
-                      c.categoryId == cat.id,
-                      () => c.toggleCategory(cat.id),
-                      icon: categoryIconFor(cat.id),
+                      'home-cat-${c.categories[i].id}',
+                      c.categories[i].name,
+                      c.categoryId == c.categories[i].id,
+                      () => c.toggleCategory(c.categories[i].id),
+                      icon: categoryIconFor(c.categories[i].id),
+                      last: i == c.categories.length - 1,
                     ),
                 ],
               ),
             ),
           ),
+          bottom: 14,
         ),
       );
     }
     if (c.stale) {
       out.add(
-        N11Banner(
-          key: const Key('home-stale'),
-          kind: BannerKind.warn,
-          title: 'Chưa cập nhật',
-          text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
-          trailing: N11Button(
-            key: const Key('home-reload'),
-            label: 'Thử lại',
-            compact: true,
-            onPressed: c.refresh,
+        _padded(
+          N11Banner(
+            key: const Key('home-stale'),
+            kind: BannerKind.warn,
+            title: 'Chưa cập nhật',
+            text: 'Đang hiển thị dữ liệu đã tải. Kiểm tra kết nối để xem bản mới nhất.',
+            trailing: N11Button(
+              key: const Key('home-reload'),
+              label: 'Thử lại',
+              compact: true,
+              onPressed: c.refresh,
+            ),
           ),
         ),
       );
     }
-    // Figma F01: ExtraBold 22/30 #191919; the shop grid starts 15px below it (12 list gap + 3).
-    out.add(
-      Padding(
-        padding: const EdgeInsets.only(bottom: 3),
-        child: Text(
-          'Quán gần bạn',
-          key: const Key('home-v5-section-title'),
-          style: N11Text.title.copyWith(
-            fontSize: N11V5.homeTitleSize,
-            height: 30 / 22,
-            fontWeight: FontWeight.w800,
-            color: N11Colors.black,
-          ),
+    Widget fallbackHeading() => _padded(
+      Text(
+        'Quán gần bạn',
+        key: const Key('home-v5-section-title'),
+        style: N11Text.title.copyWith(
+          fontSize: 19,
+          height: 26 / 19,
+          fontWeight: FontWeight.w800,
+          color: N11Colors.black,
         ),
       ),
+      bottom: 8,
     );
     if (c.outsideCoverage) {
+      out.add(fallbackHeading());
       out.add(
-        const N11InfoCard(
-          key: Key('home-outside-coverage'),
-          title: 'Khu vực này chưa được phục vụ',
-          text: 'Hiện chưa thể giao hàng tới vị trí này.',
+        _padded(
+          const N11InfoCard(
+            key: Key('home-outside-coverage'),
+            title: 'Khu vực này chưa được phục vụ',
+            text: 'Hiện chưa thể giao hàng tới vị trí này.',
+          ),
         ),
       );
     }
     if (c.areas.isEmpty) {
       if (!c.outsideCoverage) {
+        out.add(fallbackHeading());
         out.add(
-          const EmptyState(
-            icon: Icons.place_outlined,
-            title: 'Chưa có khu vực phục vụ',
-            text:
-                'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.',
+          _padded(
+            const EmptyState(
+              icon: Icons.place_outlined,
+              title: 'Chưa có khu vực phục vụ',
+              text:
+                  'Hiện chưa có khu vực nào đang phục vụ. Vui lòng quay lại sau.',
+            ),
           ),
         );
       }
@@ -741,13 +835,16 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     }
     if (c.areaId == null) {
       if (!c.outsideCoverage) {
+        out.add(fallbackHeading());
         out.add(
-          Text(
-            c.resolvingArea || _position.loading
-                ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…'
-                : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
-            key: const Key('home-location-needed'),
-            style: N11Text.lead,
+          _padded(
+            Text(
+              c.resolvingArea || _position.loading
+                  ? 'Đang tìm khu vực phục vụ theo vị trí hiện tại…'
+                  : 'Chưa xác định được khu vực theo GPS. Hãy thử định vị lại để xem các quán gần bạn.',
+              key: const Key('home-location-needed'),
+              style: N11Text.lead,
+            ),
           ),
         );
       }
@@ -755,18 +852,24 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
       // during ordinary startup, and never misrepresent a manually browsed area as GPS.
       if (_position.failure != null || c.areaResolutionFailed) {
         out.add(
-          const Text(
-            'Hoặc xem quán theo khu vực tham khảo:',
-            style: N11Text.body,
+          _padded(
+            const Text(
+              'Hoặc xem quán theo khu vực tham khảo:',
+              style: N11Text.body,
+            ),
+            bottom: 8,
           ),
         );
         for (final AreaChoice a in c.areas) {
           out.add(
-            N11ChoiceCard(
-              key: Key('fallback-area-${a.id}'),
-              title: a.name,
-              selected: false,
-              onTap: () => c.chooseArea(a.id),
+            _padded(
+              N11ChoiceCard(
+                key: Key('fallback-area-${a.id}'),
+                title: a.name,
+                selected: false,
+                onTap: () => c.chooseArea(a.id),
+              ),
+              bottom: 8,
             ),
           );
         }
@@ -776,68 +879,121 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     switch (c.listState) {
       case DiscoveryLoad.idle:
       case DiscoveryLoad.loading:
-        out.add(const M02Skeleton(rows: 4, height: 84));
+        out.add(fallbackHeading());
+        out.add(_padded(const M02Skeleton(rows: 4, height: 84)));
       case DiscoveryLoad.notConnected:
-        out.add(const M02NotConnected(what: 'Danh sách quán'));
+        out.add(fallbackHeading());
+        out.add(_padded(const M02NotConnected(what: 'Danh sách quán')));
       case DiscoveryLoad.failed:
-        out.add(_failed(c.refresh));
+        out.add(fallbackHeading());
+        out.add(_padded(_failed(c.refresh)));
       case DiscoveryLoad.ready:
         if (c.shops.isEmpty) {
           if (!c.filtersActive) {
             out.add(
-              Column(
-                key: const Key('home-no-shops'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const N11InfoCard(
-                    title: 'Chưa có quán đang phục vụ',
-                    text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn. Bạn có thể nhận tin khi có quán mới.',
-                  ),
-                  if (widget.onNotifyWhenShops != null) ...<Widget>[
-                    const SizedBox(height: N11Space.gap2),
-                    N11Button(
-                      key: const Key('home-notify-cta'),
-                      label: 'Nhận tin khi có quán',
-                      kind: ButtonKind.secondary,
-                      onPressed: widget.onNotifyWhenShops,
+              _padded(
+                Column(
+                  key: const Key('home-no-shops'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const N11InfoCard(
+                      title: 'Chưa có quán đang phục vụ',
+                      text: 'Khu vực này chưa có quán nào sẵn sàng nhận đơn. Bạn có thể nhận tin khi có quán mới.',
                     ),
+                    if (widget.onNotifyWhenShops != null) ...<Widget>[
+                      const SizedBox(height: N11Space.gap2),
+                      N11Button(
+                        key: const Key('home-notify-cta'),
+                        label: 'Nhận tin khi có quán',
+                        kind: ButtonKind.secondary,
+                        onPressed: widget.onNotifyWhenShops,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             );
           } else {
             out.add(
-              EmptyState(
-                key: const Key('home-empty'),
-                icon: Icons.restaurant,
-                title: 'Chưa có quán phù hợp',
-                text: 'Không có quán nào khớp bộ lọc hiện tại.',
+              _padded(
+                const EmptyState(
+                  key: Key('home-empty'),
+                  icon: Icons.restaurant,
+                  title: 'Chưa có quán phù hợp',
+                  text: 'Không có quán nào khớp bộ lọc hiện tại.',
+                ),
               ),
             );
           }
           if (c.filtersActive) {
             out.add(
-              N11Button(
-                key: const Key('home-clear'),
-                label: 'Xóa bộ lọc',
-                kind: ButtonKind.secondary,
-                onPressed: c.reset,
+              _padded(
+                N11Button(
+                  key: const Key('home-clear'),
+                  label: 'Xóa bộ lọc',
+                  kind: ButtonKind.secondary,
+                  onPressed: c.reset,
+                ),
               ),
             );
           }
         } else {
-          // Issue #411: one horizontal row of at most 5 cards, then "Xem tất cả" (the full list opens with every loaded shop).
-          // Owner 21/11: "Quán nổi bật" above; without GPS, "Quán gần bạn" uses the same featured order and shows no distance.
+          // Issue #411 / Home UI upgrade: "Quán nổi bật" horizontal carousel above "Quán gần bạn" horizontal carousel.
+          // TODO(api): `GET /v1/discovery/shops` does not yet return a dedicated featured flag/endpoint;
+          // `featuredOrder` currently derives featured ranking client-side (open shops, rating >= 4.0 & >= 5 reviews, then newest).
           if (kHomeFeaturedShopsEnabled) {
             out.add(
-              HomeShopSection(
-                sectionId: 'home-featured',
-                shops: featuredOrder(c.shops),
-                // The same road distances as the nearby row (one cache, no new request); no distance is invented.
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: HomeShopSection(
+                  sectionId: 'home-featured',
+                  title: 'Quán nổi bật',
+                  style: HomeShopCardStyle.featured,
+                  cardWidthFraction: 0.64,
+                  cardMinWidth: 200,
+                  cardMaxWidth: 260,
+                  shops: featuredOrder(c.shops),
+                  // The same road distances as the nearby row (one cache, no new request); no distance is invented.
+                  distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
+                  customerLocation: _position.fix,
+                  locating: _position.loading,
+                  stale: c.stale,
+                  onOpenShop: (ShopCardData s) => _openShop(
+                    context,
+                    widget.publicApi,
+                    s,
+                    ratings: widget.ratings,
+                    onReturn: c.freshness.reload,
+                  ),
+                  onSeeAll: () => _openShopsAll(featured: true),
+                ),
+              ),
+            );
+          }
+          out.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: HomeShopSection(
+                sectionId: 'home-nearby',
+                title: 'Quán gần bạn',
+                titleKey: const Key('home-v5-section-title'),
+                style: HomeShopCardStyle.nearby,
+                cardWidthFraction: 0.53,
+                cardMinWidth: 166,
+                cardMaxWidth: 220,
+                shops: _position.fix == null
+                    ? featuredOrder(c.shops)
+                    : nearbyByRoadDistance(
+                        c.shops,
+                        (ShopCardData s) => c.distances.of(s, _position.fix),
+                      ),
                 distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
                 customerLocation: _position.fix,
                 locating: _position.loading,
                 stale: c.stale,
+                note: _position.fix == null && !_position.loading
+                    ? 'Bật vị trí để xem quán gần bạn theo khoảng cách đường đi.'
+                    : null,
                 onOpenShop: (ShopCardData s) => _openShop(
                   context,
                   widget.publicApi,
@@ -845,32 +1001,8 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
                   ratings: widget.ratings,
                   onReturn: c.freshness.reload,
                 ),
-                onSeeAll: () => _openShopsAll(featured: true),
+                onSeeAll: () => _openShopsAll(featured: false),
               ),
-            );
-          }
-          out.add(
-            HomeShopSection(
-              sectionId: 'home-nearby',
-              shops: _position.fix == null ? featuredOrder(c.shops) : nearbyByRoadDistance(
-                c.shops,
-                (ShopCardData s) => c.distances.of(s, _position.fix),
-              ),
-              distanceOf: (ShopCardData s) => c.distances.of(s, _position.fix),
-              customerLocation: _position.fix,
-              locating: _position.loading,
-              stale: c.stale,
-              note: _position.fix == null && !_position.loading
-                  ? 'Bật vị trí để xem quán gần bạn theo khoảng cách đường đi.'
-                  : null,
-              onOpenShop: (ShopCardData s) => _openShop(
-                context,
-                widget.publicApi,
-                s,
-                ratings: widget.ratings,
-                onReturn: c.freshness.reload,
-              ),
-              onSeeAll: () => _openShopsAll(featured: false),
             ),
           );
         }
@@ -878,61 +1010,67 @@ class _DiscoveryHomeState extends State<DiscoveryHome>
     return out;
   }
 
-  Widget _chip(String key, String label, bool on, VoidCallback? onTap,
-          {required IconData icon}) =>
-      Padding(
-        padding: const EdgeInsets.only(right: N11V5.homeCategoryGap),
-        child: Semantics(
-          selected: on,
-          button: true,
-          label: label,
-          excludeSemantics: true,
-          child: Material(
-            key: Key(key),
-            color: on ? N11Colors.homeCategorySelected : N11Colors.white,
-            borderRadius: BorderRadius.circular(kRadiusControl),
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(kRadiusControl),
-              child: Container(
-                // Figma F01: tile 86x76, icon 25 at 8 from the top, label 11/17 at 42.
-                width: 86,
-                constraints: const BoxConstraints(minHeight: 76),
-                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: on ? N11Colors.accentOrange : N11Colors.line,
-                  ),
-                  borderRadius: BorderRadius.circular(kRadiusControl),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: <Widget>[
-                    Icon(
-                      icon,
-                      size: 25,
-                      color: on ? N11Colors.accentOrange : N11Colors.black,
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: N11Text.caption.copyWith(
-                        fontSize: 11,
-                        height: 17 / 11,
-                        fontWeight: FontWeight.w700,
-                        color: N11Colors.homeInk,
-                      ),
-                    ),
-                  ],
-                ),
+  Widget _chip(
+    String key,
+    String label,
+    bool on,
+    VoidCallback? onTap, {
+    required IconData icon,
+    bool last = false,
+  }) => Padding(
+    padding: EdgeInsets.only(right: last ? 0 : 8),
+    child: Semantics(
+      selected: on,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: Material(
+        key: Key(key),
+        color: on ? N11Colors.homeCategorySelected : N11Colors.white,
+        borderRadius: BorderRadius.circular(kRadiusControl),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(kRadiusControl),
+          child: Container(
+            width: 78,
+            constraints: const BoxConstraints(minHeight: 68),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: on ? N11Colors.accentOrange : N11Colors.line,
+                width: on ? 1.2 : 1,
               ),
+              borderRadius: BorderRadius.circular(kRadiusControl),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 22,
+                  color: on ? N11Colors.accentOrange : N11Colors.black,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  maxLines: 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: N11Text.caption.copyWith(
+                    fontSize: 11.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: N11Colors.homeInk,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// Short distance for the Home tile only: a road distance as "1,3 km" (never a number without a route), otherwise one short word.
@@ -950,9 +1088,11 @@ String homeDistanceText(RouteDistance distance, {bool locating = false}) {
   }
 }
 
-/// Issue #385: one shop tile of the Home grid, two per row. Home only; Search keeps [ShopCard].
-/// Vertical layout: full-width image, state, name (up to 2 lines), then the compact road distance.
-/// A tile without a real rating shows no badge and never invents a score.
+enum HomeShopCardStyle { featured, nearby }
+
+/// Compact Home shop card: 16:10 image with overlay badges (no mid-card status
+/// pill), closed dark overlay, and a strict 2-line body (name + real metadata).
+/// Search keeps [ShopCard].
 class HomeShopTile extends StatelessWidget {
   const HomeShopTile({
     super.key,
@@ -963,10 +1103,12 @@ class HomeShopTile extends StatelessWidget {
     this.distance = RouteDistance.noPosition,
     this.stale = false,
     this.keyScope = '',
+    this.style = HomeShopCardStyle.nearby,
   });
 
   /// Issue #411: prefix of the inner keys (rating, distance) so the featured row and the nearby row never share a key.
   final String keyScope;
+  final HomeShopCardStyle style;
   final LocationFix? customerLocation;
   final RouteDistance distance;
   final bool locating;
@@ -984,107 +1126,277 @@ class HomeShopTile extends StatelessWidget {
     final String score = rated ? shop.ratingAverage!.toStringAsFixed(1) : '';
     final String shortDistance = homeDistanceText(distance, locating: locating);
     final String fullDistance = 'Quãng đường đường bộ từ quán đến vị trí hiện tại: $shortDistance';
+    final bool featured = style == HomeShopCardStyle.featured;
     return Semantics(
       button: true,
       label:
           '${shop.name}, ${rated ? '$score sao' : 'chưa có đánh giá'}, $fullDistance, ${chip.label}',
       excludeSemantics: true,
       onTap: onTap,
-      child: Material(
-        color: N11Colors.white,
-        borderRadius: BorderRadius.circular(N11V5.cardRadius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: N11Colors.white,
           borderRadius: BorderRadius.circular(N11V5.cardRadius),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: N11Colors.line),
-              borderRadius: BorderRadius.circular(N11V5.cardRadius),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                AspectRatio(
-                  key: Key('shop-image-frame-${shop.shopId}'),
-                  aspectRatio: 4 / 3,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      ShopLogoImage(
-                        key: Key('shop-logo-${shop.shopId}'),
-                        url: shop.logoUrl,
-                        borderRadius: N11V5.cardRadius,
-                      ),
-                      if (rated)
-                        Positioned(
-                          top: N11Space.gap2,
-                          right: N11Space.gap2,
-                          child: Container(
-                            key: Key('${keyScope}shop-rating-${shop.shopId}'),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: N11Colors.white,
-                              borderRadius: BorderRadius.circular(kRadiusPill),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                const Icon(Icons.star_rounded, size: 13, color: N11Colors.yellow),
-                                const SizedBox(width: 2),
-                                Text(
-                                  score,
-                                  style: N11Text.caption.copyWith(fontSize: 11, height: 1.2, fontWeight: FontWeight.w800),
+          boxShadow: N11V5.cardShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(N11V5.cardRadius),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(N11V5.cardRadius),
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: N11Colors.line.withValues(alpha: 0.85),
+                ),
+                borderRadius: BorderRadius.circular(N11V5.cardRadius),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  AspectRatio(
+                    key: Key('${keyScope}shop-image-frame-${shop.shopId}'),
+                    aspectRatio: 16 / 10,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        ShopLogoImage(
+                          key: Key('${keyScope}shop-logo-${shop.shopId}'),
+                          url: shop.logoUrl,
+                          aspectRatio: null,
+                          clipRadius: BorderRadius.vertical(
+                            top: Radius.circular(N11V5.cardRadius - 1),
+                          ),
+                          backgroundColor: const Color(0xFFFFF4CC),
+                          iconColor: N11Colors.homeLocateInk.withValues(
+                            alpha: 0.45,
+                          ),
+                          iconSize: 32,
+                        ),
+                        if (!shop.open && !stale)
+                          Positioned.fill(
+                            child: ColoredBox(
+                              color: Colors.black.withValues(alpha: 0.44),
+                              child: Center(
+                                child: Container(
+                                  key: Key(
+                                    '${keyScope}shop-status-${shop.shopId}',
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.72),
+                                    borderRadius: BorderRadius.circular(
+                                      kRadiusPill,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Đã đóng cửa',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w700,
+                                      color: N11Colors.white,
+                                    ),
+                                  ),
                                 ),
-                              ],
+                              ),
+                            ),
+                          )
+                        else if (stale)
+                          Positioned(
+                            top: N11Space.gap2,
+                            left: N11Space.gap2,
+                            child: Container(
+                              key: Key('${keyScope}shop-status-${shop.shopId}'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: N11Colors.warningSoft,
+                                borderRadius: BorderRadius.circular(kRadiusPill),
+                              ),
+                              child: const Text(
+                                'Chưa cập nhật',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w700,
+                                  color: N11Colors.warning,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          Positioned(
+                            top: N11Space.gap2,
+                            left: N11Space.gap2,
+                            child: Container(
+                              key: Key('${keyScope}shop-status-${shop.shopId}'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: featured
+                                    ? const Color(0xFFFFEFE0)
+                                    : N11Colors.successSoft,
+                                borderRadius: BorderRadius.circular(kRadiusPill),
+                              ),
+                              child: featured
+                                  ? const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Icon(
+                                          Icons.local_fire_department_rounded,
+                                          size: 13,
+                                          color: N11Colors.accentOrange,
+                                        ),
+                                        SizedBox(width: 3),
+                                        Text(
+                                          'Yêu thích',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            height: 1.2,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF9A3412),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : const Text(
+                                      'Mở cửa',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        height: 1.2,
+                                        fontWeight: FontWeight.w700,
+                                        color: N11Colors.successInk,
+                                      ),
+                                    ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(N11Space.gap2, N11Space.gap2, N11Space.gap2, 0),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: N11Chip(chip.label, key: Key('shop-status-${shop.shopId}'), kind: chip.kind),
+                        if (rated && featured)
+                          Positioned(
+                            top: N11Space.gap2,
+                            right: N11Space.gap2,
+                            child: Container(
+                              key: Key('${keyScope}shop-rating-${shop.shopId}'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: N11Colors.white,
+                                borderRadius: BorderRadius.circular(kRadiusPill),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.star_rounded,
+                                    size: 13,
+                                    color: N11Colors.yellow,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    score,
+                                    style: N11Text.caption.copyWith(
+                                      fontSize: 11,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w800,
+                                      color: N11Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(N11Space.gap2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        shop.name,
-                        key: Key('shop-name-${shop.shopId}'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: <Widget>[
-                          const Icon(Icons.route_outlined, size: 13, color: N11Colors.ink2),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              shortDistance,
-                              key: Key('${keyScope}shop-distance-${shop.shopId}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: N11Text.caption.copyWith(fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          shop.name,
+                          key: Key('${keyScope}shop-name-${shop.shopId}'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14.5,
+                            height: 1.3,
+                            fontWeight: FontWeight.w800,
+                            color: N11Colors.black,
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: <Widget>[
+                            if (rated) ...<Widget>[
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 14,
+                                color: N11Colors.yellow,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                score,
+                                key: featured
+                                    ? null
+                                    : Key('${keyScope}shop-rating-${shop.shopId}'),
+                                style: N11Text.caption.copyWith(
+                                  fontSize: 12,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w700,
+                                  color: N11Colors.black,
+                                ),
+                              ),
+                              Text(
+                                ' • ',
+                                style: N11Text.caption.copyWith(
+                                  fontSize: 12,
+                                  height: 1.25,
+                                  color: N11Colors.ink2,
+                                ),
+                              ),
+                            ] else ...<Widget>[
+                              const Icon(
+                                Icons.route_outlined,
+                                size: 13,
+                                color: N11Colors.ink2,
+                              ),
+                              const SizedBox(width: 3),
+                            ],
+                            Expanded(
+                              child: Text(
+                                shortDistance,
+                                key: Key(
+                                  '${keyScope}shop-distance-${shop.shopId}',
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: N11Text.caption.copyWith(
+                                  fontSize: 12,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w600,
+                                  color: N11Colors.ink2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1093,7 +1405,7 @@ class HomeShopTile extends StatelessWidget {
   }
 }
 
-/// Issue #411: a Home carousel shows at most this many shop cards; the card after them is "Xem tất cả" (the full list of that section).
+/// Issue #411: a Home carousel shows at most this many shop cards.
 const int kHomeCarouselCardLimit = 5;
 
 /// Issue #411 (Owner 21/11): "Quán nổi bật" is shown above "Quán gần bạn".
@@ -1107,6 +1419,7 @@ const int kFeaturedMinReviews = 5;
 bool isFeaturedRated(ShopCardData s) => s.ratingAverage != null && s.ratingCount >= kFeaturedMinReviews && s.ratingAverage! >= kFeaturedMinAverage;
 
 /// Issue #411 (Owner 21/11): the featured order of the loaded shops, the same for "Quán nổi bật" and for "Quán gần bạn" without GPS.
+/// Open shops come before closed shops; within each group:
 /// 1) shops that meet the rule: higher average first, then more reviews, then name;
 /// 2) the rest, newest creation date first (a shop with no date last, in server order). Each shop appears once.
 /// Never invents a rating or a date: an unrated shop shows as unrated.
@@ -1116,28 +1429,35 @@ List<ShopCardData> featuredOrder(List<ShopCardData> shops) {
     for (final (int i, ShopCardData s) in shops.indexed)
       if (seen.add(s.shopId)) (i, s),
   ];
-  final List<(int, ShopCardData)> rated = unique.where((r) => isFeaturedRated(r.$2)).toList()
-    ..sort((a, b) {
-      final int byAverage = b.$2.ratingAverage!.compareTo(a.$2.ratingAverage!);
-      if (byAverage != 0) return byAverage;
-      final int byCount = b.$2.ratingCount.compareTo(a.$2.ratingCount);
-      if (byCount != 0) return byCount;
-      final int byName = a.$2.name.compareTo(b.$2.name);
-      return byName != 0 ? byName : a.$1.compareTo(b.$1);
-    });
-  final List<(int, ShopCardData)> rest = unique.where((r) => !isFeaturedRated(r.$2)).toList()
-    ..sort((a, b) {
-      final DateTime? da = a.$2.createdAt;
-      final DateTime? db = b.$2.createdAt;
-      if (da != null && db != null && da != db) return db.compareTo(da);
-      if ((da == null) != (db == null)) return da == null ? 1 : -1;
-      return a.$1.compareTo(b.$1);
-    });
-  return <ShopCardData>[for (final r in rated) r.$2, for (final r in rest) r.$2];
+  List<ShopCardData> rankGroup(Iterable<(int, ShopCardData)> group) {
+    final List<(int, ShopCardData)> rated = group.where((r) => isFeaturedRated(r.$2)).toList()
+      ..sort((a, b) {
+        final int byAverage = b.$2.ratingAverage!.compareTo(a.$2.ratingAverage!);
+        if (byAverage != 0) return byAverage;
+        final int byCount = b.$2.ratingCount.compareTo(a.$2.ratingCount);
+        if (byCount != 0) return byCount;
+        final int byName = a.$2.name.compareTo(b.$2.name);
+        return byName != 0 ? byName : a.$1.compareTo(b.$1);
+      });
+    final List<(int, ShopCardData)> rest = group.where((r) => !isFeaturedRated(r.$2)).toList()
+      ..sort((a, b) {
+        final DateTime? da = a.$2.createdAt;
+        final DateTime? db = b.$2.createdAt;
+        if (da != null && db != null && da != db) return db.compareTo(da);
+        if ((da == null) != (db == null)) return da == null ? 1 : -1;
+        return a.$1.compareTo(b.$1);
+      });
+    return <ShopCardData>[for (final r in rated) r.$2, for (final r in rest) r.$2];
+  }
+
+  return <ShopCardData>[
+    ...rankGroup(unique.where((r) => r.$2.open)),
+    ...rankGroup(unique.where((r) => !r.$2.open)),
+  ];
 }
 
-/// Issue #411 "Quán gần bạn": shops with a known ROAD distance come first, nearest first; the rest keep the server order. Ties and unknown
-/// distances keep the server order (stable), and no straight-line distance is used.
+/// Issue #411 "Quán gần bạn": open shops first, then known ROAD distance nearest first; unknown distances keep server order.
+/// No straight-line distance is used.
 List<ShopCardData> nearbyByRoadDistance(
   List<ShopCardData> shops,
   RouteDistance Function(ShopCardData shop) distanceOf,
@@ -1146,6 +1466,7 @@ List<ShopCardData> nearbyByRoadDistance(
   int? metersAt(int i) => distances[i].kind == RouteDistanceKind.route ? distances[i].meters : null;
   final List<int> order = List<int>.generate(shops.length, (int i) => i);
   order.sort((int a, int b) {
+    if (shops[a].open != shops[b].open) return shops[a].open ? -1 : 1;
     final int? ma = metersAt(a);
     final int? mb = metersAt(b);
     if (ma != null && mb != null && ma != mb) return ma.compareTo(mb);
@@ -1155,16 +1476,21 @@ List<ShopCardData> nearbyByRoadDistance(
   return <ShopCardData>[for (final int i in order) shops[i]];
 }
 
-/// Issue #411: one Home section of "Quán gần bạn" / "Quán nổi bật" — ONE horizontal row of at most [kHomeCarouselCardLimit] shop cards, then the
-/// "Xem tất cả" card. The next card peeks past the edge so the row reads as scrollable. It never grows downward; the full list opens with "Xem tất cả".
-/// The title belongs to the caller (Home), so the same widget serves every section.
+/// Issue #411: one Home section of "Quán nổi bật" / "Quán gần bạn" — section header (`title` + `Xem tất cả >`) and ONE horizontal row
+/// of at most [kHomeCarouselCardLimit] shop cards peeking past the right edge.
 class HomeShopSection extends StatelessWidget {
   const HomeShopSection({
     super.key,
     required this.sectionId,
+    required this.title,
     required this.shops,
     required this.onOpenShop,
     required this.onSeeAll,
+    this.titleKey,
+    this.style = HomeShopCardStyle.nearby,
+    this.cardWidthFraction = 0.53,
+    this.cardMinWidth = 166.0,
+    this.cardMaxWidth = 220.0,
     this.distanceOf,
     this.customerLocation,
     this.locating = false,
@@ -1172,8 +1498,14 @@ class HomeShopSection extends StatelessWidget {
     this.note,
   });
 
-  /// Keys only: `<sectionId>-carousel`, `<sectionId>-see-all`, `<sectionId>-note`.
+  /// Keys only: `<sectionId>-section`, `<sectionId>-carousel`, `<sectionId>-see-all`, `<sectionId>-note`.
   final String sectionId;
+  final String title;
+  final Key? titleKey;
+  final HomeShopCardStyle style;
+  final double cardWidthFraction;
+  final double cardMinWidth;
+  final double cardMaxWidth;
   final List<ShopCardData> shops;
   final void Function(ShopCardData shop) onOpenShop;
   final VoidCallback onSeeAll;
@@ -1194,42 +1526,97 @@ class HomeShopSection extends StatelessWidget {
       key: Key('$sectionId-section'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(N11Space.pad, 0, N11Space.pad, 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  title,
+                  key: titleKey,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: N11Text.title.copyWith(
+                    fontSize: 19,
+                    height: 26 / 19,
+                    fontWeight: FontWeight.w800,
+                    color: N11Colors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Semantics(
+                button: true,
+                label: 'Xem tất cả $title',
+                excludeSemantics: true,
+                onTap: onSeeAll,
+                child: InkWell(
+                  key: Key('$sectionId-see-all'),
+                  borderRadius: BorderRadius.circular(kRadiusPill),
+                  onTap: onSeeAll,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          'Xem tất cả',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
+                            color: N11Colors.accentOrange,
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: N11Colors.accentOrange,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         if (note != null)
           Padding(
-            padding: const EdgeInsets.only(bottom: N11Space.gap2),
+            padding: const EdgeInsets.fromLTRB(N11Space.pad, 0, N11Space.pad, N11Space.gap2),
             child: Text(note!, key: Key('$sectionId-note'), style: N11Text.caption),
           ),
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints box) {
-            // Two cards and a peek of the third on a 320-390 px phone; the width stays inside the page padding.
-            final double cardWidth = (box.maxWidth * 0.56).clamp(150.0, 190.0).toDouble();
+            final double cardWidth = (box.maxWidth * cardWidthFraction)
+                .clamp(cardMinWidth, cardMaxWidth)
+                .toDouble();
             return SingleChildScrollView(
               key: Key('$sectionId-carousel'),
               scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(N11Space.pad, 2, N11Space.pad, 6),
               child: IntrinsicHeight(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    for (final ShopCardData s in shown) ...<Widget>[
+                    for (int i = 0; i < shown.length; i++) ...<Widget>[
                       SizedBox(
                         width: cardWidth,
                         child: HomeShopTile(
-                          key: Key('${keyScope}shop-${s.shopId}'),
+                          key: Key('${keyScope}shop-${shown[i].shopId}'),
                           keyScope: keyScope,
-                          shop: s,
+                          style: style,
+                          shop: shown[i],
                           stale: stale,
                           customerLocation: customerLocation,
                           locating: locating,
-                          distance: distanceOf?.call(s) ?? RouteDistance.noPosition,
-                          onTap: () => onOpenShop(s),
+                          distance: distanceOf?.call(shown[i]) ?? RouteDistance.noPosition,
+                          onTap: () => onOpenShop(shown[i]),
                         ),
                       ),
-                      const SizedBox(width: N11Space.gap3),
+                      if (i < shown.length - 1) const SizedBox(width: N11Space.gap3),
                     ],
-                    SizedBox(
-                      width: 120,
-                      child: _SeeAllCard(key: Key('$sectionId-see-all'), onTap: onSeeAll),
-                    ),
                   ],
                 ),
               ),
@@ -1237,58 +1624,6 @@ class HomeShopSection extends StatelessWidget {
           },
         ),
       ],
-    );
-  }
-}
-
-/// The last card of a Home carousel: a plain white card with the yellow arrow, same border and radius as a shop tile.
-class _SeeAllCard extends StatelessWidget {
-  const _SeeAllCard({super.key, required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Xem tất cả',
-      excludeSemantics: true,
-      onTap: onTap,
-      child: Material(
-        color: N11Colors.white,
-        borderRadius: BorderRadius.circular(N11V5.cardRadius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(N11V5.cardRadius),
-          child: Container(
-            padding: const EdgeInsets.all(N11Space.gap2),
-            decoration: BoxDecoration(
-              border: Border.all(color: N11Colors.line),
-              borderRadius: BorderRadius.circular(N11V5.cardRadius),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(color: N11Colors.yellow, shape: BoxShape.circle),
-                  child: const Icon(Icons.arrow_forward, size: 22, color: N11Colors.black),
-                ),
-                const SizedBox(height: N11Space.gap2),
-                Text(
-                  'Xem tất cả',
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: N11Text.caption.copyWith(fontSize: 13, height: 1.25, fontWeight: FontWeight.w800, color: N11Colors.black),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1386,6 +1721,9 @@ class _NearbyShopsAllScreenState extends State<NearbyShopsAllScreen> {
                   final int i = index * 2;
                   HomeShopTile tile(ShopCardData s) => HomeShopTile(
                         key: Key('shop-${s.shopId}'),
+                        style: widget.featured
+                            ? HomeShopCardStyle.featured
+                            : HomeShopCardStyle.nearby,
                         shop: s,
                         stale: c.stale,
                         customerLocation: widget.position.fix,
@@ -2012,7 +2350,6 @@ class _PositionButton extends StatelessWidget {
     this.failed = false,
     this.outsideCoverage = false,
     this.inlineWithArea = false,
-    this.areaName,
   });
   final DiscoveryPosition position;
   final VoidCallback? retry;
@@ -2020,7 +2357,6 @@ class _PositionButton extends StatelessWidget {
   final bool failed;
   final bool outsideCoverage;
   final bool inlineWithArea;
-  final String? areaName;
   @override
   Widget build(BuildContext context) {
     if (position.fix != null && !resolving && !failed && !outsideCoverage) {
@@ -2028,9 +2364,7 @@ class _PositionButton extends StatelessWidget {
     }
     final bool busy = position.loading || resolving;
     final String label = inlineWithArea
-        ? (areaName != null
-              ? areaName!
-              : busy
+        ? (busy
               ? 'Đang tìm vị trí…'
               : position.failure == LocationFailure.denied
               ? 'Cấp quyền vị trí'
@@ -2063,42 +2397,44 @@ class _PositionButton extends StatelessWidget {
           child: Container(
             height: 30,
             constraints: const BoxConstraints(minWidth: 78),
-            alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: inlineWithArea
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const Icon(
-                        Icons.my_location,
-                        size: 15,
-                        color: N11Colors.homeLocateInk,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: N11Colors.homeLocateInk,
+            child: Center(
+              widthFactor: 1,
+              child: inlineWithArea
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.my_location,
+                          size: 15,
+                          color: N11Colors.homeLocateInk,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: N11Colors.homeLocateInk,
+                            ),
                           ),
                         ),
+                      ],
+                    )
+                  : Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: N11Colors.homeLocateInk,
                       ),
-                    ],
-                  )
-                : Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: N11Colors.homeLocateInk,
                     ),
-                  ),
+            ),
           ),
         ),
       ),

@@ -495,29 +495,53 @@ List<String> linesOf(List<HourRange> ranges) => dayLines(ranges);
   }
 }
 
-/// The same square, uncropped frame for public logos and saved owner previews.
+/// The same frame for public logos and saved owner previews. Defaults keep the
+/// square logo layout unchanged; Home cards override aspect ratio, radius, and
+/// soft placeholder tint.
 class ShopLogoImage extends StatelessWidget {
-  const ShopLogoImage({super.key, this.url, this.bytes, this.borderRadius = 12});
+  const ShopLogoImage({
+    super.key,
+    this.url,
+    this.bytes,
+    this.borderRadius = 12,
+    this.clipRadius,
+    this.aspectRatio = 1,
+    this.backgroundColor,
+    this.iconColor,
+    this.iconSize = 36,
+  });
+
   final String? url;
   final Uint8List? bytes;
   final double borderRadius;
+  final BorderRadiusGeometry? clipRadius;
+  final double? aspectRatio;
+  final Color? backgroundColor;
+  final Color? iconColor;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
-    const Widget fallback = Center(child: Icon(Icons.storefront_outlined, size: 36, color: N11Colors.black));
-    return AspectRatio(
-      aspectRatio: 1,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: ColoredBox(
-          color: N11Colors.yellowSoft,
-          child: bytes != null
-              ? Image.memory(bytes!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback)
-              : url == null || url!.isEmpty
-                  ? fallback
-                  : Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback),
-        ),
+    final Widget fallback = Center(
+      child: Icon(
+        Icons.storefront_outlined,
+        size: iconSize,
+        color: iconColor ?? N11Colors.black,
       ),
     );
+    final Widget clipped = ClipRRect(
+      borderRadius: clipRadius ?? BorderRadius.circular(borderRadius),
+      child: ColoredBox(
+        color: backgroundColor ?? N11Colors.yellowSoft,
+        child: bytes != null
+            ? Image.memory(bytes!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback)
+            : url == null || url!.isEmpty
+                ? fallback
+                : Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback),
+      ),
+    );
+    return aspectRatio == null
+        ? clipped
+        : AspectRatio(aspectRatio: aspectRatio!, child: clipped);
   }
 }
