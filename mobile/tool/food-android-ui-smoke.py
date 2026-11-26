@@ -73,7 +73,7 @@ try:
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1')
     # The brand logo (which exposed the text 11Food) is no longer on the Home (#282); the search field and the shop heading prove the Home.
     wait('Tìm quán hoặc món')
-    wait('Quán gần bạn')
+    wait('Gần bạn')
     capture('01-food-home-v5-390x844')
     logs = adb('logcat', '-d', '-s', 'flutter:E', 'AndroidRuntime:E')
     (OUTPUT / 'runtime.log').write_text(logs)
