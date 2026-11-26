@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:n11_shared/n11_shared.dart';
 
 import 'food_m14.dart';
@@ -7,6 +8,15 @@ import 'image_picker_adapter.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    statusBarBrightness: Brightness.light,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarColor: N11Colors.white,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
   final AppConfig config = AppConfig.fromEnvironment();
   final SessionController session = createSessionController(ClientApp.food, config);
   final AppFlows flows = createFlows(ClientApp.food, session, config, picker: DeviceImagePicker(), pushPort: MethodChannelPushPort(), orderMapBuilder: foodMapBuilder(), orderPinPicker: foodPinPicker());

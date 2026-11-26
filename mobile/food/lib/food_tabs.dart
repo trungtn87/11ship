@@ -55,7 +55,7 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
             }
           }
           await openInTab(
-              'shop',
+              'account',
               FinanceRequestsScreen(
                   session: flows.session,
                   shopPayments: true,
@@ -92,7 +92,7 @@ NotificationRouter foodNotificationRouter(AppFlows flows) =>
         case TargetType.deliveryList:
           actions.goTab('orders');
         case TargetType.profile:
-          actions.goTab('shop');
+          await openInTab('account', _shopManageScreen(flows.session, flows));
         case TargetType.complaint:
           final M11Source? feedback = flows.feedback;
           if (feedback != null && target.id != null) {
@@ -196,25 +196,11 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
         body: (BuildContext context, ShellActions actions) =>
             _callShip(session, flows)),
     TabSpec(
-      id: 'shop',
-      label: 'Quán',
-      icon: Icons.storefront_outlined,
-      title: 'Quán',
-      // Logged out: tapping Quán goes straight to the login screen.
-      onSelectIntercept: (BuildContext context) {
-        if (session.status == SessionStatus.signedIn || !session.ready) return false;
-        Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: foodBrand, reset: flows?.reset, shop: flows?.shop)));
-        return true;
-      },
-      body: (BuildContext context, ShellActions actions) => _shop(session, flows,
-          // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
-          openOrder: (String orderId) => Navigator.of(context).push(n11Route(_orderPage(flows!, orderId)))),
-    ),
-    TabSpec(
         id: 'account',
         label: 'Tài khoản',
         icon: Icons.person_outline,
         title: 'Tài khoản',
+        fullBleed: true,
         body: (BuildContext context, ShellActions actions) =>
             _account(session, actions, flows)),
   ];
@@ -307,6 +293,47 @@ Widget _callShip(SessionController session, AppFlows? flows) {
             ]));
 }
 
+Widget _shopManageScreen(SessionController session, AppFlows? flows) {
+  return Builder(
+    builder: (BuildContext context) {
+      final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+      return N11PageBackdrop(
+        child: Scaffold(
+          backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: <Widget>[
+                N11AppBar(
+                  title: 'Quản lý quán',
+                  onBack: () => Navigator.of(context).maybePop(),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      N11Space.pad,
+                      N11Space.gap4,
+                      N11Space.pad,
+                      N11Space.gap8,
+                    ),
+                    child: _shop(
+                      session,
+                      flows,
+                      // #391: a revenue row opens the existing order detail (the same page the orders tab uses).
+                      openOrder: (String orderId) => Navigator.of(context)
+                          .push(n11Route(_orderPage(flows!, orderId))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 Widget _shop(SessionController session, AppFlows? flows,
     {Future<void> Function(String orderId)? openOrder}) {
   if (session.status != SessionStatus.signedIn) {
@@ -395,6 +422,12 @@ Widget _account(
             actions: actions,
             reset: flows?.reset,
             shop: shop,
+            onOpenShopManage: () => Navigator.of(context)
+                .push(n11Route(_shopManageScreen(session, flows))),
+            onOpenShopRegister: shop == null
+                ? null
+                : () => Navigator.of(context).push(
+                    n11Route(ShopStartScreen(controller: shop, m02: flows?.m02))),
             settingsEntries: <Widget>[
               if (flows?.feedback != null)
                 ...m11AccountEntries(context,
@@ -430,29 +463,6 @@ Widget _account(
                             session: session, shopPayments: true)))),
               const N11ListItem(
                   icon: Icons.help_outline, title: 'Trợ giúp', soon: true),
-            ],
-            // F04 guest (Owner 14/11): a small text link LAST on the screen (after "Kiểm tra cập nhật"). It opens the existing sign-in; after
-            // signing in it opens the existing shop-management screen (it reads the server first). No guest route, API or new rule.
-            footerEntries: <Widget>[
-              if (session.status != SessionStatus.signedIn)
-                N11ListItem(
-                  key: const Key('guest-shop-link'),
-                  icon: Icons.storefront_outlined,
-                  title: 'Quản lý cửa hàng',
-                  onTap: () async {
-                    final NavigatorState navigator = Navigator.of(context);
-                    await navigator.push(n11Route(LoginScreen(
-                        session: session,
-                        brand: foodBrand,
-                        reset: flows?.reset,
-                        shop: flows?.shop)));
-                    if (session.status == SessionStatus.signedIn &&
-                        flows?.shop != null) {
-                      await navigator.push(n11Route(
-                          ShopStartScreen(controller: flows!.shop!)));
-                    }
-                  },
-                ),
             ],
           ));
 }

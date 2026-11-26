@@ -880,12 +880,16 @@ class N11List extends StatelessWidget {
       }
       rows.add(children[i]);
     }
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
     final Widget card = Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: N11Colors.white,
-        border: Border.all(color: N11Colors.line),
+        border: Border.all(
+          color: hasGradient ? N11Colors.line.withValues(alpha: 0.7) : N11Colors.line,
+        ),
         borderRadius: BorderRadius.circular(kRadiusCard),
+        boxShadow: hasGradient ? N11V5.warmSoftShadow : null,
       ),
       child: Material(
         color: Colors.transparent,
@@ -1223,6 +1227,9 @@ class N11BottomNav extends StatelessWidget {
       decoration: const BoxDecoration(
         color: N11Colors.white,
         border: Border(top: BorderSide(color: N11Colors.line)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(color: Color(0x0D191919), blurRadius: 10, offset: Offset(0, -2)),
+        ],
       ),
       child: SafeArea(
         top: false,

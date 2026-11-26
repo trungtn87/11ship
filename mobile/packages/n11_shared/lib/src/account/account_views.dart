@@ -169,7 +169,26 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[], this.showProfileEntry = true});
+  const AccountTab({
+    super.key,
+    required this.session,
+    required this.brand,
+    required this.actions,
+    required this.entries,
+    this.registerLabel = 'Tạo tài khoản',
+    this.signedInEntries = const <Widget>[],
+    this.signedInTitle = 'Cửa hàng',
+    this.reset,
+    this.shop,
+    this.onOpenShopManage,
+    this.onOpenShopRegister,
+    this.showAccountStatus = true,
+    this.showDiagnostics = true,
+    this.settingsEntries = const <Widget>[],
+    this.registerKind = ButtonKind.primary,
+    this.footerEntries = const <Widget>[],
+    this.showProfileEntry = true,
+  });
 
   /// The built-in "Thông tin cá nhân" row. The shipper app passes false and offers its own "Thông tin & Hồ sơ" entry (#396).
   final bool showProfileEntry;
@@ -183,6 +202,8 @@ class AccountTab extends StatelessWidget {
   final SessionController session;
   final ResetController? reset;
   final ShopController? shop;
+  final VoidCallback? onOpenShopManage;
+  final VoidCallback? onOpenShopRegister;
 
   /// Rows shown only while signed in (the shop / driver entry), before [entries].
   final List<Widget> signedInEntries;
@@ -197,20 +218,53 @@ class AccountTab extends StatelessWidget {
   final bool showDiagnostics;
   final List<Widget> settingsEntries;
 
+  Widget _foodScrollable(Widget child) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!constraints.hasBoundedHeight) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(
+              N11Space.pad,
+              N11Space.gap4,
+              N11Space.pad,
+              N11Space.gap8,
+            ),
+            child: child,
+          );
+        }
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            N11Space.pad,
+            N11Space.gap4,
+            N11Space.pad,
+            N11Space.gap8 + 16,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: session,
+      listenable: Listenable.merge(<Listenable>[
+        session,
+        if (shop != null) shop!,
+      ]),
       builder: (BuildContext context, Widget? child) {
         switch (session.status) {
           case SessionStatus.starting:
-            return vstack(<Widget>[
+            final Widget startingBody = vstack(<Widget>[
               _hero(),
               const N11Banner(kind: BannerKind.info, title: 'Đang kiểm tra phiên đăng nhập…', text: 'Vui lòng chờ trong giây lát.'),
-              _tools(context, signedIn: false),
+              if (brand.id != AppId.food) _tools(context, signedIn: false),
             ]);
+            return brand.id == AppId.food
+                ? _foodScrollable(startingBody)
+                : startingBody;
           case SessionStatus.unverified:
-            return vstack(<Widget>[
+            final Widget unverifiedBody = vstack(<Widget>[
               _hero(),
               N11Banner(
                 kind: BannerKind.warn,
@@ -218,8 +272,11 @@ class AccountTab extends StatelessWidget {
                 text: session.lastFailure == null ? 'Máy chủ chưa trả lời.' : failureMessage(session.lastFailure!),
                 trailing: N11Button(key: const Key('revalidate'), label: 'Thử lại', kind: ButtonKind.secondary, compact: true, onPressed: session.revalidate),
               ),
-              _tools(context, signedIn: false),
+              if (brand.id != AppId.food) _tools(context, signedIn: false),
             ]);
+            return brand.id == AppId.food
+                ? _foodScrollable(unverifiedBody)
+                : unverifiedBody;
           case SessionStatus.guest:
             return _guest(context);
           case SessionStatus.signedIn:
@@ -236,7 +293,7 @@ class AccountTab extends StatelessWidget {
       child: Column(
         children: <Widget>[
           BrandLogo(brand: brand, height: 96),
-          const SizedBox(height: N11Space.gap3),
+          const SizedBox(height: 20),
           Text(brand.slogan, textAlign: TextAlign.center, style: N11Text.display),
           const SizedBox(height: 6),
           Text(brand.id == AppId.food ? 'Đặt món từ quán gần bạn.' : 'Ứng dụng dành cho shipper 11Ship.', textAlign: TextAlign.center, style: N11Text.lead),
@@ -246,6 +303,41 @@ class AccountTab extends StatelessWidget {
   }
 
   Widget _tools(BuildContext context, {required bool signedIn}) {
+    if (brand.id == AppId.food && signedIn) {
+      final AppUpdateController? updates = AppUpdateScope.maybeOf(context);
+      final List<Widget> supportRows = <Widget>[
+        ...entries,
+        if (updates == null || updates.enabled) _updateRow(context),
+        ...footerEntries,
+      ];
+      return vstack(<Widget>[
+        N11List(
+          title: 'Cài đặt tài khoản',
+          children: <Widget>[
+            if (showProfileEntry)
+              N11ListItem(
+                key: const Key('open-profile'),
+                icon: Icons.badge_outlined,
+                title: 'Thông tin cá nhân',
+                sub: 'Xem và sửa họ tên',
+                onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
+              ),
+            ...settingsEntries,
+            N11ListItem(
+              key: const Key('change-password-entry'),
+              icon: Icons.lock_outline,
+              title: 'Đổi mật khẩu',
+              onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session))),
+            ),
+          ],
+        ),
+        if (supportRows.isNotEmpty)
+          N11List(
+            title: 'Hỗ trợ & Ứng dụng',
+            children: supportRows,
+          ),
+      ]);
+    }
     return N11List(title: signedIn ? 'Cài đặt' : null, children: <Widget>[
       if (signedIn && showProfileEntry)
         N11ListItem(
@@ -256,10 +348,6 @@ class AccountTab extends StatelessWidget {
           onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
         ),
       if (signedIn) ...settingsEntries,
-      if (signedIn && brand.id == AppId.food)
-        N11ListItem(key: const Key('change-password-entry'), icon: Icons.lock_outline, title: 'Đổi mật khẩu', onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session)))),
-      if (signedIn && brand.id == AppId.food && shop != null && session.identity?.availableRoles.contains('SHOP_OWNER') != true)
-        N11ListItem(key: const Key('shop-entry'), icon: Icons.storefront_outlined, title: 'Đăng ký mở quán', sub: 'Gửi hồ sơ để được xét duyệt', onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop!)))),
       ...entries,
       _updateRow(context),
       if (showDiagnostics && brand.id != AppId.food) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
@@ -267,10 +355,117 @@ class AccountTab extends StatelessWidget {
     ]);
   }
 
+  Widget _foodShopManageCard(BuildContext context, {required bool isOwner}) {
+    final String? profileStatus = shop?.profile?.status;
+    final String sub = isOwner
+        ? 'Thông tin quán, thực đơn và đơn hàng'
+        : profileStatus == 'INCOMPLETE'
+            ? 'Hồ sơ quán chưa hoàn tất — tiếp tục đăng ký'
+            : profileStatus == 'DISABLED'
+                ? 'Hồ sơ quán đang tạm khóa'
+                : 'Đăng ký tạo quán mới trên 11Food';
+    final VoidCallback? onTap = isOwner
+        ? onOpenShopManage
+        : (onOpenShopRegister ??
+            (shop == null
+                ? null
+                : () => Navigator.of(context).push(
+                    n11Route(ShopStartScreen(controller: shop!)))));
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: 'Quản lý quán, $sub',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: N11Colors.yellowFaint,
+          borderRadius: BorderRadius.circular(kRadiusCard),
+          border: Border.all(color: N11Colors.homeLocateBorder, width: 1.2),
+          boxShadow: N11V5.warmSoftShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(kRadiusCard),
+          child: InkWell(
+            key: const Key('account-shop-manage-card'),
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(kRadiusCard),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE7B3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.storefront_rounded,
+                      size: 23,
+                      color: N11Colors.accentOrange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Quản lý quán',
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.3,
+                            fontWeight: FontWeight.w800,
+                            color: N11Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          sub,
+                          key: const Key('account-shop-manage-sub'),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w500,
+                            color: N11Colors.ink2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 24,
+                    color: N11Colors.accentOrange,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// "Kiểm tra cập nhật": the manual retry of the M13 check (the same one the app makes at start), shown only when this build checks at all.
   Widget _updateRow(BuildContext context) {
     final AppUpdateController? updates = AppUpdateScope.maybeOf(context);
-    if (updates == null || !updates.enabled) {
+    if (updates == null) {
+      if (brand.id != AppId.food) {
+        return const SizedBox.shrink();
+      }
+      return const N11ListItem(
+        key: Key('m13-update-check'),
+        icon: Icons.system_update_outlined,
+        title: 'Kiểm tra cập nhật',
+        sub: 'Đã là phiên bản mới nhất',
+      );
+    }
+    if (!updates.enabled) {
       return const SizedBox.shrink();
     }
     return ListenableBuilder(
@@ -287,7 +482,7 @@ class AccountTab extends StatelessWidget {
 
   Widget _guest(BuildContext context) {
     final bool ended = session.sessionEndedNotice;
-    return vstack(<Widget>[
+    final List<Widget> coreChildren = <Widget>[
       if (ended)
         // Session ended: the "Phiên hết hạn / thiết bị khác" state of the design, then the same sign-in actions.
         const N11StateBlock(
@@ -323,6 +518,42 @@ class AccountTab extends StatelessWidget {
         N11Button(key: const Key('open-register'), label: registerLabel, kind: registerKind, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand, shop: shop))) : null),
         N11Button(key: const Key('open-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null),
       ],
+    ];
+    if (brand.id == AppId.food) {
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (!constraints.hasBoundedHeight) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(
+                N11Space.pad,
+                16,
+                N11Space.pad,
+                32,
+              ),
+              child: vstack(coreChildren),
+            );
+          }
+          final double minH =
+              (constraints.maxHeight - 48).clamp(0.0, double.infinity);
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              N11Space.pad,
+              16,
+              N11Space.pad,
+              32,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minH),
+              child: Center(
+                child: vstack(coreChildren),
+              ),
+            ),
+          );
+        },
+      );
+    }
+    return vstack(<Widget>[
+      ...coreChildren,
       const SizedBox(height: N11Space.gap1),
       _tools(context, signedIn: false),
     ]);
@@ -334,7 +565,7 @@ class AccountTab extends StatelessWidget {
     final List<String> roles = identity?.availableRoles ?? const <String>[];
     final bool locked = identity?.lockedWalletOnly ?? false;
     final bool deletionLocked = locked && (identity?.deletionLocked ?? false);
-    return vstack(<Widget>[
+    final Widget body = vstack(<Widget>[
       N11AvatarCard(
         name: name,
         phone: identity?.maskedPhone ?? '',
@@ -346,6 +577,13 @@ class AccountTab extends StatelessWidget {
           if (roles.contains('DRIVER')) const N11Chip('Shipper', kind: ChipKind.dark),
         ],
       ),
+      if (brand.id == AppId.food &&
+          !locked &&
+          (shop != null || onOpenShopManage != null || onOpenShopRegister != null))
+        _foodShopManageCard(
+          context,
+          isOwner: roles.contains('SHOP_OWNER'),
+        ),
       // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (an account registered while
       // SYSTEM had the registration OTP off has an unverified one).
       if (locked)
@@ -381,6 +619,7 @@ class AccountTab extends StatelessWidget {
           ),
         ]),
     ]);
+    return brand.id == AppId.food ? _foodScrollable(body) : body;
   }
 }
 

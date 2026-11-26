@@ -26,8 +26,9 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('tab-account')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('shop-entry')));
-    await tester.tap(find.byKey(const Key('shop-entry')));
+    expect(find.byKey(const Key('shop-entry')), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('account-shop-manage-card')));
+    await tester.tap(find.byKey(const Key('account-shop-manage-card')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('shop-register')));
     await tester.pumpAndSettle();
