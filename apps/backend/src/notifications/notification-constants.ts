@@ -28,6 +28,7 @@ export const KINDS = [
   'ASSIGNMENT_RELEASED_BY_ADMIN',
   'TOPUP_CONFIRMED',
   'TOPUP_REJECTED',
+  'TOPUP_HELD',
   'WITHDRAWAL_REQUESTED',
   'WITHDRAWAL_PROCESSING',
   'WITHDRAWAL_RECONCILING',
@@ -65,6 +66,7 @@ export const OUTBOX_ORDER_CHANGED_TYPE = 'order.changed.v1';
 /** #191: a person wrote in an order chat room. */
 export const OUTBOX_ORDER_CHAT_MESSAGE_TYPE = 'order.chat_message.v1';
 export const OUTBOX_TOPUP_CHANGED_TYPE = 'wallet.topup_request.changed.v1';
+export const OUTBOX_TOPUP_HELD_TYPE = 'wallet.topup_request.held.v1';
 export const OUTBOX_DRIVER_STATE_CHANGED_TYPE = 'driver.state_changed.v1';
 /** M11: a complaint moved (the Administration received it, asked, concluded, closed, re-opened). */
 export const OUTBOX_COMPLAINT_CHANGED_TYPE = 'complaint.changed.v1';
@@ -135,6 +137,7 @@ export const CATEGORY_OF_KIND: Readonly<Record<NotificationKind, NotificationCat
   ASSIGNMENT_RELEASED_BY_ADMIN: 'ORDERS',
   TOPUP_CONFIRMED: 'WALLET_PROFILE',
   TOPUP_REJECTED: 'WALLET_PROFILE',
+  TOPUP_HELD: 'WALLET_PROFILE',
   WITHDRAWAL_REQUESTED: 'WALLET_PROFILE',
   WITHDRAWAL_PROCESSING: 'WALLET_PROFILE',
   WITHDRAWAL_RECONCILING: 'WALLET_PROFILE',

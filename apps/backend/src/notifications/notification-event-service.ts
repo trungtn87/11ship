@@ -9,7 +9,7 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
-import { DraftBase, composeDeliveryChange, composeOrderChange, composeTopupCopy, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, WITHDRAWAL_COPY } from './notification-composer';
+import { DraftBase, composeDeliveryChange, composeOrderChange, composeTopupCopy, TOPUP_HELD_COPY, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, WITHDRAWAL_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
@@ -21,6 +21,7 @@ import {
   OUTBOX_ORDER_CHANGED_TYPE,
   OUTBOX_ORDER_PREFIX,
   OUTBOX_TOPUP_CHANGED_TYPE,
+  OUTBOX_TOPUP_HELD_TYPE,
   OUTBOX_WITHDRAWAL_CHANGED_TYPE,
   OUTBOX_WITHDRAWAL_PREFIX,
   PICKUP_REMINDER_STALE_MS,
@@ -109,6 +110,8 @@ export class NotificationEventService {
         return this.#order(event);
       case OUTBOX_TOPUP_CHANGED_TYPE:
         return this.#topup(event);
+      case OUTBOX_TOPUP_HELD_TYPE:
+        return this.#topupHeld(event);
       case OUTBOX_WITHDRAWAL_CHANGED_TYPE:
         return this.#withdrawal(event);
       case OUTBOX_DRIVER_STATE_CHANGED_TYPE:
@@ -447,6 +450,26 @@ export class NotificationEventService {
       const amount = state === 'CONFIRMED' ? (target.actualAmountVnd ?? payloadAmount) : null;
       const copy = composeTopupCopy(state, amount);
       await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, target.userId, event);
+    });
+  }
+
+  /** A transfer for this request is held for the Administration: one inbox entry per held bank event (the dedupe key carries the inbox row). */
+  async #topupHeld(event: OutboxPublishEvent): Promise<void> {
+    const { request_id: requestId, inbox_id: inboxId } = event.payload;
+    await this.transactions.withTransaction(async (context) => {
+      const config = await this.repo.readConfig(context);
+      if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, 'OK'))) {
+        return;
+      }
+      if (!isCanonicalUuid(requestId) || !isCanonicalUuid(inboxId)) {
+        return;
+      }
+      const target = await this.recipients.topupFacts(context, requestId);
+      if (target === undefined) {
+        return;
+      }
+      const copy = TOPUP_HELD_COPY;
+      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: 1, dedupeKey: `topup-held:${requestId}:${inboxId}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, target.userId, event);
     });
   }
 

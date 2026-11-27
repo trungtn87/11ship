@@ -92,6 +92,19 @@ describe('SePay webhook service: the automatic credit decision', () => {
     expect(store.creditCalls).toHaveLength(0);
   });
 
+  it('tells the Shipper when a transfer for their request is held (wrong amount), and says nothing when no request is named', async () => {
+    const store = freshStore();
+    const { service } = buildService(store);
+    await receive(service, body({ transferAmount: 150001 }));
+    expect(store.outboxEvents.map((e) => e.eventType)).toEqual(['wallet.topup_request.held.v1']);
+    expect(store.outboxEvents[0]?.payload).toMatchObject({ reason: 'AMOUNT_MISMATCH' });
+
+    const other = freshStore();
+    const built = buildService(other);
+    await receive(built.service, body({ code: 'NAPFFFFFFFFFF', content: 'NAPFFFFFFFFFF' }));
+    expect(other.outboxEvents).toHaveLength(0);
+  });
+
   it.each([
     ['a wrong amount', { transferAmount: 150001 }, 'AMOUNT_MISMATCH'],
     ['a missing code', { code: null, content: 'chuyen tien' }, 'NO_CODE'],
