@@ -939,7 +939,9 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
               ),
             ),
             if (r.status == TopupStatus.confirmed) _NewBalance(source: source, request: r),
-            if (r.status == TopupStatus.pending) _PendingTransfer(source: source, request: r),
+            // Once the transfer is reported the QR and the account details are not needed any more (and invite a second transfer): only the way to reach the Administration is kept.
+            if (r.status == TopupStatus.pending && !r.reported) _PendingTransfer(source: source, request: r),
+            if (r.reported) Text('Nếu sau 15 phút chưa thấy tiền, bấm "Trao đổi với quản trị" và gửi mã yêu cầu ${r.shownCode}.', key: const Key('topup-reported-help'), style: const TextStyle(fontSize: 14, height: 1.4)),
             // "Trao đổi với quản trị" is not offered while the transfer is only waited for; it appears once the transfer is reported (and for decided requests, as before).
             if (source is HttpWalletSource && (r.status != TopupStatus.pending || r.reported))
               N11Button(key: const Key('topup-exchange'), label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),

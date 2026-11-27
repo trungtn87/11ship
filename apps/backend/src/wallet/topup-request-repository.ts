@@ -161,7 +161,7 @@ export class TopupRequestRepository {
   }
 
   /**
-   * PENDING -> CANCELLED at the expected version, in ONE conditional statement, so a racing resolution (an administrator in B2.2) decides
+   * PENDING (not yet reported) -> CANCELLED at the expected version, in ONE conditional statement, so a racing resolution (an administrator in B2.2) decides
    * by the database: the loser updates zero rows and gets undefined. resolved_by is the cancelling user; the time is the database clock.
    */
   async cancelPending(context: TransactionContext, requestId: string, expectedVersion: number, actorUserId: string): Promise<TopupRequestRow | undefined> {
@@ -171,7 +171,7 @@ export class TopupRequestRepository {
               UPDATE app.wallet_topup_requests r
                  SET state = 'CANCELLED', resolved_by_user_id = $3::uuid, resolved_at = clock.t, updated_at = clock.t, version = r.version + 1
                 FROM clock
-               WHERE r.request_id = $1::uuid AND r.state = 'PENDING' AND r.version = $2::bigint
+               WHERE r.request_id = $1::uuid AND r.state = 'PENDING' AND r.version = $2::bigint AND r.reported_at IS NULL
                RETURNING r.*
             )
        SELECT ${COLUMNS} FROM updated r`,

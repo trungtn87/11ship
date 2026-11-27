@@ -152,11 +152,14 @@ void main() {
       expect(find.byType(N11Button), findsNWidgets(2));
     });
 
-    testWidgets('PENDING, reported: "Chờ xác nhận", the confirm button is gone, and "Hủy yêu cầu" remains', (WidgetTester tester) async {
+    testWidgets('PENDING, reported: "Chờ xác nhận", no QR, no account details, no confirm and no cancel button, only the way to reach the Administration', (WidgetTester tester) async {
       await mount(tester, TopupDetailScreen(source: _TopupSource(reported: true), code: 'req-1'));
       expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
       expect(find.byKey(const Key('topup-reported')), findsNothing);
-      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      expect(find.byKey(const Key('topup-cancel')), findsNothing);
+      expect(find.byKey(const Key('topup-vietqr')), findsNothing);
+      expect(find.byKey(const Key('copy-content')), findsNothing);
+      expect(find.byKey(const Key('topup-reported-help')), findsOneWidget);
     });
 
     testWidgets('PENDING with a bank that has no VietQR: no QR, a neutral note, and the text fields still copy', (WidgetTester tester) async {

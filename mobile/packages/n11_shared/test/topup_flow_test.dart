@@ -98,7 +98,7 @@ void main() {
   // M04 step 2b: "Xác nhận đã chuyển tiền" on the real source.
   const String reportPath = '/v1/driver/wallet/topup-requests/$requestId/report';
 
-  testWidgets('report: one tap posts the report, then the request reads "Chờ xác nhận", "Trao đổi với quản trị" appears and "Hủy yêu cầu" remains',
+  testWidgets('report: one tap posts the report, then the request reads "Chờ xác nhận", "Trao đổi với quản trị" appears and "Hủy yêu cầu" is gone',
       (WidgetTester tester) async {
     final t = (await tester.runAsync(() => signedIn()))!;
     routeReceivingAccount(t.api);
@@ -120,7 +120,9 @@ void main() {
     expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
     expect(find.byKey(const Key('topup-reported')), findsNothing);
     expect(find.text('Trao đổi với quản trị'), findsOneWidget);
-    expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+    expect(find.byKey(const Key('topup-cancel')), findsNothing, reason: 'Owner 2026-11-27: a reported transfer cannot be cancelled');
+    expect(find.byKey(const Key('topup-reported-help')), findsOneWidget);
+    expect(find.byKey(const Key('topup-vietqr')), findsNothing);
   });
 
   testWidgets('report: a lost answer shows a sentence; the retry is the SAME report (same key), and nothing is shown as reported before the answer',
