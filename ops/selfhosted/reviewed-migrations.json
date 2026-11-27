@@ -116,6 +116,10 @@
     "1798156800000_sepay-auto-topup-inbox": {
       "sha256": "ed612c4326ee9beab871f84bd0904e1d6c0fdbe61eb83d3ac26ffcf41cd3190b",
       "review": "Issue #403 / PR #404 (M04 SePay automatic top-up; additive; NOT applied anywhere yet). Up: automated settlement actor columns (resolved_by_system, confirmed_by_system = SEPAY_WEBHOOK) with replaced actor CHECKs that every existing ended request and topup satisfies; reported_at on requests (Owner 2026-11-20) with a replaced request guard that allows exactly that change; transfer_code_key STORED column with a unique index (migration refuses if two requests share a code); app.sepay_transfer_inbox (unique webhook id, unique transactions-API uuid, unique bank identity; states RECEIVED, CREDITED, NEEDS_ADMIN, IGNORED, LINKED; no delete); app.sepay_reconciliation_cursor (one seeded row; cursor_advanced_at added 2026-11-22 for stall detection; SELECT and UPDATE for the runtime role). Codex review of PR #404 (2026-11-22) findings 1-4 are addressed by this file: LINKED state and a canonical bank reference in the bank-record key, held-row recovery, and cursor stall. Down refuses when any inbox, automatic resolution, report or advanced cursor exists. CODEX MONEY/SECURITY REVIEW REQUIRED."
+    },
+    "1798329600000_topup-request-expiry": {
+      "sha256": "3a7cffe060daafd68bba6f6dd48b1466dcd398a26e0f361720455971edcc4d0a",
+      "review": "Top-up request expiry (Owner 2026-11-27). Up widens the system-actor CHECK of wallet_topup_requests to also allow TOPUP_EXPIRY, adds a CHECK that TOPUP_EXPIRY applies only to CANCELLED requests never reported, and a partial index for the sweep. Adds no column or grant; every existing row satisfies the new constraints and the old backend keeps working. Down refuses when any TOPUP_EXPIRY row exists. CODEX MONEY REVIEW REQUIRED."
     }
   }
 }
