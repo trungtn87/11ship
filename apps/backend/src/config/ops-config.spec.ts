@@ -42,6 +42,8 @@ describe('M13 configuration', () => {
         OPS_STORE_URL_SHIP_IOS: 'https://apps.apple.com/vn/app/11ship/id6836868854',
         OPS_IOS_LATEST_BUILD_FOOD: '12',
         OPS_IOS_LATEST_BUILD_SHIP: '2000000000',
+        OPS_IOS_LATEST_VERSION_NAME_FOOD: '1.0.1',
+        OPS_IOS_LATEST_VERSION_NAME_SHIP: '2.3.0-beta.1',
       },
       appEnv: 'production',
     });
@@ -49,10 +51,12 @@ describe('M13 configuration', () => {
     if (r.ok) {
       expect(r.config.iosStoreUrls).toEqual({ FOOD: 'https://apps.apple.com/vn/app/11food/id6836866599', SHIP: 'https://apps.apple.com/vn/app/11ship/id6836868854' });
       expect(r.config.iosLatestBuilds).toEqual({ FOOD: 12, SHIP: 2_000_000_000 });
+      expect(r.config.iosLatestVersionNames).toEqual({ FOOD: '1.0.1', SHIP: '2.3.0-beta.1' });
     }
     const none = parseOpsConfig({ env: {}, appEnv: 'production' });
     expect(none.ok && none.config.iosStoreUrls).toEqual({});
     expect(none.ok && none.config.iosLatestBuilds).toEqual({});
+    expect(none.ok && none.config.iosLatestVersionNames).toEqual({});
   });
 
   it('names each bad iOS variable and nothing else', () => {
@@ -72,6 +76,8 @@ describe('M13 configuration', () => {
     expect(bad({ OPS_IOS_LATEST_BUILD_SHIP: '1.5' })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_BUILD_SHIP'] });
     expect(bad({ OPS_IOS_LATEST_BUILD_SHIP: '2000000001' })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_BUILD_SHIP'] });
     expect(bad({ OPS_IOS_LATEST_BUILD_SHIP: 'abc' })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_BUILD_SHIP'] });
+    expect(bad({ OPS_IOS_LATEST_VERSION_NAME_FOOD: '1 0 1' })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_VERSION_NAME_FOOD'] });
+    expect(bad({ OPS_IOS_LATEST_VERSION_NAME_SHIP: 'a'.repeat(33) })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_VERSION_NAME_SHIP'] });
     expect(bad({ OPS_STORE_URL_FOOD_IOS: 'https://apps.apple.com/vn/app/11food/id6836866599', OPS_IOS_LATEST_BUILD_SHIP: 'x' })).toEqual({ ok: false, invalid: ['OPS_IOS_LATEST_BUILD_SHIP'] });
   });
 });

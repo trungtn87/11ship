@@ -30,11 +30,16 @@ describe('iOS update check through the ingest service (no database: the iOS answ
     return new OpsIngestService(undefined as never, undefined as never, undefined as never, undefined as never, undefined as never, appConfig);
   };
 
-  it('answers with the store page and the build number when iOS is newer, and never requires an update', async () => {
-    const s = service({ iosStoreUrls: { FOOD: FOOD_IOS }, iosLatestBuilds: { FOOD: 12 } });
+  it('answers with the store page, build number and configured marketing name when iOS is newer, and never requires an update', async () => {
+    const s = service({ iosStoreUrls: { FOOD: FOOD_IOS }, iosLatestBuilds: { FOOD: 12 }, iosLatestVersionNames: { FOOD: '1.0.1' } });
     const r = await s.updateCheck('FOOD', 7, 'IOS');
     expect(r).toMatchObject({ update_available: true, required: false, store_url: FOOD_IOS, latest_version_code: 12, compatible: null });
-    expect(r.release).toMatchObject({ version_code: 12, version_name: null, download_path: null });
+    expect(r.release).toMatchObject({ version_code: 12, version_name: '1.0.1', download_path: null });
+  });
+
+  it('keeps version_name null when no iOS marketing name is configured', async () => {
+    const r = await service({ iosStoreUrls: { FOOD: FOOD_IOS }, iosLatestBuilds: { FOOD: 12 } }).updateCheck('FOOD', 7, 'IOS');
+    expect(r.release).toMatchObject({ version_code: 12, version_name: null });
   });
 
   it('answers "no update" with store_url null when a value is missing or the build is not newer', async () => {

@@ -12,6 +12,8 @@
 //   OPS_STORE_URL_SHIP_IOS  the same for 11Ship
 //   OPS_IOS_LATEST_BUILD_FOOD  positive integer: the newest build number of 11Food that is on the App Store (set it again after every upload, then restart)
 //   OPS_IOS_LATEST_BUILD_SHIP  the same for 11Ship
+//   OPS_IOS_LATEST_VERSION_NAME_FOOD  marketing version of that 11Food build (for example 1.0.1; optional, max 32 characters)
+//   OPS_IOS_LATEST_VERSION_NAME_SHIP  the same for 11Ship
 //   OPS_DISK_PATHS        `label=/path` pairs separated by `;` (default `root=/`): the file systems whose usage is checked
 //   OPS_M14_HEALTH_URL    URL of the M14 service health endpoint (optional; absent = "Chưa có dữ liệu" for M14)
 //   OPS_BACKEND_VERSION   the version this process reports as itself (default: the package version, else "unknown")
@@ -27,6 +29,8 @@ export interface OpsConfig {
   readonly iosStoreUrls?: { readonly FOOD?: string; readonly SHIP?: string };
   /** Newest App Store build number of each app (OPS_IOS_LATEST_BUILD_*). Missing = no iOS update offered. */
   readonly iosLatestBuilds?: { readonly FOOD?: number; readonly SHIP?: number };
+  /** Marketing version of each newest App Store build (OPS_IOS_LATEST_VERSION_NAME_*). Missing = the app shows the build number. */
+  readonly iosLatestVersionNames?: { readonly FOOD?: string; readonly SHIP?: string };
   readonly diskPaths: readonly { readonly label: string; readonly path: string }[];
   readonly m14HealthUrl?: string;
   readonly backendVersion: string;
@@ -132,6 +136,17 @@ export function parseOpsConfig(input: { readonly env: Readonly<Record<string, st
   const iosBuildFood = buildVar('OPS_IOS_LATEST_BUILD_FOOD');
   const iosBuildShip = buildVar('OPS_IOS_LATEST_BUILD_SHIP');
 
+  // Same format as the VERSION_NAME accepted by the M13 release and version-report APIs.
+  const versionNameVar = (name: string): string | undefined => {
+    const raw = get(name);
+    if (raw === undefined) return undefined;
+    if (/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/.test(raw)) return raw;
+    invalid.push(name);
+    return undefined;
+  };
+  const iosVersionNameFood = versionNameVar('OPS_IOS_LATEST_VERSION_NAME_FOOD');
+  const iosVersionNameShip = versionNameVar('OPS_IOS_LATEST_VERSION_NAME_SHIP');
+
   const disks: { label: string; path: string }[] = [];
   const rawDisks = get('OPS_DISK_PATHS');
   if (rawDisks === undefined) {
@@ -171,6 +186,7 @@ export function parseOpsConfig(input: { readonly env: Readonly<Record<string, st
       storeUrls: { ...(storeFood === undefined ? {} : { FOOD: storeFood }), ...(storeShip === undefined ? {} : { SHIP: storeShip }) },
       iosStoreUrls: { ...(iosStoreFood === undefined ? {} : { FOOD: iosStoreFood }), ...(iosStoreShip === undefined ? {} : { SHIP: iosStoreShip }) },
       iosLatestBuilds: { ...(iosBuildFood === undefined ? {} : { FOOD: iosBuildFood }), ...(iosBuildShip === undefined ? {} : { SHIP: iosBuildShip }) },
+      iosLatestVersionNames: { ...(iosVersionNameFood === undefined ? {} : { FOOD: iosVersionNameFood }), ...(iosVersionNameShip === undefined ? {} : { SHIP: iosVersionNameShip }) },
       diskPaths: disks,
       ...(m14HealthUrl === undefined ? {} : { m14HealthUrl }),
       backendVersion: version ?? 'unknown',

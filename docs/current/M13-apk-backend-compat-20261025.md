@@ -45,7 +45,7 @@ Khi app lên Google Play không còn APK trong `OPS_ARTIFACT_DIR`. Đặt `OPS_S
 
 ### 5.1 iOS (App Store)
 
-Release catalog chỉ có Android, nên iOS không đi qua bảng release. Thay vào đó backend đọc 4 biến tuỳ chọn (không có biến nào thì iOS không được mời bản mới):
+Release catalog chỉ có Android, nên iOS không đi qua bảng release. Thay vào đó backend đọc 6 biến tuỳ chọn (không có biến nào thì iOS không được mời bản mới):
 
 | Biến | Giá trị | Sai định dạng |
 | --- | --- | --- |
@@ -53,16 +53,18 @@ Release catalog chỉ có Android, nên iOS không đi qua bảng release. Thay 
 | `OPS_STORE_URL_SHIP_IOS` | như trên, của 11Ship | như trên |
 | `OPS_IOS_LATEST_BUILD_FOOD` | số nguyên dương: build number mới nhất của 11Food đã lên App Store | như trên |
 | `OPS_IOS_LATEST_BUILD_SHIP` | như trên, của 11Ship | như trên |
+| `OPS_IOS_LATEST_VERSION_NAME_FOOD` | tên phiên bản marketing của cùng build 11Food (ví dụ `1.0.1`; cùng định dạng `VERSION_NAME`, tối đa 32 ký tự) | như trên |
+| `OPS_IOS_LATEST_VERSION_NAME_SHIP` | như trên, của 11Ship | như trên |
 
 Giá trị dự kiến cho VPS (Owner tự đặt trong môi trường; không ghi vào tệp cấu hình trong repo): 11Food `https://apps.apple.com/vn/app/11food/id6836866599`; 11Ship `https://apps.apple.com/vn/app/11ship/id6836868854`.
 
-`GET /v1/app-updates/check` nhận thêm `platform=ANDROID|IOS` (mặc định `ANDROID`; giá trị khác bị từ chối). Với `IOS`: `update_available` = `version_code` của máy < `OPS_IOS_LATEST_BUILD_<APP>`; `store_url` là link App Store; `release.version_code` là build đó, `release.version_name` là `null` (chưa có biến tên bản iOS). Thiếu một trong hai biến của app đó, hoặc máy không gửi build number, thì trả "không có bản mới" với `store_url` null. Đường iOS không bao giờ trả `required=true` và không đối chiếu ma trận tương thích Android.
+`GET /v1/app-updates/check` nhận thêm `platform=ANDROID|IOS` (mặc định `ANDROID`; giá trị khác bị từ chối). Với `IOS`: `update_available` = `version_code` của máy < `OPS_IOS_LATEST_BUILD_<APP>`; `store_url` là link App Store; `release.version_code` là build đó, `release.version_name` là `OPS_IOS_LATEST_VERSION_NAME_<APP>` nếu có, ngược lại `null`. Thiếu store URL hoặc build của app đó, hoặc máy không gửi build number, thì trả "không có bản mới" với `store_url` null. Đường iOS không bao giờ trả `required=true` và không đối chiếu ma trận tương thích Android.
 
 Máy iOS gửi build number là `BUILD_NUMBER` lúc build, cùng giá trị với `--build-number` khi đẩy lên TestFlight/App Store (`mobile/tool/ios-testflight.sh`). Build `1` trong CI mô phỏng iOS không bao giờ lên cửa hàng nên không ảnh hưởng.
 
 **Owner cập nhật mỗi lần đưa build iOS mới lên App Store:**
 1. Đọc build number vừa đẩy lên (chính là `APP_VERSION_CODE` của lần build TestFlight).
-2. Đặt `OPS_IOS_LATEST_BUILD_FOOD` (hoặc `_SHIP`) bằng số đó trong môi trường của VPS.
+2. Đặt cùng lúc `OPS_IOS_LATEST_BUILD_FOOD` (hoặc `_SHIP`) bằng số đó và `OPS_IOS_LATEST_VERSION_NAME_FOOD` (hoặc `_SHIP`) bằng tên phiên bản marketing trong môi trường của VPS.
 3. Khởi động lại backend để đọc biến mới (ví dụ theo runbook deploy VPS). Biến chỉ được đọc lúc khởi động.
 4. Kiểm tra: `GET /v1/app-updates/check?component=FOOD&version_code=<build cũ>&platform=IOS` trả `update_available: true` và `store_url` đúng.
 

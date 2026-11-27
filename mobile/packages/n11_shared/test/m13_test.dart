@@ -302,6 +302,27 @@ void main() {
       // Flutter refuses a test that leaves the platform override set when the test body ends.
       debugDefaultTargetPlatformOverride = null;
     });
+
+    testWidgets('the iOS popup shows the marketing version and falls back to the build number when it is null', (WidgetTester tester) async {
+      Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold());
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      final AppUpdateController named = _controller(_FakeTransport((String _) => _json(_check(versionCode: 12, versionName: '1.0.1', storeUrl: appStore))), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(named));
+      await tester.runAsync(named.check);
+      await tester.pump();
+      expect(find.text('Phiên bản 1.0.1'), findsOneWidget);
+      expect(find.text('Bản dựng 12'), findsNothing);
+
+      final Map<String, Object?> unnamedResponse = _check(versionCode: 13, storeUrl: appStore)..['release'] = <String, Object?>{'version_name': null, 'version_code': 13};
+      final AppUpdateController unnamed = _controller(_FakeTransport((String _) => _json(unnamedResponse)), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(unnamed));
+      await tester.runAsync(unnamed.check);
+      await tester.pump();
+      expect(find.text('Bản dựng 13'), findsOneWidget);
+      expect(find.textContaining('Phiên bản'), findsNothing);
+      debugDefaultTargetPlatformOverride = null;
+    });
   });
 
   group('update popup (#280)', () {

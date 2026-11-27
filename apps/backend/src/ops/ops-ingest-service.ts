@@ -52,6 +52,7 @@ export class OpsIngestService {
   readonly #storeUrls: NonNullable<OpsConfig['storeUrls']>;
   readonly #iosStoreUrls: NonNullable<OpsConfig['iosStoreUrls']>;
   readonly #iosLatestBuilds: NonNullable<OpsConfig['iosLatestBuilds']>;
+  readonly #iosLatestVersionNames: NonNullable<OpsConfig['iosLatestVersionNames']>;
   readonly #environment: string;
   readonly #version: string;
   readonly #compat: CompatMatrix;
@@ -71,6 +72,7 @@ export class OpsIngestService {
     this.#storeUrls = ops.storeUrls ?? {};
     this.#iosStoreUrls = ops.iosStoreUrls ?? {};
     this.#iosLatestBuilds = ops.iosLatestBuilds ?? {};
+    this.#iosLatestVersionNames = ops.iosLatestVersionNames ?? {};
     this.#environment = appConfig.appEnv;
     this.#version = ops.backendVersion;
   }
@@ -286,7 +288,7 @@ export class OpsIngestService {
 
   /**
    * The iOS answer: never from the release catalog (it holds Android builds only) and never `required`. The shape is the Android one so the app reads both alike;
-   * `compatible` is null because the iOS build is not in app-compatibility.json, and `release.version_name` is null because no iOS name is configured.
+   * `compatible` is null because the iOS build is not in app-compatibility.json. The optional configured marketing name is returned for the popup.
    */
   #iosUpdateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null): JsonObject {
     const d = decideIosUpdate(versionCode, { storeUrl: this.#iosStoreUrls[component], latestBuild: this.#iosLatestBuilds[component] });
@@ -300,7 +302,7 @@ export class OpsIngestService {
       required: false,
       priority: null,
       reason: null,
-      release: !d.offered || d.latestBuild === null ? null : { release_id: null, version_name: null, version_code: d.latestBuild, release_notes: null, released_at: null, size_bytes: null, sha256: null, min_supported_version_code: null, compatibility_note: null, download_path: null },
+      release: !d.offered || d.latestBuild === null ? null : { release_id: null, version_name: this.#iosLatestVersionNames[component] ?? null, version_code: d.latestBuild, release_notes: null, released_at: null, size_bytes: null, sha256: null, min_supported_version_code: null, compatibility_note: null, download_path: null },
       store_url: d.storeUrl,
     };
   }
