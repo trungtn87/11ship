@@ -2,9 +2,9 @@ import { describe, expect, it, jest } from '@jest/globals';
 import { TOPUP_EXPIRY_AFTER_MINUTES, TopupExpiryJob } from './topup-expiry';
 
 function harness(rows: { requestId: string; version: number }[]) {
-  const audit = jest.fn(async (..._args: unknown[]) => undefined);
-  const outbox = jest.fn(async (..._args: unknown[]) => undefined);
-  const expire = jest.fn(async (..._args: unknown[]) => rows);
+  const audit = jest.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined);
+  const outbox = jest.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined);
+  const expire = jest.fn<(...args: unknown[]) => Promise<typeof rows>>(async () => rows);
   const ctx = {};
   const job = new TopupExpiryJob(
     { withTransaction: async (fn: (c: unknown) => unknown) => fn(ctx) } as never,
