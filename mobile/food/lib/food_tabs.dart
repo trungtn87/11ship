@@ -185,6 +185,7 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
         label: 'Đơn hàng',
         icon: Icons.receipt_long_outlined,
         title: 'Đơn hàng',
+        fullBleed: session.status != SessionStatus.signedIn,
         body: (BuildContext context, ShellActions actions) =>
             _orders(session, flows)),
     TabSpec(
@@ -205,6 +206,25 @@ List<TabSpec> buildFoodTabs(SessionController session, {AppFlows? flows}) {
             _account(session, actions, flows)),
   ];
 }
+
+Widget _authRequiredCard(
+  SessionController session,
+  AppFlows? flows, {
+  Key? key,
+  required IconData icon,
+  required String title,
+  required String description,
+}) =>
+    AuthRequiredCard(
+      key: key,
+      session: session,
+      brand: foodBrand,
+      icon: icon,
+      title: title,
+      description: description,
+      reset: flows?.reset,
+      shop: flows?.shop,
+    );
 
 Widget _guestPrompt(SessionController session, String text,
         [AppFlows? flows]) =>
@@ -276,21 +296,23 @@ Widget _callShip(SessionController session, AppFlows? flows) {
         pinPicker: foodPinPickScreen(),
         feedbackSlot: _customerFeedbackSlot(flows));
   }
-  return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
+  if (session.status == SessionStatus.signedIn) {
+    return const SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
           N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
-      child: session.status == SessionStatus.signedIn
-          ? const EmptyState(
-              icon: Icons.two_wheeler_outlined,
-              title: 'Chưa gọi ship được',
-              text: 'Tài khoản này chưa dùng được chức năng gọi shipper.')
-          : vstack(<Widget>[
-              _guestPrompt(session, 'Đăng nhập để gọi shipper giao hàng.', flows),
-              const EmptyState(
-                  icon: Icons.two_wheeler_outlined,
-                  title: 'Gọi shipper giao hàng',
-                  text: 'Sau khi đăng nhập, bạn có thể gọi shipper lấy và giao đồ.'),
-            ]));
+      child: EmptyState(
+          icon: Icons.two_wheeler_outlined,
+          title: 'Chưa gọi ship được',
+          text: 'Tài khoản này chưa dùng được chức năng gọi shipper.'),
+    );
+  }
+  return _authRequiredCard(
+    session,
+    flows,
+    icon: Icons.two_wheeler_outlined,
+    title: 'Đăng nhập để gọi ship',
+    description: 'Đăng nhập tài khoản 11Food để gọi shipper lấy và giao đồ.',
+  );
 }
 
 Widget _shopManageScreen(SessionController session, AppFlows? flows) {
@@ -387,16 +409,14 @@ Widget _orders(SessionController session, AppFlows? flows) {
         feedbackSlot: _customerFeedbackSlot(flows));
   }
   if (!signedIn) {
-    // F03 guest: ONE centred block with the sign-in action (no duplicate empty card).
-    return Center(
+    return _authRequiredCard(
+      session,
+      flows,
       key: const Key('orders-guest'),
-      child: Padding(
-        padding: const EdgeInsets.all(N11Space.pad),
-        child: SizedBox(
-          width: double.infinity,
-          child: _guestPrompt(session, 'Đăng nhập để xem đơn hàng của bạn.', flows),
-        ),
-      ),
+      icon: Icons.receipt_long_outlined,
+      title: 'Theo dõi đơn hàng của bạn',
+      description:
+          'Đăng nhập tài khoản 11Food để xem trạng thái đơn đang giao và lịch sử đặt món.',
     );
   }
   return vstack(<Widget>[

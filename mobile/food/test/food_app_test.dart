@@ -378,4 +378,28 @@ void main() {
     expect(find.byKey(const Key('m06-fee-entry')), findsNothing);
     expect(find.textContaining('Chưa sẵn sàng'), findsNothing);
   });
+
+  testWidgets('guest AuthRequiredCard on Gọi ship and Đơn hàng fits 360px and opens RegisterScreen', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pump(tester, healthy());
+
+    await openTab(tester, 'call');
+    expect(find.text('Bạn chưa đăng nhập'), findsNothing);
+    expect(find.text('Đăng nhập để gọi ship'), findsOneWidget);
+    expect(find.text('Đăng nhập tài khoản 11Food để gọi shipper lấy và giao đồ.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await openTab(tester, 'orders');
+    expect(find.text('Bạn chưa đăng nhập'), findsNothing);
+    expect(find.text('Theo dõi đơn hàng của bạn'), findsOneWidget);
+    expect(find.text('Đăng nhập tài khoản 11Food để xem trạng thái đơn đang giao và lịch sử đặt món.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('guest-register')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('register-name')), findsOneWidget);
+  });
 }

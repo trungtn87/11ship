@@ -134,6 +134,178 @@ bool canRetryFailure(AuthFailure? failure) =>
 
 Route<void> n11Route(Widget screen) => MaterialPageRoute<void>(builder: (BuildContext context) => screen);
 
+/// Guest login prompt card centered optically between the app bar and bottom navigation.
+class AuthRequiredCard extends StatelessWidget {
+  const AuthRequiredCard({
+    super.key,
+    required this.session,
+    required this.brand,
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.reset,
+    this.shop,
+  });
+
+  final SessionController session;
+  final AppBrand brand;
+  final IconData icon;
+  final String title;
+  final String description;
+  final ResetController? reset;
+  final ShopController? shop;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (BuildContext context, Widget? child) {
+        if (session.status == SessionStatus.signedIn) {
+          return const SizedBox.shrink();
+        }
+        final bool ready = session.ready;
+        return ColoredBox(
+          color: N11Colors.yellowFaint,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: (constraints.maxHeight - 32).clamp(0.0, double.infinity),
+                  ),
+                  child: Align(
+                    alignment: const Alignment(0, -0.12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                      decoration: BoxDecoration(
+                        color: N11Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x14805600),
+                            blurRadius: 18,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          Container(
+                            width: 68,
+                            height: 68,
+                            decoration: const BoxDecoration(
+                              color: N11Colors.yellowSoft,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(icon, size: 32, color: N11Colors.accentOrange),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontFamily: kFontFamily,
+                              package: 'n11_shared',
+                              fontSize: 19,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                              color: N11Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            description,
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: kFontFamily,
+                              package: 'n11_shared',
+                              fontSize: 14,
+                              height: 1.45,
+                              fontWeight: FontWeight.w500,
+                              color: N11Colors.ink2,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          if (!ready) ...<Widget>[
+                            const ReasonNote(kUnavailableReason),
+                            const SizedBox(height: 12),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: N11Button(
+                              key: const Key('guest-login'),
+                              label: 'Đăng nhập',
+                              kind: ButtonKind.primary,
+                              onPressed: ready
+                                  ? () => Navigator.of(context).push(
+                                        n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop)),
+                                      )
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          InkWell(
+                            key: const Key('guest-register'),
+                            onTap: ready
+                                ? () => Navigator.of(context).push(
+                                      n11Route(RegisterScreen(session: session, brand: brand, shop: shop)),
+                                    )
+                                : null,
+                            borderRadius: BorderRadius.circular(8),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: kTapMin),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Center(
+                                  widthFactor: 1,
+                                  child: Text.rich(
+                                    TextSpan(
+                                      text: 'Chưa có tài khoản? ',
+                                      style: const TextStyle(
+                                        fontFamily: kFontFamily,
+                                        package: 'n11_shared',
+                                        fontSize: 14,
+                                        height: 1.4,
+                                        fontWeight: FontWeight.w500,
+                                        color: N11Colors.ink2,
+                                      ),
+                                      children: <InlineSpan>[
+                                        TextSpan(
+                                          text: 'Tạo tài khoản',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: ready ? N11Colors.accentOrange : N11Colors.disabledInk,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// The guest prompt of Home / Orders: sends the person to the real login screen (guests open Home first, signing in is chosen in
 /// Tài khoản or here).
 class GuestPrompt extends StatelessWidget {
