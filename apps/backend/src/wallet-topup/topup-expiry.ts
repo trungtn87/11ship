@@ -8,8 +8,8 @@ import { OutboxWriter } from '../outbox/outbox-writer';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { TopupRequestRepository } from '../wallet/topup-request-repository';
 
-/** Owner 2026-11-27: a request the Shipper never reported ends after one hour. Reported requests never expire. */
-export const TOPUP_EXPIRY_AFTER_MINUTES = 60;
+/** Owner 2026-11-27: a request the Shipper never reported ends after 24 hours (Owner 2026-11-27, first 1h then 24h). Reported requests never expire. */
+export const TOPUP_EXPIRY_AFTER_MINUTES = 24 * 60;
 export const TOPUP_EXPIRY_INTERVAL_MS = 5 * 60_000;
 const BATCH = 200;
 const RESOURCE = 'wallet_topup_request';
