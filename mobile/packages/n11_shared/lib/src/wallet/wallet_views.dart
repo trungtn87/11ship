@@ -775,6 +775,10 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   bool? _lastReported;
   bool _polling = false;
 
+  /// The answer the silent poll already read when it saw the decision: the rebuilt loader shows THIS instead of asking again, so a network blip right
+  /// after the poll cannot turn a known "confirmed" into an error screen (Codex #455).
+  WalletLoad<TopupRequest>? _polled;
+
   void _ensurePolling() {
     _pollTimer ??= Timer.periodic(const Duration(seconds: 6), (_) => _poll());
   }
@@ -790,6 +794,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
     if (oldWidget.code != widget.code || oldWidget.source != widget.source) {
       _lastStatus = null;
       _lastReported = null;
+      _polled = null;
       _stopPolling();
     }
   }
@@ -801,7 +806,9 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   }
 
   Future<WalletLoad<TopupRequest>> _load() async {
-    final WalletLoad<TopupRequest> result = await widget.source.topup(widget.code);
+    final WalletLoad<TopupRequest>? polled = _polled;
+    _polled = null;
+    final WalletLoad<TopupRequest> result = polled ?? await widget.source.topup(widget.code);
     if (!mounted) {
       return result;
     }
@@ -822,19 +829,25 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
       return;
     }
     _polling = true;
+    final String code = widget.code;
+    final WalletSource source = widget.source;
     try {
-      final WalletLoad<TopupRequest> result = await widget.source.topup(widget.code);
-      if (!mounted || _reporting || _busy || result is! WalletReady<TopupRequest>) {
+      final WalletLoad<TopupRequest> result = await source.topup(code);
+      // An answer for another request or source (the widget was reused) is dropped; so is one that arrives while a write is in flight.
+      if (!mounted || _reporting || _busy || code != widget.code || !identical(source, widget.source) || result is! WalletReady<TopupRequest>) {
         return;
       }
       final TopupRequest next = result.value;
-      if (next.status != TopupStatus.pending) {
-        _stopPolling();
-      }
       if (next.status != _lastStatus || next.reported != _lastReported) {
         _lastStatus = next.status;
         _lastReported = next.reported;
+        _polled = result;
+        if (next.status != TopupStatus.pending) {
+          _stopPolling();
+        }
         setState(() => _rev++);
+      } else if (next.status != TopupStatus.pending) {
+        _stopPolling();
       }
     } catch (_) {
       // Ignore transient network errors during silent polling.

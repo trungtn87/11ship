@@ -220,17 +220,40 @@ void main() {
       await tester.pump();
       expect(source.topupCalls, callsAfterConfirm, reason: 'polling stops once no longer PENDING');
     });
+
+    testWidgets('a poll that read CONFIRMED is shown as read: a network loss right after it does not turn the screen into an error (Codex #455)', (WidgetTester tester) async {
+      final _PollingTopupSource source = _PollingTopupSource();
+      await mount(tester, TopupDetailScreen(source: source, code: 'req-1'));
+      expect(find.text('Chờ chuyển tiền'), findsWidgets);
+
+      source.currentStatus = TopupStatus.confirmed;
+      source.failAfterConfirmedServed = true;
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wallet-failed')), findsNothing);
+      expect(find.text('Đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'), findsOneWidget);
+      expect(find.byKey(const Key('topup-new-balance')), findsOneWidget);
+    });
   });
 }
 
 class _PollingTopupSource extends _TopupSource {
   TopupStatus currentStatus = TopupStatus.pending;
   bool throwOnNextPoll = false;
+  bool failAfterConfirmedServed = false;
+  bool _servedConfirmed = false;
   int topupCalls = 0;
 
   @override
   Future<WalletLoad<TopupRequest>> topup(String code) async {
     topupCalls++;
+    if (failAfterConfirmedServed && _servedConfirmed) {
+      throw Exception('network gone after the decision was read');
+    }
+    if (currentStatus == TopupStatus.confirmed) {
+      _servedConfirmed = true;
+    }
     if (throwOnNextPoll) {
       throwOnNextPoll = false;
       throw Exception('network glitch');
