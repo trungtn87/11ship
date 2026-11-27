@@ -48,6 +48,38 @@ describe('menu by permission', () => {
     assert.equal(m.activeMenuId({ name: 'categories' }), 'catalog-categories');
     assert.deepEqual(m.breadcrumb({ name: 'categories' }), ['Quán & thực đơn', 'Nhóm món']);
   });
+  it('breadcrumbs of the renamed pages match the menu (top level and parent names)', async () => {
+    const m = await load(real, 'core/menu.js');
+    assert.deepEqual(m.breadcrumb({ name: 'shippers' }), ['Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'shipper', id: 'x' }), ['Shipper', 'Chi tiết']);
+    assert.deepEqual(m.breadcrumb({ name: 'zones' }), ['Cài đặt', 'Vùng hoạt động']);
+    assert.deepEqual(m.breadcrumb({ name: 'zone', id: 'x' }), ['Cài đặt', 'Vùng hoạt động', 'Chi tiết']);
+    assert.deepEqual(m.breadcrumb({ name: 'settings' }), ['Cài đặt', 'Cài đặt hệ thống']);
+    assert.deepEqual(m.breadcrumb({ name: 'order-timeouts' }), ['Cài đặt', 'Thời hạn xử lý đơn']);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-parameters' }), ['Cài đặt', 'Ví Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'otp-policy' }), ['Cài đặt', 'SMS & OTP']);
+    assert.deepEqual(m.breadcrumb({ name: 'backups' }), ['Sao lưu và phục hồi']);
+    assert.deepEqual(m.breadcrumb({ name: 'invitation-new' }), ['Tài khoản', 'Lời mời Admin', 'Tạo lời mời']);
+    // Every page's first crumb is a top-level menu label (a section or a parent entry), so no page drifts from the sidebar.
+    const topLabels = new Set(m.MENU.flatMap((group) => group.items.map((item) => item.label)));
+    const pages = [
+      { name: 'home' }, { name: 'overview' }, { name: 'reports' }, { name: 'users' }, { name: 'users', status: 'LOCKED' },
+      { name: 'user', id: 'x' }, { name: 'categories' }, { name: 'shops' }, { name: 'shop', id: 'x' }, { name: 'shippers' },
+      { name: 'shipper', id: 'x' }, { name: 'orders' }, { name: 'deliveries' }, { name: 'notifications' }, { name: 'reviews' },
+      { name: 'complaints' }, { name: 'wallet-parameters' }, { name: 'wallet-params' }, { name: 'otp-policy' }, { name: 'zones' },
+      { name: 'zone', id: 'x' }, { name: 'shipping-policy' }, { name: 'finance' }, { name: 'finance-wallets' }, { name: 'finance-topups' },
+      { name: 'finance-topup', id: 'x' }, { name: 'finance-bank-accounts' }, { name: 'finance-withdrawals' }, { name: 'finance-withdrawal', id: 'x' },
+      { name: 'finance-transactions' }, { name: 'finance-reconciliation' }, { name: 'ops' }, { name: 'ops-vps' }, { name: 'ops-incidents' },
+      { name: 'ops-incident', ref: 'abc' }, { name: 'ops-gateway' }, { name: 'ops-logs' }, { name: 'ops-releases' }, { name: 'ops-config' },
+      { name: 'administrators' }, { name: 'access' }, { name: 'order-timeouts' }, { name: 'settings' }, { name: 'monitoring-errors' },
+      { name: 'invitations' }, { name: 'invitation-new' }, { name: 'invitation', id: 'x' }, { name: 'invitation-reissue', id: 'x' },
+      { name: 'invitation-revoke', id: 'x' }, { name: 'audit' }, { name: 'backups' }, { name: 'config' }, { name: 'activate' }, { name: 'reset' },
+    ];
+    for (const page of pages) {
+      const crumbs = m.breadcrumb(page);
+      assert.ok(topLabels.has(crumbs[0]), `${page.name}: "${crumbs[0]}" is not a top-level menu label`);
+    }
+  });
   it('SYSTEM sees every entry', async () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(ids(m.visibleMenu('SYSTEM')), m.allLeaves().map((leaf) => leaf.id));
@@ -98,7 +130,7 @@ describe('menu by permission', () => {
     assert.equal(m.canOpenRoute('ADMIN', new Set(['withdrawals']), { name: 'finance-withdrawal', id: 'x' }), true);
     assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, { name: 'wallet-params' }), false);
     assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'wallet-params' }), true);
-    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Ví Shipper']);
     assert.equal(m.activeMenuId({ name: 'finance-withdrawal', id: 'x' }), 'finance-withdrawals');
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {

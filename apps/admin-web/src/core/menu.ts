@@ -530,9 +530,9 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'shop':
       return ['Quán & thực đơn', 'Quán', 'Chi tiết'];
     case 'shippers':
-      return ['Vận hành', 'Shipper'];
+      return ['Shipper'];
     case 'shipper':
-      return ['Vận hành', 'Shipper', 'Chi tiết'];
+      return ['Shipper', 'Chi tiết'];
     case 'orders':
       return ['Đơn & giao hàng', 'Đơn hàng'];
     case 'deliveries':
@@ -544,13 +544,13 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'complaints':
       return ['Phản hồi & thông báo', 'Phản ánh'];
     case 'wallet-parameters':
-      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+      return ['Cài đặt', 'Ví Shipper'];
     case 'otp-policy':
-      return ['Cài đặt', 'Tham số hệ thống', 'SMS & OTP'];
+      return ['Cài đặt', 'SMS & OTP'];
     case 'zones':
-      return ['Hệ thống', 'Vùng hoạt động'];
+      return ['Cài đặt', 'Vùng hoạt động'];
     case 'zone':
-      return ['Hệ thống', 'Vùng hoạt động', 'Chi tiết'];
+      return ['Cài đặt', 'Vùng hoạt động', 'Chi tiết'];
     case 'shipping-policy':
       return ['Cài đặt', 'Phí & điều kiện giao'];
     case 'finance':
@@ -572,7 +572,7 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'finance-reconciliation':
       return ['Tài chính', 'Đối soát'];
     case 'wallet-params':
-      return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
+      return ['Cài đặt', 'Ví Shipper'];
     case 'ops':
       return ['Vận hành hệ thống', 'Tổng quan'];
     case 'ops-vps':
@@ -594,21 +594,21 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'access':
       return ['Tài khoản', 'Phân quyền'];
     case 'order-timeouts':
-      return ['Cài đặt hệ thống','Đơn hàng & giao hàng','Thời hạn xử lý'];
+      return ['Cài đặt', 'Thời hạn xử lý đơn'];
     case 'settings':
-      return ['Hệ thống', 'Cài đặt hệ thống'];
+      return ['Cài đặt', 'Cài đặt hệ thống'];
     case 'monitoring-errors':
       return ['Nhật ký', 'Lỗi hệ thống'];
     case 'invitations':
       return ['Tài khoản', 'Lời mời Admin'];
     case 'invitation-new':
-      return ['Lời mời Admin', 'Tạo lời mời'];
+      return ['Tài khoản', 'Lời mời Admin', 'Tạo lời mời'];
     case 'invitation':
-      return ['Lời mời Admin', 'Chi tiết lời mời'];
+      return ['Tài khoản', 'Lời mời Admin', 'Chi tiết lời mời'];
     case 'invitation-reissue':
-      return ['Lời mời Admin', 'Cấp lại lời mời'];
+      return ['Tài khoản', 'Lời mời Admin', 'Cấp lại lời mời'];
     case 'invitation-revoke':
-      return ['Lời mời Admin', 'Thu hồi lời mời'];
+      return ['Tài khoản', 'Lời mời Admin', 'Thu hồi lời mời'];
     case 'overview':
       return ['Tổng quan', 'Điều hành'];
     case 'reports':
@@ -616,7 +616,7 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'audit':
       return ['Nhật ký', 'Hoạt động quản trị'];
     case 'backups':
-      return ['Hệ thống', 'Sao lưu và phục hồi'];
+      return ['Sao lưu và phục hồi'];
     case 'config':
       return ['Cài đặt', 'Cấu hình tập trung'];
     case 'home':
