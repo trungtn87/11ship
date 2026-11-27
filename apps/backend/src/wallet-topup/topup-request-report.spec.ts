@@ -31,6 +31,7 @@ function harness(current: TopupRequestRow | undefined) {
   const requests = {
     lockOwned: jest.fn(async () => current),
     reportPending: jest.fn(async () => row({ reportedAtMs: REPORTED_MS })),
+    cancelPending: jest.fn(async () => row({ state: 'CANCELLED', version: 2, resolvedAtMs: CREATED_MS + 1000 })),
   };
   const audit = { append: jest.fn(async () => undefined) };
   const outbox = { append: jest.fn(async () => undefined) };
@@ -92,6 +93,22 @@ describe('Shipper top-up report (Xác nhận đã chuyển tiền)', () => {
     expect(failure).toBeInstanceOf(AppError);
     expect((failure as AppError).code).toBe('TOPUP_REQUEST_STATE_CONFLICT');
     expect(h.requests.reportPending).not.toHaveBeenCalled();
+    expect(h.audit.append).not.toHaveBeenCalled();
+  });
+
+  it('Owner 2026-11-27: a request that was NOT reported can still be cancelled', async () => {
+    const h = harness(row());
+    const payload = (await h.service.cancel(h.principal, REQUEST, 1, 'key-5', 'req-5')) as Record<string, unknown>;
+    expect(h.requests.cancelPending).toHaveBeenCalledTimes(1);
+    expect(payload).toMatchObject({ state: 'CANCELLED' });
+  });
+
+  it('Owner 2026-11-27: once the transfer is reported the request cannot be cancelled any more (state conflict, nothing written)', async () => {
+    const h = harness(row({ reportedAtMs: REPORTED_MS }));
+    const failure = await h.service.cancel(h.principal, REQUEST, 1, 'key-6', 'req-6').catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AppError);
+    expect((failure as AppError).code).toBe('TOPUP_REQUEST_STATE_CONFLICT');
+    expect(h.requests.cancelPending).not.toHaveBeenCalled();
     expect(h.audit.append).not.toHaveBeenCalled();
   });
 });

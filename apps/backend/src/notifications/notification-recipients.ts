@@ -144,6 +144,15 @@ export class NotificationRecipients {
     return request === undefined ? undefined : this.driverUser(context, request.driverId);
   }
 
+  async topupFacts(context: TransactionContext, requestId: string): Promise<{ readonly userId: string; readonly actualAmountVnd: bigint | null } | undefined> {
+    const request = await this.topups.findForAdmin(context, requestId);
+    if (request === undefined) {
+      return undefined;
+    }
+    const userId = await this.driverUser(context, request.driverId);
+    return userId === undefined ? undefined : { userId, actualAmountVnd: request.actualAmountVnd };
+  }
+
   async deliveryOfferFacts(context: TransactionContext, deliveryId: string): Promise<OfferDeliveryFacts | undefined> {
     const d = await this.deliveries.findById(context, deliveryId);
     return d === undefined ? undefined : { state: d.state, version: d.version, pickupLat: d.pickupLat, pickupLng: d.pickupLng, remainingMs: d.searchExpiresAtMs - (await freshClockMs(context)) };

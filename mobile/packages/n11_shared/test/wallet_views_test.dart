@@ -251,7 +251,7 @@ void main() {
 
       expect(tester.widget<Text>(find.byKey(const Key('status-label'))).data, 'Chờ xác nhận');
       expect(find.byKey(const Key('topup-reported')), findsNothing);
-      expect(find.byKey(const Key('topup-cancel')), findsOneWidget);
+      expect(find.byKey(const Key('topup-cancel')), findsNothing, reason: 'a reported transfer cannot be cancelled');
       final Wallet after = await readWallet(tester, source);
       expect(after.total, 150000);
       expect(after.held, 2000);

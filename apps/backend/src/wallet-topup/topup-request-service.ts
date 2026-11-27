@@ -158,6 +158,11 @@ export class TopupRequestService {
         if (current.state !== 'PENDING') {
           throw new AppError('TOPUP_REQUEST_STATE_CONFLICT');
         }
+        // Owner 2026-11-27: once the Shipper has reported the transfer the request can no longer be cancelled (the money may already be on its way; the
+        // settlement or an Administrator decides it). The repository UPDATE repeats the condition, so a report racing this cancel is decided by the database.
+        if (current.reportedAtMs !== null) {
+          throw new AppError('TOPUP_REQUEST_STATE_CONFLICT');
+        }
         if (current.version !== expectedVersion) {
           throw new AppError('VERSION_CONFLICT');
         }

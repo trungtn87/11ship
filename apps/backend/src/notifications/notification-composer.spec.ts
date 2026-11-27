@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { composeDeliveryChange, composeOrderChange, DeliveryChangePayload, Draft, OrderChangePayload, reminderCopy } from './notification-composer';
+import { composeDeliveryChange, composeOrderChange, composeTopupCopy, DeliveryChangePayload, Draft, formatVnd, OrderChangePayload, reminderCopy, TOPUP_COPY } from './notification-composer';
 
 const base: DeliveryChangePayload = { deliveryId: '11111111-1111-4111-8111-111111111111', code: 'DG-1024', shopId: '22222222-2222-4222-8222-222222222222', change: 'accepted', state: 'accepted', version: 3, assignmentId: null, driverId: '33333333-3333-4333-8333-333333333333' };
 const notifies = (drafts: Draft[]) => drafts.flatMap((d) => (d.type === 'NOTIFY' ? [d.draft] : []));
@@ -134,5 +134,19 @@ describe('M08 composer — timeout cancellation of a call without an Order (issu
     const [again] = notifies(composeDeliveryChange({ ...cancelled, shopId: null, source: 'CUSTOMER' })).filter((d) => d.audience === 'CUSTOMER');
     expect(first?.dedupeKey).toBe(again?.dedupeKey);
     expect(first?.body).not.toMatch(/[0-9]{9,}|@|\+84/);
+  });
+});
+
+describe('M08 composer — topup credit notification wording', () => {
+  it('formats VND amounts deterministically and includes the credited amount when CONFIRMED', () => {
+    expect(formatVnd(100000n)).toBe('100.000đ');
+    expect(formatVnd(1500000n)).toBe('1.500.000đ');
+    expect(composeTopupCopy('CONFIRMED', 100000n)).toEqual({
+      kind: 'TOPUP_CONFIRMED',
+      title: 'Nạp tiền thành công',
+      body: 'Đã nạp 100.000đ vào ví',
+    });
+    expect(composeTopupCopy('CONFIRMED', null)).toEqual(TOPUP_COPY.CONFIRMED);
+    expect(composeTopupCopy('REJECTED', 100000n)).toEqual(TOPUP_COPY.REJECTED);
   });
 });

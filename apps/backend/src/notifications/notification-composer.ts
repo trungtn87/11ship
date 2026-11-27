@@ -268,6 +268,20 @@ export const TOPUP_COPY = {
   REJECTED: { kind: 'TOPUP_REJECTED' as const, title: 'Yêu cầu nạp tiền bị từ chối', body: 'Yêu cầu nạp tiền của bạn chưa được chấp nhận. Mở ví để xem chi tiết.' },
 };
 
+export function formatVnd(amountVnd: bigint): string {
+  return `${amountVnd.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}đ`;
+}
+
+export function composeTopupCopy(state: 'CONFIRMED' | 'REJECTED', actualAmountVnd: bigint | null = null): { readonly kind: NotificationKind; readonly title: string; readonly body: string } {
+  if (state === 'REJECTED') {
+    return TOPUP_COPY.REJECTED;
+  }
+  if (actualAmountVnd !== null && actualAmountVnd > 0n) {
+    return { ...TOPUP_COPY.CONFIRMED, body: `Đã nạp ${formatVnd(actualAmountVnd)} vào ví` };
+  }
+  return TOPUP_COPY.CONFIRMED;
+}
+
 export const PROFILE_COPY: Readonly<Record<string, { kind: NotificationKind; title: string; body: string } | undefined>> = {
   approved: { kind: 'PROFILE_APPROVED', title: 'Hồ sơ shipper đã được duyệt', body: 'Hồ sơ của bạn đã được duyệt. Mở ứng dụng để bắt đầu.' },
   rejected: { kind: 'PROFILE_REJECTED', title: 'Hồ sơ shipper chưa được duyệt', body: 'Hồ sơ của bạn chưa được duyệt. Mở ứng dụng để xem lý do và bổ sung.' },

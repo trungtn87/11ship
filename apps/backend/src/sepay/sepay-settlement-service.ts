@@ -192,7 +192,7 @@ export class SepaySettlementService {
       resourceType: RESOURCE,
       resourceId: found.requestId,
       resourceVersion: resolved.version,
-      payload: { request_id: found.requestId, state: resolved.state, version: resolved.version },
+      payload: { request_id: found.requestId, state: resolved.state, version: resolved.version, actual_amount_vnd: event.transferAmountVnd },
     });
     await this.inbox.finish(context, inboxId, 'CREDITED', null, found.requestId);
   }
