@@ -22,6 +22,11 @@ import {
   REJECT_REASONS,
   REJECT_REASON_LABEL,
   RejectReason,
+  SEPAY_DISMISS_LABEL,
+  SEPAY_DISMISS_REASONS,
+  sepayHoldText,
+  SepayDismissReason,
+  SepayHold,
   shortId,
   SystemAccount,
   TOPUP_FILTERS,
@@ -156,9 +161,11 @@ export function noticeBlock(id: string, kind: 'error' | 'notice' | 'warning'): {
 export class TopupListView {
   readonly #results: HTMLElement;
   readonly #notice = noticeBlock('topup-notice', 'warning');
+  readonly #holds = h('div', { class: 'sepay-holds' });
   #items: readonly TopupItem[] = [];
   #cursor: string | null = null;
   #latest = 0;
+  #holdsBusy = false;
   #alive = true;
   #loadingMore = false;
 
@@ -186,6 +193,7 @@ export class TopupListView {
         pageHead('Nạp tiền', 'Yêu cầu nạp tiền của Shipper. Chỉ cộng ví sau khi bạn đối chiếu sao kê ngân hàng.', 'topups-title', refresh),
         h('div', { class: 'toolbar toolbar-filters' }, tabs),
         this.#notice.element,
+        this.#holds,
         this.#results,
       ),
     );
@@ -201,9 +209,69 @@ export class TopupListView {
     this.root.replaceChildren();
   }
 
+  /** Transfers the SePay automation held for an Administrator, with the reason in plain words. Shown above the list; absent when there is none. */
+  async #loadHolds(token: number): Promise<void> {
+    const read = await this.host.source.sepayQueue();
+    if (!this.#alive || token !== this.#latest || sessionGone(read, this.host)) {
+      return;
+    }
+    if (read.kind === 'ready') {
+      this.#drawHolds(read.data);
+    } else if (read.kind === 'failed') {
+      this.#holds.replaceChildren(h('p', { class: 'message message-warning' }, 'Không tải được danh sách tiền đã về nhưng chưa tự cộng. Bấm "Làm mới" để thử lại.'));
+    } else {
+      this.#holds.replaceChildren();
+    }
+  }
+
+  #drawHolds(holds: readonly SepayHold[]): void {
+    if (holds.length === 0) {
+      this.#holds.replaceChildren();
+      return;
+    }
+    const canDismiss = this.host.rights().canRecord;
+    const columns: readonly Column[] = [{ label: 'Giờ tiền về' }, { label: 'Số tiền', end: true }, { label: 'Mã nạp' }, { label: 'Vì sao chưa tự cộng' }, { label: 'Nội dung chuyển khoản' }, { label: '', end: true }];
+    const rows = holds.map((hold) => {
+      const reason = h('select', { class: 'select', 'aria-label': 'Lý do đóng mục này' }, ...SEPAY_DISMISS_REASONS.map((code) => h('option', { value: code }, SEPAY_DISMISS_LABEL[code])));
+      const close = secondary('Đóng mục này');
+      close.addEventListener('click', () => void this.#dismiss(hold, reason.value as SepayDismissReason, close));
+      return h(
+        'tr',
+        {},
+        cell('Giờ tiền về', when(hold.receivedAt)),
+        cell('Số tiền', formatVndAmount(hold.amountVnd)),
+        cell('Mã nạp', hold.code === null ? '—' : h('code', {}, hold.code)),
+        cell('Vì sao chưa tự cộng', sepayHoldText(hold.reasonCode)),
+        cell('Nội dung chuyển khoản', hold.content === '' ? '—' : hold.content),
+        cell('', canDismiss ? h('div', { class: 'row-actions' }, reason, close) : undefined),
+      );
+    });
+    this.#holds.replaceChildren(
+      h('h2', { class: 'subtitle' }, `Tiền đã về nhưng chưa tự cộng (${holds.length})`),
+      h('p', { class: 'hint' }, 'Hệ thống không tự cộng các khoản này. Đối chiếu sao kê ngân hàng: nếu đúng là tiền nạp của một Shipper, mở yêu cầu nạp tương ứng ở danh sách bên dưới và xác nhận với đúng mã tham chiếu ngân hàng; nếu không phải tiền nạp, đóng mục này kèm lý do.'),
+      tableCard('Tiền chưa tự cộng', columns, { rows }),
+    );
+  }
+
+  async #dismiss(hold: SepayHold, reason: SepayDismissReason, button: HTMLButtonElement): Promise<void> {
+    if (this.#holdsBusy) {
+      return;
+    }
+    this.#holdsBusy = true;
+    button.disabled = true;
+    const outcome = await this.host.source.sepayDismiss({ inboxId: hold.inboxId, reason });
+    this.#holdsBusy = false;
+    if (!this.#alive || sessionGone(outcome, this.host)) {
+      return;
+    }
+    this.#notice.set(outcome.kind === 'ok' ? undefined : outcome.kind === 'forbidden' ? FINANCE_FORBIDDEN_MESSAGE : outcome.kind === 'conflict' ? 'Mục này đã được xử lý ở nơi khác. Danh sách vừa được làm mới.' : FINANCE_UNKNOWN_MESSAGE);
+    void this.#loadHolds(this.#latest);
+  }
+
   async load(): Promise<void> {
     this.#latest += 1;
     const token = this.#latest;
+    void this.#loadHolds(token);
     this.#items = [];
     this.#cursor = null;
     this.#draw({ kind: 'loading' });
