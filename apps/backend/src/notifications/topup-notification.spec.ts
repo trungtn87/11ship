@@ -188,7 +188,7 @@ describe('M08 top-up credit notifications (SePay and Admin branches)', () => {
     expect(harness.queuedPushes).toHaveLength(1);
   });
 
-  it('SePay held transfer or rolled-back credit emits no outbox event and creates no notification', async () => {
+  it('SePay held transfer emits only the held event (no credit), rolled-back credit emits nothing', async () => {
     const heldStore = freshStore({ requestAmount: 100000n });
     const rawMismatch = sepayWebhookBody(99000);
     const timestamp = String(NOW);
@@ -200,7 +200,8 @@ describe('M08 top-up credit notifications (SePay and Admin branches)', () => {
       nowSeconds: NOW,
       env: { SEPAY_WEBHOOK_SECRET: SECRET, SEPAY_API_KEY: API_KEY, SEPAY_AUTO_TOPUP_ENABLED: 'true' } as NodeJS.ProcessEnv,
     });
-    expect(heldStore.outboxEvents).toHaveLength(0);
+    // A held transfer tells the Shipper it was received, never that the wallet was credited.
+    expect(heldStore.outboxEvents.map((event) => event.eventType)).toEqual(['wallet.topup_request.held.v1']);
 
     const failStore = freshStore({ requestAmount: 100000n, creditError: new Error('db failure') });
     const rawOk = sepayWebhookBody(100000);
