@@ -127,8 +127,8 @@ class TopupRequest {
 
   String get shownCode => displayCode ?? code;
 
-  /// A topup can be cancelled only while nobody has decided it.
-  bool get canCancel => status == TopupStatus.pending;
+  /// A topup can be cancelled only while nobody has decided it AND the Shipper has not reported the transfer (Owner 2026-11-27: once reported, money may be on its way).
+  bool get canCancel => status == TopupStatus.pending && reportedAt == null;
 
   /// Waiting for the transfer (PENDING, not reported yet): the step "Chờ chuyển tiền".
   bool get awaitingTransfer => status == TopupStatus.pending && reportedAt == null;

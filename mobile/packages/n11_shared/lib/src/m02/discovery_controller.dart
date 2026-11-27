@@ -69,6 +69,8 @@ class DiscoveryController extends ChangeNotifier {
           distances.reset();
           _epoch++; // Invalidate an old area page, including loadMore.
           _shops = const <ShopCardData>[];
+          _shopDishes = const <String, List<DishHit>>{};
+          _dishesQueryKey = null;
           _hasMore = _loadingMore = _stale = false;
           _list = DiscoveryLoad.idle;
           _notify();
@@ -106,6 +108,8 @@ class DiscoveryController extends ChangeNotifier {
   // List
   DiscoveryLoad _list = DiscoveryLoad.idle;
   List<ShopCardData> _shops = const <ShopCardData>[];
+  Map<String, List<DishHit>> _shopDishes = const <String, List<DishHit>>{};
+  String? _dishesQueryKey;
   bool _hasMore = false;
   bool _loadingMore = false;
   bool _stale = false;
@@ -117,6 +121,8 @@ class DiscoveryController extends ChangeNotifier {
   List<CategoryChoice> get categories => _categories;
   DiscoveryLoad get listState => _list;
   List<ShopCardData> get shops => _shops;
+  List<DishHit> dishesForShop(String shopId) =>
+      _shopDishes[shopId] ?? const <DishHit>[];
   bool get hasMore => _hasMore;
   bool get loadingMore => _loadingMore;
   bool get stale => _stale;
@@ -198,6 +204,13 @@ class DiscoveryController extends ChangeNotifier {
     if (chosen == null) {
       return;
     }
+    final String? activeCategory = categoryId;
+    final bool activeOpenOnly = openOnly;
+    final String queryKey = '$chosen|${activeCategory ?? ''}|$activeOpenOnly';
+    if (_dishesQueryKey != queryKey) {
+      _dishesQueryKey = queryKey;
+      _shopDishes = const <String, List<DishHit>>{};
+    }
     final int epoch = ++_epoch;
     _loadingMore = false;
     if (_shops.isEmpty || _list == DiscoveryLoad.failed) {
@@ -208,8 +221,8 @@ class DiscoveryController extends ChangeNotifier {
       final DiscoveryPage<ShopCardData> page = await api.shops(
         DiscoveryQuery(
           areaId: chosen,
-          categoryId: categoryId,
-          openOnly: openOnly,
+          categoryId: activeCategory,
+          openOnly: activeOpenOnly,
         ),
       );
       if (epoch != _epoch) {
@@ -220,6 +233,14 @@ class DiscoveryController extends ChangeNotifier {
       _hasMore = page.hasMore;
       _list = DiscoveryLoad.ready;
       _stale = false;
+      unawaited(
+        _loadShopDishes(
+          area: chosen,
+          category: activeCategory,
+          open: activeOpenOnly,
+          epoch: epoch,
+        ),
+      );
     } on FeatureNotConnected {
       freshness.failed();
       if (epoch == _epoch) {
@@ -239,6 +260,47 @@ class DiscoveryController extends ChangeNotifier {
       }
     }
     _notify();
+  }
+
+  Future<void> _loadShopDishes({
+    required String area,
+    required String? category,
+    required bool open,
+    required int epoch,
+  }) async {
+    try {
+      final DiscoveryPage<DishHit> page = await api.dishes(
+        DiscoveryQuery(
+          areaId: area,
+          categoryId: category,
+          openOnly: open,
+          limit: 50,
+        ),
+      );
+      if (_disposed || epoch != _epoch) {
+        return;
+      }
+      final Map<String, List<DishHit>> grouped = <String, List<DishHit>>{};
+      for (final DishHit dish in page.items) {
+        if (!dish.shop.isPublic) {
+          continue;
+        }
+        grouped.putIfAbsent(dish.shop.shopId, () => <DishHit>[]).add(dish);
+      }
+      for (final MapEntry<String, List<DishHit>> entry in grouped.entries) {
+        entry.value.sort((DishHit a, DishHit b) {
+          final int cmp = (b.soldCount ?? -1).compareTo(a.soldCount ?? -1);
+          return cmp != 0 ? cmp : a.name.compareTo(b.name);
+        });
+        if (entry.value.length > 3) {
+          grouped[entry.key] = entry.value.sublist(0, 3);
+        }
+      }
+      _shopDishes = grouped;
+      _notify();
+    } on Object {
+      // Dish chips are supplementary; an unwired or failing dish endpoint never blocks shop cards.
+    }
   }
 
   Future<void> loadMore() async {
@@ -308,6 +370,8 @@ class DiscoveryController extends ChangeNotifier {
     areaId = id;
     distances.reset();
     _shops = const <ShopCardData>[];
+    _shopDishes = const <String, List<DishHit>>{};
+    _dishesQueryKey = null;
     _hasMore = false;
     _list = DiscoveryLoad.idle;
     _stale = false;
@@ -340,6 +404,8 @@ class DiscoveryController extends ChangeNotifier {
     if (areaChanged) {
       distances.reset();
       _shops = const <ShopCardData>[];
+      _shopDishes = const <String, List<DishHit>>{};
+      _dishesQueryKey = null;
       _hasMore = false;
       _list = DiscoveryLoad.idle;
     }

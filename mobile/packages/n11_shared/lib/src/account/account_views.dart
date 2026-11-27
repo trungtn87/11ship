@@ -134,6 +134,178 @@ bool canRetryFailure(AuthFailure? failure) =>
 
 Route<void> n11Route(Widget screen) => MaterialPageRoute<void>(builder: (BuildContext context) => screen);
 
+/// Guest login prompt card centered optically between the app bar and bottom navigation.
+class AuthRequiredCard extends StatelessWidget {
+  const AuthRequiredCard({
+    super.key,
+    required this.session,
+    required this.brand,
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.reset,
+    this.shop,
+  });
+
+  final SessionController session;
+  final AppBrand brand;
+  final IconData icon;
+  final String title;
+  final String description;
+  final ResetController? reset;
+  final ShopController? shop;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (BuildContext context, Widget? child) {
+        if (session.status == SessionStatus.signedIn) {
+          return const SizedBox.shrink();
+        }
+        final bool ready = session.ready;
+        return ColoredBox(
+          color: N11Colors.yellowFaint,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: (constraints.maxHeight - 32).clamp(0.0, double.infinity),
+                  ),
+                  child: Align(
+                    alignment: const Alignment(0, -0.12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                      decoration: BoxDecoration(
+                        color: N11Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x14805600),
+                            blurRadius: 18,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          Container(
+                            width: 68,
+                            height: 68,
+                            decoration: const BoxDecoration(
+                              color: N11Colors.yellowSoft,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(icon, size: 32, color: N11Colors.accentOrange),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontFamily: kFontFamily,
+                              package: 'n11_shared',
+                              fontSize: 19,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                              color: N11Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            description,
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: kFontFamily,
+                              package: 'n11_shared',
+                              fontSize: 14,
+                              height: 1.45,
+                              fontWeight: FontWeight.w500,
+                              color: N11Colors.ink2,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          if (!ready) ...<Widget>[
+                            const ReasonNote(kUnavailableReason),
+                            const SizedBox(height: 12),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: N11Button(
+                              key: const Key('guest-login'),
+                              label: 'Đăng nhập',
+                              kind: ButtonKind.primary,
+                              onPressed: ready
+                                  ? () => Navigator.of(context).push(
+                                        n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop)),
+                                      )
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          InkWell(
+                            key: const Key('guest-register'),
+                            onTap: ready
+                                ? () => Navigator.of(context).push(
+                                      n11Route(RegisterScreen(session: session, brand: brand, shop: shop)),
+                                    )
+                                : null,
+                            borderRadius: BorderRadius.circular(8),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: kTapMin),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Center(
+                                  widthFactor: 1,
+                                  child: Text.rich(
+                                    TextSpan(
+                                      text: 'Chưa có tài khoản? ',
+                                      style: const TextStyle(
+                                        fontFamily: kFontFamily,
+                                        package: 'n11_shared',
+                                        fontSize: 14,
+                                        height: 1.4,
+                                        fontWeight: FontWeight.w500,
+                                        color: N11Colors.ink2,
+                                      ),
+                                      children: <InlineSpan>[
+                                        TextSpan(
+                                          text: 'Tạo tài khoản',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: ready ? N11Colors.accentOrange : N11Colors.disabledInk,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// The guest prompt of Home / Orders: sends the person to the real login screen (guests open Home first, signing in is chosen in
 /// Tài khoản or here).
 class GuestPrompt extends StatelessWidget {
@@ -169,7 +341,26 @@ class GuestPrompt extends StatelessWidget {
 /// Tài khoản: guest, checking, unverified and signed-in states of one app. [entries] are that app's own rows (shop / driver entry,
 /// help, policy), shown for guests and signed-in people alike and kept locked with their reason.
 class AccountTab extends StatelessWidget {
-  const AccountTab({super.key, required this.session, required this.brand, required this.actions, required this.entries, this.registerLabel = 'Tạo tài khoản', this.signedInEntries = const <Widget>[], this.signedInTitle = 'Cửa hàng', this.reset, this.shop, this.showAccountStatus = true, this.showDiagnostics = true, this.settingsEntries = const <Widget>[], this.registerKind = ButtonKind.primary, this.footerEntries = const <Widget>[], this.showProfileEntry = true});
+  const AccountTab({
+    super.key,
+    required this.session,
+    required this.brand,
+    required this.actions,
+    required this.entries,
+    this.registerLabel = 'Tạo tài khoản',
+    this.signedInEntries = const <Widget>[],
+    this.signedInTitle = 'Cửa hàng',
+    this.reset,
+    this.shop,
+    this.onOpenShopManage,
+    this.onOpenShopRegister,
+    this.showAccountStatus = true,
+    this.showDiagnostics = true,
+    this.settingsEntries = const <Widget>[],
+    this.registerKind = ButtonKind.primary,
+    this.footerEntries = const <Widget>[],
+    this.showProfileEntry = true,
+  });
 
   /// The built-in "Thông tin cá nhân" row. The shipper app passes false and offers its own "Thông tin & Hồ sơ" entry (#396).
   final bool showProfileEntry;
@@ -183,6 +374,8 @@ class AccountTab extends StatelessWidget {
   final SessionController session;
   final ResetController? reset;
   final ShopController? shop;
+  final VoidCallback? onOpenShopManage;
+  final VoidCallback? onOpenShopRegister;
 
   /// Rows shown only while signed in (the shop / driver entry), before [entries].
   final List<Widget> signedInEntries;
@@ -197,20 +390,53 @@ class AccountTab extends StatelessWidget {
   final bool showDiagnostics;
   final List<Widget> settingsEntries;
 
+  Widget _foodScrollable(Widget child) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!constraints.hasBoundedHeight) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(
+              N11Space.pad,
+              N11Space.gap4,
+              N11Space.pad,
+              N11Space.gap8,
+            ),
+            child: child,
+          );
+        }
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            N11Space.pad,
+            N11Space.gap4,
+            N11Space.pad,
+            N11Space.gap8 + 16,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: session,
+      listenable: Listenable.merge(<Listenable>[
+        session,
+        if (shop != null) shop!,
+      ]),
       builder: (BuildContext context, Widget? child) {
         switch (session.status) {
           case SessionStatus.starting:
-            return vstack(<Widget>[
+            final Widget startingBody = vstack(<Widget>[
               _hero(),
               const N11Banner(kind: BannerKind.info, title: 'Đang kiểm tra phiên đăng nhập…', text: 'Vui lòng chờ trong giây lát.'),
-              _tools(context, signedIn: false),
+              if (brand.id != AppId.food) _tools(context, signedIn: false),
             ]);
+            return brand.id == AppId.food
+                ? _foodScrollable(startingBody)
+                : startingBody;
           case SessionStatus.unverified:
-            return vstack(<Widget>[
+            final Widget unverifiedBody = vstack(<Widget>[
               _hero(),
               N11Banner(
                 kind: BannerKind.warn,
@@ -218,8 +444,11 @@ class AccountTab extends StatelessWidget {
                 text: session.lastFailure == null ? 'Máy chủ chưa trả lời.' : failureMessage(session.lastFailure!),
                 trailing: N11Button(key: const Key('revalidate'), label: 'Thử lại', kind: ButtonKind.secondary, compact: true, onPressed: session.revalidate),
               ),
-              _tools(context, signedIn: false),
+              if (brand.id != AppId.food) _tools(context, signedIn: false),
             ]);
+            return brand.id == AppId.food
+                ? _foodScrollable(unverifiedBody)
+                : unverifiedBody;
           case SessionStatus.guest:
             return _guest(context);
           case SessionStatus.signedIn:
@@ -236,7 +465,7 @@ class AccountTab extends StatelessWidget {
       child: Column(
         children: <Widget>[
           BrandLogo(brand: brand, height: 96),
-          const SizedBox(height: N11Space.gap3),
+          const SizedBox(height: 20),
           Text(brand.slogan, textAlign: TextAlign.center, style: N11Text.display),
           const SizedBox(height: 6),
           Text(brand.id == AppId.food ? 'Đặt món từ quán gần bạn.' : 'Ứng dụng dành cho shipper 11Ship.', textAlign: TextAlign.center, style: N11Text.lead),
@@ -246,6 +475,41 @@ class AccountTab extends StatelessWidget {
   }
 
   Widget _tools(BuildContext context, {required bool signedIn}) {
+    if (brand.id == AppId.food && signedIn) {
+      final AppUpdateController? updates = AppUpdateScope.maybeOf(context);
+      final List<Widget> supportRows = <Widget>[
+        ...entries,
+        if (updates == null || updates.enabled) _updateRow(context),
+        ...footerEntries,
+      ];
+      return vstack(<Widget>[
+        N11List(
+          title: 'Cài đặt tài khoản',
+          children: <Widget>[
+            if (showProfileEntry)
+              N11ListItem(
+                key: const Key('open-profile'),
+                icon: Icons.badge_outlined,
+                title: 'Thông tin cá nhân',
+                sub: 'Xem và sửa họ tên',
+                onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
+              ),
+            ...settingsEntries,
+            N11ListItem(
+              key: const Key('change-password-entry'),
+              icon: Icons.lock_outline,
+              title: 'Đổi mật khẩu',
+              onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session))),
+            ),
+          ],
+        ),
+        if (supportRows.isNotEmpty)
+          N11List(
+            title: 'Hỗ trợ & Ứng dụng',
+            children: supportRows,
+          ),
+      ]);
+    }
     return N11List(title: signedIn ? 'Cài đặt' : null, children: <Widget>[
       if (signedIn && showProfileEntry)
         N11ListItem(
@@ -256,10 +520,6 @@ class AccountTab extends StatelessWidget {
           onTap: () => Navigator.of(context).push(n11Route(ProfileScreen(session: session))),
         ),
       if (signedIn) ...settingsEntries,
-      if (signedIn && brand.id == AppId.food)
-        N11ListItem(key: const Key('change-password-entry'), icon: Icons.lock_outline, title: 'Đổi mật khẩu', onTap: () => Navigator.of(context).push(n11Route(ChangePasswordScreen(session: session)))),
-      if (signedIn && brand.id == AppId.food && shop != null && session.identity?.availableRoles.contains('SHOP_OWNER') != true)
-        N11ListItem(key: const Key('shop-entry'), icon: Icons.storefront_outlined, title: 'Đăng ký mở quán', sub: 'Gửi hồ sơ để được xét duyệt.', onTap: () => Navigator.of(context).push(n11Route(ShopStartScreen(controller: shop!)))),
       ...entries,
       _updateRow(context),
       if (showDiagnostics && brand.id != AppId.food) N11ListItem(icon: Icons.network_check, title: 'Chẩn đoán kết nối', sub: 'Kiểm tra kết nối với máy chủ', onTap: actions.openDiagnostics),
@@ -267,10 +527,117 @@ class AccountTab extends StatelessWidget {
     ]);
   }
 
+  Widget _foodShopManageCard(BuildContext context, {required bool isOwner}) {
+    final String? profileStatus = shop?.profile?.status;
+    final String sub = isOwner
+        ? 'Thông tin quán, thực đơn và đơn hàng'
+        : profileStatus == 'INCOMPLETE'
+            ? 'Hồ sơ quán chưa hoàn tất — tiếp tục đăng ký'
+            : profileStatus == 'DISABLED'
+                ? 'Hồ sơ quán đang tạm khóa'
+                : 'Đăng ký tạo quán mới trên 11Food';
+    final VoidCallback? onTap = isOwner
+        ? onOpenShopManage
+        : (onOpenShopRegister ??
+            (shop == null
+                ? null
+                : () => Navigator.of(context).push(
+                    n11Route(ShopStartScreen(controller: shop!)))));
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: 'Quản lý quán, $sub',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: N11Colors.yellowFaint,
+          borderRadius: BorderRadius.circular(kRadiusCard),
+          border: Border.all(color: N11Colors.homeLocateBorder, width: 1.2),
+          boxShadow: N11V5.warmSoftShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(kRadiusCard),
+          child: InkWell(
+            key: const Key('account-shop-manage-card'),
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(kRadiusCard),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE7B3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.storefront_rounded,
+                      size: 23,
+                      color: N11Colors.accentOrange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Quản lý quán',
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.3,
+                            fontWeight: FontWeight.w800,
+                            color: N11Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          sub,
+                          key: const Key('account-shop-manage-sub'),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w500,
+                            color: N11Colors.ink2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 24,
+                    color: N11Colors.accentOrange,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// "Kiểm tra cập nhật": the manual retry of the M13 check (the same one the app makes at start), shown only when this build checks at all.
   Widget _updateRow(BuildContext context) {
     final AppUpdateController? updates = AppUpdateScope.maybeOf(context);
-    if (updates == null || !updates.enabled) {
+    if (updates == null) {
+      if (brand.id != AppId.food) {
+        return const SizedBox.shrink();
+      }
+      return const N11ListItem(
+        key: Key('m13-update-check'),
+        icon: Icons.system_update_outlined,
+        title: 'Kiểm tra cập nhật',
+        sub: 'Đã là phiên bản mới nhất',
+      );
+    }
+    if (!updates.enabled) {
       return const SizedBox.shrink();
     }
     return ListenableBuilder(
@@ -287,7 +654,7 @@ class AccountTab extends StatelessWidget {
 
   Widget _guest(BuildContext context) {
     final bool ended = session.sessionEndedNotice;
-    return vstack(<Widget>[
+    final List<Widget> coreChildren = <Widget>[
       if (ended)
         // Session ended: the "Phiên hết hạn / thiết bị khác" state of the design, then the same sign-in actions.
         const N11StateBlock(
@@ -323,6 +690,42 @@ class AccountTab extends StatelessWidget {
         N11Button(key: const Key('open-register'), label: registerLabel, kind: registerKind, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(RegisterScreen(session: session, brand: brand, shop: shop))) : null),
         N11Button(key: const Key('open-login'), label: 'Đăng nhập', kind: ButtonKind.secondary, onPressed: session.ready ? () => Navigator.of(context).push(n11Route(LoginScreen(session: session, brand: brand, reset: reset, shop: shop))) : null),
       ],
+    ];
+    if (brand.id == AppId.food) {
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (!constraints.hasBoundedHeight) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(
+                N11Space.pad,
+                16,
+                N11Space.pad,
+                32,
+              ),
+              child: vstack(coreChildren),
+            );
+          }
+          final double minH =
+              (constraints.maxHeight - 48).clamp(0.0, double.infinity);
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              N11Space.pad,
+              16,
+              N11Space.pad,
+              32,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minH),
+              child: Center(
+                child: vstack(coreChildren),
+              ),
+            ),
+          );
+        },
+      );
+    }
+    return vstack(<Widget>[
+      ...coreChildren,
       const SizedBox(height: N11Space.gap1),
       _tools(context, signedIn: false),
     ]);
@@ -334,7 +737,7 @@ class AccountTab extends StatelessWidget {
     final List<String> roles = identity?.availableRoles ?? const <String>[];
     final bool locked = identity?.lockedWalletOnly ?? false;
     final bool deletionLocked = locked && (identity?.deletionLocked ?? false);
-    return vstack(<Widget>[
+    final Widget body = vstack(<Widget>[
       N11AvatarCard(
         name: name,
         phone: identity?.maskedPhone ?? '',
@@ -346,6 +749,13 @@ class AccountTab extends StatelessWidget {
           if (roles.contains('DRIVER')) const N11Chip('Shipper', kind: ChipKind.dark),
         ],
       ),
+      if (brand.id == AppId.food &&
+          !locked &&
+          (shop != null || onOpenShopManage != null || onOpenShopRegister != null))
+        _foodShopManageCard(
+          context,
+          isOwner: roles.contains('SHOP_OWNER'),
+        ),
       // Only what the phone knows: a live, server-checked session. It does not claim a verified phone number (an account registered while
       // SYSTEM had the registration OTP off has an unverified one).
       if (locked)
@@ -381,6 +791,7 @@ class AccountTab extends StatelessWidget {
           ),
         ]),
     ]);
+    return brand.id == AppId.food ? _foodScrollable(body) : body;
   }
 }
 
@@ -406,33 +817,60 @@ Future<void> confirmLogout(BuildContext context, SessionController session) asyn
 // ---- Forms -----------------------------------------------------------------------------------------------------------
 
 class N11FormScaffold extends StatelessWidget {
-  const N11FormScaffold({super.key, required this.title, required this.children, required this.session, this.background = N11Colors.bg, this.onBack, this.formKey});
+  const N11FormScaffold({
+    super.key,
+    required this.title,
+    required this.children,
+    required this.session,
+    this.background = N11Colors.formBg,
+    this.usePageGradient = false,
+    this.onBack,
+    this.formKey,
+  });
 
   final String title;
   final List<Widget> children;
   final SessionController? session;
   final Color background;
+  final bool usePageGradient;
   final VoidCallback? onBack;
   final GlobalKey<FormState>? formKey;
 
   @override
   Widget build(BuildContext context) {
-    return Form(key: formKey, child: Scaffold(
-      backgroundColor: background,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            N11AppBar(title: title, onBack: onBack ?? () => Navigator.of(context).maybePop()),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap8),
-                child: vstack(children),
+    final bool useGradient =
+        usePageGradient && N11PageBackground.maybeOf(context) != null;
+    final Widget scaffold = Form(
+      key: formKey,
+      child: Scaffold(
+        backgroundColor: useGradient ? Colors.transparent : background,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              N11AppBar(
+                title: title,
+                transparent: useGradient,
+                backgroundColor: useGradient ? null : background,
+                borderColor: N11Colors.formDivider,
+                onBack: onBack ?? () => Navigator.of(context).maybePop(),
               ),
-            ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    N11Space.pad,
+                    N11Space.gap4,
+                    N11Space.pad,
+                    N11Space.gap8,
+                  ),
+                  child: vstack(children, gap: N11Space.formFieldGap),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
+    return useGradient ? N11PageBackdrop(child: scaffold) : scaffold;
   }
 }
 
@@ -521,23 +959,38 @@ class _LoginScreenState extends State<LoginScreen> {
           children: <Widget>[
             N11Heading('Chào mừng trở lại', sub: widget.brand.id == AppId.food ? 'Đăng nhập để tiếp tục với 11Food.' : 'Đăng nhập tài khoản shipper.'),
             _failureBanner(session),
-            N11Field(validator: phoneError, fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, onChanged: () => setState(() {})),
-            N11Field(
-              requiredInput: true,
-              fieldKey: const Key('login-password'),
-              label: 'Mật khẩu',
-              controller: _password,
-              password: true,
-              maxLength: 128,
-              enabled: !busy,
-              tone: wrong ? FieldTone.error : FieldTone.normal,
-              onChanged: () => setState(() {}),
+            N11Field(validator: phoneError, fieldKey: const Key('login-phone'), label: 'Số điện thoại', placeholder: '0912345678', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !busy, tone: wrong ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                N11Field(
+                  requiredInput: true,
+                  fieldKey: const Key('login-password'),
+                  label: 'Mật khẩu',
+                  controller: _password,
+                  password: true,
+                  maxLength: 128,
+                  enabled: !busy,
+                  tone: wrong ? FieldTone.error : FieldTone.normal,
+                  onChanged: () => setState(() {}),
+                ),
+                if (widget.reset != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: N11Link(
+                      'Quên mật khẩu?',
+                      key: const Key('to-reset'),
+                      compact: true,
+                      onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))),
+                    ),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: ReasonNote(kUnavailableReason),
+                  ),
+              ],
             ),
-            if (widget.reset != null)
-              N11Link('Quên mật khẩu?', key: const Key('to-reset'), onPressed: busy ? null : () => Navigator.of(context).push(n11Route(ResetScreen(controller: widget.reset!, brand: widget.brand))))
-            else
-              ReasonNote(kUnavailableReason),
-            const SizedBox(height: N11Space.gap2),
             N11Button(
               key: const Key('login-submit'), validate: true,
               label: busy ? 'Đang đăng nhập…' : 'Đăng nhập',
@@ -545,11 +998,18 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: busy || !session.ready ? null : () => session.login(phone: _phone.text, password: _password.text),
             ),
             if (!session.ready) const ReasonNote(kUnavailableReason),
-            N11Link('Chưa có tài khoản? Đăng ký', key: const Key('to-register'), onPressed: busy ? null : () {
-              // The login form's refusal must not show on the register form.
-              session.dismissNotices();
-              Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand, shop: widget.shop)));
-            }),
+            Center(
+              child: N11Link(
+                'Đăng ký',
+                prefix: 'Chưa có tài khoản? ',
+                key: const Key('to-register'),
+                onPressed: busy ? null : () {
+                  // The login form's refusal must not show on the register form.
+                  session.dismissNotices();
+                  Navigator.of(context).pushReplacement(n11Route(RegisterScreen(session: session, brand: widget.brand, shop: widget.shop)));
+                },
+              ),
+            ),
           ],
         );
       },
@@ -747,7 +1207,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         N11Button(
           key: const Key('otp-request'),
           label: !_otp.canResend && !_otp.busy ? 'Gửi lại sau ${formatWait(_otp.resendSeconds)}' : _otp.step == OtpStep.requesting ? 'Đang gửi…' : (_otp.step == OtpStep.idle && _otp.phone == null ? 'Gửi mã xác minh' : 'Gửi lại mã'),
-          kind: ButtonKind.secondary,
+          kind: _otp.step == OtpStep.idle && _otp.phone == null ? ButtonKind.primary : ButtonKind.secondary,
           loading: _otp.step == OtpStep.requesting,
           onPressed: busy || !_otp.canResend ? null : () { if (_validate(phoneOnly: true)) _otp.request(_phone.text); },
         ),
@@ -844,7 +1304,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               text: 'Số điện thoại sẽ ở trạng thái chưa xác minh. Hãy nhập đúng số của bạn: số này dùng để đăng nhập và khôi phục tài khoản.',
             ),
           if (_step == 0) ...<Widget>[
-            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', placeholder: 'Nguyễn Văn An', controller: _name, maxLength: 120, enabled: !locked, onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('password'), tone: _error('password') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-password'), label: 'Mật khẩu', controller: _password, password: true, maxLength: 128, enabled: !locked, hint: _error('password') ?? 'Dùng từ 8 đến 128 ký tự.', onChanged: () => setState(() {})),
             N11Field(key: _feedback.key('confirm'), fieldKey: const Key('register-confirm'), label: 'Nhập lại mật khẩu', controller: _confirm, password: true, maxLength: 128, enabled: !locked, hint: _error('confirm') ?? (_confirm.text.isNotEmpty && _confirm.text != _password.text ? 'Mật khẩu chưa khớp.' : null), tone: _error('confirm') != null || (_confirm.text.isNotEmpty && _confirm.text != _password.text) ? FieldTone.error : FieldTone.normal, onChanged: () => setState(() {})),
             _registrationConsent(disabled: locked),
@@ -960,7 +1420,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onChanged: _phoneEdited,
             ),
             if (!_ship && mode == RegistrationMode.required) ..._otpSection(busy),
-            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
+            N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('register-name'), label: 'Họ và tên', placeholder: 'Nguyễn Văn An', controller: _name, maxLength: 120, enabled: !busy, onChanged: () => setState(() {})),
             N11Field(
               key: _feedback.key('password'),
               tone: _error('password') == null ? FieldTone.normal : FieldTone.error,
@@ -1409,13 +1869,28 @@ class VoucherScreen extends StatelessWidget {
   const VoucherScreen({super.key, required this.session});
   final SessionController session;
   @override
-  Widget build(BuildContext context) => DefaultTabController(length: 3, child: Scaffold(
-    backgroundColor: N11Colors.bg,
-    appBar: AppBar(title: const Text('Voucher của tôi'), bottom: const TabBar(tabs: <Widget>[Tab(text: 'Khả dụng'), Tab(text: 'Đã dùng'), Tab(text: 'Hết hạn')])),
-    body: const TabBarView(children: <Widget>[
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher', text: 'Tính năng voucher chưa được hỗ trợ. Chưa thể nhập hoặc áp mã.'),
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher đã dùng', text: 'Tính năng voucher chưa được hỗ trợ.'),
-      EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher hết hạn', text: 'Tính năng voucher chưa được hỗ trợ.'),
-    ]),
-  ));
+  Widget build(BuildContext context) {
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return DefaultTabController(
+      length: 3,
+      child: N11PageBackdrop(
+        child: Scaffold(
+          backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+          appBar: AppBar(
+            title: const Text('Voucher của tôi'),
+            bottom: const TabBar(tabs: <Widget>[
+              Tab(text: 'Khả dụng'),
+              Tab(text: 'Đã dùng'),
+              Tab(text: 'Hết hạn'),
+            ]),
+          ),
+          body: const TabBarView(children: <Widget>[
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher', text: 'Tính năng voucher chưa được hỗ trợ. Chưa thể nhập hoặc áp mã.'),
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher đã dùng', text: 'Tính năng voucher chưa được hỗ trợ.'),
+            EmptyState(icon: Icons.local_offer_outlined, title: 'Chưa có voucher hết hạn', text: 'Tính năng voucher chưa được hỗ trợ.'),
+          ]),
+        ),
+      ),
+    );
+  }
 }

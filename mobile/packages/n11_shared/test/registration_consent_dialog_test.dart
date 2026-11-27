@@ -21,8 +21,8 @@ void main() {
       ),
     );
 
-    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).value, isFalse);
-    await tester.tap(find.byKey(const Key('register-policy-link')));
+    expect(tester.widget<Checkbox>(find.byKey(const Key('register-consent'))).value, isFalse);
+    await tester.tapOnText(find.textRange.ofSubstring('Điều khoản sử dụng'));
     await tester.pumpAndSettle();
     expect(find.text('Chính sách và điều khoản'), findsOneWidget);
     expect(find.text('1. Phạm vi áp dụng và đơn vị vận hành'), findsOneWidget);
@@ -36,7 +36,7 @@ void main() {
     await tester.tap(find.byKey(const Key('close-policy-popup')));
     await tester.pumpAndSettle();
     expect(agreed, isFalse);
-    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).value, isFalse);
+    expect(tester.widget<Checkbox>(find.byKey(const Key('register-consent'))).value, isFalse);
 
     await tester.tap(find.byKey(const Key('register-consent')));
     await tester.pumpAndSettle();
@@ -57,8 +57,8 @@ void main() {
         ),
       ),
     );
-    expect(tester.widget<CheckboxListTile>(find.byKey(const Key('register-consent'))).onChanged, isNull);
-    await tester.tap(find.byKey(const Key('register-policy-link')));
+    expect(tester.widget<Checkbox>(find.byKey(const Key('register-consent'))).onChanged, isNull);
+    await tester.tapOnText(find.textRange.ofSubstring('Chính sách quyền riêng tư'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('close-policy-popup')), findsOneWidget);
   });

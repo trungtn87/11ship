@@ -574,7 +574,13 @@ void main() {
         final DiscoveryController c = DiscoveryController(api: seeded());
         addTearDown(c.dispose);
         await home(tester, c);
-        expect(find.text('Cao Bằng · tham khảo'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('home-area')),
+            matching: find.text('Giao đến: Cao Bằng · tham khảo'),
+          ),
+          findsOneWidget,
+        );
         final List<String> order = <String>[
           'Zeta Ốc Hương',
           'Alpha Hải Sản',
@@ -583,19 +589,14 @@ void main() {
         for (final String n in order.take(2)) {
           expect(find.text(n), findsWidgets);
         }
-        // Issue #385 / #411: in the server order Zeta (first) is left of Alpha on the same row of the nearby section (the featured row above repeats them).
         expect(
-          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Zeta Ốc Hương'))).dx,
-          lessThan(tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Alpha Hải Sản'))).dx),
+          tester.getTopLeft(find.byKey(const Key('shop-name-s1'))).dy,
+          lessThan(tester.getTopLeft(find.byKey(const Key('shop-name-s2'))).dy),
         );
-        expect(
-          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Zeta Ốc Hương'))).dy,
-          tester.getTopLeft(find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Alpha Hải Sản'))).dy,
-        );
-        expect(find.text('Đang mở cửa'), findsWidgets);
+        expect(find.textContaining('Đang mở'), findsWidgets);
         expect(find.text('Đã đóng cửa'), findsWidgets);
         await tester.scrollUntilVisible(
-          find.descendant(of: find.byKey(const Key('home-nearby-section')), matching: find.text('Quán Đóng Cửa')),
+          find.byKey(const Key('shop-name-s3')),
           120,
           scrollable: find.byType(Scrollable).first,
         );
@@ -660,15 +661,13 @@ void main() {
     );
 
     testWidgets(
-      'V4 layout: brand and bell, area, full-width search with filter, group chips, then shop heading',
+      'layout: area header, full-width search with filter, group chips, sort tabs, then full-width shop card',
       (WidgetTester tester) async {
         phone(tester);
         final DiscoveryController c = DiscoveryController(api: seeded());
         addTearDown(c.dispose);
         await home(tester, c);
-        final double bell = tester
-            .getTopLeft(find.byKey(const Key('home-bell')))
-            .dy;
+        expect(find.byKey(const Key('home-brand-title')), findsNothing);
         final double area = tester
             .getTopLeft(find.byKey(const Key('home-area')))
             .dy;
@@ -678,14 +677,16 @@ void main() {
         final double chips = tester
             .getTopLeft(find.byKey(const Key('home-cat-all')))
             .dy;
-        final double heading = tester.getTopLeft(find.text('Quán gần bạn')).dy;
+        final double sortTabs = tester
+            .getTopLeft(find.byKey(const Key('home-sort-tabs')))
+            .dy;
         final double firstShop = tester
             .getTopLeft(find.byKey(const Key('shop-s1')))
             .dy;
         expect(
-          <double>[bell, area, search, chips, heading, firstShop],
+          <double>[area, search, chips, sortTabs, firstShop],
           orderedEquals(
-            <double>[bell, area, search, chips, heading, firstShop]..sort(),
+            <double>[area, search, chips, sortTabs, firstShop]..sort(),
           ),
         );
         expect(
@@ -703,8 +704,6 @@ void main() {
               .abs(),
           lessThan(24),
         );
-        await tapKey(tester, 'home-bell');
-        expect(find.text('Thông báo sẽ có ở bản sau.'), findsOneWidget);
         expect(
           find.text('Trang chủ'),
           findsNothing,
@@ -766,7 +765,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byKey(const Key('home-area')),
-            matching: find.text('Cao Bằng'),
+            matching: find.text('Giao đến: Cao Bằng'),
           ),
           findsOneWidget,
         );
@@ -783,14 +782,12 @@ void main() {
         await c.locate(force: true);
         await tester.pumpAndSettle();
         expect(c.areaId, 'a2');
-        // Issue #411: the featured row sits above the nearby row, so the filter taps above may leave Home scrolled a little; the area
-        // label is the top row of the list, so bring the list back to its top before reading it.
         tester.state<ScrollableState>(find.descendant(of: find.byKey(const Key('home-list')), matching: find.byType(Scrollable)).first).position.jumpTo(0);
         await tester.pumpAndSettle();
         expect(
           find.descendant(
             of: find.byKey(const Key('home-area')),
-            matching: find.text('Hòa An'),
+            matching: find.text('Giao đến: Hòa An'),
           ),
           findsOneWidget,
         );

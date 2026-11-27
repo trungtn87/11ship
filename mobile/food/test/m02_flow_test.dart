@@ -40,12 +40,15 @@ void main() {
     await session.refreshIdentity();
     await tester.pumpWidget(ListenableBuilder(listenable: session, builder: (BuildContext context, Widget? child) => N11App(navigationIdentity: session.identity?.userId, brand: foodBrand, tabs: buildFoodTabs(session, flows: flows), config: config, transport: healthy(), pollInterval: Duration.zero)));
     await tester.pump();
-    // The owner's own tab, and no "Quản lý cửa hàng" row left in Tài khoản.
-    expect(find.byKey(const Key('tab-shop')), findsOneWidget);
+    // 4-tab bottom bar: no tab-shop; owner opens Quản lý quán from Tài khoản.
+    expect(find.byKey(const Key('tab-shop')), findsNothing);
     await tester.tap(find.byKey(const Key('tab-account')));
     await tester.pumpAndSettle();
     expect(find.text('Quản lý cửa hàng'), findsNothing);
-    await tester.tap(find.byKey(const Key('tab-shop')));
+    expect(find.byKey(const Key('shop-entry')), findsNothing);
+    expect(find.byKey(const Key('account-shop-manage-card')), findsOneWidget);
+    expect(find.text('Thông tin quán, thực đơn và đơn hàng'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-shop-manage-card')));
     await tester.pumpAndSettle();
     // Not in shop mode yet: nothing is read, the person enters the mode with their own tap.
     expect(find.byKey(const Key('shop-tab-enter')), findsOneWidget);

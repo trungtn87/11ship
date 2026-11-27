@@ -13,6 +13,8 @@ export type TransferDecision =
 
 /** The exact shape topupTransferCodeOf produces: NAP + 10 upper-case hex digits. */
 export const TRANSFER_CODE_PATTERN = new RegExp(`^${SEPAY_TRANSFER_PREFIX}[0-9A-F]{10}$`);
+/** MB (and some other banks) put "<BANK> <receiving account> " in front of the customer's text; only that exact shape may precede the code. */
+const BANK_CONTENT_PREFIX = /^\s*(?:[A-Za-z]{2,16} [0-9]{6,20} )?/;
 const REFERENCE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
 export function decideTransfer(event: SepayTransferEvent): TransferDecision {
@@ -25,8 +27,8 @@ export function decideTransfer(event: SepayTransferEvent): TransferDecision {
   if (!TRANSFER_CODE_PATTERN.test(event.code)) {
     return { kind: 'NEEDS_ADMIN', reason: 'CODE_FORMAT' };
   }
-  // The code must open the transfer content: only the leading whitespace of the bank text is ignored, nothing else is read out of it.
-  if (!event.content.trimStart().startsWith(event.code)) {
+  // The code must open the transfer content: only leading whitespace and the bank's own "<BANK> <account> " prefix are skipped, nothing else is read out of it.
+  if (!event.content.slice(BANK_CONTENT_PREFIX.exec(event.content)![0].length).startsWith(event.code)) {
     return { kind: 'NEEDS_ADMIN', reason: 'CODE_NOT_AT_START' };
   }
   if (event.referenceCode === '') {

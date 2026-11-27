@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -768,6 +770,91 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
   String? _error;
   bool _reporting = false;
   String? _reportError;
+  Timer? _pollTimer;
+  TopupStatus? _lastStatus;
+  bool? _lastReported;
+  bool _polling = false;
+
+  /// The answer the silent poll already read when it saw the decision: the rebuilt loader shows THIS instead of asking again, so a network blip right
+  /// after the poll cannot turn a known "confirmed" into an error screen (Codex #455).
+  WalletLoad<TopupRequest>? _polled;
+
+  void _ensurePolling() {
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 6), (_) => _poll());
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant TopupDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.code != widget.code || oldWidget.source != widget.source) {
+      _lastStatus = null;
+      _lastReported = null;
+      _polled = null;
+      _stopPolling();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
+
+  Future<WalletLoad<TopupRequest>> _load() async {
+    final WalletLoad<TopupRequest>? polled = _polled;
+    _polled = null;
+    final WalletLoad<TopupRequest> result = polled ?? await widget.source.topup(widget.code);
+    if (!mounted) {
+      return result;
+    }
+    if (result is WalletReady<TopupRequest>) {
+      _lastStatus = result.value.status;
+      _lastReported = result.value.reported;
+      if (result.value.status == TopupStatus.pending) {
+        _ensurePolling();
+      } else {
+        _stopPolling();
+      }
+    }
+    return result;
+  }
+
+  Future<void> _poll() async {
+    if (!mounted || _reporting || _busy || _polling || _lastStatus != TopupStatus.pending) {
+      return;
+    }
+    _polling = true;
+    final String code = widget.code;
+    final WalletSource source = widget.source;
+    try {
+      final WalletLoad<TopupRequest> result = await source.topup(code);
+      // An answer for another request or source (the widget was reused) is dropped; so is one that arrives while a write is in flight.
+      if (!mounted || _reporting || _busy || code != widget.code || !identical(source, widget.source) || result is! WalletReady<TopupRequest>) {
+        return;
+      }
+      final TopupRequest next = result.value;
+      if (next.status != _lastStatus || next.reported != _lastReported) {
+        _lastStatus = next.status;
+        _lastReported = next.reported;
+        _polled = result;
+        if (next.status != TopupStatus.pending) {
+          _stopPolling();
+        }
+        setState(() => _rev++);
+      } else if (next.status != TopupStatus.pending) {
+        _stopPolling();
+      }
+    } catch (_) {
+      // Ignore transient network errors during silent polling.
+    } finally {
+      _polling = false;
+    }
+  }
 
   /// "Xác nhận đã chuyển tiền": one request in flight at a time (a second tap is ignored). A lost answer keeps its key, so a retry is the same report.
   Future<void> _report() async {
@@ -838,7 +925,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
             _Tone.warn,
             'Chuyển đúng số tiền và nội dung bên dưới. Sau khi chuyển, bấm "Xác nhận đã chuyển tiền". Tiền sẽ được cộng khi hệ thống nhận được khoản chuyển khớp mã nạp, hoặc khi quản trị xác nhận.',
           ),
-        TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Admin đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
+        TopupStatus.confirmed => (Icons.check_circle_outline, _Tone.ok, 'Đã xác nhận. Số tiền thực nhận đã được ghi vào ví.'),
         TopupStatus.rejected => (Icons.cancel_outlined, _Tone.bad, 'Admin đã từ chối yêu cầu này. Ví không thay đổi.'),
         TopupStatus.cancelled => (Icons.block, _Tone.neutral, 'Yêu cầu đã được hủy. Ví không thay đổi.'),
       };
@@ -849,7 +936,7 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
     return _page(source, 'Chi tiết yêu cầu nạp', <Widget>[
       WalletLoader<TopupRequest>(
         key: ValueKey<String>('topup-${widget.code}-$_rev'),
-        load: () => source.topup(widget.code),
+        load: _load,
         builder: (TopupRequest r) {
           final (IconData icon, _Tone tone, String text) = _look(r);
           return vstack(<Widget>[
@@ -865,7 +952,9 @@ class _TopupDetailScreenState extends State<TopupDetailScreen> {
               ),
             ),
             if (r.status == TopupStatus.confirmed) _NewBalance(source: source, request: r),
-            if (r.status == TopupStatus.pending) _PendingTransfer(source: source, request: r),
+            // Once the transfer is reported the QR and the account details are not needed any more (and invite a second transfer): only the way to reach the Administration is kept.
+            if (r.status == TopupStatus.pending && !r.reported) _PendingTransfer(source: source, request: r),
+            if (r.reported) Text('Nếu sau 15 phút chưa thấy tiền, bấm "Trao đổi với quản trị" và gửi mã yêu cầu ${r.shownCode}.', key: const Key('topup-reported-help'), style: const TextStyle(fontSize: 14, height: 1.4)),
             // "Trao đổi với quản trị" is not offered while the transfer is only waited for; it appears once the transfer is reported (and for decided requests, as before).
             if (source is HttpWalletSource && (r.status != TopupStatus.pending || r.reported))
               N11Button(key: const Key('topup-exchange'), label: 'Trao đổi với quản trị', kind: ButtonKind.secondary, onPressed: () => Navigator.of(context).push(n11Route(FinanceRequestsScreen(session: source.session, requestId: r.code)))),

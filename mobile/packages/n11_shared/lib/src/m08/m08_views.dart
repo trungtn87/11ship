@@ -619,74 +619,83 @@ class NotificationInboxScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: N11Colors.bg,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            Container(
-              constraints: const BoxConstraints(minHeight: 52),
-              decoration: const BoxDecoration(
-                color: N11Colors.white,
-                border: Border(bottom: BorderSide(color: N11Colors.line)),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    tooltip: 'Quay lại',
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(
-                      Icons.chevron_left,
-                      size: 32,
-                      color: N11Colors.black,
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                decoration: BoxDecoration(
+                  color: hasGradient ? Colors.transparent : N11Colors.white,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: hasGradient
+                          ? const Color(0x14191919)
+                          : N11Colors.line,
                     ),
                   ),
-                  Expanded(
-                    child: Semantics(
-                      header: true,
-                      child: const Text('Thông báo', style: N11Text.barTitle),
-                    ),
-                  ),
-                  TextButton.icon(
-                    key: const Key('mark-all'),
-                    onPressed: () => unawaited(_markAll(context)),
-                    icon: const Icon(
-                      Icons.done_all,
-                      size: 18,
-                      color: N11Colors.black,
-                    ),
-                    label: const Text(
-                      'Đánh dấu\nđã đọc',
-                      textAlign: TextAlign.left,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.2,
-                        fontWeight: FontWeight.w600,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      tooltip: 'Quay lại',
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        size: 32,
                         color: N11Colors.black,
                       ),
                     ),
-                  ),
-                  if (settingsBuilder != null)
-                    IconButton(
-                      key: const Key('open-notification-settings'),
-                      tooltip: 'Cài đặt thông báo',
-                      onPressed: () =>
-                          Navigator.of(context)
-                              .push(n11Route(settingsBuilder!(context))),
-                      icon: const Icon(Icons.tune, color: N11Colors.black),
+                    Expanded(
+                      child: Semantics(
+                        header: true,
+                        child: const Text('Thông báo', style: N11Text.barTitle),
+                      ),
                     ),
-                ],
+                    TextButton.icon(
+                      key: const Key('mark-all'),
+                      onPressed: () => unawaited(_markAll(context)),
+                      icon: const Icon(
+                        Icons.done_all,
+                        size: 18,
+                        color: N11Colors.black,
+                      ),
+                      label: const Text(
+                        'Đánh dấu\nđã đọc',
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.2,
+                          fontWeight: FontWeight.w600,
+                          color: N11Colors.black,
+                        ),
+                      ),
+                    ),
+                    if (settingsBuilder != null)
+                      IconButton(
+                        key: const Key('open-notification-settings'),
+                        tooltip: 'Cài đặt thông báo',
+                        onPressed: () =>
+                            Navigator.of(context)
+                                .push(n11Route(settingsBuilder!(context))),
+                        icon: const Icon(Icons.tune, color: N11Colors.black),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: NotificationInboxBody(
-                controller: controller,
-                router: router,
-                actions: actions,
+              Expanded(
+                child: NotificationInboxBody(
+                  controller: controller,
+                  router: router,
+                  actions: actions,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1069,24 +1078,27 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         ],
       );
     }
-    return Scaffold(
-      backgroundColor: N11Colors.bg,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            const N11AppBarBack(title: 'Thông báo'),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  N11Space.pad,
-                  N11Space.gap4,
-                  N11Space.pad,
-                  N11Space.gap8,
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              const N11AppBarBack(title: 'Thông báo'),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    N11Space.pad,
+                    N11Space.gap4,
+                    N11Space.pad,
+                    N11Space.gap8,
+                  ),
+                  child: body,
                 ),
-                child: body,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

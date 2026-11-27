@@ -112,6 +112,7 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
         return N11FormScaffold(
           title: 'Quản lý cửa hàng',
           session: null,
+          usePageGradient: true,
           children: <Widget>[
             _shopFailure(controller),
             if (loading) const N11Banner(key: Key('shop-loading'), kind: BannerKind.info, title: 'Đang đọc hồ sơ cửa hàng từ máy chủ…'),
@@ -125,6 +126,7 @@ class _ShopStartScreenState extends State<ShopStartScreen> {
                 title: 'Bạn chưa có hồ sơ cửa hàng',
                 text: 'Tạo hồ sơ để kích hoạt vai trò Chủ quán. Bạn vẫn là khách hàng như bình thường.',
               ),
+              const SizedBox(height: N11Space.gap1),
               N11Button(key: const Key('shop-register'), label: 'Tạo hồ sơ cửa hàng', onPressed: () => Navigator.of(context).push(n11Route(ShopFormScreen(controller: controller, m02: widget.m02)))),
             ],
             if (ready && profile != null) ...<Widget>[
@@ -271,13 +273,12 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
             _shopFailure(c),
             if (locked) const N11Banner(kind: BannerKind.info, title: 'Hồ sơ đã hoàn tất', text: 'Chỉ xem. Sửa hồ sơ sau khi hoàn tất chưa nối trên Android.'),
             ShopLogoField(value: c.logo, picker: c.picker, session: c.session, enabled: !editingLocked && !locked, onChanged: c.setLogo),
-            const N11Steps(count: 2, current: 1, label: 'Thông tin liên hệ'),
+            const N11SectionHeader('Thông tin liên hệ'),
             N11Field(key: _feedback.key('name'), hint: _error('name'), tone: _error('name') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-name'), label: 'Tên cửa hàng', controller: _name, maxLength: 120, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
             N11Field(key: _feedback.key('phone'), hint: _error('phone'), tone: _error('phone') == null ? FieldTone.normal : FieldTone.error, fieldKey: const Key('shop-phone'), label: 'Số điện thoại liên hệ', controller: _phone, keyboard: TextInputType.phone, maxLength: 20, enabled: !editingLocked && !locked, onChanged: () { _push(); setState(() {}); }),
-            const SizedBox(height: N11Space.gap1),
-            const N11Steps(count: 2, current: 2, label: 'Vị trí'),
+            const N11SectionHeader('Vị trí & kênh liên hệ', showDivider: true),
             KeyedSubtree(key: _feedback.key('address'), child: AddressLocationField(key: const Key('shop-address'), error: _error('address') ?? (c.failure?.kind == AuthFailureKind.pickupOutsideArea ? failureMessage(c.failure!) : null), label: 'Chọn vị trí lấy hàng trên bản đồ', text: _address.text,
-              pinSummary: (c.fix?.latitude ?? profile?.pickupLat) == null || (c.fix?.longitude ?? profile?.pickupLng) == null ? 'Chưa chọn ghim trên bản đồ.' : 'Ghim đã chọn: ${(c.fix?.latitude ?? profile!.pickupLat!).toStringAsFixed(5)}, ${(c.fix?.longitude ?? profile!.pickupLng!).toStringAsFixed(5)}',
+              pinSummary: (c.fix?.latitude ?? profile?.pickupLat) == null || (c.fix?.longitude ?? profile?.pickupLng) == null ? 'Chưa chọn ghim trên bản đồ.' : 'Đã chọn vị trí trên bản đồ (${(c.fix?.latitude ?? profile!.pickupLat!).toStringAsFixed(5)}, ${(c.fix?.longitude ?? profile!.pickupLng!).toStringAsFixed(5)})',
               onTap: busy || locked || c.hasPendingWrite ? null : () async {
                 _push();
                 final int epoch = c.session.sessionEpoch;
@@ -313,7 +314,10 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
                   }
                 },
               ),
-              ReasonNote(_completeReason(c, profile, hasPoint)),
+              ReasonNote(
+                _completeReason(c, profile, hasPoint),
+                icon: Icons.info_outline,
+              ),
             ],
           ],
         );
@@ -375,6 +379,7 @@ class _ShopHomeScreenState extends State<ShopHomeScreen> {
         return N11FormScaffold(
           title: 'Cửa hàng của tôi',
           session: null,
+          usePageGradient: true,
           children: <Widget>[
             _shopFailure(c),
             if (profile == null) const N11Banner(kind: BannerKind.info, title: 'Đang đọc hồ sơ…'),

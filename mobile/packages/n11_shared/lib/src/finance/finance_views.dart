@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../account/api_client.dart';
 import '../account/session_controller.dart';
+import '../tokens.dart';
 
 /// Finance requests use the current app session. Nothing here credits a wallet or activates a shop.
 class FinanceRequestsScreen extends StatefulWidget {
@@ -142,40 +143,44 @@ class _FinanceRequestsScreenState extends State<FinanceRequestsScreen> with Widg
   @override
   Widget build(BuildContext context) {
     final bool room = _id != null;
-    return Scaffold(
-      appBar: AppBar(title: Text(room ? 'Trao đổi thanh toán' : 'Yêu cầu và trao đổi tài chính'), actions: <Widget>[IconButton(onPressed: _loading ? null : () => _reload(), icon: const Icon(Icons.refresh), tooltip: 'Làm mới')]),
-      body: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
-        if (_loading) const LinearProgressIndicator(),
-        if (!room) ...<Widget>[
-          if (widget.shopPayments) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-            const Text('Tạo yêu cầu thanh toán'),
-            const Text('Nhập số tiền và mục đích. Chuyển khoản ngoài ứng dụng rồi báo đã chuyển ở bước tiếp theo. Ghi nhận tiền và cấp quyền thực đơn là hai bước riêng.'),
-            TextField(controller: _amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Số tiền (đ)')),
-            TextField(controller: _note, maxLength: 500, decoration: const InputDecoration(labelText: 'Mục đích / nội dung thanh toán')),
-            FilledButton(onPressed: _sending ? null : () => _send(create: true), child: const Text('Tạo yêu cầu')),
-          ]))),
-          if (_items.isEmpty && !_loading) const Text('Chưa có yêu cầu thanh toán.'),
-          for (final Map<String, Object?> r in _items) Card(child: ListTile(title: Text('${r['label']} · ${r['amount_requested_vnd']} đ'), subtitle: Text('${_state(r['state'])} · ${r['unread']} chưa đọc'), trailing: const Icon(Icons.chat_outlined), onTap: () { setState(() { _id = r['request_id']! as String; _before = null; _request = null; _messages = <Map<String, Object?>>[]; }); unawaited(_reload()); })),
-        ] else ...<Widget>[
-          TextButton(onPressed: () { setState(() { _id = null; _before = null; _request = null; }); unawaited(_reload()); }, child: const Text('← Danh sách yêu cầu')),
-          Text(_state(_request?['state']), style: Theme.of(context).textTheme.titleMedium),
-          if (_request?['state'] == 'PENDING') ...<Widget>[
-            const Text('Chuyển khoản ngoài ứng dụng theo tài khoản nhận đang được cấu hình:'),
-            if (_accounts.isEmpty) const Text('Chưa có tài khoản nhận. Trao đổi với quản trị trước khi chuyển khoản.'),
-            for (final Map<String, Object?> a in _accounts) SelectableText('${a['bank_id']} · ${a['account_number']}\n${a['account_holder']}'),
-            if (_request?['reported_at'] == null) OutlinedButton(onPressed: _sending ? null : _reportTransfer, child: const Text('Tôi đã chuyển khoản'))
-            else Text('Đã báo chuyển khoản lúc ${_time(_request?['reported_at'])}. Chờ kiểm tra tiền thực nhận.'),
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : null,
+        appBar: AppBar(title: Text(room ? 'Trao đổi thanh toán' : 'Yêu cầu và trao đổi tài chính'), actions: <Widget>[IconButton(onPressed: _loading ? null : () => _reload(), icon: const Icon(Icons.refresh), tooltip: 'Làm mới')]),
+        body: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+          if (_loading) const LinearProgressIndicator(),
+          if (!room) ...<Widget>[
+            if (widget.shopPayments) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+              const Text('Tạo yêu cầu thanh toán'),
+              const Text('Nhập số tiền và mục đích. Chuyển khoản ngoài ứng dụng rồi báo đã chuyển ở bước tiếp theo. Ghi nhận tiền và cấp quyền thực đơn là hai bước riêng.'),
+              TextField(controller: _amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Số tiền (đ)')),
+              TextField(controller: _note, maxLength: 500, decoration: const InputDecoration(labelText: 'Mục đích / nội dung thanh toán')),
+              FilledButton(onPressed: _sending ? null : () => _send(create: true), child: const Text('Tạo yêu cầu')),
+            ]))),
+            if (_items.isEmpty && !_loading) const Text('Chưa có yêu cầu thanh toán.'),
+            for (final Map<String, Object?> r in _items) Card(child: ListTile(title: Text('${r['label']} · ${r['amount_requested_vnd']} đ'), subtitle: Text('${_state(r['state'])} · ${r['unread']} chưa đọc'), trailing: const Icon(Icons.chat_outlined), onTap: () { setState(() { _id = r['request_id']! as String; _before = null; _request = null; _messages = <Map<String, Object?>>[]; }); unawaited(_reload()); })),
+          ] else ...<Widget>[
+            TextButton(onPressed: () { setState(() { _id = null; _before = null; _request = null; }); unawaited(_reload()); }, child: const Text('← Danh sách yêu cầu')),
+            Text(_state(_request?['state']), style: Theme.of(context).textTheme.titleMedium),
+            if (_request?['state'] == 'PENDING') ...<Widget>[
+              const Text('Chuyển khoản ngoài ứng dụng theo tài khoản nhận đang được cấu hình:'),
+              if (_accounts.isEmpty) const Text('Chưa có tài khoản nhận. Trao đổi với quản trị trước khi chuyển khoản.'),
+              for (final Map<String, Object?> a in _accounts) SelectableText('${a['bank_id']} · ${a['account_number']}\n${a['account_holder']}'),
+              if (_request?['reported_at'] == null) OutlinedButton(onPressed: _sending ? null : _reportTransfer, child: const Text('Tôi đã chuyển khoản'))
+              else Text('Đã báo chuyển khoản lúc ${_time(_request?['reported_at'])}. Chờ kiểm tra tiền thực nhận.'),
+            ],
+            const Text('Tin nhắn chỉ dùng để trao đổi, không tự xác nhận tiền đã nhận.'),
+            for (final Map<String, Object?> m in _messages) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('${m['sender_name'] ?? switch (m['role']) { 'SYSTEM_EVENT' => 'Thông báo', 'SHOP' => 'Quán', 'SHIPPER' => 'Shipper', _ => 'Quản trị' }} · ${_time(m['created_at'])}', style: Theme.of(context).textTheme.labelSmall), Text(m['body']! as String)]))),
+            if (_request?['state'] == 'PENDING') ...<Widget>[
+              TextField(controller: _message, maxLength: 500, minLines: 1, maxLines: 4, decoration: const InputDecoration(labelText: 'Tin nhắn')),
+              FilledButton(onPressed: _sending ? null : () => _send(), child: const Text('Gửi tin nhắn')),
+            ] else if (_request != null) const Text('Yêu cầu đã kết thúc. Lịch sử trao đổi vẫn được giữ lại.'),
           ],
-          const Text('Tin nhắn chỉ dùng để trao đổi, không tự xác nhận tiền đã nhận.'),
-          for (final Map<String, Object?> m in _messages) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('${m['sender_name'] ?? switch (m['role']) { 'SYSTEM_EVENT' => 'Thông báo', 'SHOP' => 'Quán', 'SHIPPER' => 'Shipper', _ => 'Quản trị' }} · ${_time(m['created_at'])}', style: Theme.of(context).textTheme.labelSmall), Text(m['body']! as String)]))),
-          if (_request?['state'] == 'PENDING') ...<Widget>[
-            TextField(controller: _message, maxLength: 500, minLines: 1, maxLines: 4, decoration: const InputDecoration(labelText: 'Tin nhắn')),
-            FilledButton(onPressed: _sending ? null : () => _send(), child: const Text('Gửi tin nhắn')),
-          ] else if (_request != null) const Text('Yêu cầu đã kết thúc. Lịch sử trao đổi vẫn được giữ lại.'),
-        ],
-        if (_before != null) TextButton(onPressed: _loading ? null : () => _reload(older: true), child: Text(room ? 'Tin nhắn cũ hơn' : 'Xem tiếp')),
-      ]),
+          if (_before != null) TextButton(onPressed: _loading ? null : () => _reload(older: true), child: Text(room ? 'Tin nhắn cũ hơn' : 'Xem tiếp')),
+        ]),
+      ),
     );
   }
 }

@@ -9,7 +9,7 @@ import { ShippingFeeAgreementService } from '../shipping-policy/shipping-fee-agr
 import { TransactionContext } from '../transaction/transaction-context';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { appOfAudience, composeComplaintChange, ComplaintChangePayload } from './notification-complaint-composer';
-import { DraftBase, composeDeliveryChange, composeOrderChange, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, TOPUP_COPY, WITHDRAWAL_COPY } from './notification-composer';
+import { DraftBase, composeDeliveryChange, composeOrderChange, composeTopupCopy, DeliveryChangePayload, OrderChangePayload, NEW_OFFERS_COPY, PROFILE_COPY, WITHDRAWAL_COPY } from './notification-composer';
 import {
   CATEGORY_OF_KIND,
   MAX_EVENT_AGE_MS,
@@ -31,6 +31,7 @@ import { NotificationConfig, NotificationRepository } from './notification-repos
 import { NotificationPushQueue } from './notification-push-queue';
 import { NotificationRecipients } from './notification-recipients';
 import { isCanonicalUuid } from '../shared/identifiers';
+import { MAX_WALLET_VND } from '../wallet/wallet-types';
 import { AuditWriter } from '../audit/audit-writer';
 import { OpsRepository } from '../ops/ops-repository';
 import { isHighPriorityKind, isTimeBound, STALE_AUDIT_ACTION, STALE_METRIC } from './notification-stale';
@@ -428,7 +429,7 @@ export class NotificationEventService {
   // ---- wallet and profile -----------------------------------------------------------------------------------------------------
 
   async #topup(event: OutboxPublishEvent): Promise<void> {
-    const { request_id: requestId, state, version } = event.payload;
+    const { request_id: requestId, state, version, actual_amount_vnd: rawAmount } = event.payload;
     await this.transactions.withTransaction(async (context) => {
       const config = await this.repo.readConfig(context);
       if (!(await this.repo.claimEvent(context, event.eventId, event.eventType, 'OK'))) {
@@ -437,12 +438,15 @@ export class NotificationEventService {
       if (!isCanonicalUuid(requestId) || typeof version !== 'number' || (state !== 'CONFIRMED' && state !== 'REJECTED')) {
         return;
       }
-      const userId = await this.recipients.topupOwner(context, requestId);
-      if (userId === undefined) {
+      const target = await this.recipients.topupFacts(context, requestId);
+      if (target === undefined) {
         return;
       }
-      const copy = TOPUP_COPY[state];
-      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, userId, event);
+      const payloadAmount = typeof rawAmount === 'number' && Number.isSafeInteger(rawAmount) && rawAmount > 0 && BigInt(rawAmount) <= MAX_WALLET_VND ? BigInt(rawAmount) : null;
+      // Prefer the authoritative credited amount stored in app.wallet_topups; fall back to the event payload only when absent (e.g. synthetic rows).
+      const amount = state === 'CONFIRMED' ? (target.actualAmountVnd ?? payloadAmount) : null;
+      const copy = composeTopupCopy(state, amount);
+      await this.#notify(context, config, { audience: 'DRIVER', app: 'SHIP', kind: copy.kind, title: copy.title, body: copy.body, targetType: 'WALLET_TXN', targetId: requestId, targetVersion: version, dedupeKey: `topup:${requestId}:${state}:${String(version)}`, validForMs: null, pushTtlMs: PUSH_TTL_MS.account }, target.userId, event);
     });
   }
 

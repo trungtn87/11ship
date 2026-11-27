@@ -51,17 +51,21 @@ void main() {
       expect(find.byKey(const Key('shop-rating-r')), findsOneWidget);
       expect(tester.getSize(find.byKey(const Key('tile-long'))).height, tester.getSize(find.byKey(const Key('tile-r'))).height);
       final Size image = tester.getSize(find.byKey(const Key('shop-image-frame-long')));
-      expect(image.aspectRatio, closeTo(4 / 3, 0.01));
+      expect(image.aspectRatio, closeTo(16 / 10, 0.01));
       expect(image.width, closeTo(tester.getSize(find.byKey(const Key('tile-long'))).width - 2, 0.01));
       expect(find.descendant(of: find.byKey(const Key('shop-logo-long')), matching: find.byIcon(Icons.storefront_outlined)), findsOneWidget);
       expect(
         tester.getTopLeft(find.byKey(const Key('shop-status-long'))).dy,
-        greaterThanOrEqualTo(tester.getBottomLeft(find.byKey(const Key('shop-image-frame-long'))).dy),
+        greaterThanOrEqualTo(tester.getTopLeft(find.byKey(const Key('shop-image-frame-long'))).dy),
+      );
+      expect(
+        tester.getBottomLeft(find.byKey(const Key('shop-status-long'))).dy,
+        lessThanOrEqualTo(tester.getBottomLeft(find.byKey(const Key('shop-image-frame-long'))).dy),
       );
     });
   }
 
-  testWidgets('a real rating shows the score on the logo; no rating shows the honest text and no score', (WidgetTester tester) async {
+  testWidgets('a real rating shows the score; no rating shows no score', (WidgetTester tester) async {
     await _pumpRow(tester, 390, const <ShopCardData>[rated, unrated]);
     expect(find.text('4.5'), findsOneWidget);
     // Antigravity #385 fix: an unrated tile shows no rating line (the long "Chưa có đánh giá" was cut); no score is invented.
@@ -79,12 +83,12 @@ void main() {
     expect(find.byKey(const Key('shop-rating-z')), findsNothing);
   });
 
-  testWidgets('the Home tile shows open / closed from the data and the address is not on it', (WidgetTester tester) async {
+  testWidgets('the Home tile shows open / closed overlay from the data and the address is not on it', (WidgetTester tester) async {
     await _pumpRow(tester, 390, const <ShopCardData>[
       ShopCardData(shopId: 'o', name: 'Mở', address: 'ADDRESS-MARKER-OPEN', reason: 'ONLINE'),
       ShopCardData(shopId: 'c', name: 'Đóng', address: 'ADDRESS-MARKER-CLOSED', reason: 'OUTSIDE_BUSINESS_HOURS'),
     ]);
-    expect(find.text('Đang mở cửa'), findsOneWidget);
+    expect(find.text('Mở cửa'), findsOneWidget);
     expect(find.text('Đã đóng cửa'), findsOneWidget);
     expect(find.textContaining('ADDRESS-MARKER'), findsNothing);
   });

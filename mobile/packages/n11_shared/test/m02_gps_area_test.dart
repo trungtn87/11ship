@@ -138,14 +138,14 @@ void main() {
     await tester.tap(find.byKey(const Key('fallback-area-a1')));
     await tester.pumpAndSettle();
     expect(controller.manualArea, isTrue);
-    expect(find.text('Vùng 1 · tham khảo'), findsOneWidget);
+    expect(find.text('Giao đến: Vùng 1 · tham khảo'), findsOneWidget);
     gps.failure = null;
     gps.next = fix(2);
     await controller.locate(force: true);
     await tester.pumpAndSettle();
     expect(controller.manualArea, isFalse);
     expect(controller.areaId, 'a2');
-    expect(find.text('Vùng 2'), findsOneWidget);
+    expect(find.text('Giao đến: Vùng 2'), findsOneWidget);
     expect(find.byKey(const Key('fallback-area-a1')), findsNothing);
   });
   testWidgets(
@@ -163,7 +163,7 @@ void main() {
                 controller: c, publicApi: const UnwiredPublicShopApi()))));
     await tester.pumpAndSettle();
     expect(gps.calls, 1);
-    expect(find.text('Vùng 1'), findsOneWidget);
+    expect(find.text('Giao đến: Vùng 1'), findsOneWidget);
     expect(find.byKey(const Key('discovery-locate')), findsNothing);
     await tester.tap(find.byKey(const Key('home-search')));
     await tester.pumpAndSettle();

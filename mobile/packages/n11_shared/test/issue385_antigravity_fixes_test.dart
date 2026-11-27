@@ -112,16 +112,16 @@ void main() {
     });
   }
 
-  // 3. Long name: two lines of the name stay readable; the tile does not overflow.
+  // 3. Long name: single-line title with ellipsis keeps card compact and avoids overflow.
   for (final (double width, double scale) in <(double, double)>[(390, 1.3), (360, 1.3), (320, 1.3)]) {
-    testWidgets('a long shop name uses up to two lines at ${width.toInt()}px, text ${scale}x', (WidgetTester tester) async {
+    testWidgets('a long shop name uses a single line with ellipsis at ${width.toInt()}px, text ${scale}x', (WidgetTester tester) async {
       await _pumpTiles(tester, width: width, textScale: scale, tiles: <Widget>[_tile(longName), _tile(rated)]);
       final Finder name = find.byKey(const Key('shop-name-l'));
       final Text text = tester.widget<Text>(name);
-      expect(text.maxLines, 2, reason: 'the name may use two lines, never one');
+      expect(text.maxLines, 1, reason: 'compact Home cards truncate long names to 1 line with ellipsis');
+      expect(text.overflow, TextOverflow.ellipsis);
       final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(name);
-      // Two lines at most: the paragraph height stays within two lines of the name's own line height.
-      expect(paragraph.size.height, lessThanOrEqualTo(2 * 15 * 1.25 * scale * 1.3 + 2));
+      expect(paragraph.size.height, lessThanOrEqualTo(15 * 1.3 * scale * 1.3 + 2));
       expect(tester.takeException(), isNull);
     });
   }

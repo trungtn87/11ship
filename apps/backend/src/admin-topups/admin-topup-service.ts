@@ -300,14 +300,19 @@ export class AdminTopupService {
       outcome: 'SUCCESS',
       metadata: { state: row.state, ...detail },
     });
-    // The event carries the identifier, the state and the version only (the same shape the Shipper's own commands publish).
+    // The event carries the identifier, the state, the version, and (for CONFIRMED) the actual credited amount.
     await this.outbox.append(context, {
       eventType: EVENT_CHANGED,
       eventSchemaVersion: 1,
       resourceType: RESOURCE,
       resourceId: row.requestId,
       resourceVersion: row.version,
-      payload: { request_id: row.requestId, state: row.state, version: row.version },
+      payload: {
+        request_id: row.requestId,
+        state: row.state,
+        version: row.version,
+        ...(row.state === 'CONFIRMED' && typeof detail.actual_amount_vnd === 'number' ? { actual_amount_vnd: detail.actual_amount_vnd } : {}),
+      },
     });
   }
 

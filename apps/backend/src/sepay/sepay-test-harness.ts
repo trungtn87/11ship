@@ -1,4 +1,5 @@
 import { AppError } from '../common/app-errors';
+import { OutboxEventInput } from '../outbox/outbox-event';
 import { TransactionContext } from '../transaction/transaction-context';
 import { SepayTransferEvent } from './sepay-event';
 import { SepaySettlementService } from './sepay-settlement-service';
@@ -39,6 +40,7 @@ export interface Store {
   resolvedBy: unknown[];
   auditRows: number;
   outboxRows: number;
+  outboxEvents: OutboxEventInput[];
   creditCalls: unknown[];
   creditError?: unknown;
 }
@@ -60,6 +62,7 @@ export function freshStore(overrides: Partial<Store> = {}): Store {
     resolvedBy: [],
     auditRows: 0,
     outboxRows: 0,
+    outboxEvents: [],
     creditCalls: [],
     ...overrides,
   };
@@ -140,7 +143,7 @@ export function buildService(store: Store): { service: SepayWebhookService; tran
       },
     } as never,
     { append: async () => { store.auditRows += 1; } } as never,
-    { append: async () => { store.outboxRows += 1; } } as never,
+    { append: async (_c: unknown, event: OutboxEventInput) => { store.outboxRows += 1; store.outboxEvents.push(event); } } as never,
   );
   const service = new SepayWebhookService(
     {
@@ -159,6 +162,7 @@ export function buildService(store: Store): { service: SepayWebhookService; tran
           resolvedBy: [...store.resolvedBy],
           auditRows: store.auditRows,
           outboxRows: store.outboxRows,
+          outboxEvents: [...store.outboxEvents],
         };
         try {
           return await work(context);

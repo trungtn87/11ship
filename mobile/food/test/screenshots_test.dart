@@ -119,7 +119,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await shot(tester, '07-account');
-    await tester.tap(find.byKey(const Key('shop-entry')));
+    await tester.tap(find.byKey(const Key('account-shop-manage-card')));
     await tester.pumpAndSettle();
     await shot(tester, '08-shop-empty');
     await tester.tap(find.byKey(const Key('shop-register')));
@@ -134,6 +134,8 @@ void main() {
     await tester.pumpAndSettle();
     await shot(tester, '10-shop-address-picker');
     await tester.tap(find.byKey(const Key('location-save')));
+    await tester.pumpAndSettle();
+    tester.state<ScrollableState>(find.byType(Scrollable).first).position.jumpTo(0);
     await tester.pumpAndSettle();
     await shot(tester, '09-shop-form');
     expect(server.puts, isEmpty);

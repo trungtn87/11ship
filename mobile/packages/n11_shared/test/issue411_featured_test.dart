@@ -58,10 +58,11 @@ Future<DiscoveryController> _pumpHome(WidgetTester tester, FakeDiscoveryApi api,
   return c;
 }
 
-/// Shop ids in the order they are drawn in a Home row (Row children keep the list order).
-List<String> _rowIds(WidgetTester tester, String carousel) {
-  final Finder row = find.descendant(of: find.byKey(Key(carousel)), matching: find.byType(HomeShopTile));
-  return <String>[for (final HomeShopTile t in tester.widgetList<HomeShopTile>(row)) t.shop.shopId];
+/// Shop ids in the vertical order they are drawn on Home.
+List<String> _cardIds(WidgetTester tester) {
+  final List<HomeShopFullCard> cards =
+      tester.widgetList<HomeShopFullCard>(find.byType(HomeShopFullCard)).toList();
+  return <String>[for (final HomeShopFullCard c in cards) c.shop.shopId];
 }
 
 void main() {
@@ -117,16 +118,16 @@ void main() {
   });
 
   group('Quán nổi bật on Home (issue #411, Owner 21/11)', () {
-    testWidgets('0 qualified shops: the Home row is the 5 newest shops', (WidgetTester tester) async {
-      _phone(tester);
+    testWidgets('0 qualified shops: the Nổi bật tab shows the newest shops first', (WidgetTester tester) async {
+      _phone(tester, height: 1400);
       final List<FakeShopEntry> shops = <FakeShopEntry>[for (int i = 1; i <= 7; i++) _s(i, created: DateTime.utc(2026, 1, i))];
       await _pumpHome(tester, FakeDiscoveryApi(shops: shops));
-      expect(_rowIds(tester, 'home-featured-carousel'), <String>['s07', 's06', 's05', 's04', 's03']);
+      expect(_cardIds(tester).take(5).toList(), <String>['s07', 's06', 's05', 's04', 's03']);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('2 qualified + 3 newest: qualified by score first, then the newest filled in', (WidgetTester tester) async {
-      _phone(tester);
+      _phone(tester, height: 1400);
       final List<FakeShopEntry> shops = <FakeShopEntry>[
         _s(1, created: DateTime.utc(2026, 1, 1)),
         _s(2, avg: 4.2, count: 5, created: DateTime.utc(2025, 1, 1)),
@@ -136,22 +137,16 @@ void main() {
         _s(6, created: DateTime.utc(2026, 3, 1)),
       ];
       await _pumpHome(tester, FakeDiscoveryApi(shops: shops));
-      expect(_rowIds(tester, 'home-featured-carousel'), <String>['s03', 's02', 's04', 's05', 's06']);
+      expect(_cardIds(tester).take(5).toList(), <String>['s03', 's02', 's04', 's05', 's06']);
     });
 
-    testWidgets('6+ qualified: only 5 on Home, and "Xem tất cả" lists all of them in score order (no limit of 5)', (WidgetTester tester) async {
-      _phone(tester);
+    testWidgets('6+ qualified: all qualified shops list in score order', (WidgetTester tester) async {
+      _phone(tester, height: 1400);
       final List<FakeShopEntry> shops = <FakeShopEntry>[
         for (int i = 1; i <= 7; i++) _s(i, avg: 4.0 + i / 10, count: 5 + i),
       ];
       await _pumpHome(tester, FakeDiscoveryApi(shops: shops));
-      expect(_rowIds(tester, 'home-featured-carousel'), <String>['s07', 's06', 's05', 's04', 's03']);
-      await tester.ensureVisible(find.byKey(const Key('home-featured-see-all')));
-      await tester.tap(find.byKey(const Key('home-featured-see-all')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('featured-all-screen')), findsOneWidget);
-      final Finder list = find.descendant(of: find.byKey(const Key('nearby-all-list')), matching: find.byType(HomeShopTile));
-      expect(<String>[for (final HomeShopTile t in tester.widgetList<HomeShopTile>(list)) t.shop.shopId].take(7), <String>['s07', 's06', 's05', 's04', 's03', 's02', 's01']);
+      expect(_cardIds(tester), <String>['s07', 's06', 's05', 's04', 's03', 's02', 's01']);
     });
 
     testWidgets('a shop that is not public never appears in any featured list', (WidgetTester tester) async {
@@ -163,19 +158,19 @@ void main() {
       ];
       final DiscoveryController c = await _pumpHome(tester, FakeDiscoveryApi(shops: shops));
       expect(c.shops.map((s) => s.shopId), isNot(contains('s01')));
-      expect(_rowIds(tester, 'home-featured-carousel'), <String>['s02', 's03']);
+      expect(_cardIds(tester), <String>['s02', 's03']);
     });
 
-    testWidgets('a narrow 320px phone: the featured row scrolls sideways and nothing overflows', (WidgetTester tester) async {
+    testWidgets('a narrow 320px phone: full-width cards render cleanly and nothing overflows', (WidgetTester tester) async {
       _phone(tester, width: 320, height: 640);
       await _pumpHome(tester, FakeDiscoveryApi(shops: <FakeShopEntry>[for (int i = 1; i <= 6; i++) _s(i, avg: 4.5, count: 6)]));
       expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('home-featured-carousel')), findsOneWidget);
+      expect(find.byKey(const Key('home-sort-tabs')), findsOneWidget);
     });
   });
 
   group('Quán gần bạn without GPS and its order (issue #411, Owner 21/11)', () {
-    testWidgets('GPS off: the same featured order, no km, and the small hint to turn location on', (WidgetTester tester) async {
+    testWidgets('GPS off: Gần bạn tab keeps featured order, no km, and shows the honest hint to turn location on', (WidgetTester tester) async {
       _phone(tester);
       final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
@@ -184,13 +179,15 @@ void main() {
         _s(3, created: DateTime.utc(2026, 2, 1)),
       ]);
       await _pumpHome(tester, api, gps: gps);
-      expect(_rowIds(tester, 'home-nearby-carousel'), <String>['s02', 's03', 's01']);
+      await tester.tap(find.byKey(const Key('home-tab-nearby')));
+      await tester.pumpAndSettle();
+      expect(_cardIds(tester), <String>['s02', 's03', 's01']);
       expect(find.byKey(const Key('home-nearby-note')), findsOneWidget);
       expect(find.textContaining(' km'), findsNothing);
       expect(api.routeRequests, isEmpty);
     });
 
-    testWidgets('GPS on: nearest by road first (not the featured order)', (WidgetTester tester) async {
+    testWidgets('GPS on: Gần bạn tab orders nearest by road first (not the featured order)', (WidgetTester tester) async {
       _phone(tester);
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
         _s(1, avg: 4.9, count: 30),
@@ -198,10 +195,12 @@ void main() {
       ]);
       api.roads = <String, int?>{'s01': 2500, 's02': 400};
       await _pumpHome(tester, api);
-      expect(_rowIds(tester, 'home-nearby-carousel'), <String>['s02', 's01']);
+      await tester.tap(find.byKey(const Key('home-tab-nearby')));
+      await tester.pumpAndSettle();
+      expect(_cardIds(tester), <String>['s02', 's01']);
     });
 
-    testWidgets('switching GPS from off to on reorders the nearby list from the featured order to road distance', (WidgetTester tester) async {
+    testWidgets('switching GPS from off to on reorders the Gần bạn list from featured order to road distance', (WidgetTester tester) async {
       _phone(tester);
       final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
       final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
@@ -210,30 +209,14 @@ void main() {
       ]);
       api.roads = <String, int?>{'s01': 2500, 's02': 400};
       final DiscoveryController c = await _pumpHome(tester, api, gps: gps);
-      expect(_rowIds(tester, 'home-nearby-carousel'), <String>['s01', 's02']);
+      await tester.tap(find.byKey(const Key('home-tab-nearby')));
+      await tester.pumpAndSettle();
+      expect(_cardIds(tester), <String>['s01', 's02']);
       gps.failure = null;
       await tester.runAsync(() => c.position.locate());
       await tester.pumpAndSettle();
-      expect(_rowIds(tester, 'home-nearby-carousel'), <String>['s02', 's01']);
+      expect(_cardIds(tester), <String>['s02', 's01']);
       expect(find.byKey(const Key('home-nearby-note')), findsNothing);
-    });
-
-    testWidgets('"Xem tất cả" of Quán gần bạn without GPS uses the same featured order, in two columns', (WidgetTester tester) async {
-      _phone(tester);
-      final FakeLocationProvider gps = FakeLocationProvider()..failure = LocationFailure.denied;
-      final FakeDiscoveryApi api = FakeDiscoveryApi(shops: <FakeShopEntry>[
-        _s(1, created: DateTime.utc(2026, 1, 1)),
-        _s(2, avg: 4.4, count: 8),
-        _s(3, created: DateTime.utc(2026, 2, 1)),
-      ]);
-      await _pumpHome(tester, api, gps: gps);
-      await tester.ensureVisible(find.byKey(const Key('home-nearby-see-all')));
-      await tester.tap(find.byKey(const Key('home-nearby-see-all')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('nearby-all-screen')), findsOneWidget);
-      final Finder list = find.descendant(of: find.byKey(const Key('nearby-all-list')), matching: find.byType(HomeShopTile));
-      expect(<String>[for (final HomeShopTile t in tester.widgetList<HomeShopTile>(list)) t.shop.shopId], <String>['s02', 's03', 's01']);
-      expect(find.textContaining(' km'), findsNothing);
     });
   });
 }

@@ -40,17 +40,16 @@ Future<void> pumpGuest(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('F04 guest: "Quản lý cửa hàng" is a small link at the end of Account and opens the existing sign-in', (WidgetTester tester) async {
+  testWidgets('F04 guest: Account screen centers logo and auth buttons with no bottom tool rows', (WidgetTester tester) async {
     await pumpGuest(tester);
-    final Finder link = find.byKey(const Key('guest-shop-link'));
-    await tester.scrollUntilVisible(link, 120, scrollable: find.byType(Scrollable).first);
-    expect(find.text('Quản lý cửa hàng'), findsOneWidget);
-    // The link sits below the sign-in / sign-up actions (the bottom of the screen).
-    expect(tester.getTopLeft(link).dy, greaterThan(tester.getTopLeft(find.byKey(const Key('open-login'))).dy));
-    // It is the last row: below "Trợ giúp" (the last list row before the footer).
-    expect(tester.getTopLeft(link).dy, greaterThan(tester.getTopLeft(find.text('Trợ giúp')).dy));
-    await tester.tap(link);
-    await tester.pumpAndSettle();
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byKey(const Key('guest-shop-link')), findsNothing);
+    expect(find.text('Quản lý cửa hàng'), findsNothing);
+    expect(find.text('Trợ giúp'), findsNothing);
+    expect(find.byKey(const Key('m13-update-check')), findsNothing);
+    expect(find.text('Thèm là có'), findsOneWidget);
+    expect(find.text('Đặt món từ quán gần bạn.'), findsOneWidget);
+    expect(find.byKey(const Key('open-register')), findsOneWidget);
+    expect(find.byKey(const Key('open-login')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

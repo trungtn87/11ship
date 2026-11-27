@@ -669,26 +669,29 @@ class _M07Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Form(child: Scaffold(
-      backgroundColor: N11Colors.bg,
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            N11AppBar(title: title, onBack: () => Navigator.of(context).maybePop()),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap6),
-                child: vstack(<Widget>[if (sample) const M07SampleBanner(), ...children]),
+    final bool hasGradient = N11PageBackground.maybeOf(context) != null;
+    return Form(child: N11PageBackdrop(
+      child: Scaffold(
+        backgroundColor: hasGradient ? Colors.transparent : N11Colors.bg,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              N11AppBar(title: title, onBack: () => Navigator.of(context).maybePop()),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap4, N11Space.pad, N11Space.gap6),
+                  child: vstack(<Widget>[if (sample) const M07SampleBanner(), ...children]),
+                ),
               ),
-            ),
-            if (bottom != null)
-              Container(
-                padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap3),
-                decoration: const BoxDecoration(color: N11Colors.white, border: Border(top: BorderSide(color: N11Colors.line))),
-                child: bottom,
-              ),
-          ],
+              if (bottom != null)
+                Container(
+                  padding: const EdgeInsets.fromLTRB(N11Space.pad, N11Space.gap3, N11Space.pad, N11Space.gap3),
+                  decoration: const BoxDecoration(color: N11Colors.white, border: Border(top: BorderSide(color: N11Colors.line))),
+                  child: bottom,
+                ),
+            ],
+          ),
         ),
       ),
     ));

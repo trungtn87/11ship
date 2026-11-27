@@ -127,19 +127,17 @@ void main() {
     expect(find.byType(N11BottomNav), findsOneWidget);
   });
 
-  testWidgets('five tabs for a guest in the agreed order, ready banner shown', (WidgetTester tester) async {
+  testWidgets('four tabs for a guest in the agreed order, ready banner shown', (WidgetTester tester) async {
     await pump(tester, healthy());
-    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Quán', 'Tài khoản']) {
+    for (final String label in <String>['Trang chủ', 'Đơn hàng', 'Gọi ship', 'Tài khoản']) {
       expect(find.descendant(of: find.byType(N11BottomNav), matching: find.text(label)), findsOneWidget, reason: label);
     }
-    await tester.tap(find.byKey(const Key('tab-shop')));
-    await tester.pumpAndSettle();
-    expect(find.text('Đăng nhập để mở hoặc quản lý quán.'), findsOneWidget);
+    expect(find.byKey(const Key('tab-shop')), findsNothing);
     // Ready is quiet: no banner is shown when the server is fine (the diagnostics screen shows the details).
     expect(find.byKey(const Key('connection-banner')), findsNothing);
   });
 
-  testWidgets('back preserves details and purpose; owner UI comes only from server identity', (WidgetTester tester) async {
+  testWidgets('back preserves details and purpose; tabs stay 4 regardless of role', (WidgetTester tester) async {
     final FakeApiTransport api = FakeApiTransport();
     installAccountRoutes(api);
     final SessionController session = await pump(tester, healthy(), api: api);
@@ -158,21 +156,21 @@ void main() {
     await tester.tap(find.byKey(const Key('register-next')));
     await tester.pumpAndSettle();
     expect(tester.widget<ListTile>(find.byKey(const Key('purpose-owner'))).selected, isTrue);
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
     expect(api.to('POST', '/v1/client-auth/register'), isEmpty);
   });
 
-  test('owner tab follows server role/profile and never changes context', () async {
+  test('tabs remain 4 regardless of server role/profile and never change context', () async {
     final FakeApiTransport api = FakeApiTransport();
     installAccountRoutes(api);
     final FakeShopServer server = FakeShopServer(api);
     final SessionController session = createSessionController(ClientApp.food, config, transport: api, bridge: FakeDeviceBridge());
     await session.start();
     await session.login(phone: '0901234567', password: 'Correct-Horse-9');
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
     server.owner = true;
     await session.refreshIdentity();
-    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'shop', 'account']);
+    expect(buildFoodTabs(session).map((TabSpec tab) => tab.id), <String>['home', 'orders', 'call', 'account']);
     expect(server.contexts, isEmpty);
   });
 
@@ -185,14 +183,15 @@ void main() {
     expect(find.text('Danh sách quán chưa sẵn sàng'), findsOneWidget);
   });
 
-  testWidgets('account: login and register are open; the guest "Quản lý cửa hàng" link is the only shop entry and grants nothing', (WidgetTester tester) async {
+  testWidgets('account: login and register are open; guest view omits footer tool rows', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
     final Finder login = find.byKey(const Key('open-login'));
     final Finder register = find.byKey(const Key('open-register'));
     expect(tester.widget<N11Button>(login).onPressed, isNotNull);
     expect(tester.widget<N11Button>(register).onPressed, isNotNull);
-    expect(find.text('Quản lý cửa hàng'), findsOneWidget);
+    expect(find.text('Quản lý cửa hàng'), findsNothing);
+    expect(find.text('Trợ giúp'), findsNothing);
     expect(find.text('Chẩn đoán kết nối'), findsNothing);
     expect(find.textContaining('chờ backend'), findsNothing, reason: texts(tester));
   });
@@ -314,11 +313,9 @@ void main() {
   testWidgets('account omits removed groups and rows', (WidgetTester tester) async {
     await pump(tester, healthy());
     await openTab(tester, 'account');
-    // "Quản lý cửa hàng" is the guest link at the end of the screen (F04, see f04_guest_shop_link_test.dart), not a row.
-    for (final String label in <String>['Trạng thái tài khoản', 'Chính sách và điều khoản', 'Chẩn đoán kết nối', 'Trạng thái', 'Cửa hàng']) {
+    for (final String label in <String>['Trạng thái tài khoản', 'Chính sách và điều khoản', 'Chẩn đoán kết nối', 'Trạng thái', 'Cửa hàng', 'Trợ giúp']) {
       expect(find.text(label), findsNothing);
     }
-    expect(find.text('Trợ giúp'), findsOneWidget);
   });
 
   testWidgets('offline then retry recovers', (WidgetTester tester) async {
@@ -380,5 +377,29 @@ void main() {
     await openTab(tester, 'orders');
     expect(find.byKey(const Key('m06-fee-entry')), findsNothing);
     expect(find.textContaining('Chưa sẵn sàng'), findsNothing);
+  });
+
+  testWidgets('guest AuthRequiredCard on Gọi ship and Đơn hàng fits 360px and opens RegisterScreen', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pump(tester, healthy());
+
+    await openTab(tester, 'call');
+    expect(find.text('Bạn chưa đăng nhập'), findsNothing);
+    expect(find.text('Đăng nhập để gọi ship'), findsOneWidget);
+    expect(find.text('Đăng nhập tài khoản 11Food để gọi shipper lấy và giao đồ.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await openTab(tester, 'orders');
+    expect(find.text('Bạn chưa đăng nhập'), findsNothing);
+    expect(find.text('Theo dõi đơn hàng của bạn'), findsOneWidget);
+    expect(find.text('Đăng nhập tài khoản 11Food để xem trạng thái đơn đang giao và lịch sử đặt món.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('guest-register')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('register-name')), findsOneWidget);
   });
 }
