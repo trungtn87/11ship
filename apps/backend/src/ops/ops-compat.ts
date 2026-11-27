@@ -52,6 +52,14 @@ export const APP_COMPAT_MATRIX = 'APP_COMPAT_MATRIX';
 export interface PublishedFacts {
   readonly release: ReleaseRow | undefined;
   readonly artifactReady: boolean;
+  /** Google Play page of the app (OPS_STORE_URL_*): a release with no file is a store build and is offered through it. */
+  readonly storeUrl?: string | undefined;
+}
+
+/** A release phones can be sent to: its file is really downloadable, or it is a file-less store build and the app's store page is configured. */
+function isOfferable(release: ReleaseRow | undefined, published: PublishedFacts): boolean {
+  if (release === undefined || release.versionCode === null) return false;
+  return release.artifactName === null ? published.storeUrl !== undefined : published.artifactReady;
 }
 
 /** True when the release file is in the artifact directory with the registered size (the same test the download makes). */
@@ -99,7 +107,7 @@ export interface CompatDecision {
 export function decideCompat(component: AppComponent, matrix: CompatMatrix, installed: number | null, published: PublishedFacts): CompatDecision {
   const entry = matrix.components[component];
   const latest = published.release;
-  const downloadable = latest !== undefined && latest.versionCode !== null && latest.artifactName !== null && published.artifactReady ? latest : undefined;
+  const downloadable = latest !== undefined && isOfferable(latest, published) ? latest : undefined;
   const newer = downloadable !== undefined && (installed === null || (downloadable.versionCode as number) > installed);
   const minSupported = Math.max(entry.minClientVersionCode, latest !== undefined && latest.priority === 'REQUIRED' ? (latest.minSupportedVersionCode ?? 0) : 0);
 
@@ -122,6 +130,33 @@ export function decideCompat(component: AppComponent, matrix: CompatMatrix, inst
   return { status: newer ? 'UPDATE_OPTIONAL' : 'COMPATIBLE', compatible: true, required: false, offer: newer ? downloadable : null, minSupportedVersionCode: minSupported, reason: null };
 }
 
+/** What the server knows about the App Store build of one app (OPS_STORE_URL_*_IOS and OPS_IOS_LATEST_BUILD_*). Both values are needed to offer anything. */
+export interface IosFacts {
+  readonly storeUrl?: string | undefined;
+  readonly latestBuild?: number | undefined;
+}
+
+export interface IosDecision {
+  /** True only when the phone's build is lower than the newest App Store build and both values are configured. */
+  readonly offered: boolean;
+  readonly storeUrl: string | null;
+  readonly latestBuild: number | null;
+}
+
+/**
+ * iOS update check. iOS builds are not in the Android release catalog nor in app-compatibility.json, so nothing here is ever "required": the only answer is
+ * "a newer App Store build exists" (offered) or "nothing to say" (not offered). A missing value, or a phone that did not say its build number, is not offered.
+ */
+export function decideIosUpdate(installed: number | null, facts: IosFacts): IosDecision {
+  const ready = facts.storeUrl !== undefined && facts.latestBuild !== undefined;
+  const offered = ready && installed !== null && installed < (facts.latestBuild as number);
+  return {
+    offered,
+    storeUrl: offered ? (facts.storeUrl as string) : null,
+    latestBuild: offered ? (facts.latestBuild as number) : null,
+  };
+}
+
 /**
  * The operations check: the deployed contract demands a build nobody can download. UNKNOWN is never OK, and "no release at all" while the minimum is the
  * initial 1 is fine (no phone can be below it).
@@ -141,7 +176,7 @@ export function evaluateAppCompat(component: AppComponent, matrix: CompatMatrix,
   if (latest.versionCode < min) {
     return { ...base, state: 'CRITICAL', value, evidenceCode: 'COMPAT_APK_TOO_OLD', title: `${label}: APK đã phát hành (${String(latest.versionCode)}) thấp hơn mức backend yêu cầu (${String(min)})` };
   }
-  if (!published.artifactReady) {
+  if (!isOfferable(latest, published)) {
     return { ...base, state: 'CRITICAL', value, evidenceCode: 'COMPAT_ARTIFACT_MISSING', title: `${label}: tệp APK ${latest.versionName} không tải được (thiếu hoặc sai kích thước trong thư mục artifact)` };
   }
   return { ...base, state: 'OK', value, evidenceCode: 'COMPAT_OK', title: `${label}: tương thích APK–backend` };

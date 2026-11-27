@@ -52,6 +52,15 @@ describe('APK–backend compatibility decision (#193)', () => {
     expect(decideCompat('SHIP', matrix(1, 1), 30, { release: release({ priority: 'REQUIRED' }), artifactReady: true }).required).toBe(true);
   });
 
+  it('a Google Play build (no file) is offered only when the app has a store page configured', () => {
+    const store = release({ artifactName: null, artifactSha256: null, artifactSizeBytes: null });
+    expect(decideCompat('SHIP', matrix(1, 1), 35, { release: store, artifactReady: false })).toMatchObject({ status: 'COMPATIBLE', offer: null });
+    expect(decideCompat('SHIP', matrix(1, 1), 35, { release: store, artifactReady: false, storeUrl: 'https://play.google.com/store/apps/details?id=vn.eleven.ship' })).toMatchObject({ status: 'UPDATE_OPTIONAL', offer: { versionCode: 40 } });
+    expect(decideCompat('SHIP', matrix(1, 30), 20, { release: store, artifactReady: false, storeUrl: 'https://play.google.com/store/apps/details?id=vn.eleven.ship' })).toMatchObject({ status: 'UPDATE_REQUIRED', required: true });
+    expect(evaluateAppCompat('SHIP', matrix(1, 30), { release: store, artifactReady: false, storeUrl: 'https://play.google.com/store/apps/details?id=vn.eleven.ship' }).state).toBe('OK');
+    expect(evaluateAppCompat('SHIP', matrix(1, 30), { release: store, artifactReady: false }).state).toBe('CRITICAL');
+  });
+
   it('an unknown installed build concludes nothing', () => {
     expect(decideCompat('SHIP', matrix(1, 30), null, { release: release(), artifactReady: true })).toMatchObject({ status: 'UNKNOWN_VERSION', compatible: null, required: false });
   });

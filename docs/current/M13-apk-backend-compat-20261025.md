@@ -38,3 +38,34 @@ Cold start gọi `/check` (không cần đăng nhập); resume dùng giới hạ
 - Backend không gắn header phiên bản vào mọi API nên **không tự từ chối từng request của APK cũ**; bảo vệ là bước 1 (API tương thích) + preflight.
 - Chủ quán (11Food): `busyProbe` đọc **số đơn quán đang xử lý từ máy chủ** (`counts` của danh sách đơn: đang chuẩn bị, hẹn giờ, đang giao, cần xử lý). Có đơn → chỉ banner, không khóa ngang; xong hết → hiện màn cập nhật. Đơn **chờ nhận** không giữ cập nhật lại, nhưng khi biết có bản bắt buộc quán **không xác nhận được đơn mới** (vẫn từ chối được; đơn đã nhận xử lý bình thường). Không đọc được trạng thái, hoặc phiên chưa xác định → coi là **bận**, không bao giờ suy ra rảnh; chỉ khách chưa đăng nhập hoặc tài khoản không có quán mới được coi là rảnh. Chưa thử trên máy thật.
 - Chưa có số tài khoản/máy dùng bản cũ theo thời gian ngoài `ops_version_reports` M13 hiện có.
+
+## 5. Bản Google Play (không có tệp APK)
+
+Khi app lên Google Play không còn APK trong `OPS_ARTIFACT_DIR`. Đặt `OPS_STORE_URL_FOOD` / `OPS_STORE_URL_SHIP` (đúng `https://play.google.com/store/apps/details?id=vn.eleven.food|ship`, sai thì backend không khởi động) và đăng ký trong Web Admin một release FOOD/SHIP **không kèm tệp** (version_code là versionCode bản Play). Bản đó được mời khi app đã đặt link; `/check` trả thêm `store_url` (chỉ cho bản không tệp) và popup Android hiện nút **Cập nhật** mở trang Play. Không đặt link thì bản không tệp không bao giờ được mời.
+
+### 5.1 iOS (App Store)
+
+Release catalog chỉ có Android, nên iOS không đi qua bảng release. Thay vào đó backend đọc 6 biến tuỳ chọn (không có biến nào thì iOS không được mời bản mới):
+
+| Biến | Giá trị | Sai định dạng |
+| --- | --- | --- |
+| `OPS_STORE_URL_FOOD_IOS` | `https://apps.apple.com/vn/app/<slug>/id<số>` (bắt buộc có `/vn/`; không query, fragment, user hay port; tối đa 200 ký tự) | backend không khởi động, báo đúng tên biến |
+| `OPS_STORE_URL_SHIP_IOS` | như trên, của 11Ship | như trên |
+| `OPS_IOS_LATEST_BUILD_FOOD` | số nguyên dương: build number mới nhất của 11Food đã lên App Store | như trên |
+| `OPS_IOS_LATEST_BUILD_SHIP` | như trên, của 11Ship | như trên |
+| `OPS_IOS_LATEST_VERSION_NAME_FOOD` | tên phiên bản marketing của cùng build 11Food (ví dụ `1.0.1`; cùng định dạng `VERSION_NAME`, tối đa 32 ký tự) | như trên |
+| `OPS_IOS_LATEST_VERSION_NAME_SHIP` | như trên, của 11Ship | như trên |
+
+Giá trị dự kiến cho VPS (Owner tự đặt trong môi trường; không ghi vào tệp cấu hình trong repo): 11Food `https://apps.apple.com/vn/app/11food/id6836866599`; 11Ship `https://apps.apple.com/vn/app/11ship/id6836868854`.
+
+`GET /v1/app-updates/check` nhận thêm `platform=ANDROID|IOS` (mặc định `ANDROID`; giá trị khác bị từ chối). Với `IOS`: `update_available` = `version_code` của máy < `OPS_IOS_LATEST_BUILD_<APP>`; `store_url` là link App Store; `release.version_code` là build đó, `release.version_name` là `OPS_IOS_LATEST_VERSION_NAME_<APP>` nếu có, ngược lại `null`. Thiếu store URL hoặc build của app đó, hoặc máy không gửi build number, thì trả "không có bản mới" với `store_url` null. Đường iOS không bao giờ trả `required=true` và không đối chiếu ma trận tương thích Android.
+
+Máy iOS gửi build number là `BUILD_NUMBER` lúc build, cùng giá trị với `--build-number` khi đẩy lên TestFlight/App Store (`mobile/tool/ios-testflight.sh`). Build `1` trong CI mô phỏng iOS không bao giờ lên cửa hàng nên không ảnh hưởng.
+
+**Owner cập nhật mỗi lần đưa build iOS mới lên App Store:**
+1. Đọc build number vừa đẩy lên (chính là `APP_VERSION_CODE` của lần build TestFlight).
+2. Đặt cùng lúc `OPS_IOS_LATEST_BUILD_FOOD` (hoặc `_SHIP`) bằng số đó và `OPS_IOS_LATEST_VERSION_NAME_FOOD` (hoặc `_SHIP`) bằng tên phiên bản marketing trong môi trường của VPS.
+3. Khởi động lại backend để đọc biến mới (ví dụ theo runbook deploy VPS). Biến chỉ được đọc lúc khởi động.
+4. Kiểm tra: `GET /v1/app-updates/check?component=FOOD&version_code=<build cũ>&platform=IOS` trả `update_available: true` và `store_url` đúng.
+
+Nếu bản mới trên App Store không được mời ngay sau khi đặt biến, kiểm tra lại bước 3 (backend chưa khởi động lại) trước khi sửa gì khác. Đặt build mới chỉ khi bản đó đã được Apple duyệt và có trên App Store; đặt sớm hơn sẽ mời người dùng tới trang chưa có bản đó.

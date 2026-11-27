@@ -10,7 +10,7 @@ import { AdminSystemActor, LockedActor } from '../admin-provisioning/admin-syste
 import { AuditWriter } from '../audit/audit-writer';
 import { AppError } from '../common/app-errors';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
-import { DEFAULT_OPS_CONFIG } from '../config/ops-config';
+import { DEFAULT_OPS_CONFIG, OpsConfig } from '../config/ops-config';
 import { IdempotencyExecutor, IdempotentOutcome, JsonObject } from '../idempotency/idempotency-executor';
 import { freshClockMs } from '../idempotency/idempotency-repository';
 import { SmsGatewayOpsReader } from '../sms-gateway/sms-gateway-ops-reader';
@@ -67,6 +67,7 @@ export class OpsAdminService {
   readonly #lockTimeoutMs: number;
   readonly #diskPaths: readonly { readonly label: string; readonly path: string }[];
   readonly #artifactDir: string | undefined;
+  readonly #storeUrls: NonNullable<OpsConfig['storeUrls']>;
   readonly #environment: string;
   readonly #compat: CompatMatrix;
 
@@ -90,6 +91,7 @@ export class OpsAdminService {
     this.#compat = compat ?? APP_COMPAT;
     this.#lockTimeoutMs = appConfig.idempotency.businessLockTimeoutMs;
     this.#artifactDir = (appConfig.ops ?? DEFAULT_OPS_CONFIG).artifactDir;
+    this.#storeUrls = (appConfig.ops ?? DEFAULT_OPS_CONFIG).storeUrls ?? {};
     this.#diskPaths = (appConfig.ops ?? DEFAULT_OPS_CONFIG).diskPaths;
     this.#environment = appConfig.appEnv;
   }
@@ -758,7 +760,7 @@ export class OpsAdminService {
     if (component !== 'FOOD' && component !== 'SHIP') {
       return null;
     }
-    const check = evaluateAppCompat(component, this.#compat, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest) });
+    const check = evaluateAppCompat(component, this.#compat, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest), storeUrl: this.#storeUrls[component] });
     return { contract_revision: this.#compat.contractRevision, min_client_version_code: this.#compat.components[component].minClientVersionCode, ok: check.state === 'OK', problem: check.state === 'OK' ? null : (check.evidenceCode ?? null), summary: check.state === 'OK' ? 'Có APK tải được đáp ứng mức tối thiểu của backend' : check.title };
   }
 

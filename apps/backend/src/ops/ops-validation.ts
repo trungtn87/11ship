@@ -292,8 +292,9 @@ export function parseReleaseBody(body: unknown): ReleaseBody {
   if (android && versionCode === null) reject();
   const artifactName = optText(b.artifact_name, 96);
   if (artifactName !== null && !ARTIFACT_NAME_PATTERN.test(artifactName)) reject();
-  // An Android release is only useful with its file; the others may be notes-only (a backend deploy has no downloadable artifact).
-  if (android && artifactName === null) reject();
+  // An Android release is only useful with its file; the others may be notes-only (a backend deploy has no downloadable artifact). A Google Play build of
+  // 11Food/11Ship has no file here: phones are sent to the store page configured in OPS_STORE_URL_*, so those two may be registered without one.
+  if (android && artifactName === null && component !== 'FOOD' && component !== 'SHIP') reject();
   const minBackend = optText(b.min_backend_version, 32);
   if (minBackend !== null && !VERSION_NAME.test(minBackend)) reject();
   const requiredReason = optText(b.required_reason, 200);
@@ -414,11 +415,13 @@ export function parseClientLogs(body: unknown): { entries: ClientLogEntry[] } {
   };
 }
 
-export function parseAppUpdateCheck(query: unknown): { component: 'FOOD' | 'SHIP'; versionCode: number | null } {
-  const q = queryStrings(query, ['component', 'version_code']);
+export function parseAppUpdateCheck(query: unknown): { component: 'FOOD' | 'SHIP'; versionCode: number | null; platform: 'ANDROID' | 'IOS' } {
+  const q = queryStrings(query, ['component', 'version_code', 'platform']);
   if (q.component !== 'FOOD' && q.component !== 'SHIP') reject();
   const versionCode = q.version_code === undefined ? null : /^\d{1,10}$/.test(q.version_code) && Number(q.version_code) <= 2_000_000_000 ? Number(q.version_code) : reject();
-  return { component: q.component as 'FOOD' | 'SHIP', versionCode };
+  // Optional; absent means ANDROID (the behaviour before iOS was added). Any other value is refused.
+  const platform = q.platform === undefined ? 'ANDROID' : q.platform === 'ANDROID' || q.platform === 'IOS' ? q.platform : reject();
+  return { component: q.component as 'FOOD' | 'SHIP', versionCode, platform };
 }
 
 export function parseVersionReport(body: unknown): { component: 'FOOD' | 'SHIP'; versionName: string; versionCode: number } {

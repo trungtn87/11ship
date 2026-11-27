@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
@@ -33,7 +34,8 @@ class _FakePlatform implements UpdatePlatform {
 }
 
 /// What the server answers for a build older than the newest published one. The download fields are still sent by today's server; the app ignores them.
-Map<String, Object?> _check({bool required = false, int versionCode = 9, String versionName = '1.9'}) => <String, Object?>{
+Map<String, Object?> _check({bool required = false, int versionCode = 9, String versionName = '1.9', String? storeUrl}) => <String, Object?>{
+      'store_url': storeUrl,
       'status': required ? 'UPDATE_REQUIRED' : 'UPDATE_OPTIONAL',
       'update_available': true,
       'required': required,
@@ -131,7 +133,7 @@ void main() {
       final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
       final AppUpdateController c = _controller(transport, _FakePlatform(dir));
       await c.check();
-      expect(transport.paths.single, '/v1/app-updates/check?component=SHIP&version_code=5');
+      expect(transport.paths.single, '/v1/app-updates/check?component=SHIP&version_code=5&platform=ANDROID');
       expect(c.phase, AppUpdatePhase.available);
       expect(c.notice!.versionName, '1.9');
       expect(c.showNotice, isTrue);
@@ -187,7 +189,7 @@ void main() {
       final _FakeTransport transport = _FakeTransport((String _) => _json(_check()));
       final AppUpdateController c = _controller(transport, _FakePlatform(dir));
       await c.check();
-      expect(transport.paths, <String>['/v1/app-updates/check?component=SHIP&version_code=5']);
+      expect(transport.paths, <String>['/v1/app-updates/check?component=SHIP&version_code=5&platform=ANDROID']);
     });
 
     test('a build without a build number is never told to update', () async {
@@ -217,6 +219,109 @@ void main() {
       clock = clock.add(const Duration(minutes: 31));
       await c.check();
       expect(c.showNotice, isTrue);
+    });
+  });
+
+  group('store page (Google Play on Android, App Store on iOS)', () {
+    const String play = 'https://play.google.com/store/apps/details?id=vn.eleven.ship';
+    const String appStore = 'https://apps.apple.com/vn/app/11ship/id6836868854';
+
+    tearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    test('Android takes only the Google Play page', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: play))!.storeUrl, play);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: appStore))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: 'https://evil.example/store/apps/details?id=vn.eleven.ship'))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check())!.storeUrl, isNull);
+    });
+
+    test('iOS takes only an App Store page of the /vn/ form, without query or fragment', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: appStore))!.storeUrl, appStore);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: play))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: 'https://apps.apple.com/app/11ship/id6836868854'))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: '$appStore?l=vi'))!.storeUrl, isNull);
+      expect(AppUpdateNotice.fromCheck(_check(storeUrl: 'https://evil.example/vn/app/11ship/id6836868854'))!.storeUrl, isNull);
+    });
+
+    test('an iOS build without a name from the server is still a notice, shown by its build number', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final Map<String, Object?> data = _check(storeUrl: appStore)
+        ..['release'] = <String, Object?>{'version_name': null, 'version_code': 12};
+      final AppUpdateNotice? n = AppUpdateNotice.fromCheck(data);
+      expect(n!.versionName, isNull);
+      expect(n.versionCode, 12);
+      expect(n.storeUrl, appStore);
+    });
+
+    test('the check asks the server for the platform of this phone', () async {
+      final _FakeTransport ios = _FakeTransport((String _) => _json(_latest()));
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      await _controller(ios, _FakePlatform(Directory.systemTemp)).check();
+      expect(ios.paths.single, contains('platform=IOS'));
+
+      final _FakeTransport android = _FakeTransport((String _) => _json(_latest()));
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      await _controller(android, _FakePlatform(Directory.systemTemp)).check();
+      expect(android.paths.single, contains('platform=ANDROID'));
+    });
+
+    testWidgets('the popup offers the button only for a store link of this platform, and opens it through the launch channel', (WidgetTester tester) async {
+      const MethodChannel channel = MethodChannel('vn.eleven.n11/launch');
+      final List<MethodCall> calls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+
+      Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold(body: Text('trang chính')));
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final AppUpdateController ios = _controller(_FakeTransport((String _) => _json(_check(storeUrl: appStore))), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(ios));
+      await tester.runAsync(ios.check);
+      await tester.pump();
+      expect(find.byKey(const Key('m13-update-popup')), findsOneWidget);
+      expect(find.byKey(const Key('m13-update-store')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('m13-update-store')));
+      await tester.pump();
+      expect(calls.single.method, 'open');
+      expect(calls.single.arguments, <String, Object?>{'url': appStore});
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final AppUpdateController android = _controller(_FakeTransport((String _) => _json(_check(storeUrl: appStore))), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(android));
+      await tester.runAsync(android.check);
+      await tester.pump();
+      expect(find.byKey(const Key('m13-update-popup')), findsOneWidget);
+      expect(find.byKey(const Key('m13-update-store')), findsNothing, reason: 'an App Store link is not offered on Android');
+      // Flutter refuses a test that leaves the platform override set when the test body ends.
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('the iOS popup shows the marketing version and falls back to the build number when it is null', (WidgetTester tester) async {
+      Widget app(AppUpdateController c) => MaterialApp(builder: (BuildContext context, Widget? child) => AppUpdateGate(controller: c, child: child!), home: const Scaffold());
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      final AppUpdateController named = _controller(_FakeTransport((String _) => _json(_check(versionCode: 12, versionName: '1.0.1', storeUrl: appStore))), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(named));
+      await tester.runAsync(named.check);
+      await tester.pump();
+      expect(find.text('Phiên bản 1.0.1'), findsOneWidget);
+      expect(find.text('Bản dựng 12'), findsNothing);
+
+      final Map<String, Object?> unnamedResponse = _check(versionCode: 13, storeUrl: appStore)..['release'] = <String, Object?>{'version_name': null, 'version_code': 13};
+      final AppUpdateController unnamed = _controller(_FakeTransport((String _) => _json(unnamedResponse)), _FakePlatform(Directory.systemTemp));
+      await tester.pumpWidget(app(unnamed));
+      await tester.runAsync(unnamed.check);
+      await tester.pump();
+      expect(find.text('Bản dựng 13'), findsOneWidget);
+      expect(find.textContaining('Phiên bản'), findsNothing);
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 

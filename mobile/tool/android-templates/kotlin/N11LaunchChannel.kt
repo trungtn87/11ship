@@ -46,7 +46,7 @@ class N11LaunchChannel(private val activity: Activity) : MethodChannel.MethodCal
     companion object {
         const val CHANNEL = "vn.eleven.n11/launch"
         private val PHONE = Regex("^\\+84[0-9]{9}$")
-        private val HOSTS = setOf("zalo.me", "m.me", "www.facebook.com")
+        private val HOSTS = setOf("zalo.me", "m.me", "www.facebook.com", "play.google.com")
 
         fun isPhone(value: String): Boolean = PHONE.matches(value)
 
