@@ -107,6 +107,9 @@ export function parseTopupPage(data: Record<string, unknown>): TopupPage | undef
   return { items, nextCursor: next };
 }
 
+/** A string as sent (empty included), or null. A missing key or any other type is a malformed row, never a blank value. */
+const stringOrNull = (value: unknown): string | null | undefined => (value === null ? null : typeof value === 'string' ? value : undefined);
+
 export function parseSepayQueue(data: Record<string, unknown>): readonly SepayHold[] | undefined {
   if (!Array.isArray(data.items)) {
     return undefined;
@@ -117,19 +120,17 @@ export function parseSepayQueue(data: Record<string, unknown>): readonly SepayHo
     const inboxId = uuid(raw?.inbox_id);
     const receivedAt = iso(raw?.received_at);
     const reason = str(raw?.reason_code);
-    if (raw === undefined || inboxId === undefined || receivedAt === undefined || reason === undefined || !whole(raw.amount_vnd)) {
+    const code = stringOrNull(raw?.code);
+    const referenceCode = stringOrNull(raw?.reference_code);
+    const accountLast4 = stringOrNull(raw?.account_last4);
+    const content = typeof raw?.content === 'string' ? raw.content : undefined;
+    if (
+      raw === undefined || inboxId === undefined || receivedAt === undefined || reason === undefined || !whole(raw.amount_vnd) ||
+      code === undefined || referenceCode === undefined || accountLast4 === undefined || content === undefined
+    ) {
       return undefined;
     }
-    items.push({
-      inboxId,
-      receivedAt,
-      amountVnd: raw.amount_vnd,
-      code: str(raw.code) ?? null,
-      referenceCode: str(raw.reference_code) ?? null,
-      reasonCode: reason,
-      content: typeof raw.content === 'string' ? raw.content : '',
-      accountLast4: str(raw.account_last4) ?? null,
-    });
+    items.push({ inboxId, receivedAt, amountVnd: raw.amount_vnd, code, referenceCode, reasonCode: reason, content, accountLast4 });
   }
   return items;
 }

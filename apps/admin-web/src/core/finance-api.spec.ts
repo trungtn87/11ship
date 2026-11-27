@@ -145,4 +145,22 @@ describe('SePay hold queue', () => {
     expect(parseSepayQueue({ items: [{ ...row, amount_vnd: -1 }] })).toBeUndefined();
     expect(parseSepayQueue({})).toBeUndefined();
   });
+
+  const held = { inbox_id: ID, received_at: '2026-11-27T03:00:00.000Z', amount_vnd: 100000, code: null, reference_code: null, reason_code: 'NO_CODE', content: '', account_last4: null };
+  it('accepts null for code, reference_code and account_last4, and an empty content', () => {
+    expect(parseSepayQueue({ items: [held] })).toEqual([{ inboxId: ID, receivedAt: held.received_at, amountVnd: 100000, code: null, referenceCode: null, reasonCode: 'NO_CODE', content: '', accountLast4: null }]);
+  });
+
+  for (const field of ['code', 'reference_code', 'account_last4', 'content'] as const) {
+    it(`treats a missing ${field} as a malformed row: no usable answer for the whole response`, () => {
+      const without: Record<string, unknown> = { ...held };
+      delete without[field];
+      expect(parseSepayQueue({ items: [held, without] })).toBeUndefined();
+      expect(parseSepayQueue({ items: [without] })).toBeUndefined();
+    });
+    it(`treats a wrong-typed ${field} as a malformed row: no usable answer for the whole response`, () => {
+      expect(parseSepayQueue({ items: [held, { ...held, [field]: 5 }] })).toBeUndefined();
+      expect(parseSepayQueue({ items: [{ ...held, [field]: false }] })).toBeUndefined();
+    });
+  }
 });
