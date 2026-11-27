@@ -5,6 +5,7 @@ import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { TopupExpiryJob, TopupExpirySweeper } from './topup-expiry';
 import { TopupRequestService } from './topup-request-service';
 import { WalletTopupController } from './wallet-topup.controller';
 
@@ -20,7 +21,7 @@ export class WalletTopupModule {
       module: WalletTopupModule,
       imports: [auth, DriverModule, WalletModule, TransactionModule, IdempotencyModule, AuditModule, OutboxModule],
       controllers: [WalletTopupController],
-      providers: [TopupRequestService],
+      providers: [TopupRequestService, TopupExpiryJob, TopupExpirySweeper],
     };
   }
 }

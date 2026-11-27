@@ -182,6 +182,29 @@ export class TopupRequestRepository {
   }
 
   /**
+   * Ends the requests that are still PENDING, were never reported, and are older than `afterMinutes` (database clock): PENDING -> CANCELLED, resolved
+   * by the SYSTEM ('TOPUP_EXPIRY'). ONE statement: rows another transaction holds (a settlement or a report in flight) are skipped and met by the next run,
+   * so the database decides every race. Returns what it ended.
+   */
+  async expireUnreported(context: TransactionContext, afterMinutes: number, limit: number): Promise<Array<{ requestId: string; version: number }>> {
+    const result = await context.query<{ request_id: string; version: string }>(
+      `WITH clock AS (SELECT date_trunc('milliseconds', clock_timestamp()) AS t),
+            due AS (
+              SELECT r.request_id FROM app.wallet_topup_requests r, clock
+               WHERE r.state = 'PENDING' AND r.reported_at IS NULL AND r.created_at < clock.t - make_interval(mins => $1::int)
+               ORDER BY r.created_at LIMIT $2::int FOR UPDATE OF r SKIP LOCKED
+            )
+       UPDATE app.wallet_topup_requests r
+          SET state = 'CANCELLED', resolved_by_system = 'TOPUP_EXPIRY', resolved_at = clock.t, updated_at = clock.t, version = r.version + 1
+         FROM clock, due
+        WHERE r.request_id = due.request_id AND r.state = 'PENDING' AND r.reported_at IS NULL
+        RETURNING r.request_id::text AS request_id, r.version::text AS version`,
+      [afterMinutes, limit],
+    );
+    return result.rows.map((row) => ({ requestId: row.request_id, version: Number(row.version) }));
+  }
+
+  /**
    * The one-time report of a transfer: sets reported_at while the request is PENDING and not yet reported. State and version are NOT changed
    * (the request guard allows exactly this), so the settlement sees the same PENDING request it always did. Undefined when not applicable.
    */
