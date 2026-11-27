@@ -69,6 +69,11 @@ set_key NSCameraUsageDescription string "$camera_text"
 set_key NSPhotoLibraryUsageDescription string "$photos_text"
 # No custom cryptography beyond the system TLS and Keychain: lets TestFlight skip the export-compliance question.
 set_key ITSAppUsesNonExemptEncryption bool false
+# App Store "Language": declare Vietnamese (the app UI is Vietnamese) next to English.
+/usr/libexec/PlistBuddy -c "Delete :CFBundleLocalizations" "$plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations array" "$plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:0 string vi" "$plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:1 string en" "$plist"
 # 11Ship shares the shipper's position while the app runs in the background (started from the open app, "While Using" permission only).
 if [ "$app" = ship ]; then
   /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$plist" 2>/dev/null || true
