@@ -139,11 +139,60 @@ export const MENU: readonly MenuGroup[] = [
     id: 'overview',
     section: 'ĐIỀU HÀNH',
     items: [
-      { id: 'home', label: 'Tổng quan', icon: 'home', route: { name: 'home' }, ready: true, access: 'any' },
-      // M12-A: the figures and the work waiting; every figure is gated by the server per administrator (FORBIDDEN / NOT_READY / ERROR are shown as such).
-      { id: 'overview', label: 'Điều hành', icon: 'activity', route: { name: 'overview' }, ready: true, access: 'any' },
-      // M12-E: reports and CSV/Excel export; the server checks the report and export rights again on every read and download.
-      { id: 'reports', label: 'Báo cáo', icon: 'activity', route: { name: 'reports' }, ready: true, access: 'any' },
+      // The landing page (route home) only says the sign-in worked; the working overview is "Điều hành". M12-A/E: the server gates every figure and export per administrator.
+      {
+        id: 'overview-group',
+        label: 'Tổng quan',
+        icon: 'home',
+        ready: true,
+        access: 'any',
+        children: [
+          { id: 'overview', label: 'Việc cần xử lý & số liệu', route: { name: 'overview' }, ready: true, access: 'any' },
+          { id: 'reports', label: 'Báo cáo', route: { name: 'reports' }, ready: true, access: 'any' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'operations',
+    section: 'ĐIỀU HÀNH',
+    items: [
+      {
+        id: 'orders-group',
+        label: 'Đơn & giao hàng',
+        icon: 'receipt',
+        ready: true,
+        access: 'any',
+        children: [
+          { id: 'orders', label: 'Đơn hàng', route: { name: 'orders' }, ready: true, access: 'orders' },
+          { id: 'deliveries', label: 'Giao hàng', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
+        ],
+      },
+      {
+        id: 'shops-group',
+        label: 'Quán & thực đơn',
+        icon: 'store',
+        ready: true,
+        access: 'any',
+        children: [
+          // M02 shop management; an ADMIN needs VIEW on the SHOP app (the server decides every call again).
+          { id: 'shops', label: 'Quán', route: { name: 'shops' }, ready: true, access: 'shops' },
+          { id: 'catalog-categories', label: 'Nhóm món', route: { name: 'categories' }, ready: true, access: 'catalog' },
+        ],
+      },
+      { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
+      {
+        id: 'feedback-group',
+        label: 'Phản hồi & thông báo',
+        icon: 'chat',
+        ready: true,
+        access: 'any',
+        children: [
+          { id: 'reviews', label: 'Đánh giá', route: { name: 'reviews' }, ready: true, access: 'feedback' },
+          { id: 'complaints', label: 'Phản ánh', route: { name: 'complaints' }, ready: true, access: 'feedback' },
+          { id: 'notifications', label: 'Thông báo', route: { name: 'notifications' }, ready: true, access: 'notifications' },
+        ],
+      },
     ],
   },
   {
@@ -152,52 +201,23 @@ export const MENU: readonly MenuGroup[] = [
     items: [
       {
         id: 'users',
-        label: 'Người dùng',
+        label: 'Tài khoản',
         icon: 'user',
         ready: true,
-        access: 'users',
+        access: 'any',
         children: [
-          { id: 'users-list', label: 'Danh sách', route: { name: 'users' }, ready: true, access: 'users' },
+          { id: 'users-list', label: 'Người dùng', route: { name: 'users' }, ready: true, access: 'users' },
           { id: 'users-locked', label: 'Đang khóa', route: { name: 'users', status: 'LOCKED' }, ready: true, access: 'users' },
+          // SYSTEM only: administrators, their rights (M12-C) and invitations.
+          { id: 'administrators', label: 'Quản trị viên', route: { name: 'administrators' }, ready: true, access: 'system' },
+          { id: 'access', label: 'Phân quyền', route: { name: 'access' }, ready: true, access: 'system' },
+          { id: 'invitations', label: 'Lời mời Admin', route: { name: 'invitations' }, ready: true, access: 'system' },
         ],
       },
-      { id: 'administrators', label: 'Quản trị viên', icon: 'shield', route: { name: 'administrators' }, ready: true, access: 'system' },
-      // M12-C: SYSTEM gives and takes back the rights of each ADMIN, locks the account and ends its sessions.
-      { id: 'access', label: 'Phân quyền', icon: 'key', route: { name: 'access' }, ready: true, access: 'system' },
-      { id: 'invitations', label: 'Lời mời Admin', icon: 'mail', route: { name: 'invitations' }, ready: true, access: 'system' },
     ],
   },
   {
-    id: 'operations',
-    section: 'ĐIỀU HÀNH',
-    items: [
-      // M02 shop management: list and detail from the server; an ADMIN needs VIEW on the SHOP app (the server decides every call again).
-      { id: 'shops', label: 'Quán', icon: 'store', route: { name: 'shops' }, ready: true, access: 'shops' },
-      { id: 'drivers', label: 'Shipper', icon: 'rider', route: { name: 'shippers' }, ready: true, access: 'drivers' },
-      { id: 'orders', label: 'Đơn hàng', icon: 'receipt', route: { name: 'orders' }, ready: true, access: 'orders' },
-      { id: 'deliveries', label: 'Giao hàng', icon: 'truck', route: { name: 'deliveries' }, ready: true, access: 'deliveries' },
-      { id: 'notifications', label: 'Thông báo', icon: 'bell', route: { name: 'notifications' }, ready: true, access: 'notifications' },
-      { id: 'reviews', label: 'Đánh giá', icon: 'star', route: { name: 'reviews' }, ready: true, access: 'feedback' },
-      { id: 'complaints', label: 'Phản ánh', icon: 'chat', route: { name: 'complaints' }, ready: true, access: 'feedback' },
-    ],
-  },
-  {
-    id: 'catalog',
-    section: 'QUẢN LÝ',
-    items: [
-      {
-        id: 'catalog',
-        label: 'Danh mục',
-        icon: 'store',
-        ready: true,
-        access: 'catalog',
-        children: [{ id: 'catalog-categories', label: 'Nhóm món', route: { name: 'categories' }, ready: true, access: 'catalog' }],
-      },
-    ],
-  },
-  {
-    // M04 (UI phase, Owner-approved 2026-10-15): Tổng quan / Ví Shipper / Nạp tiền / Rút tiền / Giao dịch / Đối soát. SYSTEM sees all of it;
-    // an ADMIN needs the matching grant, which the server does not send yet (grantsFromPermissions), so for now only SYSTEM sees it.
+    // M04: SYSTEM sees all of it; an ADMIN needs the matching grant; a parent without a visible child is dropped.
     id: 'finance',
     section: 'QUẢN LÝ',
     items: [
@@ -206,7 +226,6 @@ export const MENU: readonly MenuGroup[] = [
         label: 'Tài chính',
         icon: 'wallet',
         ready: true,
-        // B3a: the children decide (an ADMIN with only wallet.read sees only "Nạp tiền"); a parent without a visible child is dropped.
         access: 'any',
         children: [
           { id: 'finance-overview', label: 'Tổng quan', route: { name: 'finance' }, ready: true, access: 'driver-wallets' },
@@ -215,15 +234,13 @@ export const MENU: readonly MenuGroup[] = [
           { id: 'finance-withdrawals', label: 'Rút tiền', route: { name: 'finance-withdrawals' }, ready: true, access: 'withdrawals' },
           { id: 'finance-transactions', label: 'Giao dịch', route: { name: 'finance-transactions' }, ready: true, access: 'driver-wallets' },
           { id: 'finance-reconciliation', label: 'Đối soát', route: { name: 'finance-reconciliation' }, ready: true, access: 'driver-wallets' },
-          // B3a: the receiving accounts of the system (SYSTEM only; the server decides again).
           { id: 'finance-bank-accounts', label: 'Tài khoản nhận tiền', route: { name: 'finance-bank-accounts' }, ready: true, access: 'system' },
         ],
       },
     ],
   },
   {
-    // M13 (Owner-approved 2026-10-16): Tổng quan / Sự cố / SMS Gateway / Nhật ký / Phiên bản & cập nhật / Cấu hình. SYSTEM sees all; an ADMIN only with a
-    // grant from SYSTEM (view or handle), read from the server; the server decides every call again.
+    // M13: SYSTEM sees all; an ADMIN only with a grant from SYSTEM (read from the server, which decides every call again).
     id: 'sysops',
     section: 'HỆ THỐNG',
     items: [
@@ -238,7 +255,7 @@ export const MENU: readonly MenuGroup[] = [
           { id: 'sysops-vps', label: 'Giám sát VPS', route: { name: 'ops-vps' }, ready: true, access: 'ops' },
           { id: 'sysops-incidents', label: 'Sự cố', route: { name: 'ops-incidents' }, ready: true, access: 'ops' },
           { id: 'sysops-gateway', label: 'SMS Gateway', route: { name: 'ops-gateway' }, ready: true, access: 'ops' },
-          { id: 'sysops-logs', label: 'Nhật ký', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
+          { id: 'sysops-logs', label: 'Nhật ký máy chủ', route: { name: 'ops-logs' }, ready: true, access: 'ops' },
           { id: 'sysops-releases', label: 'Phiên bản & cập nhật', route: { name: 'ops-releases' }, ready: true, access: 'ops' },
           { id: 'sysops-config', label: 'Cấu hình', route: { name: 'ops-config' }, ready: true, access: 'ops' },
         ],
@@ -249,35 +266,36 @@ export const MENU: readonly MenuGroup[] = [
     id: 'system',
     section: 'HỆ THỐNG',
     items: [
-      // Owner decision 2026-10-14: the SYSTEM account's switches (phone verification first). SYSTEM only.
-      { id: 'system-settings', label: 'Cài đặt hệ thống', icon: 'gear', route: { name: 'settings' }, ready: true, access: 'system' },
-      // M12-D: every group of configuration in one place (every administrator reads; only SYSTEM changes, and each owner decides again).
-      { id: 'config', label: 'Cấu hình tập trung', icon: 'gear', route: { name: 'config' }, ready: true, access: 'any' },
-      { id:'order-timeouts',label:'Thời hạn xử lý đơn',icon:'gear',route:{name:'order-timeouts'},ready:true,access:'order-timeouts' },
-      // Issue #253: every administrator reads the areas; only SYSTEM changes them (the server decides again).
-      { id: 'zones', label: 'Vùng hoạt động', icon: 'map-pin', route: { name: 'zones' }, ready: true, access: 'any' },
-      // M03: Cài đặt › Tham số hệ thống › Ví Shipper (minimum top-up / withdrawal per request). Every administrator sees the values; only SYSTEM changes them
-      // (Owner decision 2026-10-17; the server decides again on every call).
       {
-        id: 'parameters',
-        label: 'Tham số hệ thống',
+        // Every setting in one place. Every administrator reads; only SYSTEM changes; each owner decides again.
+        id: 'settings-group',
+        label: 'Cài đặt',
         icon: 'gear',
         ready: true,
         access: 'any',
         children: [
+          { id: 'system-settings', label: 'Cài đặt hệ thống', route: { name: 'settings' }, ready: true, access: 'system' },
+          { id: 'config', label: 'Cấu hình tập trung', route: { name: 'config' }, ready: true, access: 'any' },
+          { id: 'order-timeouts', label: 'Thời hạn xử lý đơn', route: { name: 'order-timeouts' }, ready: true, access: 'order-timeouts' },
+          { id: 'zones', label: 'Vùng hoạt động', route: { name: 'zones' }, ready: true, access: 'any' },
           { id: 'parameters-shipper-wallet', label: 'Ví Shipper', route: { name: 'wallet-parameters' }, ready: true, access: 'any' },
-          // Issue #117: the six SMS OTP limits (every administrator reads, only SYSTEM changes, the server decides again).
           { id: 'parameters-otp', label: 'SMS & OTP', route: { name: 'otp-policy' }, ready: true, access: 'any' },
+          { id: 'shipping-policy', label: 'Phí & điều kiện giao', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
         ],
       },
-      // M06-A: Phí & điều kiện giao (fee table; every administrator reads, only SYSTEM changes, the server decides again).
-      { id: 'shipping-policy', label: 'Phí & điều kiện giao', icon: 'gear', route: { name: 'shipping-policy' }, ready: true, access: 'any' },
-      // M12-F: the audit log (read only; the server needs the audit.read right) and the backup history / restore requests (SYSTEM only).
-      { id: 'audit', label: 'Nhật ký', icon: 'doc', route: { name: 'audit' }, ready: true, access: 'any' },
+      {
+        id: 'logs-group',
+        label: 'Nhật ký',
+        icon: 'doc',
+        ready: true,
+        access: 'any',
+        children: [
+          // M12-F: the audit log (the server needs the audit.read right) and the error log (SYSTEM only).
+          { id: 'audit', label: 'Hoạt động quản trị', route: { name: 'audit' }, ready: true, access: 'any' },
+          { id: 'monitoring-errors', label: 'Lỗi hệ thống', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
+        ],
+      },
       { id: 'backups', label: 'Sao lưu và phục hồi', icon: 'shield', route: { name: 'backups' }, ready: true, access: 'system' },
-      { id: 'monitoring', label: 'Giám sát', icon: 'activity', ready: true, access: 'system', children: [
-        { id: 'monitoring-errors', label: 'Nhật ký lỗi', route: { name: 'monitoring-errors' }, ready: true, access: 'system' },
-      ] },
     ],
   },
 ];
@@ -494,7 +512,7 @@ export function activeMenuId(route: Route): string {
     case 'home':
     case 'activate':
     case 'reset':
-      return 'home';
+      return 'overview';
   }
 }
 
@@ -506,25 +524,25 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'user':
       return ['Tài khoản', 'Người dùng', 'Chi tiết'];
     case 'categories':
-      return ['Danh mục', 'Nhóm món'];
+      return ['Quán & thực đơn', 'Nhóm món'];
     case 'shops':
-      return ['Vận hành', 'Quán'];
+      return ['Quán & thực đơn', 'Quán'];
     case 'shop':
-      return ['Vận hành', 'Quán', 'Chi tiết'];
+      return ['Quán & thực đơn', 'Quán', 'Chi tiết'];
     case 'shippers':
       return ['Vận hành', 'Shipper'];
     case 'shipper':
       return ['Vận hành', 'Shipper', 'Chi tiết'];
     case 'orders':
-      return ['Vận hành', 'Đơn hàng'];
+      return ['Đơn & giao hàng', 'Đơn hàng'];
     case 'deliveries':
-      return ['Vận hành', 'Giao hàng'];
+      return ['Đơn & giao hàng', 'Giao hàng'];
     case 'notifications':
-      return ['Vận hành', 'Thông báo'];
+      return ['Phản hồi & thông báo', 'Thông báo'];
     case 'reviews':
-      return ['Vận hành', 'Đánh giá'];
+      return ['Phản hồi & thông báo', 'Đánh giá'];
     case 'complaints':
-      return ['Vận hành', 'Phản ánh'];
+      return ['Phản hồi & thông báo', 'Phản ánh'];
     case 'wallet-parameters':
       return ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper'];
     case 'otp-policy':
@@ -566,7 +584,7 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'ops-gateway':
       return ['Vận hành hệ thống', 'SMS Gateway'];
     case 'ops-logs':
-      return ['Vận hành hệ thống', 'Nhật ký'];
+      return ['Vận hành hệ thống', 'Nhật ký máy chủ'];
     case 'ops-releases':
       return ['Vận hành hệ thống', 'Phiên bản & cập nhật'];
     case 'ops-config':
@@ -580,7 +598,7 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'settings':
       return ['Hệ thống', 'Cài đặt hệ thống'];
     case 'monitoring-errors':
-      return ['Hệ thống', 'Giám sát', 'Nhật ký lỗi'];
+      return ['Nhật ký', 'Lỗi hệ thống'];
     case 'invitations':
       return ['Tài khoản', 'Lời mời Admin'];
     case 'invitation-new':
@@ -596,7 +614,7 @@ export function breadcrumb(route: Route): readonly string[] {
     case 'reports':
       return ['Tổng quan', 'Báo cáo'];
     case 'audit':
-      return ['Hệ thống', 'Nhật ký'];
+      return ['Nhật ký', 'Hoạt động quản trị'];
     case 'backups':
       return ['Hệ thống', 'Sao lưu và phục hồi'];
     case 'config':

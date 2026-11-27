@@ -95,6 +95,6 @@ describe('M08.06 notification administration client', () => {
     const grants = grantsFromPermissions([{ app: 'DRIVER', canView: true, canReviewProfile: false, canLock: false }]);
     expect(canOpenRoute('ADMIN', grants, { name: 'notifications' })).toBe(true);
     expect(canOpenRoute('ADMIN', new Set(), { name: 'notifications' })).toBe(false);
-    expect(visibleMenu('SYSTEM').flatMap((g) => g.items.map((i) => i.id))).toContain('notifications');
+    expect(visibleMenu('SYSTEM').flatMap((g) => g.items.flatMap((i) => [i.id, ...(i.children ?? []).map((c) => c.id)]))).toContain('notifications');
   });
 });

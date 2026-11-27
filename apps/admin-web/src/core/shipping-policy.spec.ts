@@ -177,7 +177,7 @@ describe('M06-A admin web - route and menu', () => {
     expect(formatRoute({ name: 'shipping-policy' })).toBe('/system/shipping-fee-policy');
     expect(canOpenRoute('ADMIN', new Set() as never, { name: 'shipping-policy' })).toBe(true);
     expect(canOpenRoute('SYSTEM', new Set() as never, { name: 'shipping-policy' })).toBe(true);
-    const labels = (role: 'SYSTEM' | 'ADMIN'): string[] => visibleMenu(role, new Set() as never).flatMap((group) => group.items.map((item) => item.id));
+    const labels = (role: 'SYSTEM' | 'ADMIN'): string[] => visibleMenu(role, new Set() as never).flatMap((group) => group.items.flatMap((item) => [item.id, ...(item.children ?? []).map((c) => c.id)]));
     expect(labels('SYSTEM')).toContain('shipping-policy');
     expect(labels('ADMIN')).toContain('shipping-policy');
   });

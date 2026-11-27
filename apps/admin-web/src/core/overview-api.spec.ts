@@ -125,9 +125,9 @@ describe('M12-A overview - links, range and menu', () => {
   });
 
   it('"Điều hành" is in every administrator\'s menu, and the page opens for every role (the server gates each figure)', () => {
-    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((group) => group.items.map((item) => item.label));
-    expect(labels(visibleMenu('ADMIN', new Set()))).toContain('Điều hành');
-    expect(labels(visibleMenu('SYSTEM', new Set()))).toContain('Điều hành');
+    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((group) => group.items.flatMap((item) => [item.label, ...(item.children ?? []).map((c) => c.label)]));
+    expect(labels(visibleMenu('ADMIN', new Set()))).toContain('Việc cần xử lý & số liệu');
+    expect(labels(visibleMenu('SYSTEM', new Set()))).toContain('Việc cần xử lý & số liệu');
     expect(canOpenRoute('ADMIN', new Set(), { name: 'overview' })).toBe(true);
     expect(parseRoute('/overview')).toEqual({ name: 'overview' });
     expect(formatRoute({ name: 'overview' })).toBe('/overview');

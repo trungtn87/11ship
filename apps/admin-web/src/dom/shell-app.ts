@@ -1590,8 +1590,8 @@ export class ShellApp implements ShellHost {
     const lead = h('p', { class: 'lead lead-last' }, 'Vai trò: ', h('span', { class: 'role-badge' }, role));
     const hint =
       role === 'SYSTEM'
-        ? h('p', { class: 'lead' }, 'Dùng menu bên trái để mời và quản lý tài khoản ADMIN. Các mục có nhãn “Sắp có” sẽ được mở ở bước sau.')
-        : h('p', { class: 'lead' }, 'Các chức năng quản lý dành cho ADMIN sẽ có ở bước sau.');
+        ? h('p', { class: 'lead' }, 'Dùng menu bên trái để làm việc. Mở “Tổng quan” để xem các việc đang chờ xử lý.')
+        : h('p', { class: 'lead' }, 'Dùng menu bên trái để làm việc. Mở “Tổng quan” để xem các việc đang chờ xử lý.');
     return h('section', { class: 'content content-narrow', 'aria-labelledby': 'shell-title' }, title, lead, hint);
   }
 }

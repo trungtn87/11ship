@@ -145,7 +145,7 @@ describe('admin web Deliveries - route and menu', () => {
   it('has its own route and menu entry, visible only with the delivery grant (SYSTEM sees it)', () => {
     expect(parseRoute('/operations/deliveries')).toEqual({ name: 'deliveries' });
     expect(formatRoute({ name: 'deliveries' })).toBe('/operations/deliveries');
-    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((g) => g.items.map((i) => i.label));
+    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((g) => g.items.flatMap((i) => [i.label, ...(i.children ?? []).map((c) => c.label)]));
     expect(labels(visibleMenu('SYSTEM', new Set()))).toContain('Giao hàng');
     expect(labels(visibleMenu('ADMIN', new Set()))).not.toContain('Giao hàng');
     const grants = grantsFromPermissions([{ app: 'DRIVER', canView: true, canReviewProfile: false, canLock: false }]);

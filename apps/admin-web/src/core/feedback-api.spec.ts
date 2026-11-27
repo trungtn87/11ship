@@ -169,7 +169,7 @@ describe('admin web Feedback - routes and menu', () => {
     expect(parseRoute('/operations/complaints')).toEqual({ name: 'complaints' });
     expect(formatRoute({ name: 'reviews' })).toBe('/operations/reviews');
     expect(formatRoute({ name: 'complaints' })).toBe('/operations/complaints');
-    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((g) => g.items.map((i) => i.label));
+    const labels = (groups: ReturnType<typeof visibleMenu>) => groups.flatMap((g) => g.items.flatMap((i) => [i.label, ...(i.children ?? []).map((c) => c.label)]));
     expect(labels(visibleMenu('SYSTEM', new Set()))).toEqual(expect.arrayContaining(['Đánh giá', 'Phản ánh']));
     expect(labels(visibleMenu('ADMIN', new Set()))).not.toContain('Đánh giá');
     const grants = grantsFromPermissions([{ app: 'SHOP', canView: true, canReviewProfile: false, canLock: false }]);
