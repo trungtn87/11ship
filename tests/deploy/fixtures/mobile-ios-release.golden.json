@@ -65,7 +65,7 @@
     "mobile/tool/sign-aab.sh": "99bfd773caef6fb9216dac49704ece67587ad460b89bef9cd2a5e8f56c393adc",
     "mobile/tool/check-aab-release.py": "1fb28c82a2efa23d457bc4593a00187cd8bcb27100fc5ad2a2e9d91a572b7ad2",
     "mobile/tool/play_versioncode_gate.py": "e1d731538fb037a46537d9881f0870d727d3db66419f44fc2be8c2d5fea35b5b",
-    "mobile/tool/prepare-ios.sh": "e9cc5b639369016091af453f8773d3632a198353db86a109f765d8b4d089ead2",
+    "mobile/tool/prepare-ios.sh": "8346dd0272d0f055670aed06541f0ec8dfaa453b9a191bd02773e6c7bfbc15c0",
     "mobile/tool/ios-testflight.sh": "bda5693388ad4284365eb0ed3596a47395564526a452fa45f9388c3759f594de"
   }
 }
