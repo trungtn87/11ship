@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { Transport, TransportRequest, TransportResponse } from './api';
-import { AdminFinanceApi, createFinanceAdminSource, parseAdminAccess, parseReceivingAccounts, parseRights, parseTopup, parseTopupPage } from './finance-api';
+import { AdminFinanceApi, createFinanceAdminSource, parseAdminAccess, parseReceivingAccounts, parseRights, parseSepayQueue, parseTopup, parseTopupPage } from './finance-api';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const ACC = '22222222-2222-4222-8222-222222222222';
@@ -136,4 +136,31 @@ describe('finance API (B3a) - requests', () => {
     expect((requests[1] as { body: object }).body).toEqual({ expected_version: 1, can_receive: true });
     expect((requests[2] as { body: object }).body).toEqual({ permission_key: 'wallet.read', expected_version: 0 });
   });
+});
+
+describe('SePay hold queue', () => {
+  it('reads the held transfers and refuses a malformed row', () => {
+    const row = { inbox_id: ID, received_at: '2026-11-27T03:00:00.000Z', amount_vnd: 100000, code: null, reference_code: 'FT1', reason_code: 'NO_CODE', content: 'chuyen tien', account_last4: '1234' };
+    expect(parseSepayQueue({ items: [row] })).toEqual([{ inboxId: ID, receivedAt: row.received_at, amountVnd: 100000, code: null, referenceCode: 'FT1', reasonCode: 'NO_CODE', content: 'chuyen tien', accountLast4: '1234' }]);
+    expect(parseSepayQueue({ items: [{ ...row, amount_vnd: -1 }] })).toBeUndefined();
+    expect(parseSepayQueue({})).toBeUndefined();
+  });
+
+  const held = { inbox_id: ID, received_at: '2026-11-27T03:00:00.000Z', amount_vnd: 100000, code: null, reference_code: null, reason_code: 'NO_CODE', content: '', account_last4: null };
+  it('accepts null for code, reference_code and account_last4, and an empty content', () => {
+    expect(parseSepayQueue({ items: [held] })).toEqual([{ inboxId: ID, receivedAt: held.received_at, amountVnd: 100000, code: null, referenceCode: null, reasonCode: 'NO_CODE', content: '', accountLast4: null }]);
+  });
+
+  for (const field of ['code', 'reference_code', 'account_last4', 'content'] as const) {
+    it(`treats a missing ${field} as a malformed row: no usable answer for the whole response`, () => {
+      const without: Record<string, unknown> = { ...held };
+      delete without[field];
+      expect(parseSepayQueue({ items: [held, without] })).toBeUndefined();
+      expect(parseSepayQueue({ items: [without] })).toBeUndefined();
+    });
+    it(`treats a wrong-typed ${field} as a malformed row: no usable answer for the whole response`, () => {
+      expect(parseSepayQueue({ items: [held, { ...held, [field]: 5 }] })).toBeUndefined();
+      expect(parseSepayQueue({ items: [{ ...held, [field]: false }] })).toBeUndefined();
+    });
+  }
 });

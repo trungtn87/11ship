@@ -29,24 +29,56 @@ describe('menu by permission', () => {
   it('ADMIN without grants sees Tổng quan and the (read-only) system parameters, nothing else', async () => {
     const m = await load(real, 'core/menu.js');
     // Owner decision 2026-10-17: every administrator may READ the system parameters (SYSTEM alone edits them).
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['home', 'overview', 'reports', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', m.NO_GRANTS)), ['overview-group', 'overview', 'reports', 'settings-group', 'config', 'zones', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'logs-group', 'audit']);
   });
   it('ADMIN with a grant sees that entry, never administrators, invitations or the system settings', async () => {
     const m = await load(real, 'core/menu.js');
     const seen = ids(m.visibleMenu('ADMIN', new Set(['users', 'shops'])));
-    assert.deepEqual(seen, ['home', 'overview', 'reports', 'users', 'users-list', 'users-locked', 'shops', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(seen, ['overview-group', 'overview', 'reports', 'shops-group', 'shops', 'users', 'users-list', 'users-locked', 'settings-group', 'config', 'zones', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'logs-group', 'audit']);
     assert.ok(!seen.includes('administrators') && !seen.includes('invitations') && !seen.includes('system-settings'));
   });
   it('"Danh mục › Nhóm món" needs the catalog grant (SHOP VIEW + the catalog right); SYSTEM always sees it', async () => {
     const m = await load(real, 'core/menu.js');
-    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['home', 'overview', 'reports', 'catalog', 'catalog-categories', 'config', 'zones', 'parameters', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'audit']);
+    assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['catalog']))), ['overview-group', 'overview', 'reports', 'shops-group', 'catalog-categories', 'settings-group', 'config', 'zones', 'parameters-shipper-wallet', 'parameters-otp', 'shipping-policy', 'logs-group', 'audit']);
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers']))).includes('catalog-categories'));
     assert.ok(ids(m.visibleMenu('SYSTEM')).includes('catalog-categories'));
     assert.equal(m.canOpenRoute('ADMIN', new Set(['users', 'shops']), { name: 'categories' }), false);
     assert.equal(m.canOpenRoute('ADMIN', new Set(['catalog']), { name: 'categories' }), true);
     assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'categories' }), true);
     assert.equal(m.activeMenuId({ name: 'categories' }), 'catalog-categories');
-    assert.deepEqual(m.breadcrumb({ name: 'categories' }), ['Danh mục', 'Nhóm món']);
+    assert.deepEqual(m.breadcrumb({ name: 'categories' }), ['Quán & thực đơn', 'Nhóm món']);
+  });
+  it('breadcrumbs of the renamed pages match the menu (top level and parent names)', async () => {
+    const m = await load(real, 'core/menu.js');
+    assert.deepEqual(m.breadcrumb({ name: 'shippers' }), ['Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'shipper', id: 'x' }), ['Shipper', 'Chi tiết']);
+    assert.deepEqual(m.breadcrumb({ name: 'zones' }), ['Cài đặt', 'Vùng hoạt động']);
+    assert.deepEqual(m.breadcrumb({ name: 'zone', id: 'x' }), ['Cài đặt', 'Vùng hoạt động', 'Chi tiết']);
+    assert.deepEqual(m.breadcrumb({ name: 'settings' }), ['Cài đặt', 'Cài đặt hệ thống']);
+    assert.deepEqual(m.breadcrumb({ name: 'order-timeouts' }), ['Cài đặt', 'Thời hạn xử lý đơn']);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-parameters' }), ['Cài đặt', 'Ví Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'otp-policy' }), ['Cài đặt', 'SMS & OTP']);
+    assert.deepEqual(m.breadcrumb({ name: 'backups' }), ['Sao lưu và phục hồi']);
+    assert.deepEqual(m.breadcrumb({ name: 'invitation-new' }), ['Tài khoản', 'Lời mời Admin', 'Tạo lời mời']);
+    // Every page's first crumb is a top-level menu label (a section or a parent entry), so no page drifts from the sidebar.
+    const topLabels = new Set(m.MENU.flatMap((group) => group.items.map((item) => item.label)));
+    const pages = [
+      { name: 'home' }, { name: 'overview' }, { name: 'reports' }, { name: 'users' }, { name: 'users', status: 'LOCKED' },
+      { name: 'user', id: 'x' }, { name: 'categories' }, { name: 'shops' }, { name: 'shop', id: 'x' }, { name: 'shippers' },
+      { name: 'shipper', id: 'x' }, { name: 'orders' }, { name: 'deliveries' }, { name: 'notifications' }, { name: 'reviews' },
+      { name: 'complaints' }, { name: 'wallet-parameters' }, { name: 'wallet-params' }, { name: 'otp-policy' }, { name: 'zones' },
+      { name: 'zone', id: 'x' }, { name: 'shipping-policy' }, { name: 'finance' }, { name: 'finance-wallets' }, { name: 'finance-topups' },
+      { name: 'finance-topup', id: 'x' }, { name: 'finance-bank-accounts' }, { name: 'finance-withdrawals' }, { name: 'finance-withdrawal', id: 'x' },
+      { name: 'finance-transactions' }, { name: 'finance-reconciliation' }, { name: 'ops' }, { name: 'ops-vps' }, { name: 'ops-incidents' },
+      { name: 'ops-incident', ref: 'abc' }, { name: 'ops-gateway' }, { name: 'ops-logs' }, { name: 'ops-releases' }, { name: 'ops-config' },
+      { name: 'administrators' }, { name: 'access' }, { name: 'order-timeouts' }, { name: 'settings' }, { name: 'monitoring-errors' },
+      { name: 'invitations' }, { name: 'invitation-new' }, { name: 'invitation', id: 'x' }, { name: 'invitation-reissue', id: 'x' },
+      { name: 'invitation-revoke', id: 'x' }, { name: 'audit' }, { name: 'backups' }, { name: 'config' }, { name: 'activate' }, { name: 'reset' },
+    ];
+    for (const page of pages) {
+      const crumbs = m.breadcrumb(page);
+      assert.ok(topLabels.has(crumbs[0]), `${page.name}: "${crumbs[0]}" is not a top-level menu label`);
+    }
   });
   it('SYSTEM sees every entry', async () => {
     const m = await load(real, 'core/menu.js');
@@ -56,7 +88,7 @@ describe('menu by permission', () => {
     const m = await load(real, 'core/menu.js');
     assert.deepEqual(
       m.MENU.flatMap((group) => group.items.map((item) => item.label)),
-      ['Tổng quan', 'Điều hành', 'Báo cáo', 'Người dùng', 'Quản trị viên', 'Phân quyền', 'Lời mời Admin', 'Quán', 'Shipper', 'Đơn hàng', 'Giao hàng', 'Thông báo', 'Đánh giá', 'Phản ánh', 'Danh mục', 'Tài chính', 'Vận hành hệ thống', 'Cài đặt hệ thống', 'Cấu hình tập trung', 'Thời hạn xử lý đơn', 'Vùng hoạt động', 'Tham số hệ thống', 'Phí & điều kiện giao', 'Nhật ký', 'Sao lưu và phục hồi', 'Giám sát'],
+      ['Tổng quan', 'Đơn & giao hàng', 'Quán & thực đơn', 'Shipper', 'Phản hồi & thông báo', 'Tài khoản', 'Tài chính', 'Vận hành hệ thống', 'Cài đặt', 'Nhật ký', 'Sao lưu và phục hồi'],
     );
   });
   it('sidebar sections ĐIỀU HÀNH / QUẢN LÝ / HỆ THỐNG: presentation only; group ids, routes and per-role visibility are unchanged', async () => {
@@ -64,11 +96,11 @@ describe('menu by permission', () => {
     const sectionOf = (id) => m.MENU.find((group) => group.id === id).section;
     assert.deepEqual(
       m.MENU.map((group) => group.id),
-      ['overview', 'accounts', 'operations', 'catalog', 'finance', 'sysops', 'system'],
+      ['overview', 'operations', 'accounts', 'finance', 'sysops', 'system'],
     );
     assert.equal(sectionOf('overview'), 'ĐIỀU HÀNH');
     assert.equal(sectionOf('operations'), 'ĐIỀU HÀNH');
-    for (const id of ['accounts', 'catalog', 'finance']) assert.equal(sectionOf(id), 'QUẢN LÝ', id);
+    for (const id of ['accounts', 'finance']) assert.equal(sectionOf(id), 'QUẢN LÝ', id);
     for (const id of ['sysops', 'system']) assert.equal(sectionOf(id), 'HỆ THỐNG', id);
     // The regrouping adds no right: an ADMIN without grants still does not see the user list.
     assert.ok(!ids(m.visibleMenu('ADMIN', new Set())).includes('users'));
@@ -98,7 +130,7 @@ describe('menu by permission', () => {
     assert.equal(m.canOpenRoute('ADMIN', new Set(['withdrawals']), { name: 'finance-withdrawal', id: 'x' }), true);
     assert.equal(m.canOpenRoute('ADMIN', m.NO_GRANTS, { name: 'wallet-params' }), false);
     assert.equal(m.canOpenRoute('SYSTEM', m.NO_GRANTS, { name: 'wallet-params' }), true);
-    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Tham số hệ thống', 'Ví Shipper']);
+    assert.deepEqual(m.breadcrumb({ name: 'wallet-params' }), ['Cài đặt', 'Ví Shipper']);
     assert.equal(m.activeMenuId({ name: 'finance-withdrawal', id: 'x' }), 'finance-withdrawals');
   });
   it('a ready entry has a route; an entry that is not built has none (shown as "Sắp có")', async () => {
@@ -130,7 +162,7 @@ describe('M13 "Vận hành hệ thống" menu and pages', () => {
     assert.deepEqual(ids(m.visibleMenu('SYSTEM')).filter((id) => id.startsWith('sysops')), OPS);
     assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['users', 'shops', 'drivers', 'deliveries', 'notifications']))).filter((id) => id.startsWith('sysops')), []);
     assert.deepEqual(ids(m.visibleMenu('ADMIN', new Set(['ops']))).filter((id) => id.startsWith('sysops')), OPS);
-    assert.deepEqual(m.MENU.find((g) => g.id === 'sysops').items[0].children.map((c) => c.label), ['Tổng quan', 'Giám sát VPS', 'Sự cố', 'SMS Gateway', 'Nhật ký', 'Phiên bản & cập nhật', 'Cấu hình']);
+    assert.deepEqual(m.MENU.find((g) => g.id === 'sysops').items[0].children.map((c) => c.label), ['Tổng quan', 'Giám sát VPS', 'Sự cố', 'SMS Gateway', 'Nhật ký máy chủ', 'Phiên bản & cập nhật', 'Cấu hình']);
   });
   it('routes parse, format and are guarded like the menu', async () => {
     const m = await load(real, 'core/menu.js');

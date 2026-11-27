@@ -733,7 +733,7 @@ describe('M03 — Shipper management', () => {
 
   // ------------------------------------------------------------------------------------------------ wallet parameters
 
-  describe('Cài đặt → Tham số hệ thống → Ví Shipper', () => {
+  describe('Cài đặt → Ví Shipper', () => {
     const read = (who: AdminLogin): Promise<AdminResponse> => adminGet(who, '/system-settings/shipper-wallet');
     const write = (who: AdminLogin, body: unknown): Promise<AdminResponse> => adminPost(who, '/system-settings/shipper-wallet', body);
 

@@ -175,6 +175,9 @@ export interface FinanceAdminSource {
   setReceiving(command: ReceivingCommand): Promise<FinanceOutcome>;
   adminAccess(userId: string): Promise<FinanceRead<AdminFinanceAccess>>;
   changeAccess(command: AccessCommand): Promise<FinanceOutcome>;
+  /** Bank transfers the SePay automation did not credit and that wait for an Administrator (read needs the finance read right). */
+  sepayQueue(): Promise<FinanceRead<readonly SepayHold[]>>;
+  sepayDismiss(command: SepayDismissCommand): Promise<FinanceOutcome>;
 }
 
 /** Nothing connected: every read says so, every command is refused before it leaves the page. No sample data exists in this build. */
@@ -190,6 +193,8 @@ export const NOT_WIRED_FINANCE_ADMIN: FinanceAdminSource = {
   setReceiving: async () => ({ kind: 'not-wired' }),
   adminAccess: async () => ({ kind: 'not-wired' }),
   changeAccess: async () => ({ kind: 'not-wired' }),
+  sepayQueue: async () => ({ kind: 'not-wired' }),
+  sepayDismiss: async () => ({ kind: 'not-wired' }),
 };
 
 // ---- money and time -----------------------------------------------------------------------------------------------------
@@ -349,3 +354,55 @@ export function messageOf(code: string): string {
 
 /** First 8 characters of an identifier, for a table cell. The full value is shown on the detail page. */
 export const shortId = (id: string): string => id.slice(0, 8);
+
+
+// ---- SePay: transfers held for an Administrator ---------------------------------------------------------------------------------
+
+export interface SepayHold {
+  readonly inboxId: string;
+  readonly receivedAt: string;
+  readonly amountVnd: number;
+  readonly code: string | null;
+  readonly referenceCode: string | null;
+  readonly reasonCode: string;
+  readonly content: string;
+  readonly accountLast4: string | null;
+}
+
+export type SepayDismissReason = 'NOT_A_TOPUP' | 'OTHER_CUSTOMER_PAYMENT' | 'DUPLICATE' | 'OTHER';
+export const SEPAY_DISMISS_REASONS: readonly SepayDismissReason[] = ['NOT_A_TOPUP', 'OTHER_CUSTOMER_PAYMENT', 'DUPLICATE', 'OTHER'];
+export const SEPAY_DISMISS_LABEL: Record<SepayDismissReason, string> = {
+  NOT_A_TOPUP: 'Không phải tiền nạp ví',
+  OTHER_CUSTOMER_PAYMENT: 'Tiền thanh toán khác',
+  DUPLICATE: 'Trùng với khoản đã xử lý',
+  OTHER: 'Lý do khác',
+};
+
+export interface SepayDismissCommand {
+  readonly inboxId: string;
+  readonly reason: SepayDismissReason;
+}
+
+/** Why the automation kept a transfer instead of crediting it, in plain Vietnamese. An unknown code is shown as such, never guessed. */
+export const SEPAY_HOLD_LABEL: Record<string, string> = {
+  NO_CODE: 'Nội dung chuyển khoản không có mã nạp (NAP…)',
+  CODE_FORMAT: 'Mã nạp trong nội dung bị sai định dạng',
+  CODE_NOT_AT_START: 'Mã nạp không nằm ở đầu nội dung chuyển khoản',
+  NO_REFERENCE: 'Ngân hàng không gửi mã tham chiếu giao dịch',
+  REFERENCE_FORMAT: 'Mã tham chiếu giao dịch của ngân hàng không hợp lệ',
+  NO_REQUEST_FOR_CODE: 'Không có yêu cầu nạp nào ứng với mã này',
+  REQUEST_NOT_FOUND: 'Không tìm thấy yêu cầu nạp ứng với mã này',
+  REQUEST_NOT_PENDING: 'Yêu cầu nạp đã được xử lý hoặc đã hủy',
+  AMOUNT_MISMATCH: 'Số tiền chuyển khác số tiền trong yêu cầu nạp',
+  DRIVER_NOT_ACTIVE: 'Tài khoản Shipper không còn hoạt động',
+  WALLET_NOT_FOUND: 'Không tìm thấy ví của Shipper',
+  ACCOUNT_NOT_RECEIVING: 'Tài khoản nhận tiền này đang không được bật nhận',
+  AUTO_TOPUP_DISABLED: 'Tự động cộng tiền đang tắt',
+  AUTO_TOPUP_NOT_CONFIGURED: 'Tự động cộng tiền chưa được cấu hình',
+  TOPUP_WALLET_LIMIT_EXCEEDED: 'Cộng tiền sẽ vượt hạn mức ví',
+  BANK_TRANSACTION_ALREADY_RECORDED: 'Giao dịch ngân hàng này đã được ghi nhận trước đó',
+};
+
+export function sepayHoldText(code: string): string {
+  return SEPAY_HOLD_LABEL[code] ?? `Cần admin kiểm tra (mã: ${code})`;
+}

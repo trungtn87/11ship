@@ -20,6 +20,8 @@ import {
   ReceivingAccount,
   ReceivingCommand,
   RejectCommand,
+  SepayDismissCommand,
+  SepayHold,
   SystemAccount,
   TopupFilter,
   TopupItem,
@@ -103,6 +105,34 @@ export function parseTopupPage(data: Record<string, unknown>): TopupPage | undef
     items.push(item);
   }
   return { items, nextCursor: next };
+}
+
+/** A string as sent (empty included), or null. A missing key or any other type is a malformed row, never a blank value. */
+const stringOrNull = (value: unknown): string | null | undefined => (value === null ? null : typeof value === 'string' ? value : undefined);
+
+export function parseSepayQueue(data: Record<string, unknown>): readonly SepayHold[] | undefined {
+  if (!Array.isArray(data.items)) {
+    return undefined;
+  }
+  const items: SepayHold[] = [];
+  for (const entry of data.items) {
+    const raw = record(entry);
+    const inboxId = uuid(raw?.inbox_id);
+    const receivedAt = iso(raw?.received_at);
+    const reason = str(raw?.reason_code);
+    const code = stringOrNull(raw?.code);
+    const referenceCode = stringOrNull(raw?.reference_code);
+    const accountLast4 = stringOrNull(raw?.account_last4);
+    const content = typeof raw?.content === 'string' ? raw.content : undefined;
+    if (
+      raw === undefined || inboxId === undefined || receivedAt === undefined || reason === undefined || !whole(raw.amount_vnd) ||
+      code === undefined || referenceCode === undefined || accountLast4 === undefined || content === undefined
+    ) {
+      return undefined;
+    }
+    items.push({ inboxId, receivedAt, amountVnd: raw.amount_vnd, code, referenceCode, reasonCode: reason, content, accountLast4 });
+  }
+  return items;
 }
 
 export function parseReceivingAccounts(data: Record<string, unknown>): readonly ReceivingAccount[] | undefined {
@@ -191,6 +221,12 @@ export class AdminFinanceApi extends ApiClient {
   }
   topup(id: string): Promise<ApiResult<TopupItem>> {
     return this.call({ method: 'GET', path: `/admin/finance/topup-requests/${encodeURIComponent(id)}` }, (data) => parseTopup(data));
+  }
+  sepayQueue(): Promise<ApiResult<readonly SepayHold[]>> {
+    return this.call({ method: 'GET', path: '/admin/finance/sepay-inbox/needs-admin' }, parseSepayQueue);
+  }
+  sepayDismiss(csrf: string, command: SepayDismissCommand): Promise<ApiResult<unknown>> {
+    return this.call({ method: 'POST', path: `/admin/finance/sepay-inbox/${encodeURIComponent(command.inboxId)}/dismiss`, body: { reason_code: command.reason }, csrf }, anyData);
   }
   receivingAccounts(): Promise<ApiResult<readonly ReceivingAccount[]>> {
     return this.call({ method: 'GET', path: '/admin/finance/topup-receiving-accounts' }, parseReceivingAccounts);
@@ -325,5 +361,7 @@ export function createFinanceAdminSource(api: AdminFinanceApi, session: CsrfPort
     setReceiving: (command) => send((csrf) => api.setReceiving(csrf, command)),
     adminAccess: async (userId) => readOf(await api.adminAccess(userId)),
     changeAccess: (command) => send((csrf) => api.changeAccess(csrf, command)),
+    sepayQueue: async () => readOf(await api.sepayQueue()),
+    sepayDismiss: (command) => send((csrf) => api.sepayDismiss(csrf, command)),
   };
 }

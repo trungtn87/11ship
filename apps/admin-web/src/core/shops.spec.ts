@@ -171,8 +171,8 @@ describe('admin web shops - routes and menu', () => {
     expect(canOpenRoute('ADMIN', new Set(['users', 'drivers'] as const), { name: 'shop', id: ID })).toBe(false);
     expect(canOpenRoute('SYSTEM', new Set(), { name: 'shop', id: ID })).toBe(true);
     expect(activeMenuId({ name: 'shop', id: ID })).toBe('shops');
-    expect(breadcrumb({ name: 'shop', id: ID })).toEqual(['Vận hành', 'Quán', 'Chi tiết']);
-    expect(visibleMenu('ADMIN', new Set(['users', 'shops'] as const)).flatMap((group) => group.items).map((item) => item.id)).toContain('shops');
-    expect(visibleMenu('ADMIN', new Set(['users'] as const)).flatMap((group) => group.items).map((item) => item.id)).not.toContain('shops');
+    expect(breadcrumb({ name: 'shop', id: ID })).toEqual(['Quán & thực đơn', 'Quán', 'Chi tiết']);
+    expect(visibleMenu('ADMIN', new Set(['users', 'shops'] as const)).flatMap((group) => group.items.flatMap((item) => [item.id, ...(item.children ?? []).map((c) => c.id)]))).toContain('shops');
+    expect(visibleMenu('ADMIN', new Set(['users'] as const)).flatMap((group) => group.items.flatMap((item) => [item.id, ...(item.children ?? []).map((c) => c.id)]))).not.toContain('shops');
   });
 });
