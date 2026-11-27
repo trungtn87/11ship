@@ -5,7 +5,7 @@ import '../tokens.dart';
 import 'm13_update.dart';
 
 // M13 (issue #280): one light popup when a newer build exists. It covers nothing for good (a tap outside or "Để sau" closes it), never depends on a sign-in
-// or on orders. It downloads and installs nothing; for a Google Play build the server sends the store page and Android shows "Cập nhật" to open it.
+// or on orders. It downloads and installs nothing; for a store build the server sends the store page of the phone's platform (Google Play or the App Store) and the popup shows "Cập nhật" to open it.
 
 /// Wraps the app: the app is never rebuilt, the popup is drawn above it while there is a newer build the person has not postponed.
 class AppUpdateGate extends StatelessWidget {
@@ -52,7 +52,7 @@ String updateCheckSummary(AppUpdateController c) {
   }
   final AppUpdateNotice? notice = c.notice;
   if (notice != null) {
-    return 'Có bản mới ${notice.versionName}';
+    return notice.versionName == null ? 'Có bản dựng mới ${notice.versionCode}' : 'Có bản mới ${notice.versionName}';
   }
   if (c.lastCheckFailed) {
     return 'Chưa kiểm tra được. Kiểm tra mạng rồi thử lại.';
@@ -101,7 +101,7 @@ class AppUpdatePopup extends StatelessWidget {
                     children: <Widget>[
                       const Text('Có bản cập nhật mới', style: N11Text.title),
                       const SizedBox(height: 8),
-                      Text('Phiên bản ${notice.versionName}', style: N11Text.body),
+                      Text(notice.versionName == null ? 'Bản dựng ${notice.versionCode}' : 'Phiên bản ${notice.versionName}', style: N11Text.body),
                       const SizedBox(height: 16),
                       Wrap(
                         alignment: WrapAlignment.end,
@@ -109,7 +109,8 @@ class AppUpdatePopup extends StatelessWidget {
                         runSpacing: 8,
                         children: <Widget>[
                           TextButton(key: const Key('m13-update-later'), onPressed: controller.dismiss, child: const Text('Để sau')),
-                          if (notice.storeUrl != null && defaultTargetPlatform == TargetPlatform.android)
+                          // The store link is already checked for this platform (AppUpdateNotice.storeLinkFor): Google Play on Android, the App Store on iOS.
+                          if (notice.storeUrl != null)
                             FilledButton(
                               key: const Key('m13-update-store'),
                               onPressed: () => launcher.open(notice.storeUrl!),

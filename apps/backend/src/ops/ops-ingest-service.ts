@@ -8,7 +8,7 @@ import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { DEFAULT_OPS_CONFIG, OpsConfig } from '../config/ops-config';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ANDROID_COMPONENTS, CHECK_BACKUP, CHECK_EXTERNAL_PROBE, CHECK_PUBLIC_API, CHECK_RESTORE_TEST, ClientLogKind, IngestKeyScope, OpsSource, ReleaseComponent } from './ops-constants';
-import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactReady, decideCompat } from './ops-compat';
+import { APP_COMPAT, APP_COMPAT_MATRIX, APP_COMPONENTS, CompatMatrix, artifactReady, decideCompat, decideIosUpdate } from './ops-compat';
 import { OpsEngine } from './ops-engine';
 import { evaluateBackup, evaluateRestoreTest } from './ops-monitors';
 import { OpsReleaseRepository, ReleaseRow } from './ops-release-repository';
@@ -50,6 +50,8 @@ const DEPLOY_START_REPLAY_MS = 30 * 60_000;
 export class OpsIngestService {
   readonly #artifactDir: string | undefined;
   readonly #storeUrls: NonNullable<OpsConfig['storeUrls']>;
+  readonly #iosStoreUrls: NonNullable<OpsConfig['iosStoreUrls']>;
+  readonly #iosLatestBuilds: NonNullable<OpsConfig['iosLatestBuilds']>;
   readonly #environment: string;
   readonly #version: string;
   readonly #compat: CompatMatrix;
@@ -67,6 +69,8 @@ export class OpsIngestService {
     const ops = appConfig.ops ?? DEFAULT_OPS_CONFIG;
     this.#artifactDir = ops.artifactDir;
     this.#storeUrls = ops.storeUrls ?? {};
+    this.#iosStoreUrls = ops.iosStoreUrls ?? {};
+    this.#iosLatestBuilds = ops.iosLatestBuilds ?? {};
     this.#environment = appConfig.appEnv;
     this.#version = ops.backendVersion;
   }
@@ -258,7 +262,10 @@ export class OpsIngestService {
    * withdrawn, draft or missing-file release is not. When the deployed contract (app-compatibility.json) demands a build that cannot be downloaded the answer is
    * UPDATE_REQUIRED_UNAVAILABLE, never "up to date"; the operations check `app_compat.*` raises the same fault for SYSTEM.
    */
-  async updateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null): Promise<JsonObject> {
+  async updateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null, platform: 'ANDROID' | 'IOS' = 'ANDROID'): Promise<JsonObject> {
+    if (platform === 'IOS') {
+      return this.#iosUpdateCheck(component, versionCode);
+    }
     const latest = await this.transactions.withTransaction((context) => this.releases.latestPublished(context, component));
     const d = decideCompat(component, this.#compat, versionCode, { release: latest, artifactReady: artifactReady(this.#artifactDir, latest), storeUrl: this.#storeUrls[component] });
     return {
@@ -274,6 +281,27 @@ export class OpsIngestService {
       release: d.offer === null ? null : this.#publicRelease(d.offer),
       // The Google Play page, only for a file-less (store) build; a build with a file is downloaded as before.
       store_url: d.offer !== null && d.offer.artifactName === null ? (this.#storeUrls[component] ?? null) : null,
+    };
+  }
+
+  /**
+   * The iOS answer: never from the release catalog (it holds Android builds only) and never `required`. The shape is the Android one so the app reads both alike;
+   * `compatible` is null because the iOS build is not in app-compatibility.json, and `release.version_name` is null because no iOS name is configured.
+   */
+  #iosUpdateCheck(component: 'FOOD' | 'SHIP', versionCode: number | null): JsonObject {
+    const d = decideIosUpdate(versionCode, { storeUrl: this.#iosStoreUrls[component], latestBuild: this.#iosLatestBuilds[component] });
+    return {
+      status: d.offered ? 'UPDATE_OPTIONAL' : 'COMPATIBLE',
+      compatible: null,
+      contract_revision: this.#compat.contractRevision,
+      min_supported_version_code: null,
+      latest_version_code: d.latestBuild,
+      update_available: d.offered,
+      required: false,
+      priority: null,
+      reason: null,
+      release: !d.offered || d.latestBuild === null ? null : { release_id: null, version_name: null, version_code: d.latestBuild, release_notes: null, released_at: null, size_bytes: null, sha256: null, min_supported_version_code: null, compatibility_note: null, download_path: null },
+      store_url: d.storeUrl,
     };
   }
 

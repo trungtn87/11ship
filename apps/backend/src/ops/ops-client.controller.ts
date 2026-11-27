@@ -76,7 +76,7 @@ export class OpsClientController {
   @Get('app-updates/check')
   async check(@Query() query: unknown) {
     const q = parseAppUpdateCheck(query);
-    return { data: await this.ingest.updateCheck(q.component, q.versionCode) };
+    return { data: await this.ingest.updateCheck(q.component, q.versionCode, q.platform) };
   }
 
   /** The deployed APK contract and what can be downloaded, per app. Read-only and public like /check; the deploy preflight reads it before promoting a breaking change. */

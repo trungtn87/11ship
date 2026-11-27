@@ -13,16 +13,36 @@ import '../account/api_client.dart';
 /// A newer build than the installed one.
 @immutable
 class AppUpdateNotice {
-  const AppUpdateNotice({required this.versionName, required this.versionCode, this.storeUrl});
+  const AppUpdateNotice({required this.versionCode, this.versionName, this.storeUrl});
 
-  final String versionName;
+  /// Null for an iOS build: no marketing name is configured on the server, so the popup shows the build number instead.
+  final String? versionName;
   final int versionCode;
 
-  /// The Google Play page of this app when the newer build is a store build (the server sends it only then); null otherwise. The popup offers it on Android only.
+  /// The store page of THIS platform when the newer build is a store build (the server sends it only then): Google Play on Android, the App Store on iOS.
+  /// A link for the other platform is dropped. The popup offers the button only when this is set.
   final String? storeUrl;
 
+  static final RegExp _playLink = RegExp(r'^https://play\.google\.com/store/apps/details\?id=[a-z][a-z0-9_.]{1,100}$');
+  static final RegExp _appStoreLink = RegExp(r'^https://apps\.apple\.com/vn/app/[A-Za-z0-9-]{1,100}/id[0-9]{1,15}$');
+
+  /// The store link this platform may open (null for any other host or form). Limited to what the server documents, so a wrong link never reaches the launcher.
+  static String? storeLinkFor(Object? store, TargetPlatform platform) {
+    if (store is! String || store.length > 200) {
+      return null;
+    }
+    if (platform == TargetPlatform.iOS) {
+      return _appStoreLink.hasMatch(store) ? store : null;
+    }
+    if (platform == TargetPlatform.android) {
+      return _playLink.hasMatch(store) ? store : null;
+    }
+    return null;
+  }
+
   /// null = no newer build. Throws [FormatException] on an answer that is not what the server documents.
-  static AppUpdateNotice? fromCheck(Object? data) {
+  /// [platform] is the platform of this phone (defaults to the running one); a store link of another platform is dropped.
+  static AppUpdateNotice? fromCheck(Object? data, {TargetPlatform? platform}) {
     if (data is! Map<String, Object?>) {
       throw const FormatException('update');
     }
@@ -35,12 +55,13 @@ class AppUpdateNotice {
     }
     final Object? name = release['version_name'];
     final Object? code = release['version_code'];
-    if (name is! String || name.isEmpty || name.length > 32 || code is! int || code <= 0) {
+    // An iOS build has no name on the server (null); an Android build always has one.
+    final bool nameOk = name == null || (name is String && name.isNotEmpty && name.length <= 32);
+    if (!nameOk || code is! int || code <= 0) {
       throw const FormatException('release');
     }
-    final Object? store = data['store_url'];
-    final bool storeOk = store is String && store.length <= 200 && store.startsWith('https://play.google.com/store/apps/details?id=');
-    return AppUpdateNotice(versionName: name, versionCode: code, storeUrl: storeOk ? store : null);
+    final String? store = storeLinkFor(data['store_url'], platform ?? defaultTargetPlatform);
+    return AppUpdateNotice(versionName: name as String?, versionCode: code, storeUrl: store);
   }
 }
 
@@ -127,6 +148,9 @@ class AppUpdateController extends ChangeNotifier {
   bool _lastCheckFailed = false;
   int? _dismissedCode;
 
+  /// The platform the check asks for: `IOS` on an iPhone build (its build number is the App Store CFBundleVersion), otherwise `ANDROID`.
+  static String platformName() => defaultTargetPlatform == TargetPlatform.iOS ? 'IOS' : 'ANDROID';
+
   AppUpdatePhase get phase => _phase;
   AppUpdateNotice? get notice => _notice;
 
@@ -156,11 +180,11 @@ class AppUpdateController extends ChangeNotifier {
     _phase = AppUpdatePhase.checking;
     notifyListeners();
     try {
-      final ApiResponse response = await transport.send('GET', '/v1/app-updates/check?component=$component&version_code=$installedVersionCode');
+      final ApiResponse response = await transport.send('GET', '/v1/app-updates/check?component=$component&version_code=$installedVersionCode&platform=${platformName()}');
       if (response.status != 200) {
         throw const FormatException('status');
       }
-      final AppUpdateNotice? found = AppUpdateNotice.fromCheck(response.data);
+      final AppUpdateNotice? found = AppUpdateNotice.fromCheck(response.data, platform: defaultTargetPlatform);
       if (found != null && found.versionCode > installedVersionCode) {
         _notice = found;
         _phase = AppUpdatePhase.available;

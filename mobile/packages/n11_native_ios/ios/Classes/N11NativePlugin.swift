@@ -118,7 +118,8 @@ enum TokenStore {
 /// Dial and open mirror N11LaunchChannel.kt: a number must be +84 and nine digits, a link must be https on a fixed host list without credentials,
 /// a port or a fragment. Anything else is refused before the system is asked. Answers false (never an error) when nothing can handle it.
 enum Launch {
-    private static let hosts: Set<String> = ["zalo.me", "m.me", "www.facebook.com"]
+    // apps.apple.com: the App Store page of the app for the update popup (Android's mirror lists play.google.com for the same purpose).
+    private static let hosts: Set<String> = ["zalo.me", "m.me", "www.facebook.com", "apps.apple.com"]
 
     static func isPhone(_ value: String) -> Bool {
         value.range(of: "^\\+84[0-9]{9}$", options: .regularExpression) != nil

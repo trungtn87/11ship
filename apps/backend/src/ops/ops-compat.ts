@@ -130,6 +130,33 @@ export function decideCompat(component: AppComponent, matrix: CompatMatrix, inst
   return { status: newer ? 'UPDATE_OPTIONAL' : 'COMPATIBLE', compatible: true, required: false, offer: newer ? downloadable : null, minSupportedVersionCode: minSupported, reason: null };
 }
 
+/** What the server knows about the App Store build of one app (OPS_STORE_URL_*_IOS and OPS_IOS_LATEST_BUILD_*). Both values are needed to offer anything. */
+export interface IosFacts {
+  readonly storeUrl?: string | undefined;
+  readonly latestBuild?: number | undefined;
+}
+
+export interface IosDecision {
+  /** True only when the phone's build is lower than the newest App Store build and both values are configured. */
+  readonly offered: boolean;
+  readonly storeUrl: string | null;
+  readonly latestBuild: number | null;
+}
+
+/**
+ * iOS update check. iOS builds are not in the Android release catalog nor in app-compatibility.json, so nothing here is ever "required": the only answer is
+ * "a newer App Store build exists" (offered) or "nothing to say" (not offered). A missing value, or a phone that did not say its build number, is not offered.
+ */
+export function decideIosUpdate(installed: number | null, facts: IosFacts): IosDecision {
+  const ready = facts.storeUrl !== undefined && facts.latestBuild !== undefined;
+  const offered = ready && installed !== null && installed < (facts.latestBuild as number);
+  return {
+    offered,
+    storeUrl: offered ? (facts.storeUrl as string) : null,
+    latestBuild: offered ? (facts.latestBuild as number) : null,
+  };
+}
+
 /**
  * The operations check: the deployed contract demands a build nobody can download. UNKNOWN is never OK, and "no release at all" while the minimum is the
  * initial 1 is fine (no phone can be below it).

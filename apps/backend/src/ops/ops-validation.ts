@@ -415,11 +415,13 @@ export function parseClientLogs(body: unknown): { entries: ClientLogEntry[] } {
   };
 }
 
-export function parseAppUpdateCheck(query: unknown): { component: 'FOOD' | 'SHIP'; versionCode: number | null } {
-  const q = queryStrings(query, ['component', 'version_code']);
+export function parseAppUpdateCheck(query: unknown): { component: 'FOOD' | 'SHIP'; versionCode: number | null; platform: 'ANDROID' | 'IOS' } {
+  const q = queryStrings(query, ['component', 'version_code', 'platform']);
   if (q.component !== 'FOOD' && q.component !== 'SHIP') reject();
   const versionCode = q.version_code === undefined ? null : /^\d{1,10}$/.test(q.version_code) && Number(q.version_code) <= 2_000_000_000 ? Number(q.version_code) : reject();
-  return { component: q.component as 'FOOD' | 'SHIP', versionCode };
+  // Optional; absent means ANDROID (the behaviour before iOS was added). Any other value is refused.
+  const platform = q.platform === undefined ? 'ANDROID' : q.platform === 'ANDROID' || q.platform === 'IOS' ? q.platform : reject();
+  return { component: q.component as 'FOOD' | 'SHIP', versionCode, platform };
 }
 
 export function parseVersionReport(body: unknown): { component: 'FOOD' | 'SHIP'; versionName: string; versionCode: number } {
