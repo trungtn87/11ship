@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, jest } from '@jest/globals';
 import { TOPUP_EXPIRY_AFTER_MINUTES, TopupExpiryJob } from './topup-expiry';
 
 function harness(rows: { requestId: string; version: number }[]) {
-  const audit = vi.fn(async () => undefined);
-  const outbox = vi.fn(async () => undefined);
-  const expire = vi.fn(async () => rows);
+  const audit = jest.fn(async () => undefined);
+  const outbox = jest.fn(async () => undefined);
+  const expire = jest.fn(async () => rows);
   const ctx = {};
   const job = new TopupExpiryJob(
     { withTransaction: async (fn: (c: unknown) => unknown) => fn(ctx) } as never,
