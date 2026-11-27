@@ -11,6 +11,7 @@ import { SepaySettlementRepository } from '../../apps/backend/src/sepay/sepay-se
 import { SepaySettlementService } from '../../apps/backend/src/sepay/sepay-settlement-service';
 import { SepayWebhookService } from '../../apps/backend/src/sepay/sepay-webhook.service';
 import { TransactionContext } from '../../apps/backend/src/transaction/transaction-context';
+import { TOPUP_EXPIRY_AFTER_MINUTES, TopupExpiryJob } from '../../apps/backend/src/wallet-topup/topup-expiry';
 import { topupTransferCodeOf } from '../../apps/backend/src/wallet-topup/topup-transfer-code';
 import { TopupAutoLookupRepository } from '../../apps/backend/src/wallet/topup-auto-lookup-repository';
 import { TopupPostingService } from '../../apps/backend/src/wallet/topup-posting-service';
@@ -527,6 +528,89 @@ describe('M04 SePay automatic top-up step 1 - inbox, matching, credit once (real
       expect(await inboxOf(eventId)).toEqual({ state: 'CREDITED', reason_code: null, topup_request_id: requestId });
       expect(await balanceOf()).toBe('150000');
 
+    });
+  });
+
+  // ---- Owner 2026-11-27: a request never reported within 24 hours is ended by the system (migration 1798329600000_topup-request-expiry) ----
+
+  /** A PENDING request created `ageMinutes` ago (the clock is the database's), optionally reported by the Shipper. */
+  async function agedRequest(ageMinutes: number, reported: boolean): Promise<{ requestId: string; code: string }> {
+    const requestId = randomUUID();
+    await client.query(
+      `INSERT INTO app.wallet_topup_requests (request_id, wallet_id, driver_id, amount_requested_vnd, state, created_by_user_id, version, created_at, updated_at)
+       SELECT $1::uuid, $2::uuid, $3::uuid, 150000, 'PENDING', $4::uuid, 1, t, t
+         FROM (SELECT date_trunc('milliseconds', clock_timestamp()) - make_interval(mins => $5::int) AS t) AS clock`,
+      [requestId, walletId, driverId, userId, ageMinutes],
+    );
+    if (reported) {
+      expect((await requests.reportPending(ctx(), requestId))?.state).toBe('PENDING');
+    }
+    return { requestId, code: topupTransferCodeOf(requestId) };
+  }
+
+  const stateOf = async (requestId: string): Promise<Record<string, unknown>> =>
+    (await client.query('SELECT state, version::int AS version, resolved_by_user_id, resolved_by_system FROM app.wallet_topup_requests WHERE request_id = $1::uuid', [requestId])).rows[0] as Record<string, unknown>;
+
+  it('expiry ends only a PENDING request never reported and older than 24 hours: once, by the system, and a second run changes nothing', async () => {
+    await scenario(async () => {
+      const day = TOPUP_EXPIRY_AFTER_MINUTES;
+      expect(day).toBe(24 * 60);
+      const old = await agedRequest(day + 60, false);
+      const young = await agedRequest(day - 60, false);
+      const reported = await agedRequest(day + 60, true);
+      const ended = await requests.expireUnreported(ctx(), day, 200);
+      expect(ended.map((row) => row.requestId)).toEqual([old.requestId]);
+      expect(await stateOf(old.requestId)).toEqual({ state: 'CANCELLED', version: 2, resolved_by_user_id: null, resolved_by_system: 'TOPUP_EXPIRY' });
+      expect((await stateOf(young.requestId)).state).toBe('PENDING');
+      expect((await stateOf(reported.requestId)).state).toBe('PENDING');
+      expect(await requests.expireUnreported(ctx(), day, 200)).toEqual([]);
+      expect(await balanceOf()).toBe('0');
+    });
+  });
+
+  it('the job writes one audit line and one event per ended request, and none on a second run', async () => {
+    await scenario(async (c) => {
+      const old = await agedRequest(TOPUP_EXPIRY_AFTER_MINUTES + 60, false);
+      const transactions = { withTransaction: (work: (context: TransactionContext) => Promise<unknown>) => work(ctx()) };
+      const job = new TopupExpiryJob(transactions as never, requests, new AuditWriter(), new OutboxWriter());
+      expect(await job.runOnce()).toBeGreaterThanOrEqual(1);
+      expect(await job.runOnce()).toBe(0);
+      const audits = (await c.query("SELECT count(*)::int AS n FROM app.audit_logs WHERE resource_id = $1 AND action = 'wallet.topup_request.expired.v1'", [old.requestId])).rows[0];
+      expect(audits).toEqual({ n: 1 });
+      const events = (await c.query("SELECT count(*)::int AS n FROM app.outbox_events WHERE resource_id = $1 AND event_type = 'wallet.topup_request.changed.v1'", [old.requestId])).rows[0];
+      expect(events).toEqual({ n: 1 });
+    });
+  });
+
+  it('a transfer that arrives after the request expired is held for an Administrator (REQUEST_NOT_PENDING) and credits nothing', async () => {
+    await scenario(async () => {
+      await receivingAccount();
+      const old = await agedRequest(TOPUP_EXPIRY_AFTER_MINUTES + 60, false);
+      await requests.expireUnreported(ctx(), TOPUP_EXPIRY_AFTER_MINUTES, 200);
+      const raw = webhook({ code: old.code, content: `${old.code} chuyen tien`, transferAmount: 150000 });
+      const eventId = JSON.parse(raw.toString('utf8')).id as number;
+      expect(await service.receive(signedRequest(raw))).toEqual({ status: 200, body: { success: true } });
+      expect(await inboxOf(eventId)).toEqual({ state: 'NEEDS_ADMIN', reason_code: 'REQUEST_NOT_PENDING', topup_request_id: null });
+      expect(await balanceOf()).toBe('0');
+      expect(await topupCount()).toBe(0);
+    });
+  });
+
+  it('the database refuses TOPUP_EXPIRY on a request that is not CANCELLED or that was reported', async () => {
+    await scenario(async (c) => {
+      const pending = await agedRequest(10, false);
+      await c.query('SAVEPOINT not_ended');
+      await expect(c.query("UPDATE app.wallet_topup_requests SET resolved_by_system = 'TOPUP_EXPIRY' WHERE request_id = $1::uuid", [pending.requestId])).rejects.toThrow();
+      await c.query('ROLLBACK TO SAVEPOINT not_ended');
+      const reported = await agedRequest(10, true);
+      await c.query('SAVEPOINT reported_cancel');
+      await expect(
+        c.query(
+          `UPDATE app.wallet_topup_requests SET state = 'CANCELLED', resolved_by_system = 'TOPUP_EXPIRY', resolved_at = now(), updated_at = now(), version = version + 1 WHERE request_id = $1::uuid`,
+          [reported.requestId],
+        ),
+      ).rejects.toThrow(/wallet_topup_requests_expiry_ck/);
+      await c.query('ROLLBACK TO SAVEPOINT reported_cancel');
     });
   });
 });

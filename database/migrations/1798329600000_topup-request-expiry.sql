@@ -1,5 +1,5 @@
 -- Up Migration
--- Owner 2026-11-27: a top-up request that the Shipper never reported ends by itself after one hour. The system ends it (resolved_by_system),
+-- Owner 2026-11-27: a top-up request that the Shipper never reported ends by itself after 24 hours. The system ends it (resolved_by_system),
 -- never a person, so the history says what happened. A request that was reported is never ended this way.
 
 ALTER TABLE app.wallet_topup_requests DROP CONSTRAINT wallet_topup_requests_system_actor_ck;
