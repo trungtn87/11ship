@@ -15,6 +15,7 @@ import { decideTransfer } from './sepay-transfer-rules';
 
 const RESOURCE = 'wallet_topup_request';
 const EVENT_CHANGED = 'wallet.topup_request.changed.v1';
+const EVENT_HELD = 'wallet.topup_request.held.v1';
 const ACTION_CREDITED = 'sepay.wallet_topup.credited.v1';
 const ACTOR_ID = 'sepay_webhook';
 
@@ -123,14 +124,14 @@ export class SepaySettlementService {
     // ADR-004 3.1 order: the Shipper root, then the wallet, then the request. Decisions are made only after these locks.
     const driver = await this.drivers.lockById(context, found.driverId);
     if (driver === undefined || driver.status !== 'ACTIVE') {
-      return this.#hold(context, inboxId, 'DRIVER_NOT_ACTIVE');
+      return this.#holdForRequest(context, inboxId, found.requestId, 'DRIVER_NOT_ACTIVE');
     }
     if (!(await this.posting.lockWalletOf(context, found.walletId, found.driverId))) {
-      return this.#hold(context, inboxId, 'WALLET_NOT_FOUND');
+      return this.#holdForRequest(context, inboxId, found.requestId, 'WALLET_NOT_FOUND');
     }
     const request = await this.requests.lockById(context, found.requestId);
     if (request === undefined || request.walletId !== found.walletId || request.driverId !== found.driverId) {
-      return this.#hold(context, inboxId, 'REQUEST_NOT_FOUND');
+      return this.#holdForRequest(context, inboxId, found.requestId, 'REQUEST_NOT_FOUND');
     }
     if (request.state !== 'PENDING') {
       // The request lock may have waited for an Administrator who confirmed this very transfer and committed meanwhile. The bank-record check
@@ -138,10 +139,10 @@ export class SepaySettlementService {
       if (await this.lookups.bankRecordExists(context, SEPAY_BANK_ID, account.systemAccountId, canonicalTransactionId)) {
         return this.#alreadyRecorded(context, inboxId, account.systemAccountId, canonicalTransactionId);
       }
-      return this.#hold(context, inboxId, 'REQUEST_NOT_PENDING');
+      return this.#holdForRequest(context, inboxId, found.requestId, 'REQUEST_NOT_PENDING');
     }
     if (BigInt(event.transferAmountVnd) !== request.amountRequestedVnd) {
-      return this.#hold(context, inboxId, 'AMOUNT_MISMATCH');
+      return this.#holdForRequest(context, inboxId, found.requestId, 'AMOUNT_MISMATCH');
     }
     try {
       await this.posting.creditTopup(context, {
@@ -162,7 +163,7 @@ export class SepaySettlementService {
           // Another transaction recorded this bank reference first (it is visible now): link the evidence instead of queueing it.
           return this.#alreadyRecorded(context, inboxId, account.systemAccountId, canonicalTransactionId);
         }
-        return this.#hold(context, inboxId, error.code);
+        return this.#holdForRequest(context, inboxId, found.requestId, error.code);
       }
       throw error;
     }
@@ -213,5 +214,21 @@ export class SepaySettlementService {
   async #hold(context: TransactionContext, inboxId: string, reason: string): Promise<void> {
     const state: InboxState = 'NEEDS_ADMIN';
     await this.inbox.finish(context, inboxId, state, reason, null);
+  }
+
+  /**
+   * The same queue entry as #hold, for an event whose code names a request: the Shipper who owns the request is told, in words, that the bank
+   * received the transfer and the Administration will settle it (no amount, no account; the text may show on a lock screen). One event per inbox row.
+   */
+  async #holdForRequest(context: TransactionContext, inboxId: string, requestId: string, reason: string): Promise<void> {
+    await this.#hold(context, inboxId, reason);
+    await this.outbox.append(context, {
+      eventType: EVENT_HELD,
+      eventSchemaVersion: 1,
+      resourceType: RESOURCE,
+      resourceId: requestId,
+      resourceVersion: 1,
+      payload: { request_id: requestId, inbox_id: inboxId, reason },
+    });
   }
 }

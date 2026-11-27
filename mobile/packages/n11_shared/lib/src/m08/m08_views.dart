@@ -61,6 +61,7 @@ IconData _iconOf(NotificationItem item) => switch (item.kind) {
   'DELIVERY_ACCEPTED' => Icons.storefront_outlined,
   'TOPUP_CONFIRMED' ||
   'TOPUP_REJECTED' ||
+  'TOPUP_HELD' ||
   'WITHDRAWAL_REQUESTED' ||
   'WITHDRAWAL_PROCESSING' ||
   'WITHDRAWAL_RECONCILING' ||

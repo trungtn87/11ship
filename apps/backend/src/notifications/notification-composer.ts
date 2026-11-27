@@ -268,6 +268,9 @@ export const TOPUP_COPY = {
   REJECTED: { kind: 'TOPUP_REJECTED' as const, title: 'Yêu cầu nạp tiền bị từ chối', body: 'Yêu cầu nạp tiền của bạn chưa được chấp nhận. Mở ví để xem chi tiết.' },
 };
 
+/** A transfer reached the bank for this request but could not be settled automatically (amount differs, request already ended, ...). No amount or account. */
+export const TOPUP_HELD_COPY = { kind: 'TOPUP_HELD' as const, title: 'Đã nhận khoản chuyển, đang chờ xử lý', body: 'Ngân hàng đã nhận khoản chuyển cho yêu cầu nạp của bạn nhưng chưa khớp tự động. Quản trị viên sẽ xử lý, bạn không cần chuyển lại. Mở ví để xem chi tiết.' };
+
 export function formatVnd(amountVnd: bigint): string {
   return `${amountVnd.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}đ`;
 }
