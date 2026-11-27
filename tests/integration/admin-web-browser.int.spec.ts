@@ -197,9 +197,9 @@ describe('M01-D-LOGIN-UI - admin web in a real browser against the real backend'
     await page.evaluate('new Promise((resolve) => setTimeout(resolve, 400))');
     expect(
       await page.evaluate<string[]>(
-        `[...document.querySelectorAll('.side-sub a')].filter((a) => a.getBoundingClientRect().width > 0).map((a) => a.textContent.trim())`,
+        `[...document.querySelectorAll('#side-sub-users a')].filter((a) => a.getBoundingClientRect().width > 0).map((a) => a.textContent.trim())`,
       ),
-    ).toEqual(['Danh sách', 'Đang khóa']);
+    ).toEqual(['Người dùng', 'Đang khóa', 'Quản trị viên', 'Phân quyền', 'Lời mời Admin']);
     await page.click('.side-sub a[href="/accounts/users?status=LOCKED"]');
     await page.waitFor(`document.querySelector('#users-search')`);
     expect(await page.evaluate<boolean>(`!document.querySelector('.shell').classList.contains('shell-drawer-open')`)).toBe(true);
