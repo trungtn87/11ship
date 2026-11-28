@@ -80,12 +80,14 @@ sudo chown root:root /etc/11ship/backup/pgpass && sudo chmod 600 /etc/11ship/bac
 HBA="$(sudo -u postgres psql -Atc 'SHOW hba_file')"; sudo cp "$HBA" "$HBA.bak-$(date +%Y%m%d)"; sudo grep -n 'reject' "$HBA"
 #   dòng cần thêm (đúng nguyên văn):
 #   hostssl postgres,/^ship11_(verify|restore)_[a-z0-9_]+$ ship11_backup_scratch 127.0.0.1/32 scram-sha-256
+#   và cùng dòng cho ::1/128 (localhost có thể phân giải sang IPv6 trước; thiếu dòng này thì kết nối bị từ chối)
+#   hostssl postgres,/^ship11_(verify|restore)_[a-z0-9_]+$ ship11_backup_scratch ::1/128 scram-sha-256
 sudo -u postgres psql -c "SELECT pg_reload_conf()"
 # 5. kiểm: role đúng quyền, và kết nối được bằng pgpass (không in mật khẩu)
 sudo -u postgres psql -Atc "SELECT rolcreatedb, rolsuper FROM pg_roles WHERE rolname = 'ship11_backup_scratch'"   # phải: t|f
 ```
 
-Cấu hình (`/etc/11ship/backup/backup.env`, xem `backup.env.example`): `BACKUP_SCRATCH_URL=postgres://ship11_backup_scratch@localhost:5432/postgres?sslmode=verify-full`, cùng `PGPASSFILE=/etc/11ship/backup/pgpass` và `PGSSLROOTCERT=/etc/11ship/db-ca.crt`. `libpq` tự lấy mật khẩu từ `PGPASSFILE` theo tên role, nên URL không chứa mật khẩu. `BACKUP_SOURCE_URL` (role `ship11_migrator`) không đổi. Không dán mật khẩu vào `backup.env`, vào URL, vào log hay vào PR. Đổi mật khẩu: lặp bước 2–3 (`\password` và ghi lại `pgpass`); lần chạy kế tiếp đọc file mới, không cần khởi động lại dịch vụ.
+Cấu hình (`/etc/11ship/backup/backup.env`, xem `backup.env.example`): `BACKUP_SCRATCH_URL=postgres://ship11_backup_scratch@localhost:5432/postgres?sslmode=verify-full`, cùng `PGPASSFILE=/etc/11ship/backup/pgpass` và `PGSSLROOTCERT=/etc/11ship/db-ca.crt`. `libpq` tự lấy mật khẩu từ `PGPASSFILE` theo tên role, nên URL không chứa mật khẩu. **Lưu ý:** `PGPASSFILE` ghi đè `~/.pgpass` mặc định, nên `/etc/11ship/backup/pgpass` phải chứa CẢ dòng `ship11_migrator` (cho `BACKUP_SOURCE_URL`) LẪN dòng `ship11_backup_scratch`; thiếu dòng migrator thì sao lưu không xác thực được. `BACKUP_SOURCE_URL` (role `ship11_migrator`) không đổi. Không dán mật khẩu vào `backup.env`, vào URL, vào log hay vào PR. Đổi mật khẩu: lặp bước 2–3 (`\password` và ghi lại `pgpass`); lần chạy kế tiếp đọc file mới, không cần khởi động lại dịch vụ.
 
 ## 5. Mỗi lần chạy làm gì, và khi nào mới gọi là thành công
 
