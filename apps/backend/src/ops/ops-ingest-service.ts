@@ -14,11 +14,46 @@ import { evaluateBackup, evaluateRestoreTest } from './ops-monitors';
 import { OpsReleaseRepository, ReleaseRow } from './ops-release-repository';
 import { OpsRepository } from './ops-repository';
 import { OpsSettingsService } from './ops-settings-service';
-import { ClientLogEntry, DeployBody, ProbeBody } from './ops-validation';
+import { BackupRunKind, ClientLogEntry, DeployBody, ProbeBody } from './ops-validation';
 import { releaseView, iso } from './ops-views';
 import { JsonObject } from '../idempotency/idempotency-executor';
 
 const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+
+export interface BackupReport {
+  kind: 'BACKUP' | 'RESTORE_TEST';
+  ok: boolean;
+  finishedAtMs: number;
+  sizeBytes: number | null;
+  detailCode: string | null;
+  runId: string | null;
+  backupKind: BackupRunKind | null;
+}
+
+/** "1,5 MB"-style size for the Discord notice (Vietnamese decimal comma). */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  let value = bytes / 1024;
+  let unit = 0;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1).replace('.', ',')} ${units[unit]}`;
+}
+
+/** The content of the success notice: time, kind, size, and that the copy is kept off the VPS. No path, no secret, no customer data. */
+export function backupNoticeContent(b: { finishedAtMs: number; sizeBytes: number | null; backupKind: BackupRunKind | null }): Record<string, unknown> {
+  const kind = b.backupKind ?? 'KHÔNG RÕ';
+  const size = b.sizeBytes === null ? 'không rõ' : formatBytes(b.sizeBytes);
+  return {
+    title: b.backupKind === null ? 'Sao lưu thành công' : `Sao lưu ${b.backupKind} thành công`,
+    source: 'Sao lưu',
+    at: iso(b.finishedAtMs),
+    detail: `Loại: ${kind}. Dung lượng: ${size}. Đã lưu ngoài VPS và đã kiểm tra.`,
+  };
+}
 const KIND_SOURCE: Readonly<Record<ClientLogKind, (app: 'FOOD' | 'SHIP') => OpsSource>> = {
   CRASH: (app) => (app === 'FOOD' ? 'APP_FOOD' : 'APP_SHIP'),
   ACTION_ERROR: (app) => (app === 'FOOD' ? 'APP_FOOD' : 'APP_SHIP'),
@@ -151,9 +186,10 @@ export class OpsIngestService {
 
   // ---- backup ----
 
-  async backup(b: { kind: 'BACKUP' | 'RESTORE_TEST'; ok: boolean; finishedAtMs: number; sizeBytes: number | null; detailCode: string | null }): Promise<JsonObject> {
+  async backup(b: BackupReport): Promise<JsonObject> {
     return this.transactions.withTransaction(async (context) => {
-      await this.releases.insertBackupReport(context, { reportId: randomUUID(), ...b });
+      const reportId = randomUUID();
+      await this.releases.insertBackupReport(context, { reportId, kind: b.kind, ok: b.ok, finishedAtMs: b.finishedAtMs, sizeBytes: b.sizeBytes, detailCode: b.detailCode });
       await this.repo.insertEvent(context, { category: 'TECHNICAL', level: b.ok ? 'INFO' : 'ERROR', source: 'BACKUP', environment: this.#environment, appVersion: this.#version, code: b.ok ? `${b.kind}_OK` : `${b.kind}_FAILED`, kind: b.kind, message: b.ok ? `${b.kind === 'BACKUP' ? 'Sao lưu' : 'Thử khôi phục'} thành công` : `${b.kind === 'BACKUP' ? 'Sao lưu' : 'Thử khôi phục'} thất bại`, detail: { size_bytes: b.sizeBytes, detail_code: b.detailCode } }, randomUUID());
       const eff = await this.settings.load(context);
       const nowMs = Date.now();
@@ -163,6 +199,10 @@ export class OpsIngestService {
         await this.engine.observe(context, evaluateBackup({ nowMs, latest: summary.latest, lastOkAtMs: summary.lastOkAtMs }, eff.settings));
       } else {
         await this.engine.observe(context, evaluateRestoreTest({ nowMs, latest: summary.latest, lastOkAtMs: summary.lastOkAtMs }));
+      }
+      // A verified off-VPS copy is announced once per run (the run id; a report without one is keyed by its own id). A failure keeps the incident path above.
+      if (b.kind === 'BACKUP' && b.ok) {
+        await this.engine.enqueueBackupNotice(context, { dedupeKey: `backup-ok:${b.runId ?? reportId}`, content: backupNoticeContent(b) });
       }
       return { recorded: true, check: b.kind === 'BACKUP' ? CHECK_BACKUP : CHECK_RESTORE_TEST };
     });

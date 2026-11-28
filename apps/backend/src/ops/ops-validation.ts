@@ -353,14 +353,29 @@ export function parseProbeBody(body: unknown): ProbeBody {
   };
 }
 
-export function parseBackupBody(body: unknown): { kind: 'BACKUP' | 'RESTORE_TEST'; ok: boolean; finishedAtMs: number; sizeBytes: number | null; detailCode: string | null } {
-  const b = shaped(body, ['kind', 'ok', 'finished_at'], ['size_bytes', 'detail_code']);
+export const BACKUP_RUN_KINDS = ['DAILY', 'WEEKLY', 'PRE_MIGRATION', 'PRE_RESTORE', 'MANUAL'] as const;
+export type BackupRunKind = (typeof BACKUP_RUN_KINDS)[number];
+
+/** `run_id` (the backup run's id) and `backup_kind` (DAILY, WEEKLY, ...) are optional: they identify the run for the success notice; older reporters omit them. */
+export function parseBackupBody(body: unknown): {
+  kind: 'BACKUP' | 'RESTORE_TEST';
+  ok: boolean;
+  finishedAtMs: number;
+  sizeBytes: number | null;
+  detailCode: string | null;
+  runId: string | null;
+  backupKind: BackupRunKind | null;
+} {
+  const b = shaped(body, ['kind', 'ok', 'finished_at'], ['size_bytes', 'detail_code', 'run_id', 'backup_kind']);
   if (b.kind !== 'BACKUP' && b.kind !== 'RESTORE_TEST') reject();
   const detail = b.detail_code === undefined || b.detail_code === null ? null : text(b.detail_code, 1, 32);
   if (detail !== null && !/^[A-Z0-9_]{1,32}$/.test(detail)) reject();
   const finished = isoInstant(b.finished_at);
   if (finished > Date.now() + 5 * 60_000) reject();
-  return { kind: b.kind as 'BACKUP' | 'RESTORE_TEST', ok: bool(b.ok), finishedAtMs: finished, sizeBytes: optInt(b.size_bytes, 0, Number.MAX_SAFE_INTEGER), detailCode: detail };
+  const runId = b.run_id === undefined || b.run_id === null ? null : uuid(b.run_id);
+  if (b.backup_kind !== undefined && b.backup_kind !== null && !(BACKUP_RUN_KINDS as readonly unknown[]).includes(b.backup_kind)) reject();
+  const backupKind = b.backup_kind === undefined || b.backup_kind === null ? null : (b.backup_kind as BackupRunKind);
+  return { kind: b.kind as 'BACKUP' | 'RESTORE_TEST', ok: bool(b.ok), finishedAtMs: finished, sizeBytes: optInt(b.size_bytes, 0, Number.MAX_SAFE_INTEGER), detailCode: detail, runId, backupKind };
 }
 
 export type DeployBody =

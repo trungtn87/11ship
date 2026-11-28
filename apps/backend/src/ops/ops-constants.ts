@@ -54,7 +54,7 @@ export type DetectedBy = 'INTERNAL' | 'EXTERNAL_PROBE' | 'APP_REPORT';
 export type EventCategory = 'TECHNICAL' | 'INCIDENT' | 'ADMIN';
 export type EventLevel = 'INFO' | 'WARN' | 'ERROR';
 
-export type NotificationKind = 'OPEN' | 'REMINDER' | 'ESCALATION' | 'RECOVERY' | 'SNOOZE_END' | 'TEST' | 'DEPLOY' | 'MAINTENANCE';
+export type NotificationKind = 'OPEN' | 'REMINDER' | 'ESCALATION' | 'RECOVERY' | 'SNOOZE_END' | 'TEST' | 'DEPLOY' | 'MAINTENANCE' | 'BACKUP_OK';
 
 export const RELEASE_COMPONENTS = ['FOOD', 'SHIP', 'GATEWAY', 'WEB_ADMIN', 'BACKEND', 'M14', 'MAP_PACK'] as const;
 export type ReleaseComponent = (typeof RELEASE_COMPONENTS)[number];

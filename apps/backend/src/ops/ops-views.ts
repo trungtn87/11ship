@@ -58,6 +58,7 @@ export const NOTIFICATION_KIND_LABEL: Readonly<Record<string, string>> = {
   TEST: 'Gửi thử',
   DEPLOY: 'Triển khai',
   MAINTENANCE: 'Bảo trì',
+  BACKUP_OK: 'Sao lưu thành công',
 };
 
 export const EVIDENCE_TEXT: Readonly<Record<string, string>> = {

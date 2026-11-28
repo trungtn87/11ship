@@ -120,6 +120,10 @@
     "1798329600000_topup-request-expiry": {
       "sha256": "21788a7eb077b7d727c3ef20ee10ccdd2d583a8d2663072e51b90e9cfe3ca791",
       "review": "Top-up request expiry (Owner 2026-11-27). Up widens the system-actor CHECK of wallet_topup_requests to also allow TOPUP_EXPIRY, adds a CHECK that TOPUP_EXPIRY applies only to CANCELLED requests never reported, and a partial index for the sweep. Adds no column or grant; every existing row satisfies the new constraints and the old backend keeps working. Down refuses when any TOPUP_EXPIRY row exists. CODEX MONEY REVIEW REQUIRED."
+    },
+    "1798416000000_ops-backup-success-notice": {
+      "sha256": "1fe254990056bbebcdbe252665d168fae54e4313bd2f7982d60c049aaac89494",
+      "review": "M12-F (Owner-approved notice for successful off-VPS backups; PR #468). Up widens the ops_notifications kind CHECK with BACKUP_OK; adds no column, grant or data; the old backend never writes BACKUP_OK and keeps working. Down refuses when any BACKUP_OK notice exists."
     }
   }
 }

@@ -1,7 +1,13 @@
 -- M12-F: checks run against a RESTORED scratch database (never against the live one). Output is "name|value" lines read by backup.sh / restore-rehearsal.sh.
 \pset tuples_only on
 \pset format unaligned
+-- The VPS keeps its migration history in app.pgmigrations; local and integration databases use public.pgmigrations. Same rule as bk_schema_version in lib.sh.
+SELECT to_regclass('app.pgmigrations') IS NOT NULL AS has_app_migrations \gset
+\if :has_app_migrations
+SELECT 'schema_version|' || COALESCE((SELECT name FROM app.pgmigrations ORDER BY id DESC LIMIT 1), 'NONE');
+\else
 SELECT 'schema_version|' || COALESCE((SELECT name FROM public.pgmigrations ORDER BY id DESC LIMIT 1), 'NONE');
+\endif
 SELECT 'users|' || count(*) FROM app.users;
 SELECT 'audit_logs|' || count(*) FROM app.audit_logs;
 SELECT 'wallet_ledger_entries|' || count(*) FROM app.wallet_ledger_entries;

@@ -523,6 +523,23 @@ export class OpsEngine {
     });
   }
 
+  /** A successful off-VPS backup run: one INFO notice, deduplicated by `dedupeKey` (a repeat of the same run sends nothing). Same channel rules as an incident notice, incl. maintenance of the backup source. */
+  async enqueueBackupNotice(context: TransactionContext, n: { dedupeKey: string; content: Record<string, unknown> }): Promise<NotificationRow | undefined> {
+    const eff = await this.settings.load(context);
+    const inMaintenance = await this.#inMaintenance(context, 'BACKUP');
+    // INFO is never filtered by the minimum severity (the same rule as a recovery notice).
+    const skipReason = this.#skipReason(eff, 'CRITICAL', inMaintenance);
+    return this.incidents.enqueue(context, {
+      notificationId: randomUUID(),
+      incidentId: null,
+      kind: 'BACKUP_OK',
+      severity: 'INFO',
+      content: n.content,
+      dedupeKey: n.dedupeKey,
+      ...(skipReason === undefined ? {} : { skipReason }),
+    });
+  }
+
   // ---- log of an incident ----
 
   async #log(context: TransactionContext, incident: IncidentRow, level: EventLevel, code: string, message: string, actorUserId?: string, detail?: Record<string, unknown>): Promise<void> {

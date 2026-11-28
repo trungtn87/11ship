@@ -63,6 +63,32 @@ Quyền file: `rclone.conf` (chứa token) `root:root 0600`; `*.cred` 0600; thư
 
 Cơ chế lịch: `11ship-backup.timer` `OnCalendar=*-*-* 03:00:00 Asia/Ho_Chi_Minh` (đúng 03:00 giờ Việt Nam bất kể múi giờ VPS; kiểm bằng `systemd-analyze calendar`), `Persistent=true` (bù lần bị lỡ khi VPS tắt), `TimeoutStartSec=4h`. **Chống chạy chồng:** systemd không khởi chạy lần thứ hai khi unit đang chạy; `backup.sh` còn giữ `flock` trong spool nên lần chạy tay, job "Sao lưu ngay" và deploy cũng không đè nhau (lần sau thoát mã 75, không tạo bản ghi). Bản trước deploy chạy bằng `11ship-backup-predeploy.service`, nối vào `vps-update.py`: khi `/etc/11ship/backup/backup.env` đã có, **bản trước migration lên Drive và xác minh là bắt buộc**, lỗi thì cập nhật dừng trước khi migrate; chưa cấu hình thì in `WARNING` rõ ràng (chỉ còn bản dump cục bộ) và không chặn.
 
+### 4a. Role khôi phục thử `ship11_backup_scratch` (làm MỘT lần, trước lần chạy đầu)
+
+Lý do: `ship11_migrator` không có quyền `CREATEDB` và `pg_hba` chỉ cho nó vào `ship11_staging`, nên bước kiểm khôi phục thử (tạo DB `ship11_verify_*`) không chạy được bằng role đó. Role riêng này chỉ tạo được DB có tên `ship11_verify_*` / `ship11_restore_*`, không đọc được `ship11_staging`. Mật khẩu **không** được in ra màn hình, **không** nằm trong lệnh hay trong lịch sử shell: nhập bằng `read -rs` hoặc `\password`.
+
+```bash
+# 1. role (không có quyền superuser; chỉ được tạo DB)
+sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE ship11_backup_scratch LOGIN CREATEDB NOSUPERUSER NOINHERIT"
+# 2. đặt mật khẩu NGẪU NHIÊN: tạo ở trình quản lý mật khẩu hoặc `openssl rand -base64 32` trong cửa sổ khác (không in ra); psql hỏi 2 lần, không hiển thị
+sudo -u postgres psql -c "\password ship11_backup_scratch"
+# 3. ghi cùng mật khẩu đó vào pgpass (nhập ẩn; không đưa vào tham số dòng lệnh)
+read -rs -p 'mật khẩu ship11_backup_scratch: ' S; echo
+( umask 077; printf 'localhost:5432:*:ship11_backup_scratch:%s\n' "$S" ) | sudo tee /etc/11ship/backup/pgpass >/dev/null; unset S
+sudo chown root:root /etc/11ship/backup/pgpass && sudo chmod 600 /etc/11ship/backup/pgpass
+# 4. pg_hba: thêm ĐÚNG MỘT dòng, đặt TRƯỚC dòng reject cuối (sao lưu file trước khi sửa)
+HBA="$(sudo -u postgres psql -Atc 'SHOW hba_file')"; sudo cp "$HBA" "$HBA.bak-$(date +%Y%m%d)"; sudo grep -n 'reject' "$HBA"
+#   dòng cần thêm (đúng nguyên văn):
+#   hostssl postgres,/^ship11_(verify|restore)_[a-z0-9_]+$ ship11_backup_scratch 127.0.0.1/32 scram-sha-256
+#   và cùng dòng cho ::1/128 (localhost có thể phân giải sang IPv6 trước; thiếu dòng này thì kết nối bị từ chối)
+#   hostssl postgres,/^ship11_(verify|restore)_[a-z0-9_]+$ ship11_backup_scratch ::1/128 scram-sha-256
+sudo -u postgres psql -c "SELECT pg_reload_conf()"
+# 5. kiểm: role đúng quyền, và kết nối được bằng pgpass (không in mật khẩu)
+sudo -u postgres psql -Atc "SELECT rolcreatedb, rolsuper FROM pg_roles WHERE rolname = 'ship11_backup_scratch'"   # phải: t|f
+```
+
+Cấu hình (`/etc/11ship/backup/backup.env`, xem `backup.env.example`): `BACKUP_SCRATCH_URL=postgres://ship11_backup_scratch@localhost:5432/postgres?sslmode=verify-full`, cùng `PGPASSFILE=/etc/11ship/backup/pgpass` và `PGSSLROOTCERT=/etc/11ship/db-ca.crt`. `libpq` tự lấy mật khẩu từ `PGPASSFILE` theo tên role, nên URL không chứa mật khẩu. **Lưu ý:** `PGPASSFILE` ghi đè `~/.pgpass` mặc định, nên `/etc/11ship/backup/pgpass` phải chứa CẢ dòng `ship11_migrator` (cho `BACKUP_SOURCE_URL`) LẪN dòng `ship11_backup_scratch`; thiếu dòng migrator thì sao lưu không xác thực được. `BACKUP_SOURCE_URL` (role `ship11_migrator`) không đổi. Không dán mật khẩu vào `backup.env`, vào URL, vào log hay vào PR. Đổi mật khẩu: lặp bước 2–3 (`\password` và ghi lại `pgpass`); lần chạy kế tiếp đọc file mới, không cần khởi động lại dịch vụ.
+
 ## 5. Mỗi lần chạy làm gì, và khi nào mới gọi là thành công
 
 `dump → gói + manifest → mã hóa → khôi phục thử bản MÃ HÓA vào DB tạm ship11_verify_* và kiểm tra (schema, số dòng nhật ký/sổ cái, ví = sổ cái) → tải lên Drive → kiểm chứng bản trên Drive → dọn bản cũ → ghi nhận → báo M13`. Năm trạng thái được phân biệt trên trang **Hệ thống › Sao lưu và phục hồi**: *đã tạo bản trên VPS* (`LOCAL`), *đã tải lên* (`UPLOADED`), *đã xác minh ngoài VPS* (`VERIFIED`), **thành công** (chỉ khi `VERIFIED`; hiện "Thành công ngoài VPS"), **thất bại** (kèm bước dừng và nguyên nhân bằng lời). Cơ sở dữ liệu từ chối ghi `offsite` khi chưa `VERIFIED`.

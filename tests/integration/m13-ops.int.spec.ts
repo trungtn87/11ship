@@ -574,12 +574,22 @@ describe('M13 — operations, alerts and updates', () => {
       const send = (body: unknown) => api(admin.running.baseUrl, 'POST', '/ops/ingest/backup', { bearer: key.secret, body });
       const ago = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
       // Only the backup incident is counted: other checks (a queue backlog left by earlier suites in the shared database, a late probe) may speak too, and that is not under test here.
-      const told = (): typeof discord.calls => discord.calls.filter((c) => c.body.embeds[0]!.fields.some((f) => f.name === 'Nguồn' && f.value === 'Sao lưu'));
+      // Success notices (severity INFO, "Thông tin") are counted apart below; incidents and their recovery are "told".
+      const told = (): typeof discord.calls => discord.calls.filter((c) => c.body.embeds[0]!.fields.some((f) => f.name === 'Nguồn' && f.value === 'Sao lưu') && !c.body.embeds[0]!.fields.some((f) => f.name === 'Mức độ' && f.value === 'Thông tin'));
+      const successNotices = (): typeof discord.calls => discord.calls.filter((c) => c.body.embeds[0]!.title.includes('Sao lưu') && c.body.embeds[0]!.title.includes('thành công'));
       const said = (): string => JSON.stringify(told().map((c) => c.body));
 
       expect((await send({ kind: 'BACKUP', ok: true, finished_at: ago(1), size_bytes: 1000 })).status).toBe(200);
       await dispatcher.runOnce();
-      expect(told()).toHaveLength(0); // a good backup says nothing
+      expect(told()).toHaveLength(0); // a good backup raises no incident message...
+      expect(successNotices()).toHaveLength(1); // ...and is announced once as a success (M12-F)
+
+      // the same run reported twice (a retried call) is announced once
+      const run = { kind: 'BACKUP', ok: true, finished_at: ago(0), size_bytes: 1500, run_id: '0b7c2f1e-5a2d-4c9e-9f10-1a2b3c4d5e6f', backup_kind: 'DAILY' };
+      expect((await send(run)).status).toBe(200);
+      expect((await send(run)).status).toBe(200);
+      await dispatcher.runOnce();
+      expect(successNotices()).toHaveLength(2);
 
       expect((await send({ kind: 'BACKUP', ok: false, finished_at: ago(0), detail_code: 'DRIVE_QUOTA' })).status).toBe(200);
       await dispatcher.runOnce();
