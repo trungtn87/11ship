@@ -91,7 +91,7 @@ db_mb="$(( $(sql -c 'SELECT pg_database_size(current_database())') / 1048576 + 1
 work="$(mktemp -d "$BACKUP_DIR/.work.XXXXXX")"
 bk_log "dump ($kind, trigger $trigger)"
 pg_dump -Fc --no-owner --file "$work/database.dump" "$BACKUP_SOURCE_URL" || fail DUMP_FAILED
-schema_version="$(sql -c "SELECT COALESCE((SELECT name FROM public.pgmigrations ORDER BY id DESC LIMIT 1), 'NONE')")"
+schema_version="$(bk_schema_version)"
 components=("database.dump:$(stat -c %s "$work/database.dump"):$(sha256sum "$work/database.dump" | cut -d' ' -f1)")
 extra=()
 if [[ -n "${BACKUP_EXTRA_PATHS:-}" ]]; then

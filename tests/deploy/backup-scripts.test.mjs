@@ -3,12 +3,13 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 // M12-F: the backup and restore-rehearsal scripts. These checks need no database: syntax, and that the restore script refuses every target that is not a brand-new scratch
 // database BEFORE it connects anywhere. The real dump/restore rehearsal is recorded in docs/evidence/m12/restore-rehearsal-20261023.txt.
 
-const script = (name) => new URL(`../../ops/backup/${name}`, import.meta.url).pathname;
+const script = (name) => fileURLToPath(new URL(`../../ops/backup/${name}`, import.meta.url));
 
 describe('ops/backup scripts', () => {
   test('are valid bash', () => {
@@ -42,6 +43,42 @@ describe('ops/backup scripts', () => {
     const result = spawnSync('bash', [script('backup.sh')], { env: { ...env, BACKUP_KIND: 'WHENEVER' }, encoding: 'utf8' });
     assert.equal(result.status, 64);
     assert.match(result.stderr, /unknown kind/);
+  });
+
+  test('the schema version is read from app.pgmigrations when the VPS has it, otherwise from public.pgmigrations', () => {
+    // A stand-in for psql: answers the two questions bk_schema_version asks and refuses anything else. No database is needed.
+    const code = `
+      source "${script('lib.sh')}"
+      sql() {
+        local q="\${*: -1}"
+        case "$q" in
+          *to_regclass*) echo "$FAKE_HAS_APP" ;;
+          *"FROM app.pgmigrations"*) echo "APP_HISTORY" ;;
+          *"FROM public.pgmigrations"*) echo "PUBLIC_HISTORY" ;;
+          *) echo "unexpected query: $q" >&2; exit 1 ;;
+        esac
+      }
+      bk_schema_version
+    `;
+    const run = (has) => spawnSync('bash', ['-c', code], { env: { PATH: process.env.PATH, FAKE_HAS_APP: has }, encoding: 'utf8' });
+    const onVps = run('t');
+    assert.equal(onVps.status, 0, onVps.stderr);
+    assert.equal(onVps.stdout.trim(), 'APP_HISTORY');
+    const local = run('f');
+    assert.equal(local.status, 0, local.stderr);
+    assert.equal(local.stdout.trim(), 'PUBLIC_HISTORY');
+  });
+
+  test('backup and verify both use the same migration-history rule (verify.sql is run by psql on the scratch database)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const verify = readFileSync(script('verify.sql'), 'utf8');
+    assert.match(verify, /to_regclass\('app\.pgmigrations'\)/);
+    assert.match(verify, /\\if :has_app_migrations\b/);
+    assert.match(verify, /FROM app\.pgmigrations/);
+    assert.match(verify, /FROM public\.pgmigrations/);
+    const backup = readFileSync(script('backup.sh'), 'utf8');
+    assert.match(backup, /schema_version="\$\(bk_schema_version\)"/);
+    assert.doesNotMatch(backup, /FROM public\.pgmigrations/);
   });
 
   test('the rehearsal seed refuses to run outside a rehearsal database', async () => {

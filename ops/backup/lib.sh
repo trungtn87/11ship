@@ -10,6 +10,14 @@ bk_log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 bk_redact() { python3 "$BK_TOOLS" redact; }
 bk_classify() { python3 "$BK_TOOLS" classify; }
 
+# Name of the last applied migration. The VPS keeps its history in app.pgmigrations (scripts/db-migrate-remote.js); local and integration databases use public.pgmigrations.
+# Needs the caller's `sql` function (runs one psql command and prints its output).
+bk_schema_version() {
+  local table=public.pgmigrations
+  if [[ "$(sql -c "SELECT to_regclass('app.pgmigrations') IS NOT NULL")" == "t" ]]; then table=app.pgmigrations; fi
+  sql -c "SELECT COALESCE((SELECT name FROM $table ORDER BY id DESC LIMIT 1), 'NONE')"
+}
+
 # Sunday on the Vietnam calendar (the 03:00 run of Sunday also becomes the weekly copy). Takes an epoch so it can be tested at the day edges.
 bk_is_weekly_day() { [[ "$(TZ=Asia/Ho_Chi_Minh date -d "@${1:-$(date +%s)}" +%u)" == "7" ]]; }
 
