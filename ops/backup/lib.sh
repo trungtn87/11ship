@@ -144,16 +144,21 @@ bk_spool_trim_unsent() {
 # Tells M13 (Discord alerts, Web Admin health) how the run ended. ok=true ONLY for a copy verified outside the VPS. The credential comes from a file (a systemd credential) and is
 # passed to curl on stdin, so it is never on a command line, in the environment of curl or in a log. No URL, host or secret is logged.
 bk_report() {
-  local kind="${1:?BACKUP|RESTORE_TEST}" ok="${2:?true|false}" size="${3:-}" detail="${4:-}" body
+  # run_id (the backup run's UUID) and backup_kind (DAILY, WEEKLY, ...) are optional; the success notice on Discord is keyed by run_id.
+  local kind="${1:?BACKUP|RESTORE_TEST}" ok="${2:?true|false}" size="${3:-}" detail="${4:-}" run_id="${5:-}" backup_kind="${6:-}" body
   [[ -n "${BACKUP_OPS_URL:-}" && -r "${BACKUP_INGEST_KEY_FILE:-/nonexistent}" ]] || { bk_log "M13 report skipped: BACKUP_OPS_URL or the ingest key is not set"; return 0; }
-  body="$(python3 - "$kind" "$ok" "$size" "$detail" <<'PY'
+  body="$(python3 - "$kind" "$ok" "$size" "$detail" "$run_id" "$backup_kind" <<'PY'
 import json, sys, datetime
-kind, ok, size, detail = sys.argv[1:5]
+kind, ok, size, detail, run_id, backup_kind = sys.argv[1:7]
 b = {'kind': kind, 'ok': ok == 'true', 'finished_at': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')}
 if size.isdigit():
     b['size_bytes'] = int(size)
 if detail:
     b['detail_code'] = detail
+if run_id:
+    b['run_id'] = run_id
+if backup_kind:
+    b['backup_kind'] = backup_kind
 print(json.dumps(b))
 PY
 )"

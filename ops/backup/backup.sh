@@ -176,5 +176,5 @@ for old in $(ls -1tr "$BACKUP_DIR"/ship11-*.tar.enc 2>/dev/null); do
 done
 bk_remote_retention "${id:0:8}"
 bk_spool_prune "$BACKUP_DIR" "$keep_local"
-bk_report BACKUP true "$size" ""
+bk_report BACKUP true "$size" "" "$id" "$kind"
 echo "BACKUP OK id=$id kind=$kind size=$size offsite=true"

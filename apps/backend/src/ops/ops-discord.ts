@@ -51,6 +51,7 @@ const KIND_LABEL: Readonly<Record<NotificationKind, string>> = {
   TEST: 'Gửi thử',
   DEPLOY: 'Triển khai',
   MAINTENANCE: 'Bảo trì',
+  BACKUP_OK: 'Sao lưu thành công',
 };
 
 const clip = (v: unknown, max: number): string => {
